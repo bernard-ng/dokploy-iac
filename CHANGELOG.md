@@ -22,3 +22,6 @@ All notable changes to this project will be documented in this file.
   regression check against Dokploy `v0.30.6`.
 - Add fixture-backed and live SDK contract tests for project, application,
   Postgres, and authentication responses.
+- Add the typed Phase 3 state model with canonical resource addresses,
+  instance identity, non-sensitive managed inputs, lineage, revisions, and
+  serial-checked mutation invariants.
