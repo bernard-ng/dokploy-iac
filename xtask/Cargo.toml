@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "Apache-2.0"
+repository = "https://github.com/bernard-ng/dokploy-iac"
+publish = false
+
+[dependencies]
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tempfile = "3.23"
+thiserror = "2.0"

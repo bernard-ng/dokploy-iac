@@ -1,0 +1,74 @@
+name: dokploy-iac-integration
+
+x-dokploy-image: &dokploy-image dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8
+x-postgres-image: &postgres-image postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
+
+services:
+  postgres:
+    image: *postgres-image
+    environment:
+      POSTGRES_DB: dokploy
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USER: dokploy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dokploy -d dokploy"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    networks:
+      - database
+    restart: unless-stopped
+    secrets:
+      - postgres_password
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  dokploy:
+    image: *dokploy-image
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BETTER_AUTH_SECRET_FILE: /run/secrets/auth_secret
+      POSTGRES_DB: dokploy
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: dokploy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/trpc/settings.health"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 30s
+    networks:
+      - default
+      - database
+    ports:
+      - "127.0.0.1:${DOKPLOY_INTEGRATION_PORT:-33000}:3000"
+    restart: unless-stopped
+    secrets:
+      - auth_secret
+      - postgres_password
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dokploy-data:/etc/dokploy
+      - docker-config:/root/.docker
+
+networks:
+  database:
+    internal: true
+
+secrets:
+  auth_secret:
+    file: .integration/secrets/auth_secret
+  postgres_password:
+    file: .integration/secrets/postgres_password
+
+volumes:
+  docker-config:
+  dokploy-data:
+  postgres-data:

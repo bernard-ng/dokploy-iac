@@ -1,0 +1,26 @@
+[package]
+name = "dokploy-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dokploy"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+directories.workspace = true
+dokploy-sdk.workspace = true
+keyring.workspace = true
+miette.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+toml_edit.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+zeroize.workspace = true

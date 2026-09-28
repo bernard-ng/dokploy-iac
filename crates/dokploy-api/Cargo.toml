@@ -1,0 +1,20 @@
+[package]
+name = "dokploy-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "Apache-2.0"
+repository = "https://github.com/bernard-ng/dokploy-iac"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+http = "1.4"
+indexmap = { version = "2.14", features = ["serde"] }
+oas3-gen-support = "0.28.0"
+regex = "1.13"
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "http2", "native-tls", "query", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_with = { version = "3.21", features = ["base64", "chrono"] }
+validator = { version = "0.21", features = ["derive"] }

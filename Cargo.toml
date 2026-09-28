@@ -1,0 +1,34 @@
+[workspace]
+members = [
+    "crates/dokploy-api",
+    "crates/dokploy-cli",
+    "crates/dokploy-sdk",
+    "xtask",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/bernard-ng/dokploy-iac"
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.48", features = ["derive"] }
+directories = "6.0.0"
+dokploy-api = { path = "crates/dokploy-api", version = "0.1.0" }
+dokploy-sdk = { path = "crates/dokploy-sdk", version = "0.1.0" }
+keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
+miette = { version = "7.6.0", features = ["fancy"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tempfile = "3.23.0"
+thiserror = "2.0.16"
+tokio = "1.53.1"
+toml_edit = "0.23.6"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+url = "2.5.7"
+zeroize = "1.8.2"
