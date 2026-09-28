@@ -28,7 +28,9 @@ project, application, and Postgres reads, bounded GET retries, explicit
 outcome-unknown errors for interrupted mutations, and recursive secret
 redaction for CLI responses. Fixture tests and live tests run against the
 pinned local Dokploy `v0.30.6` environment. Phase 3 adds the durable state
-engine.
+engine. Its typed state model, instance binding, fail-fast writer lock, strict
+loading, and atomic primary/backup checkpoints are implemented; operation
+journaling and recovery detection are next.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

@@ -179,7 +179,7 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
         .expect("the later address must be serialized");
     assert!(earlier_position < later_position);
 
-    let decoded: StateFile = serde_json::from_str(&encoded).expect("state must deserialize");
+    let decoded = StateFile::from_json_slice(encoded.as_bytes()).expect("state must deserialize");
     assert_eq!(decoded, state);
     assert_eq!(decoded.serial(), 2);
     assert_eq!(decoded.cli_version(), &Version::new(0, 1, 0));
@@ -193,7 +193,8 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
 
     let mut unsupported = serde_json::to_value(&state).expect("state must serialize");
     unsupported["formatVersion"] = json!(2);
-    assert!(serde_json::from_value::<StateFile>(unsupported).is_err());
+    let unsupported = serde_json::to_vec(&unsupported).expect("state JSON must serialize");
+    assert!(StateFile::from_json_slice(&unsupported).is_err());
 }
 
 #[test]
@@ -204,11 +205,13 @@ fn state_deserialization_rejects_unknown_fields_and_nil_lineage() {
 
     let mut unknown = serde_json::to_value(&state).expect("state must serialize");
     unknown["unexpected"] = json!(true);
-    assert!(serde_json::from_value::<StateFile>(unknown).is_err());
+    let unknown = serde_json::to_vec(&unknown).expect("state JSON must serialize");
+    assert!(StateFile::from_json_slice(&unknown).is_err());
 
     let mut nil_lineage = serde_json::to_value(&state).expect("state must serialize");
     nil_lineage["lineage"] = json!("00000000-0000-0000-0000-000000000000");
-    assert!(serde_json::from_value::<StateFile>(nil_lineage).is_err());
+    let nil_lineage = serde_json::to_vec(&nil_lineage).expect("state JSON must serialize");
+    assert!(StateFile::from_json_slice(&nil_lineage).is_err());
 }
 
 #[test]
@@ -236,6 +239,41 @@ fn resource_state_canonicalizes_dependencies() {
 
     assert!(resource.is_protected());
     assert_eq!(resource.dependencies(), &[first, second]);
+}
+
+#[test]
+fn state_debug_output_does_not_expose_managed_values_or_remote_ids() {
+    let inputs = ManagedInputs::try_from_json(json!({
+        "description": "managed-input-canary"
+    }))
+    .expect("inputs must be safe");
+    let resource = ResourceState::new(
+        ResourceKind::Application,
+        RemoteId::new("remote-id-canary").expect("remote ID must be valid"),
+        false,
+        inputs.clone(),
+        Vec::new(),
+    );
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    state
+        .upsert_resource(
+            "application.api".parse().expect("address must parse"),
+            resource.clone(),
+        )
+        .expect("resource must be inserted");
+
+    for debug in [
+        format!("{inputs:?}"),
+        format!("{resource:?}"),
+        format!("{state:?}"),
+    ] {
+        assert!(!debug.contains("managed-input-canary"));
+        assert!(!debug.contains("remote-id-canary"));
+    }
+}
+
+fn instance() -> InstanceIdentity {
+    InstanceIdentity::parse("https://deploy.example.com").expect("instance must be valid")
 }
 
 fn resource_state(kind: ResourceKind, remote_id: &str) -> ResourceState {

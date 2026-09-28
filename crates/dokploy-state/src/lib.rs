@@ -2,6 +2,8 @@
 
 mod resource;
 mod state;
+mod storage;
+mod strict_json;
 
 pub use resource::{
     ResourceAddress, ResourceAddressParseError, ResourceKind, ResourceKindParseError, ResourceName,
@@ -9,5 +11,8 @@ pub use resource::{
 };
 pub use state::{
     InstanceIdentity, InstanceIdentityError, ManagedInputs, ManagedInputsError, RemoteId,
-    RemoteIdError, ResourceState, StateError, StateFile, StateRevision,
+    RemoteIdError, ResourceState, StateDecodeError, StateError, StateFile, StateRevision,
+};
+pub use storage::{
+    DurabilityStage, ExpectedState, PersistenceTarget, StateStore, StateStoreError, WriteSession,
 };

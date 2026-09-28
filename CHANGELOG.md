@@ -25,3 +25,6 @@ All notable changes to this project will be documented in this file.
 - Add the typed Phase 3 state model with canonical resource addresses,
   instance identity, non-sensitive managed inputs, lineage, revisions, and
   serial-checked mutation invariants.
+- Add instance-bound local state persistence with fail-fast locking, strict
+  decoding, stale-revision protection, owner-only artifacts, atomic writes,
+  and previous-state backups.

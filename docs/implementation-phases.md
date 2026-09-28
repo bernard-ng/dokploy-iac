@@ -38,6 +38,9 @@ durable state semantics.
 
 - Add logical resource addresses, lineage, serials, instance binding, locking,
   atomic writes, backups, operation journals, and recovery detection.
+- Completed: typed state identities and mutations, instance-bound storage,
+  strict decoding, stale-write detection, and atomic primary/backup files.
+- Remaining: durable operation journals and recovery detection.
 
 ## Phase 4: configuration
 

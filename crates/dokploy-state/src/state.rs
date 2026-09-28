@@ -6,6 +6,7 @@ use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
 
+use crate::strict_json::reject_duplicate_keys;
 use crate::{ResourceAddress, ResourceKind};
 
 const CURRENT_FORMAT_VERSION: u32 = 1;
@@ -175,9 +176,18 @@ pub struct RemoteIdError;
 /// known secret-bearing field families recursively. Resource-specific adapters
 /// remain responsible for passing only fields owned by their configuration
 /// schema; secret values under an unrelated key cannot be inferred from JSON.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ManagedInputs(serde_json::Value);
+
+impl fmt::Debug for ManagedInputs {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("ManagedInputs")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl ManagedInputs {
     /// Validates JSON before it can cross into durable managed state.
@@ -262,7 +272,7 @@ fn is_sensitive_key(key: &str) -> bool {
 }
 
 /// Durable state for one managed resource.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceState {
     kind: ResourceKind,
@@ -270,6 +280,19 @@ pub struct ResourceState {
     protected: bool,
     last_applied: ManagedInputs,
     dependencies: Vec<ResourceAddress>,
+}
+
+impl fmt::Debug for ResourceState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ResourceState")
+            .field("kind", &self.kind)
+            .field("remote_id", &"[REDACTED]")
+            .field("protected", &self.protected)
+            .field("last_applied", &"[REDACTED]")
+            .field("dependency_count", &self.dependencies.len())
+            .finish()
+    }
 }
 
 impl ResourceState {
@@ -354,9 +377,35 @@ impl<'de> Deserialize<'de> for ResourceState {
 }
 
 /// One versioned state lineage bound to exactly one Dokploy instance.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateFile {
+    format_version: u32,
+    cli_version: Version,
+    lineage: Uuid,
+    serial: u64,
+    instance: InstanceIdentity,
+    resources: BTreeMap<ResourceAddress, ResourceState>,
+}
+
+impl fmt::Debug for StateFile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StateFile")
+            .field("format_version", &self.format_version)
+            .field("cli_version", &self.cli_version)
+            .field("lineage", &self.lineage)
+            .field("serial", &self.serial)
+            .field("instance", &self.instance)
+            .field("resource_count", &self.resources.len())
+            .finish()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+struct SerializedStateFile {
     format_version: u32,
     cli_version: Version,
     lineage: Uuid,
@@ -398,6 +447,15 @@ impl StateFile {
             instance,
             resources: BTreeMap::new(),
         }
+    }
+
+    /// Strictly decodes one state document, including duplicate-key checks.
+    pub fn from_json_slice(bytes: &[u8]) -> Result<Self, StateDecodeError> {
+        reject_duplicate_keys(bytes).map_err(|()| StateDecodeError)?;
+        let state: SerializedStateFile =
+            serde_json::from_slice(bytes).map_err(|_| StateDecodeError)?;
+
+        Self::from_serialized(state).map_err(|_| StateDecodeError)
     }
 
     /// Returns the on-disk state format version.
@@ -502,43 +560,25 @@ impl StateFile {
     fn next_serial(&self) -> Result<u64, StateError> {
         self.serial.checked_add(1).ok_or(StateError::SerialOverflow)
     }
-}
 
-impl<'de> Deserialize<'de> for StateFile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        #[serde(rename_all = "camelCase")]
-        struct SerializedStateFile {
-            format_version: u32,
-            cli_version: Version,
-            lineage: Uuid,
-            serial: u64,
-            instance: InstanceIdentity,
-            resources: BTreeMap<ResourceAddress, ResourceState>,
-        }
-
-        let state = SerializedStateFile::deserialize(deserializer)?;
+    fn from_serialized(state: SerializedStateFile) -> Result<Self, StateError> {
         if state.format_version != CURRENT_FORMAT_VERSION {
-            return Err(de::Error::custom(StateError::UnsupportedFormatVersion {
+            return Err(StateError::UnsupportedFormatVersion {
                 found: state.format_version,
                 supported: CURRENT_FORMAT_VERSION,
-            }));
+            });
         }
 
         if state.lineage.is_nil() {
-            return Err(de::Error::custom(StateError::NilLineage));
+            return Err(StateError::NilLineage);
         }
 
         for (address, resource) in &state.resources {
             if address.kind() != resource.kind() {
-                return Err(de::Error::custom(StateError::ResourceKindMismatch {
+                return Err(StateError::ResourceKindMismatch {
                     address: address.clone(),
                     state_kind: resource.kind(),
-                }));
+                });
             }
         }
 
@@ -552,6 +592,11 @@ impl<'de> Deserialize<'de> for StateFile {
         })
     }
 }
+
+/// A deliberately detail-free state decoding failure.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("state JSON is malformed or violates state invariants")]
+pub struct StateDecodeError;
 
 /// A state invariant that prevented a read or mutation.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
