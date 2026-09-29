@@ -1,4 +1,6 @@
-use serde::Deserialize;
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer};
+use std::fmt;
 
 macro_rules! identifier {
     ($name:ident) => {
@@ -63,17 +65,102 @@ pub struct ApplicationDetails {
     pub name: String,
     pub app_name: String,
     pub environment_id: EnvironmentId,
-    pub source_type: String,
+    #[serde(default)]
+    pub source_type: ResponseField<String>,
+    #[serde(default)]
+    pub description: ResponseField<String>,
+    #[serde(default)]
+    pub replicas: ResponseField<u32>,
+    #[serde(default)]
+    pub repository: ResponseField<String>,
+    #[serde(default)]
+    pub branch: ResponseField<String>,
+    #[serde(default)]
+    pub build_path: ResponseField<String>,
+    #[serde(default, rename = "env")]
+    pub environment: ResponseField<ApplicationEnvironmentShape>,
     #[serde(default)]
     pub application_status: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
     #[serde(default)]
     pub has_git_provider_access: Option<bool>,
     #[serde(default)]
     pub server_id: Option<ServerId>,
     #[serde(default)]
     pub unauthorized_provider: Option<String>,
+}
+
+/// Value-free shape of the secret-bearing application `env` field.
+///
+/// The custom deserializer deliberately consumes strings without retaining
+/// their bytes, so runtime environment values cannot enter snapshots, logs,
+/// diagnostics, or debug output through the SDK model.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApplicationEnvironmentShape {
+    /// Dokploy returned an empty environment document.
+    Empty,
+    /// Dokploy returned a non-empty environment document whose bytes are opaque.
+    Opaque,
+}
+
+impl<'de> Deserialize<'de> for ApplicationEnvironmentShape {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ShapeVisitor;
+
+        impl Visitor<'_> for ShapeVisitor {
+            type Value = ApplicationEnvironmentShape;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an application environment string")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(if value.is_empty() {
+                    ApplicationEnvironmentShape::Empty
+                } else {
+                    ApplicationEnvironmentShape::Opaque
+                })
+            }
+        }
+
+        deserializer.deserialize_str(ShapeVisitor)
+    }
+}
+
+/// One safe application entry returned by `application.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplicationSearchItem {
+    pub application_id: ApplicationId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+}
+
+/// The fully collected application search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ApplicationCollection {
+    pub(crate) applications: Vec<ApplicationSearchItem>,
+}
+
+impl ApplicationCollection {
+    /// Returns all applications discovered in the parent environment.
+    #[must_use]
+    pub fn applications(&self) -> &[ApplicationSearchItem] {
+        &self.applications
+    }
+}
+
+/// One page returned by the runtime `application.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApplicationSearchPage {
+    pub(crate) items: Vec<ApplicationSearchItem>,
+    pub(crate) total: u64,
 }
 
 /// A safe subset of the response returned by `postgres.one`.
@@ -202,7 +289,10 @@ pub struct PostgresSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{ApplicationDetails, PostgresDetails, ProjectTopology, ResponseField};
+    use super::{
+        ApplicationDetails, ApplicationEnvironmentShape, PostgresDetails, ProjectTopology,
+        ResponseField,
+    };
 
     #[test]
     fn application_details_tolerate_unknown_runtime_fields() {
@@ -214,6 +304,66 @@ mod tests {
         assert_eq!(application.application_id.as_str(), "application-1");
         assert_eq!(application.environment_id.as_str(), "environment-1");
         assert_eq!(application.server_id, None);
+        assert_eq!(application.description, ResponseField::Null);
+        assert_eq!(application.replicas, ResponseField::Value(1));
+        assert_eq!(application.build_path, ResponseField::Value("/".to_owned()));
+        assert_eq!(application.environment, ResponseField::Null);
+    }
+
+    #[test]
+    fn application_environment_shape_never_retains_runtime_bytes() {
+        let application: ApplicationDetails = serde_json::from_str(
+            r#"{
+                "applicationId":"application-1",
+                "environmentId":"environment-1",
+                "name":"API",
+                "appName":"api",
+                "env":"SECRET=environment-value-canary"
+            }"#,
+        )
+        .expect("application response is valid");
+
+        assert_eq!(
+            application.environment,
+            ResponseField::Value(ApplicationEnvironmentShape::Opaque)
+        );
+        assert!(!format!("{application:?}").contains("environment-value-canary"));
+    }
+
+    #[test]
+    fn application_fields_preserve_omitted_null_and_value() {
+        let application: ApplicationDetails = serde_json::from_str(
+            r#"{
+                "applicationId":"application-1",
+                "environmentId":"environment-1",
+                "name":"API",
+                "appName":"api",
+                "description":null,
+                "replicas":2,
+                "repository":"owner/repository",
+                "branch":"main",
+                "sourceType":"github",
+                "buildPath":"apps/api",
+                "env":""
+            }"#,
+        )
+        .expect("application response is valid");
+
+        assert_eq!(application.description, ResponseField::Null);
+        assert_eq!(application.replicas, ResponseField::Value(2));
+        assert_eq!(
+            application.repository,
+            ResponseField::Value("owner/repository".to_owned())
+        );
+        assert_eq!(application.branch, ResponseField::Value("main".to_owned()));
+        assert_eq!(
+            application.source_type,
+            ResponseField::Value("github".to_owned())
+        );
+        assert_eq!(
+            application.environment,
+            ResponseField::Value(ApplicationEnvironmentShape::Empty)
+        );
     }
 
     #[test]

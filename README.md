@@ -65,6 +65,13 @@ proved-present parent, distinguishes authoritative from partial collections,
 and preserves description omission versus null without admitting Dokploy's
 environment variables or nested resource payloads into planner state.
 
+Application discovery now extends that snapshot with fully paginated search
+inside proved physical environments and direct managed-ID reads. It validates
+current containment, probes move and reparent targets without trusting
+replacement parents, preserves owned field presence, and reduces the
+secret-bearing runtime environment document to a value-free shape before it
+crosses the SDK seam.
+
 The durable sensitive-state foundation now stores non-null password and
 application environment intent only as opaque, versioned HMAC-SHA-256
 receipts. State format version 2 rejects raw sensitive values, ambiguous

@@ -560,6 +560,7 @@ fn sensitive_values_and_remote_observations_are_enforced_at_snapshot_seams() {
 
     for observation in [
         PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
         PropertyObservation::KnownAbsent,
     ] {
         RemoteState::try_new(

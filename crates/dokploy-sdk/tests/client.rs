@@ -376,6 +376,206 @@ async fn applications_get_uses_a_strong_id_and_decodes_application_details() {
 }
 
 #[tokio::test]
+async fn applications_by_environment_reads_every_page_through_one_narrow_interface() {
+    let first_items = (0..100)
+        .map(|index| {
+            serde_json::json!({
+                "applicationId": format!("application-{index}"),
+                "environmentId": "environment-1",
+                "name": format!("application-{index}")
+            })
+        })
+        .collect::<Vec<_>>();
+    let first = Box::leak(
+        serde_json::json!({"items": first_items, "total": 101})
+            .to_string()
+            .into_boxed_str(),
+    );
+    let second = Box::leak(
+        serde_json::json!({
+            "items": [{
+                "applicationId": "application-100",
+                "environmentId": "environment-1",
+                "name": "application-100"
+            }],
+            "total": 101
+        })
+        .to_string()
+        .into_boxed_str(),
+    );
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", first as &'static str),
+        ("200 OK", second as &'static str),
+    ]);
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let applications = client
+        .applications()
+        .by_environment(EnvironmentId::new("environment-1"))
+        .await
+        .expect("all application pages are readable");
+
+    assert_eq!(applications.applications().len(), 101);
+    let requests = server.finish_all();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("GET /api/application.search?"));
+    assert!(requests[0].contains("environmentId=environment-1"));
+    assert!(requests[0].contains("limit=100"));
+    assert!(requests[0].contains("offset=0"));
+    assert!(requests[1].starts_with("GET /api/application.search?"));
+    assert!(requests[1].contains("environmentId=environment-1"));
+    assert!(requests[1].contains("limit=100"));
+    assert!(requests[1].contains("offset=100"));
+}
+
+#[tokio::test]
+async fn applications_by_environment_rejects_premature_empty_pages() {
+    let server = TestServer::respond_with_json(r#"{"items":[],"total":1}"#);
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let error = client
+        .applications()
+        .by_environment(EnvironmentId::new("environment-1"))
+        .await
+        .expect_err("an incomplete application collection is unsafe");
+
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "application.search"
+        }
+    ));
+    server.finish();
+}
+
+#[tokio::test]
+async fn applications_by_environment_rejects_pages_over_the_declared_total() {
+    let server = TestServer::respond_with_json(
+        r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"one"},{"applicationId":"application-2","environmentId":"environment-1","name":"two"}],"total":1}"#,
+    );
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let error = client
+        .applications()
+        .by_environment(EnvironmentId::new("environment-1"))
+        .await
+        .expect_err("a page cannot contain more than the declared total");
+
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "application.search"
+        }
+    ));
+    server.finish();
+}
+
+#[tokio::test]
+async fn applications_by_environment_rejects_totals_above_the_collection_cap() {
+    let server = TestServer::respond_with_json(r#"{"items":[],"total":10001}"#);
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let error = client
+        .applications()
+        .by_environment(EnvironmentId::new("environment-1"))
+        .await
+        .expect_err("the bounded collection cap must be enforced");
+
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "application.search"
+        }
+    ));
+    server.finish();
+}
+
+#[tokio::test]
+async fn applications_by_environment_rejects_an_empty_parent_before_transport() {
+    let client = Dokploy::builder()
+        .url("http://127.0.0.1:9")
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let error = client
+        .applications()
+        .by_environment(EnvironmentId::new(""))
+        .await
+        .expect_err("an empty parent ID is invalid");
+
+    assert!(matches!(
+        error,
+        Error::InvalidRequest {
+            operation: "application.search",
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn applications_by_environment_rejects_totals_that_change_between_pages() {
+    let first_items = (0..100)
+        .map(|index| {
+            serde_json::json!({
+                "applicationId": format!("application-{index}"),
+                "environmentId": "environment-1",
+                "name": format!("application-{index}")
+            })
+        })
+        .collect::<Vec<_>>();
+    let first = Box::leak(
+        serde_json::json!({"items": first_items, "total": 101})
+            .to_string()
+            .into_boxed_str(),
+    );
+    let second = Box::leak(
+        serde_json::json!({"items": [], "total": 100})
+            .to_string()
+            .into_boxed_str(),
+    );
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", first as &'static str),
+        ("200 OK", second as &'static str),
+    ]);
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let error = client
+        .applications()
+        .by_environment(EnvironmentId::new("environment-1"))
+        .await
+        .expect_err("changing totals are unsafe");
+
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "application.search"
+        }
+    ));
+    server.finish_all();
+}
+
+#[tokio::test]
 async fn dokploy_errors_preserve_status_code_message_and_issues() {
     let server = TestServer::respond(
         "404 Not Found",

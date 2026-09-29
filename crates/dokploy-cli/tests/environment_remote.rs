@@ -5,8 +5,8 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    DiscoverRemoteError, DiscoveryAuthority, EnvironmentTopologyAuthority,
-    ProjectTopologyAuthority, discover_remote,
+    ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority,
+    EnvironmentTopologyAuthority, ProjectTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -104,6 +104,7 @@ fn authoritative() -> DiscoveryAuthority {
     DiscoveryAuthority {
         projects: ProjectTopologyAuthority::Authoritative,
         environments: EnvironmentTopologyAuthority::Authoritative,
+        applications: ApplicationTopologyAuthority::Authoritative,
     }
 }
 
@@ -423,6 +424,7 @@ environments:
     let authority = DiscoveryAuthority {
         projects: ProjectTopologyAuthority::Authoritative,
         environments: EnvironmentTopologyAuthority::Partial,
+        applications: ApplicationTopologyAuthority::Authoritative,
     };
 
     let remote = discover_remote(&client, &desired, &state, authority)

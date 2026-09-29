@@ -10,8 +10,8 @@ pub use client::{Dokploy, DokployBuilder};
 pub use error::{BuildError, DokployError, Error};
 pub use imperative::{Imperative, ImperativeMethod, ImperativeRequest};
 pub use models::{
-    ApplicationDetails, ApplicationId, ApplicationSummary, EnvironmentCollection,
-    EnvironmentDetails, EnvironmentId, EnvironmentSummary, EnvironmentTopology, PostgresDetails,
-    PostgresId, PostgresSummary, ProjectDetails, ProjectId, ProjectTopology, ResponseField,
-    ServerId,
+    ApplicationCollection, ApplicationDetails, ApplicationEnvironmentShape, ApplicationId,
+    ApplicationSearchItem, ApplicationSummary, EnvironmentCollection, EnvironmentDetails,
+    EnvironmentId, EnvironmentSummary, EnvironmentTopology, PostgresDetails, PostgresId,
+    PostgresSummary, ProjectDetails, ProjectId, ProjectTopology, ResponseField, ServerId,
 };

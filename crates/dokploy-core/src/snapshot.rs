@@ -942,8 +942,7 @@ fn validate_remote_resource(
         let valid = if path.is_sensitive() {
             matches!(
                 observation,
-                PropertyObservation::KnownAbsent
-                    | PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+                PropertyObservation::KnownAbsent | PropertyObservation::Unknown(_)
             )
         } else {
             match path {

@@ -1,6 +1,7 @@
 use crate::{
-    ApplicationDetails, ApplicationId, Dokploy, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
+    ApplicationCollection, ApplicationDetails, ApplicationId, Dokploy, EnvironmentCollection,
+    EnvironmentDetails, EnvironmentId, Error, PostgresDetails, PostgresId, ProjectDetails,
+    ProjectId, ProjectTopology,
 };
 
 /// Read operations for Dokploy projects.
@@ -37,6 +38,16 @@ impl<'a> Applications<'a> {
     /// Reads one application from fresh remote state.
     pub async fn get(&self, application_id: ApplicationId) -> Result<ApplicationDetails, Error> {
         self.client.application_get(application_id.as_str()).await
+    }
+
+    /// Reads every application in one environment from fresh paginated state.
+    pub async fn by_environment(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<ApplicationCollection, Error> {
+        self.client
+            .applications_by_environment(environment_id.as_str())
+            .await
     }
 }
 

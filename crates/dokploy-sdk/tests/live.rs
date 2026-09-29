@@ -143,10 +143,21 @@ async fn applications_get_reads_the_selected_live_application() {
         .get(ApplicationId::new(expected.application_id.as_str()))
         .await
         .expect("the selected live application must be readable");
+    let collection = client
+        .applications()
+        .by_environment(EnvironmentId::new(environment.environment_id.as_str()))
+        .await
+        .expect("the live parent-scoped application collection must be readable");
 
     assert_eq!(application.application_id, expected.application_id);
     assert_eq!(application.environment_id, environment.environment_id);
     assert_eq!(application.name, expected.name);
+    assert!(
+        collection
+            .applications()
+            .iter()
+            .any(|item| item.application_id == expected.application_id)
+    );
 }
 
 #[tokio::test]

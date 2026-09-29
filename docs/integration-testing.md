@@ -62,8 +62,9 @@ The wrapper verifies the pinned Dokploy version and required fixture topology,
 then supplies the ignored local API key only to the test process. The tests are
 ignored during ordinary `cargo test` runs and perform no remote mutations.
 They cover fresh project topology reads, project, environment, and application
-lookup, parent-scoped environment collections, and normalization of Dokploy's
-sparse authentication error response.
+lookup, parent-scoped environment collections, fully collected parent-scoped
+application search, and normalization of Dokploy's sparse authentication error
+response.
 
 ## Live CLI redaction test
 

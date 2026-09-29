@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dokploy_api::{
-    APPLICATION_ONE, ApplicationOneRequest, ApplicationOneRequestQuery, DokployApiClient,
+    APPLICATION_ONE, APPLICATION_SEARCH, ApplicationOneRequest, ApplicationOneRequestQuery,
+    ApplicationSearchRequest, ApplicationSearchRequestQuery, DokployApiClient,
     ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint, EndpointMethod,
     EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentOneRequest,
     EnvironmentOneRequestQuery, POSTGRES_ONE, PROJECT_ALL, PROJECT_ONE, PostgresOneRequest,
@@ -21,14 +22,16 @@ use crate::imperative::{
     Imperative, ImperativeBody, ImperativeMethod, ImperativeRequest, MultipartField,
 };
 use crate::models::{
-    ApplicationDetails, EnvironmentCollection, EnvironmentDetails, PostgresDetails, ProjectDetails,
-    ProjectTopology,
+    ApplicationCollection, ApplicationDetails, ApplicationSearchPage, EnvironmentCollection,
+    EnvironmentDetails, PostgresDetails, ProjectDetails, ProjectTopology,
 };
 use crate::services::{Applications, Environments, Postgres, Projects};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("dokploy-iac/", env!("CARGO_PKG_VERSION"));
+const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
+const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
 
 /// A configured client for the Dokploy API.
 #[derive(Clone)]
@@ -117,6 +120,62 @@ impl Dokploy {
         validate_generated_request(APPLICATION_ONE, &request)?;
 
         self.read_query_json(APPLICATION_ONE, &request.query).await
+    }
+
+    pub(crate) async fn applications_by_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<ApplicationCollection, Error> {
+        if environment_id.is_empty() {
+            return Err(invalid_request(
+                APPLICATION_SEARCH.operation(),
+                "environment ID cannot be empty",
+            ));
+        }
+        let mut applications = Vec::new();
+        let mut expected_total = None;
+
+        loop {
+            let request = ApplicationSearchRequest {
+                query: ApplicationSearchRequestQuery {
+                    environment_id: Some(environment_id.to_owned()),
+                    limit: Some(APPLICATION_SEARCH_PAGE_SIZE as f64),
+                    offset: Some(applications.len() as f64),
+                    ..ApplicationSearchRequestQuery::default()
+                },
+            };
+            validate_generated_request(APPLICATION_SEARCH, &request)?;
+            let page: ApplicationSearchPage = self
+                .read_query_json(APPLICATION_SEARCH, &request.query)
+                .await?;
+
+            let expected = *expected_total.get_or_insert(page.total);
+            if page.total != expected
+                || expected > APPLICATION_SEARCH_ITEM_LIMIT as u64
+                || page.items.len() > APPLICATION_SEARCH_PAGE_SIZE
+            {
+                return Err(Error::UnexpectedResponse {
+                    operation: APPLICATION_SEARCH.operation(),
+                });
+            }
+            let expected = usize::try_from(expected).map_err(|_| Error::UnexpectedResponse {
+                operation: APPLICATION_SEARCH.operation(),
+            })?;
+            let page_would_exceed_total = applications
+                .len()
+                .checked_add(page.items.len())
+                .is_none_or(|count| count > expected);
+            if page_would_exceed_total || (page.items.is_empty() && applications.len() < expected) {
+                return Err(Error::UnexpectedResponse {
+                    operation: APPLICATION_SEARCH.operation(),
+                });
+            }
+
+            applications.extend(page.items);
+            if applications.len() == expected {
+                return Ok(ApplicationCollection { applications });
+            }
+        }
     }
 
     pub(crate) async fn environment_get(

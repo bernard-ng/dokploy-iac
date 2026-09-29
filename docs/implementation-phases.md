@@ -84,6 +84,10 @@ durable state semantics.
 - Project fresh environment state into the same snapshot as projects, using
   managed physical IDs, parent-scoped name probes, separate collection
   authority, containment validation, and secret-safe description reads.
+- Project fresh application state into the combined snapshot, using bounded
+  exhaustive parent-scoped search, managed physical IDs, current-containment
+  validation, reparent collision probes, presence-aware owned fields, and a
+  value-free environment shape.
 - Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.

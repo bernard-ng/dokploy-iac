@@ -31,10 +31,12 @@ observations while retaining explicit unknown observations for partial reads.
 
 Remote resources contain a separate observation for each path: known value,
 known absence, or a closed unknown reason. Write-only password and environment
-entry paths reject known values and accept only known absence or the sensitive
-unknown reason. Desired, stored, and remote constructors validate paths against
-the resource kind. Desired construction also rejects self-dependencies and
-dependencies absent from the desired snapshot.
+entry paths reject known values and accept known absence or a closed unknown
+reason. Only the sensitive unknown reason is conclusive for write-only planning;
+omission and invalid-response reasons remain blocking. Desired, stored, and
+remote constructors validate paths against the resource kind. Desired
+construction also rejects self-dependencies and dependencies absent from the
+desired snapshot.
 
 Planning is a pure three-way comparison. Missing observations and unknown
 non-sensitive observations for desired properties make the plan incomplete.
