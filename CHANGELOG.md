@@ -31,3 +31,7 @@ All notable changes to this project will be documented in this file.
 - Add durable JSONL operation journals with action-bound state transitions,
   append-before-checkpoint ordering, constrained failure codes, strict recovery
   scanning, and mutation refusal while recovery evidence is unresolved.
+- Add the strict Phase 4 `dokploy.yaml` model with ownership-aware fields,
+  bounded parsing, typed references and containment, descriptor-only secrets,
+  lifecycle rules, moves, removals, JSON Schema, and redaction-safe semantic
+  diagnostics.

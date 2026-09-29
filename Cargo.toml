@@ -2,6 +2,7 @@
 members = [
     "crates/dokploy-api",
     "crates/dokploy-cli",
+    "crates/dokploy-config",
     "crates/dokploy-sdk",
     "crates/dokploy-state",
     "xtask",
@@ -19,15 +20,18 @@ anyhow = "1.0.100"
 clap = { version = "4.5.48", features = ["derive"] }
 directories = "6.0.0"
 dokploy-api = { path = "crates/dokploy-api", version = "0.1.0" }
+dokploy-config = { path = "crates/dokploy-config", version = "0.1.0" }
 dokploy-sdk = { path = "crates/dokploy-sdk", version = "0.1.0" }
 dokploy-state = { path = "crates/dokploy-state", version = "0.1.0" }
 fs4 = { version = "1.1.0", features = ["sync"] }
 keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service", "windows-native"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["native-tls"] }
+schemars = "1.2.2"
 semver = { version = "1.0.27", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+serde-saphyr = { version = "1.3.0", default-features = false, features = ["deserialize"] }
 tempfile = "3.23.0"
 thiserror = "2.0.16"
 tokio = "1.53.1"

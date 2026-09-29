@@ -43,9 +43,11 @@ durable state semantics.
 
 ## Phase 4: configuration
 
-- Add the versioned `dokploy.yaml` model, ownership-aware fields, references,
-  secrets, dependencies, lifecycle rules, schema generation, and semantic
-  validation.
+- Complete: add the versioned `dokploy.yaml` model, ownership-aware fields,
+  typed references, descriptor-only secrets, dependencies, lifecycle rules,
+  moves, removals, schema generation, containment, and semantic validation.
+- Next: expose `dokploy init`, `dokploy schema`, and `dokploy validate` without
+  requiring a connection context or contacting Dokploy.
 
 ## Phase 5: planner
 

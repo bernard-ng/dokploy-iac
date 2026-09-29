@@ -1,0 +1,30 @@
+//! Strict, bounded parsing and semantic validation for `dokploy.yaml`.
+//!
+//! The configuration module deliberately exposes one deep parsing seam:
+//! [`DokployConfig::parse`] converts untrusted YAML into a deterministic,
+//! validated model or returns a redacted error. Resource identity remains the
+//! global `kind.name` form owned by `dokploy-state`; consequently, resource
+//! names must be unique across all environments in the initial MVP.
+//!
+//! Secret sources are descriptors only. Parsing never reads the process
+//! environment or filesystem. File descriptors are lexically restricted to a
+//! relative path (optionally beginning with `./`); execution remains
+//! responsible for config-directory resolution, regular-file checks, symlink
+//! policy, and secret-byte handling. Source locations are retained separately
+//! for safe diagnostics and do not affect normalized configuration equality.
+
+mod field;
+mod model;
+mod parser;
+mod types;
+
+pub use field::Field;
+pub use model::{
+    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, PostgresConfig,
+    ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
+    ValidationIssue,
+};
+pub use types::{
+    ConfigValue, DomainConfig, GitHubSource, Lifecycle, MoveDeclaration, PropertyPath,
+    RemovedDeclaration, ResourceReference, SecretSource, SecretSourceKind, SourceConfig,
+};

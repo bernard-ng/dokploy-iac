@@ -33,8 +33,13 @@ engine.
 Phase 3 is complete. The state subsystem now includes typed resource identity,
 instance binding, lineage and serial revisions, fail-fast writer locking,
 strict loading, atomic primary/backup checkpoints, durable operation journals,
-and fail-closed recovery detection. Phase 4 adds the versioned configuration
-language and semantic validation.
+and fail-closed recovery detection.
+
+Phase 4 is in progress. Its configuration core now provides a versioned,
+strictly bounded `dokploy.yaml` language with ownership-aware fields, typed
+references, deferred secret descriptors, parent relationships, lifecycle
+rules, moves, removals, JSON Schema, and redaction-safe semantic validation.
+The `init`, `schema`, and `validate` CLI commands are the next checkpoint.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.
