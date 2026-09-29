@@ -149,6 +149,21 @@ async fn projects_all_reads_the_runtime_topology() {
     assert_eq!(topology.projects()[0].project_id.as_str(), "project-1");
 }
 
+#[test]
+fn client_exposes_its_normalized_api_base_url_without_credentials() {
+    let client = Dokploy::builder()
+        .url("https://deploy.example.com/dokploy/")
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    assert_eq!(
+        client.base_url().as_str(),
+        "https://deploy.example.com/dokploy/api"
+    );
+    assert!(!client.base_url().as_str().contains("test-api-key"));
+}
+
 #[tokio::test]
 async fn requests_authenticate_without_exposing_transport_configuration() {
     let server = TestServer::respond_with_json("[]");

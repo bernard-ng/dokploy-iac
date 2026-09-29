@@ -56,3 +56,8 @@ All notable changes to this project will be documented in this file.
   derived containment and reference dependencies, lifecycle directives, and a
   redacted deferred-execution sidecar for logical references. Concrete
   sensitive inputs fail closed until a convergent intent fingerprint exists.
+- Add read-only project remote discovery with explicit topology authority,
+  pre-transport instance binding, presence-aware descriptions, managed-ID and
+  unmanaged-name matching, explicit replacement collisions, move and removal
+  probes, fresh reads, duplicate-topology rejection, and redaction-safe failure
+  classification.

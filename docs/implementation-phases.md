@@ -69,7 +69,10 @@ durable state semantics.
   non-serializable execution sidecar that preserves logical containment,
   and domain references without resolving remote IDs. Reject concrete
   sensitive inputs until the planner has a convergent intent fingerprint.
-- Build desired, stored, and fresh remote state models.
+- Project fresh project topology into explicit remote observations with
+  authoritative absence, physical-ID matching for managed projects, exact-name
+  collision probes, and fail-closed transport and topology diagnostics.
+- Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.
 

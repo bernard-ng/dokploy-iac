@@ -42,6 +42,16 @@ impl Dokploy {
         DokployBuilder::default()
     }
 
+    /// Returns the normalized API base URL used for every request.
+    ///
+    /// The URL contains no credentials, query, or fragment. Callers can parse
+    /// it into their own instance-identity type without coupling this SDK to
+    /// that domain.
+    #[must_use]
+    pub fn base_url(&self) -> &Url {
+        &self.inner.api.base_url
+    }
+
     /// Returns access to project read operations.
     #[must_use]
     pub fn projects(&self) -> Projects<'_> {

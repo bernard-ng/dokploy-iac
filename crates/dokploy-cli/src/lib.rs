@@ -8,6 +8,7 @@ pub mod desired;
 mod imperative;
 mod imperative_generated;
 mod redaction;
+pub mod remote;
 pub mod settings;
 pub mod telemetry;
 

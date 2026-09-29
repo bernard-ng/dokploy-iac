@@ -27,6 +27,30 @@ identifier!(PostgresId);
 identifier!(ProjectId);
 identifier!(ServerId);
 
+/// Presence-aware value returned by a tolerant Dokploy response model.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum ResponseField<T> {
+    /// Dokploy omitted the field, so its current value is unknown.
+    #[default]
+    NotReturned,
+    /// Dokploy returned an explicit JSON null.
+    Null,
+    /// Dokploy returned a concrete value.
+    Value(T),
+}
+
+impl<'de, T> Deserialize<'de> for ResponseField<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(Option::<T>::deserialize(deserializer)?.map_or(Self::Null, Self::Value))
+    }
+}
+
 /// A stable subset of the response returned by `application.one`.
 ///
 /// Unknown response fields are intentionally ignored. Dokploy's OpenAPI
@@ -99,7 +123,7 @@ pub struct ProjectDetails {
     pub project_id: ProjectId,
     pub name: String,
     #[serde(default)]
-    pub description: Option<String>,
+    pub description: ResponseField<String>,
     #[serde(default)]
     pub environments: Vec<EnvironmentTopology>,
 }
@@ -140,7 +164,7 @@ pub struct PostgresSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{ApplicationDetails, PostgresDetails, ProjectTopology};
+    use super::{ApplicationDetails, PostgresDetails, ProjectTopology, ResponseField};
 
     #[test]
     fn application_details_tolerate_unknown_runtime_fields() {
@@ -165,8 +189,37 @@ mod tests {
         let environment = &project.environments[0];
 
         assert_eq!(project.project_id.as_str(), "project-1");
+        assert_eq!(
+            project.description,
+            ResponseField::Value("Disposable integration fixture".to_owned())
+        );
         assert_eq!(environment.applications[0].name, "API");
         assert_eq!(environment.postgres[0].name, None);
+    }
+
+    #[test]
+    fn project_description_preserves_omitted_null_and_string_responses() {
+        let cases = [
+            (
+                r#"[{"projectId":"project-1","name":"omitted"}]"#,
+                ResponseField::NotReturned,
+            ),
+            (
+                r#"[{"projectId":"project-1","name":"null","description":null}]"#,
+                ResponseField::Null,
+            ),
+            (
+                r#"[{"projectId":"project-1","name":"value","description":"known"}]"#,
+                ResponseField::Value("known".to_owned()),
+            ),
+        ];
+
+        for (json, expected) in cases {
+            let topology: ProjectTopology =
+                serde_json::from_str(json).expect("project topology is valid");
+
+            assert_eq!(topology.projects()[0].description, expected);
+        }
     }
 
     #[test]

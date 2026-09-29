@@ -12,5 +12,5 @@ pub use imperative::{Imperative, ImperativeMethod, ImperativeRequest};
 pub use models::{
     ApplicationDetails, ApplicationId, ApplicationSummary, EnvironmentId, EnvironmentTopology,
     PostgresDetails, PostgresId, PostgresSummary, ProjectDetails, ProjectId, ProjectTopology,
-    ServerId,
+    ResponseField, ServerId,
 };

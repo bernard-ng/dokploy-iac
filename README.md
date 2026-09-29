@@ -52,7 +52,11 @@ run dependent-first. Explicit moves now preserve managed identity through an
 atomic source-to-target checkpoint, while removal directives choose retain or
 destroy semantics without weakening identity or protection checks. Ignored
 changes preserve stored ownership baselines for existing resources and expose
-explicit write exclusions for future executors.
+explicit write exclusions for future executors. The CLI composition layer now
+projects one fresh, explicitly authoritative project topology into planner
+observations, binding the client to the state instance, preserving omitted
+versus null response fields, matching managed projects by physical ID, and
+probing unmanaged names without exposing any mutation path.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.
