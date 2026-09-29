@@ -8,7 +8,9 @@ use crate::{
     DriftKind, FieldChange, MetadataChangeKind, MoveAction, OwnedValue, Plan, PlanDiagnostic,
     PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, ProtectionIntent,
     RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint, StoredState,
-    UnsupportedDirectiveKind, ValueState, plan::PLAN_FORMAT_VERSION, snapshot::StoredResource,
+    UnsupportedDirectiveKind, ValueState,
+    plan::PLAN_FORMAT_VERSION,
+    snapshot::{StoredResource, owned_source_shape_valid},
 };
 
 /// Computes a plan without I/O or mutation.
@@ -342,6 +344,13 @@ fn plan_move(
     }
 
     let property_plan = compare_properties(desired_resource, stored_resource, remote_resource);
+    if let Some(property) = invalid_ignored_checkpoint(desired_resource, &property_plan) {
+        let mut issue =
+            move_diagnostic(PlanDiagnosticCode::InvalidIgnoredCheckpoint, source, target);
+        issue.property = Some(property);
+        diagnostics.push(issue);
+        return;
+    }
     let (metadata, _) = metadata_changes(desired_resource, stored_resource);
     if !property_plan.drifted.is_empty() {
         drift.push(DriftChange {
@@ -350,23 +359,30 @@ fn plan_move(
             properties: property_plan.drifted.clone(),
         });
     }
-    changes.push(PlannedChange::move_change(
-        source.clone(),
-        target.clone(),
-        if property_plan.convergence_required {
-            MoveAction::Update
-        } else {
-            MoveAction::StateOnly
-        },
-        if property_plan.remote_changed {
-            ChangeOrigin::ConfigAndDrift
-        } else {
-            ChangeOrigin::Config
-        },
-        property_plan.fields,
-        metadata,
-        resource_checkpoint_for_desired(desired_resource, Some(stored_resource)),
-    ));
+    changes.push(
+        PlannedChange::move_change(
+            source.clone(),
+            target.clone(),
+            if property_plan.convergence_required {
+                MoveAction::Update
+            } else {
+                MoveAction::StateOnly
+            },
+            if property_plan.remote_changed {
+                ChangeOrigin::ConfigAndDrift
+            } else {
+                ChangeOrigin::Config
+            },
+            property_plan.fields,
+            metadata,
+            resource_checkpoint_for_properties(
+                desired_resource,
+                Some(stored_resource),
+                property_plan.checkpoint_properties,
+            ),
+        )
+        .preserving(desired_resource.ignore_changes.clone()),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -468,7 +484,15 @@ fn plan_missing_resource(
                 return;
             }
 
-            let (fields, config_changed) = missing_resource_field_changes(desired, stored);
+            let (fields, config_changed, checkpoint_properties) =
+                missing_resource_field_changes(desired, stored);
+            if let Some(property) = invalid_ignored_properties(desired, &checkpoint_properties) {
+                let mut issue =
+                    diagnostic(PlanDiagnosticCode::InvalidIgnoredCheckpoint, Some(address));
+                issue.property = Some(property);
+                diagnostics.push(issue);
+                return;
+            }
             let (metadata, metadata_changed) = metadata_changes(desired, stored);
             drift.push(DriftChange {
                 address: address.clone(),
@@ -485,7 +509,11 @@ fn plan_missing_resource(
                 },
                 fields,
                 metadata,
-                checkpoint_for_desired(desired, Some(stored)),
+                CheckpointTarget::Present(resource_checkpoint_for_properties(
+                    desired,
+                    Some(stored),
+                    checkpoint_properties,
+                )),
             ));
         }
         (None, Some(_)) => {
@@ -550,6 +578,12 @@ fn plan_present_resource(
     }
 
     let property_plan = compare_properties(desired, stored, remote);
+    if let Some(property) = invalid_ignored_checkpoint(desired, &property_plan) {
+        let mut issue = diagnostic(PlanDiagnosticCode::InvalidIgnoredCheckpoint, Some(address));
+        issue.property = Some(property);
+        diagnostics.push(issue);
+        return;
+    }
     let (metadata, metadata_changed) = metadata_changes(desired, stored);
     if !property_plan.drifted.is_empty() {
         drift.push(DriftChange {
@@ -565,18 +599,25 @@ fn plan_present_resource(
         return;
     }
 
-    changes.push(PlannedChange::resource(
-        address,
-        if property_plan.convergence_required {
-            ChangeKind::Update
-        } else {
-            ChangeKind::NoOp
-        },
-        change_origin(config_changed, remote_changed),
-        property_plan.fields,
-        metadata,
-        checkpoint_for_desired(desired, Some(stored)),
-    ));
+    changes.push(
+        PlannedChange::resource(
+            address,
+            if property_plan.convergence_required {
+                ChangeKind::Update
+            } else {
+                ChangeKind::NoOp
+            },
+            change_origin(config_changed, remote_changed),
+            property_plan.fields,
+            metadata,
+            CheckpointTarget::Present(resource_checkpoint_for_properties(
+                desired,
+                Some(stored),
+                property_plan.checkpoint_properties,
+            )),
+        )
+        .preserving(desired.ignore_changes.clone()),
+    );
 }
 
 fn plan_present_delete(
@@ -634,15 +675,6 @@ fn add_unsupported_resource_diagnostics(
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) -> bool {
     let before = diagnostics.len();
-    if !desired.ignore_changes.is_empty() {
-        let mut issue = diagnostic(
-            PlanDiagnosticCode::UnsupportedDirective,
-            Some(address.clone()),
-        );
-        issue.property = desired.ignore_changes.first().cloned();
-        issue.unsupported = Some(UnsupportedDirectiveKind::IgnoreChanges);
-        diagnostics.push(issue);
-    }
     if !desired.replace_on_changes.is_empty() {
         let mut issue = diagnostic(
             PlanDiagnosticCode::UnsupportedDirective,
@@ -663,6 +695,7 @@ fn required_property_diagnostics(
     desired
         .properties
         .keys()
+        .filter(|key| !desired.ignore_changes.contains(key))
         .filter_map(|key| property_diagnostic(address, key.clone(), remote))
         .collect()
 }
@@ -700,6 +733,7 @@ struct PropertyPlan {
     config_changed: bool,
     remote_changed: bool,
     convergence_required: bool,
+    checkpoint_properties: BTreeMap<PropertyPath, OwnedValue>,
 }
 
 fn compare_properties(
@@ -718,10 +752,15 @@ fn compare_properties(
     let mut any_config = false;
     let mut any_remote = false;
     let mut convergence_required = false;
+    let checkpoint_properties = effective_existing_properties(desired, stored);
 
     for key in keys {
         let desired_value = desired.properties.get(&key);
         let stored_value = stored.properties.get(&key);
+
+        if desired.ignore_changes.contains(&key) {
+            continue;
+        }
 
         let Some(desired_value) = desired_value else {
             if let Some(stored_value) = stored_value {
@@ -771,7 +810,29 @@ fn compare_properties(
         config_changed: any_config,
         remote_changed: any_remote,
         convergence_required,
+        checkpoint_properties,
     }
+}
+
+fn invalid_ignored_checkpoint(
+    desired: &DesiredResource,
+    property_plan: &PropertyPlan,
+) -> Option<PropertyPath> {
+    invalid_ignored_properties(desired, &property_plan.checkpoint_properties)
+}
+
+fn invalid_ignored_properties(
+    desired: &DesiredResource,
+    properties: &BTreeMap<PropertyPath, OwnedValue>,
+) -> Option<PropertyPath> {
+    (!owned_source_shape_valid(properties)).then(|| {
+        desired
+            .ignore_changes
+            .iter()
+            .find(|path| path.is_source_child())
+            .cloned()
+            .unwrap_or(PropertyPath::SourceRepository)
+    })
 }
 
 fn create_field_changes(desired: &DesiredResource) -> Vec<FieldChange> {
@@ -791,9 +852,9 @@ fn create_field_changes(desired: &DesiredResource) -> Vec<FieldChange> {
 fn missing_resource_field_changes(
     desired: &DesiredResource,
     stored: &StoredResource,
-) -> (Vec<FieldChange>, bool) {
-    let keys: BTreeSet<_> = desired
-        .properties
+) -> (Vec<FieldChange>, bool, BTreeMap<PropertyPath, OwnedValue>) {
+    let checkpoint_properties = effective_existing_properties(desired, stored);
+    let keys: BTreeSet<_> = checkpoint_properties
         .keys()
         .chain(stored.properties.keys())
         .cloned()
@@ -802,7 +863,7 @@ fn missing_resource_field_changes(
     let fields = keys
         .into_iter()
         .filter_map(|key| {
-            let desired_value = desired.properties.get(&key);
+            let desired_value = checkpoint_properties.get(&key);
             let stored_value = stored.properties.get(&key);
             if desired_value == stored_value {
                 return None;
@@ -817,7 +878,25 @@ fn missing_resource_field_changes(
             })
         })
         .collect();
-    (fields, config_changed)
+    (fields, config_changed, checkpoint_properties)
+}
+
+fn effective_existing_properties(
+    desired: &DesiredResource,
+    stored: &StoredResource,
+) -> BTreeMap<PropertyPath, OwnedValue> {
+    let mut properties = desired.properties.clone();
+    for path in &desired.ignore_changes {
+        if path.is_lifecycle_only() {
+            continue;
+        }
+        if let Some(value) = stored.properties.get(path) {
+            properties.insert(path.clone(), value.clone());
+        } else {
+            properties.remove(path);
+        }
+    }
+    properties
 }
 
 fn metadata_changes(
@@ -898,6 +977,14 @@ fn resource_checkpoint_for_desired(
     desired: &DesiredResource,
     stored: Option<&StoredResource>,
 ) -> ResourceCheckpoint {
+    resource_checkpoint_for_properties(desired, stored, desired.properties.clone())
+}
+
+fn resource_checkpoint_for_properties(
+    desired: &DesiredResource,
+    stored: Option<&StoredResource>,
+    properties: BTreeMap<PropertyPath, OwnedValue>,
+) -> ResourceCheckpoint {
     let protected = match desired.protection {
         ProtectionIntent::Unmanaged => stored.is_some_and(|resource| resource.protected),
         ProtectionIntent::Set(value) => value,
@@ -905,7 +992,7 @@ fn resource_checkpoint_for_desired(
     ResourceCheckpoint {
         protected,
         dependencies: desired.dependencies.clone(),
-        properties: desired.properties.clone(),
+        properties,
     }
 }
 

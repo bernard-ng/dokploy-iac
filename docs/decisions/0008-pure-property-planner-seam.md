@@ -80,8 +80,31 @@ An already missing managed resource is forgotten for either policy. Invalid,
 conflicting, chained, or ambiguous directives block the whole plan rather than
 degrading into default create or delete actions.
 
-Ignored changes and replacement metadata remain retained in desired input but
-produce typed blocking diagnostics until their dedicated planner slices exist.
+Ignored paths use previous managed state as the ownership baseline for an
+existing resource. A path owned in stored state keeps that exact stored value
+in the checkpoint; a path absent from stored ownership stays unmanaged even
+when desired input declares it. Ignored paths require no remote property
+observation and do not contribute field changes, drift, origins, convergence,
+or state-only checkpoints. Initial create still uses desired input because no
+previous baseline exists. Recreate after remote deletion uses stored values for
+previously owned ignored paths and omits newly desired ignored paths.
+
+Existing-resource update, no-op, and move entries expose ignored paths as a
+redaction-safe write-exclusion set. A future executor must omit those paths
+from mutation payloads and must not reconstruct a whole-object write from the
+checkpoint. Pending moves use the source's stored baseline. Satisfied moves
+plan the target normally. `deployment.status` is a computed write exclusion
+and never enters managed inputs. Sensitive and structural-root ignore paths,
+ignore/replacement overlaps, and ancestor/descendant selector conflicts fail
+at the desired-state seam. An ignored baseline that would make durable source
+ownership invalid blocks with a typed diagnostic.
+
+Replacement metadata remains typed-blocking. Safe replacement requires
+adapter-projected mutability and an explicit `ReplacementOrder` rather than a
+global create/delete default. It also requires protection enforcement,
+explicit move interaction, recoverable journal steps, and a checkpoint that
+accepts the new physical identity. Until those inputs and executor semantics
+exist, replacement cannot degrade into create, update, or move.
 
 Dependency ordering uses `petgraph` behind the planner seam. Desired-resource
 edges order create, recreate, update, and no-op checkpoint actions
@@ -99,13 +122,15 @@ misleading partial execution sequence.
 
 ## Consequences
 
-- Remote adapters must provide explicit observations for every desired
-  property path they claim to support.
+- Remote adapters must provide explicit observations for every desired,
+  nonignored property path they claim to support.
 - Durable managed-input keys outside the finite MVP vocabulary fail closed
   through a redaction-safe projection error; this avoids guessing how legacy
   or future state should be interpreted.
 - State-only protection, dependency, and ownership changes are represented as
   no-op remote actions that a later executor must checkpoint.
+- Ignored paths are explicit write exclusions on existing-resource actions;
+  checkpoint data is not permission to send a whole-object update.
 - Executing a move requires future atomic `StateFile` and journal support for
   removing the source and writing the target as one recoverable transition.
   This checkpoint defines that target but adds no executor behavior.
@@ -113,4 +138,4 @@ misleading partial execution sequence.
   errors; missing and self-dependencies still fail at the desired-state seam.
 - Adding a property path requires an explicit planner vocabulary, kind
   validation, state projection, and adapter update.
-- Ignored changes and replacement behavior remain later Phase 5 checkpoints.
+- Replacement behavior remains a later Phase 5 checkpoint.

@@ -63,8 +63,10 @@ durable state semantics.
   diagnostics backed by `petgraph`.
 - Plan explicit identity-preserving moves and idempotent retain or destroy
   removals with atomic checkpoint targets and fail-closed collision probes.
+- Preserve stored ownership baselines for ignored existing-resource paths and
+  expose deterministic write exclusions without treating them as drift.
 - Build desired, stored, and fresh remote state models.
-- Add drift detection, deterministic diffs, and replacement behavior.
+- Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.
 
 ## Phase 6: executor MVP

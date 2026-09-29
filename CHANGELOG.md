@@ -49,3 +49,6 @@ All notable changes to this project will be documented in this file.
 - Add pure-planner move and removal semantics with idempotent declarations,
   explicit target collision probes, atomic move checkpoint targets, retain or
   destroy policies, and redaction-safe two-address diagnostics.
+- Add stored-baseline `ignore_changes` planning for existing resources,
+  including explicit write exclusions, create and recreate semantics, move
+  support, lifecycle-only suppression, and fail-closed selector validation.

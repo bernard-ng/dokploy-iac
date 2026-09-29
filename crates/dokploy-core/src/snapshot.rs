@@ -95,7 +95,7 @@ impl DesiredResource {
         self
     }
 
-    /// Adds ignored property paths for a future planner checkpoint.
+    /// Adds ignored property paths in deterministic order.
     #[must_use]
     pub fn with_ignored_changes(mut self, mut properties: Vec<PropertyPath>) -> Self {
         properties.sort();
@@ -288,6 +288,12 @@ pub enum DesiredStateError {
     /// A property value violates its path's sensitivity or root contract.
     #[error("desired resource `{address}` contains an invalid property value")]
     InvalidPropertyValue { address: ResourceAddress },
+    /// An ignored path is sensitive or represents a structural collection root.
+    #[error("desired resource `{address}` contains an unsafe ignored property")]
+    InvalidIgnoredProperty { address: ResourceAddress },
+    /// Ignore and replacement selectors overlap directly or structurally.
+    #[error("desired resource `{address}` contains conflicting lifecycle paths")]
+    ConflictingLifecyclePaths { address: ResourceAddress },
     /// A collection root and one of its child paths were both supplied.
     #[error("desired resource `{address}` contains conflicting property paths")]
     ConflictingPropertyPaths { address: ResourceAddress },
@@ -329,6 +335,33 @@ fn validate_desired_resource(
             });
         }
     }
+    if resource.ignore_changes.iter().any(|path| {
+        path.is_sensitive() || matches!(path, PropertyPath::Source | PropertyPath::Environment)
+    }) {
+        return Err(DesiredStateError::InvalidIgnoredProperty {
+            address: address.clone(),
+        });
+    }
+    if resource.ignore_changes.iter().any(|ignored| {
+        resource
+            .replace_on_changes
+            .iter()
+            .any(|replacement| property_paths_overlap(ignored, replacement))
+    }) {
+        return Err(DesiredStateError::ConflictingLifecyclePaths {
+            address: address.clone(),
+        });
+    }
+    if resource.properties.contains_key(&PropertyPath::Source)
+        && resource
+            .ignore_changes
+            .iter()
+            .any(PropertyPath::is_source_child)
+    {
+        return Err(DesiredStateError::ConflictingLifecyclePaths {
+            address: address.clone(),
+        });
+    }
 
     validate_root_child_combinations(address, &resource.properties).map_err(|()| {
         DesiredStateError::ConflictingPropertyPaths {
@@ -341,6 +374,14 @@ fn validate_desired_resource(
         });
     }
     Ok(())
+}
+
+fn property_paths_overlap(left: &PropertyPath, right: &PropertyPath) -> bool {
+    left == right
+        || matches!(left, PropertyPath::Source) && right.is_source_child()
+        || matches!(right, PropertyPath::Source) && left.is_source_child()
+        || matches!(left, PropertyPath::Environment) && right.is_environment_child()
+        || matches!(right, PropertyPath::Environment) && left.is_environment_child()
 }
 
 fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
@@ -357,7 +398,7 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
     }
 }
 
-fn owned_source_shape_valid(properties: &BTreeMap<PropertyPath, OwnedValue>) -> bool {
+pub(crate) fn owned_source_shape_valid(properties: &BTreeMap<PropertyPath, OwnedValue>) -> bool {
     !properties.contains_key(&PropertyPath::SourceBranch)
         || matches!(
             properties.get(&PropertyPath::SourceRepository),

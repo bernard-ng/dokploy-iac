@@ -39,7 +39,7 @@ fn omitted_property_relinquishes_ownership_without_remote_update_or_drift() {
     .expect("desired state must be valid");
     let stored = StoredState::try_from_state(&state).expect("stored state must project");
     let remote = RemoteState::try_new(
-        instance,
+        instance.clone(),
         [(
             address,
             RemoteObservation::Present(RemoteResource::new(
@@ -87,7 +87,7 @@ fn omitting_source_branch_relinquishes_only_that_nested_path() {
         )])),
     );
     let remote = remote_state(
-        instance,
+        instance.clone(),
         &address,
         BTreeMap::from([(
             PropertyPath::SourceRepository,
@@ -2176,7 +2176,7 @@ fn explicit_removals_follow_stored_dependencies_dependent_first() {
 }
 
 #[test]
-fn ignore_and_replacement_metadata_block_until_supported() {
+fn replacement_metadata_blocks_update_and_create_until_strategy_is_explicit() {
     let address = address("application.api");
     let instance = instance();
     let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
@@ -2191,6 +2191,275 @@ fn ignore_and_replacement_metadata_block_until_supported() {
         .with_replacement_changes(vec![PropertyPath::DeploymentStatus]),
     );
     let remote = remote_state(
+        instance.clone(),
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Replicas,
+            PropertyObservation::Known(value(json!(1))),
+        )]),
+    );
+
+    let update_plan = plan(&desired, &stored, &remote);
+
+    assert!(update_plan.complete());
+    assert!(!update_plan.applyable());
+    assert!(update_plan.changes().is_empty());
+    assert_eq!(update_plan.diagnostics().len(), 1);
+    assert_eq!(
+        update_plan.diagnostics()[0].unsupported(),
+        Some(UnsupportedDirectiveKind::Replacement)
+    );
+    assert_eq!(
+        update_plan.diagnostics()[0].property(),
+        Some(&PropertyPath::DeploymentStatus)
+    );
+
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_replacement_changes(vec![PropertyPath::Replicas]),
+    );
+    let remote = RemoteState::try_new(instance, [(address, RemoteObservation::Missing)])
+        .expect("remote state must be valid");
+    let create = plan(&desired, &stored, &remote);
+    assert!(create.changes().is_empty());
+    assert_eq!(
+        create.diagnostics()[0].unsupported(),
+        Some(UnsupportedDirectiveKind::Replacement)
+    );
+}
+
+#[test]
+fn ignored_existing_property_preserves_stored_baseline_during_an_unrelated_update() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(
+        &address,
+        &instance,
+        json!({ "description": "old", "replicas": 1 }),
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([
+            (
+                PropertyPath::Description,
+                OwnedValue::Value(value(json!("new"))),
+            ),
+            (PropertyPath::Replicas, OwnedValue::Value(value(json!(2)))),
+        ]))
+        .with_ignored_changes(vec![PropertyPath::Replicas]),
+    );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Description,
+            PropertyObservation::Known(value(json!("old"))),
+        )]),
+    );
+
+    let ignored = plan(&desired, &stored, &remote);
+
+    assert!(ignored.complete());
+    assert!(ignored.applyable());
+    assert!(ignored.drift().is_empty());
+    assert_eq!(ignored.changes().len(), 1);
+    let change = &ignored.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::Update);
+    assert_eq!(change.origin(), ChangeOrigin::Config);
+    assert_eq!(change.fields().len(), 1);
+    assert_eq!(change.fields()[0].key(), &PropertyPath::Description);
+    assert_eq!(change.preserved_paths(), &[PropertyPath::Replicas]);
+    assert!(matches!(
+        change
+            .checkpoint()
+            .present()
+            .and_then(|target| target.property(&PropertyPath::Replicas)),
+        Some(CheckpointValueRef::NonSensitive(value)) if value == &json!(1)
+    ));
+}
+
+#[test]
+fn ignored_only_differences_need_no_observation_change_drift_or_checkpoint() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_ignored_changes(vec![PropertyPath::Replicas]),
+    );
+
+    for properties in [
+        BTreeMap::new(),
+        BTreeMap::from([(PropertyPath::Replicas, PropertyObservation::KnownAbsent)]),
+        BTreeMap::from([(
+            PropertyPath::Replicas,
+            PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
+        )]),
+    ] {
+        let remote = remote_state(instance.clone(), &address, properties);
+        let ignored = plan(&desired, &stored, &remote);
+
+        assert!(ignored.complete());
+        assert!(ignored.applyable());
+        assert!(ignored.changes().is_empty());
+        assert!(ignored.drift().is_empty());
+    }
+}
+
+#[test]
+fn remote_deleted_recreate_uses_only_stored_ignored_ownership() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(
+        &address,
+        &instance,
+        json!({ "description": "old", "replicas": 1 }),
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([
+            (
+                PropertyPath::Description,
+                OwnedValue::Value(value(json!("new"))),
+            ),
+            (PropertyPath::Replicas, OwnedValue::Value(value(json!(2)))),
+            (
+                PropertyPath::SourceBranch,
+                OwnedValue::Value(value(json!("main"))),
+            ),
+            (
+                PropertyPath::SourceRepository,
+                OwnedValue::Value(value(json!("owner/repo"))),
+            ),
+        ]))
+        .with_ignored_changes(vec![PropertyPath::Replicas, PropertyPath::SourceBranch]),
+    );
+    let remote = RemoteState::try_new(instance, [(address, RemoteObservation::Missing)])
+        .expect("remote state must be valid");
+
+    let recreate = plan(&desired, &stored, &remote);
+
+    assert!(recreate.applyable());
+    let change = &recreate.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::Create);
+    assert_eq!(change.origin(), ChangeOrigin::ConfigAndDrift);
+    assert!(change.preserved_paths().is_empty());
+    assert_eq!(change.fields().len(), 2);
+    assert!(change.fields().iter().all(|field| !matches!(
+        field.key(),
+        PropertyPath::Replicas | PropertyPath::SourceBranch
+    )));
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .expect("recreate has checkpoint");
+    assert!(matches!(
+        checkpoint.property(&PropertyPath::Replicas),
+        Some(CheckpointValueRef::NonSensitive(value)) if value == &json!(1)
+    ));
+    assert!(checkpoint.property(&PropertyPath::SourceBranch).is_none());
+}
+
+#[test]
+fn desired_state_rejects_sensitive_structural_and_replacement_overlapping_ignores() {
+    let cases = [
+        (
+            address("postgres.main"),
+            DesiredResource::new(BTreeMap::from([(
+                PropertyPath::Password,
+                OwnedValue::Sensitive,
+            )]))
+            .with_ignored_changes(vec![PropertyPath::Password]),
+            false,
+        ),
+        (
+            address("application.api"),
+            DesiredResource::new(BTreeMap::from([(PropertyPath::Source, OwnedValue::Null)]))
+                .with_ignored_changes(vec![PropertyPath::Source]),
+            false,
+        ),
+        (
+            address("application.api"),
+            DesiredResource::new(BTreeMap::from([(
+                PropertyPath::Replicas,
+                OwnedValue::Value(value(json!(1))),
+            )]))
+            .with_ignored_changes(vec![PropertyPath::Replicas])
+            .with_replacement_changes(vec![PropertyPath::Replicas]),
+            true,
+        ),
+        (
+            address("application.api"),
+            DesiredResource::new(BTreeMap::from([(PropertyPath::Source, OwnedValue::Null)]))
+                .with_ignored_changes(vec![PropertyPath::SourceBranch]),
+            true,
+        ),
+        (
+            address("application.api"),
+            DesiredResource::new(BTreeMap::from([
+                (
+                    PropertyPath::SourceRepository,
+                    OwnedValue::Value(value(json!("owner/repo"))),
+                ),
+                (
+                    PropertyPath::SourceBranch,
+                    OwnedValue::Value(value(json!("main"))),
+                ),
+            ]))
+            .with_ignored_changes(vec![PropertyPath::SourceBranch])
+            .with_replacement_changes(vec![PropertyPath::Source]),
+            true,
+        ),
+    ];
+
+    for (address, resource, overlap) in cases {
+        let error = DesiredState::try_new(digest(), BTreeMap::from([(address, resource)]))
+            .expect_err("unsafe ignore metadata must fail at the desired-state seam");
+        if overlap {
+            assert!(matches!(
+                error,
+                DesiredStateError::ConflictingLifecyclePaths { .. }
+            ));
+        } else {
+            assert!(matches!(
+                error,
+                DesiredStateError::InvalidIgnoredProperty { .. }
+            ));
+        }
+    }
+}
+
+#[test]
+fn lifecycle_only_ignore_is_a_write_exclusion_and_never_enters_checkpoint_state() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_ignored_changes(vec![PropertyPath::DeploymentStatus]),
+    );
+    let remote = remote_state(
         instance,
         &address,
         BTreeMap::from([(
@@ -2199,28 +2468,371 @@ fn ignore_and_replacement_metadata_block_until_supported() {
         )]),
     );
 
-    let plan = plan(&desired, &stored, &remote);
+    let ignored = plan(&desired, &stored, &remote);
 
-    assert!(plan.complete());
-    assert!(!plan.applyable());
-    assert!(plan.changes().is_empty());
-    assert_eq!(plan.diagnostics().len(), 2);
+    assert!(ignored.complete());
+    assert!(ignored.applyable());
+    assert_eq!(ignored.changes()[0].kind(), ChangeKind::Update);
     assert_eq!(
-        plan.diagnostics()[0].unsupported(),
-        Some(UnsupportedDirectiveKind::IgnoreChanges)
+        ignored.changes()[0].preserved_paths(),
+        &[PropertyPath::DeploymentStatus]
     );
-    assert_eq!(
-        plan.diagnostics()[0].property(),
-        Some(&PropertyPath::SourceBranch)
+    assert!(
+        ignored.changes()[0]
+            .checkpoint()
+            .present()
+            .is_some_and(|target| target.property(&PropertyPath::DeploymentStatus).is_none())
     );
+}
+
+#[test]
+fn ignored_create_uses_desired_input_but_never_adopts_an_unmanaged_collision() {
+    let address = address("application.api");
+    let instance = instance();
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_ignored_changes(vec![PropertyPath::Replicas]),
+    );
+    let missing = RemoteState::try_new(
+        instance.clone(),
+        [(address.clone(), RemoteObservation::Missing)],
+    )
+    .expect("remote state must be valid");
+
+    let create = plan(&desired, &stored, &missing);
+
+    assert!(create.applyable());
+    let change = &create.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::Create);
+    assert!(change.preserved_paths().is_empty());
+    assert!(matches!(
+        change
+            .checkpoint()
+            .present()
+            .and_then(|target| target.property(&PropertyPath::Replicas)),
+        Some(CheckpointValueRef::NonSensitive(value)) if value == &json!(2)
+    ));
+
+    let present = remote_state(instance, &address, BTreeMap::new());
+    let collision = plan(&desired, &stored, &present);
+    assert!(collision.changes().is_empty());
     assert_eq!(
-        plan.diagnostics()[1].unsupported(),
+        collision.diagnostics()[0].code(),
+        PlanDiagnosticCode::UnmanagedAddressCollision
+    );
+}
+
+#[test]
+fn ignored_ownership_comes_only_from_the_stored_baseline() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({ "description": "old" }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([
+            (
+                PropertyPath::Description,
+                OwnedValue::Value(value(json!("new"))),
+            ),
+            (PropertyPath::Replicas, OwnedValue::Value(value(json!(2)))),
+        ]))
+        .with_ignored_changes(vec![PropertyPath::Replicas]),
+    );
+    let remote = remote_state(
+        instance.clone(),
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Description,
+            PropertyObservation::Known(value(json!("old"))),
+        )]),
+    );
+
+    let unmanaged = plan(&desired, &stored, &remote);
+    let checkpoint = unmanaged.changes()[0]
+        .checkpoint()
+        .present()
+        .expect("update has checkpoint");
+    assert!(checkpoint.property(&PropertyPath::Replicas).is_none());
+
+    let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::new())
+            .with_protection(ProtectionIntent::Set(true))
+            .with_ignored_changes(vec![PropertyPath::Replicas]),
+    );
+    let remote = remote_state(instance, &address, BTreeMap::new());
+
+    let preserved = plan(&desired, &stored, &remote);
+    let checkpoint = preserved.changes()[0]
+        .checkpoint()
+        .present()
+        .expect("metadata checkpoint is present");
+    assert!(matches!(
+        checkpoint.property(&PropertyPath::Replicas),
+        Some(CheckpointValueRef::NonSensitive(value)) if value == &json!(1)
+    ));
+    assert_eq!(
+        preserved.changes()[0].preserved_paths(),
+        &[PropertyPath::Replicas]
+    );
+}
+
+#[test]
+fn pending_move_preserves_ignored_source_baseline_without_remote_write() {
+    let source = address("application.backend");
+    let target = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&source, &instance, json!({ "replicas": 1 }), true);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &target,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_ignored_changes(vec![PropertyPath::Replicas]),
+    )
+    .with_moves(vec![MoveDirective::new(source.clone(), target.clone())]);
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                source.clone(),
+                RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+            ),
+            (target, RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let move_plan = plan(&desired, &stored, &remote);
+
+    assert!(move_plan.complete());
+    assert!(move_plan.applyable());
+    assert!(move_plan.drift().is_empty());
+    let change = &move_plan.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::Move);
+    assert_eq!(change.move_action(), Some(MoveAction::StateOnly));
+    assert!(change.fields().is_empty());
+    assert_eq!(change.preserved_paths(), &[PropertyPath::Replicas]);
+    assert!(matches!(
+        change
+            .checkpoint()
+            .move_target()
+            .and_then(|target| target.property(&PropertyPath::Replicas)),
+        Some(CheckpointValueRef::NonSensitive(value)) if value == &json!(1)
+    ));
+}
+
+#[test]
+fn replacement_metadata_blocks_a_move_instead_of_degrading_to_move_or_update() {
+    let source = address("application.backend");
+    let target = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&source, &instance, json!({ "replicas": 1 }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &target,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_replacement_changes(vec![PropertyPath::Replicas]),
+    )
+    .with_moves(vec![MoveDirective::new(source.clone(), target.clone())]);
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                source.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([(
+                        PropertyPath::Replicas,
+                        PropertyObservation::Known(value(json!(1))),
+                    )]),
+                )),
+            ),
+            (target.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let blocked = plan(&desired, &stored, &remote);
+
+    assert!(blocked.changes().is_empty());
+    assert_eq!(blocked.diagnostics()[0].address(), Some(&source));
+    assert_eq!(blocked.diagnostics()[0].related_address(), Some(&target));
+    assert_eq!(
+        blocked.diagnostics()[0].unsupported(),
         Some(UnsupportedDirectiveKind::Replacement)
     );
-    assert_eq!(
-        plan.diagnostics()[1].property(),
-        Some(&PropertyPath::DeploymentStatus)
+}
+
+#[test]
+fn ignored_source_baseline_cannot_create_branch_without_repository_state() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({ "source": null }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([
+            (
+                PropertyPath::SourceRepository,
+                OwnedValue::Value(value(json!("owner/repo"))),
+            ),
+            (
+                PropertyPath::SourceBranch,
+                OwnedValue::Value(value(json!("main"))),
+            ),
+        ]))
+        .with_ignored_changes(vec![PropertyPath::SourceRepository]),
     );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([
+            (
+                PropertyPath::SourceRepository,
+                PropertyObservation::Known(value(json!("external/repo"))),
+            ),
+            (
+                PropertyPath::SourceBranch,
+                PropertyObservation::Known(value(json!("main"))),
+            ),
+        ]),
+    );
+
+    let blocked = plan(&desired, &stored, &remote);
+
+    assert!(blocked.changes().is_empty());
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::InvalidIgnoredCheckpoint
+    );
+    assert_eq!(
+        blocked.diagnostics()[0].property(),
+        Some(&PropertyPath::SourceRepository)
+    );
+}
+
+#[test]
+fn ignored_path_order_is_deterministic_and_stored_values_remain_redacted() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(
+        &address,
+        &instance,
+        json!({ "description": "ignored-secret-canary", "replicas": 1 }),
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let resource = || {
+        DesiredResource::new(BTreeMap::from([
+            (
+                PropertyPath::Description,
+                OwnedValue::Value(value(json!("desired-secret-canary"))),
+            ),
+            (PropertyPath::Replicas, OwnedValue::Value(value(json!(2)))),
+        ]))
+    };
+    let desired_a = desired_state(
+        &address,
+        resource().with_ignored_changes(vec![
+            PropertyPath::DeploymentStatus,
+            PropertyPath::Description,
+        ]),
+    );
+    let desired_b = desired_state(
+        &address,
+        resource().with_ignored_changes(vec![
+            PropertyPath::Description,
+            PropertyPath::DeploymentStatus,
+        ]),
+    );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Replicas,
+            PropertyObservation::Known(value(json!(1))),
+        )]),
+    );
+
+    let plan_a = plan(&desired_a, &stored, &remote);
+    let plan_b = plan(&desired_b, &stored, &remote);
+
+    assert_eq!(plan_a.to_json_bytes(), plan_b.to_json_bytes());
+    assert_eq!(
+        plan_a.changes()[0].preserved_paths(),
+        &[PropertyPath::Description, PropertyPath::DeploymentStatus]
+    );
+    let json = String::from_utf8(plan_a.to_json_bytes()).expect("plan JSON must be UTF-8");
+    let debug = format!("{plan_a:?}");
+    for canary in ["ignored-secret-canary", "desired-secret-canary"] {
+        assert!(!json.contains(canary));
+        assert!(!debug.contains(canary));
+    }
+}
+
+#[test]
+fn satisfied_move_plans_normally_and_preserves_an_ignored_null_baseline() {
+    let source = address("application.backend");
+    let target = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&target, &instance, json!({ "replicas": null }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &target,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )]))
+        .with_protection(ProtectionIntent::Set(true))
+        .with_ignored_changes(vec![PropertyPath::Replicas]),
+    )
+    .with_moves(vec![MoveDirective::new(source, target.clone())]);
+    let remote = remote_state(instance, &target, BTreeMap::new());
+
+    let satisfied = plan(&desired, &stored, &remote);
+
+    assert!(satisfied.complete());
+    assert!(satisfied.applyable());
+    let change = &satisfied.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::NoOp);
+    assert!(change.previous_address().is_none());
+    assert_eq!(change.preserved_paths(), &[PropertyPath::Replicas]);
+    assert!(matches!(
+        change
+            .checkpoint()
+            .present()
+            .and_then(|checkpoint| checkpoint.property(&PropertyPath::Replicas)),
+        Some(CheckpointValueRef::Null)
+    ));
+}
+
+#[test]
+fn removing_ignore_restores_normal_convergence_and_drift_reporting() {
+    let resumed = replicas_plan(1, 2, 3);
+
+    assert!(resumed.complete());
+    assert!(resumed.applyable());
+    assert_eq!(resumed.changes()[0].kind(), ChangeKind::Update);
+    assert_eq!(resumed.changes()[0].fields().len(), 1);
+    assert_eq!(resumed.drift().len(), 1);
+    assert_eq!(resumed.drift()[0].kind(), dokploy_core::DriftKind::Updated);
+    assert_eq!(resumed.drift()[0].properties(), &[PropertyPath::Replicas]);
 }
 
 #[test]
@@ -2722,6 +3334,10 @@ fn diagnostic_codes_and_plan_metadata_are_stable() {
     assert_eq!(
         PlanDiagnosticCode::MoveTargetCollision.as_str(),
         "DOKPLAN015"
+    );
+    assert_eq!(
+        PlanDiagnosticCode::InvalidIgnoredCheckpoint.as_str(),
+        "DOKPLAN016"
     );
 
     let address = address("application.api");

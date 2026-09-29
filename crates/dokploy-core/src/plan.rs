@@ -128,6 +128,8 @@ pub struct PlannedChange {
     previous_address: Option<ResourceAddress>,
     #[serde(skip_serializing_if = "Option::is_none")]
     move_action: Option<MoveAction>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    preserved_paths: Vec<PropertyPath>,
     kind: ChangeKind,
     origin: ChangeOrigin,
     fields: Vec<FieldChange>,
@@ -143,6 +145,7 @@ impl fmt::Debug for PlannedChange {
             .field("address", &self.address)
             .field("previous_address", &self.previous_address)
             .field("move_action", &self.move_action)
+            .field("preserved_paths", &self.preserved_paths)
             .field("kind", &self.kind)
             .field("origin", &self.origin)
             .field("fields", &self.fields)
@@ -170,6 +173,7 @@ impl PlannedChange {
             address,
             previous_address: None,
             move_action: None,
+            preserved_paths: Vec::new(),
             kind,
             origin,
             fields,
@@ -191,6 +195,7 @@ impl PlannedChange {
             address: to,
             previous_address: Some(from.clone()),
             move_action: Some(action),
+            preserved_paths: Vec::new(),
             kind: ChangeKind::Move,
             origin,
             fields,
@@ -215,6 +220,24 @@ impl PlannedChange {
     #[must_use]
     pub const fn move_action(&self) -> Option<MoveAction> {
         self.move_action
+    }
+
+    /// Returns paths that a future mutation must preserve rather than write.
+    #[must_use]
+    pub fn preserved_paths(&self) -> &[PropertyPath] {
+        &self.preserved_paths
+    }
+
+    pub(crate) fn preserving(mut self, preserved_paths: Vec<PropertyPath>) -> Self {
+        assert!(
+            matches!(
+                self.kind,
+                ChangeKind::Update | ChangeKind::NoOp | ChangeKind::Move
+            ),
+            "only existing-resource actions can preserve ignored paths"
+        );
+        self.preserved_paths = preserved_paths;
+        self
     }
 
     /// Returns the selected convergence action.
@@ -429,8 +452,6 @@ impl DriftChange {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnsupportedDirectiveKind {
-    /// Per-property ignore rule.
-    IgnoreChanges,
     /// Per-property replacement rule.
     Replacement,
 }
@@ -468,6 +489,8 @@ pub enum PlanDiagnosticCode {
     MoveSourceMissing,
     /// A move target is already occupied in stored or remote state.
     MoveTargetCollision,
+    /// Applying ignore ownership would create an invalid durable property shape.
+    InvalidIgnoredCheckpoint,
 }
 
 impl PlanDiagnosticCode {
@@ -490,6 +513,7 @@ impl PlanDiagnosticCode {
             Self::InvalidRemovalDirective => "DOKPLAN013",
             Self::MoveSourceMissing => "DOKPLAN014",
             Self::MoveTargetCollision => "DOKPLAN015",
+            Self::InvalidIgnoredCheckpoint => "DOKPLAN016",
         }
     }
 }
