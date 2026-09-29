@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use dokploy_core::{
     ChangeKind, ChangeOrigin, CheckpointValueRef, ComparableValue, ConfigDigest, DesiredResource,
-    DesiredState, DesiredStateError, MetadataChangeKind, MoveDirective, OwnedValue, Plan,
-    PlanDiagnosticCode, PropertyObservation, PropertyPath, PropertyUnknownReason, ProtectionIntent,
-    RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState, RemoteStateError,
-    RemovalDirective, StoredState, StoredStateError, UnsupportedDirectiveKind, ValueState, plan,
+    DesiredState, DesiredStateError, MetadataChangeKind, MoveAction, MoveDirective, OwnedValue,
+    Plan, PlanDiagnosticCode, PropertyObservation, PropertyPath, PropertyUnknownReason,
+    ProtectionIntent, RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState,
+    RemoteStateError, RemovalDirective, StoredState, StoredStateError, UnsupportedDirectiveKind,
+    ValueState, plan,
 };
 use dokploy_state::{
     InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind, ResourceState,
@@ -1444,7 +1445,201 @@ fn unchanged_dependencies_do_not_create_state_only_changes() {
 }
 
 #[test]
-fn move_and_removal_directives_block_instead_of_degrading_into_create_or_delete() {
+fn move_preserves_identity_and_emits_one_target_addressed_change() {
+    let old = address("application.backend");
+    let new = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(
+        &old,
+        &instance,
+        json!({ "description": "move-secret-canary", "replicas": 1 }),
+        true,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &new,
+        DesiredResource::new(BTreeMap::from([
+            (
+                PropertyPath::Description,
+                OwnedValue::Value(value(json!("move-secret-canary"))),
+            ),
+            (PropertyPath::Replicas, OwnedValue::Value(value(json!(1)))),
+        ])),
+    )
+    .with_moves(vec![MoveDirective::new(old.clone(), new.clone())]);
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                old.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([
+                        (
+                            PropertyPath::Description,
+                            PropertyObservation::Known(value(json!("move-secret-canary"))),
+                        ),
+                        (
+                            PropertyPath::Replicas,
+                            PropertyObservation::Known(value(json!(1))),
+                        ),
+                    ]),
+                )),
+            ),
+            (new.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("move observations must be valid");
+
+    let move_plan = plan(&desired, &stored, &remote);
+
+    assert!(move_plan.complete());
+    assert!(move_plan.applyable());
+    assert!(move_plan.diagnostics().is_empty());
+    assert_eq!(move_plan.changes().len(), 1);
+    let change = &move_plan.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::Move);
+    assert_eq!(change.address(), &new);
+    assert_eq!(change.previous_address(), Some(&old));
+    assert_eq!(change.move_action(), Some(MoveAction::StateOnly));
+    assert!(change.fields().is_empty());
+    assert!(change.metadata().is_empty());
+    assert!(
+        change
+            .checkpoint()
+            .move_target()
+            .is_some_and(|target| target.protected())
+    );
+    assert!(change.checkpoint().present().is_none());
+    assert_eq!(change.checkpoint().move_from(), Some(&old));
+
+    let json = String::from_utf8(move_plan.to_json_bytes()).expect("plan JSON is UTF-8");
+    assert!(json.contains("\"previousAddress\":\"application.backend\""));
+    assert!(!json.contains("remote-1"));
+    assert!(!json.contains("move-secret-canary"));
+    let debug = format!("{move_plan:?}");
+    assert!(!debug.contains("remote-1"));
+    assert!(!debug.contains("move-secret-canary"));
+}
+
+#[test]
+fn move_directive_and_observation_order_do_not_change_plan_json() {
+    let source_a = address("application.old-a");
+    let source_b = address("application.old-b");
+    let target_a = address("application.new-a");
+    let target_b = address("application.new-b");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(&mut state, source_b.clone(), "remote-b", Vec::new());
+    insert_state_resource(&mut state, source_a.clone(), "remote-a", Vec::new());
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let resources = BTreeMap::from([
+        (target_b.clone(), DesiredResource::new(BTreeMap::new())),
+        (target_a.clone(), DesiredResource::new(BTreeMap::new())),
+    ]);
+    let desired_a = DesiredState::try_new(digest(), resources)
+        .expect("desired state must be valid")
+        .with_moves(vec![
+            MoveDirective::new(source_b.clone(), target_b.clone()),
+            MoveDirective::new(source_a.clone(), target_a.clone()),
+        ]);
+    let desired_b = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (target_a.clone(), DesiredResource::new(BTreeMap::new())),
+            (target_b.clone(), DesiredResource::new(BTreeMap::new())),
+        ]),
+    )
+    .expect("desired state must be valid")
+    .with_moves(vec![
+        MoveDirective::new(source_a.clone(), target_a.clone()),
+        MoveDirective::new(source_b.clone(), target_b.clone()),
+    ]);
+    let remote_a = RemoteState::try_new(
+        instance.clone(),
+        [
+            (target_b.clone(), RemoteObservation::Missing),
+            (
+                source_b.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("remote-b").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (target_a.clone(), RemoteObservation::Missing),
+            (
+                source_a.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("remote-a").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+    let remote_b = RemoteState::try_new(
+        instance,
+        [
+            (
+                source_a,
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("remote-a").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (target_a.clone(), RemoteObservation::Missing),
+            (
+                source_b,
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("remote-b").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (target_b, RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan_a = plan(&desired_a, &stored, &remote_a);
+    let plan_b = plan(&desired_b, &stored, &remote_b);
+
+    assert_eq!(plan_a.to_json_bytes(), plan_b.to_json_bytes());
+    assert_eq!(plan_a.changes()[0].address(), &target_a);
+}
+
+#[test]
+fn persisted_move_declaration_is_idempotent_and_plans_the_target_normally() {
+    let old = address("application.backend");
+    let new = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&new, &instance, json!({ "replicas": 1 }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &new,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(1))),
+        )])),
+    )
+    .with_moves(vec![MoveDirective::new(old, new.clone())]);
+    let remote = remote_state(
+        instance,
+        &new,
+        BTreeMap::from([(
+            PropertyPath::Replicas,
+            PropertyObservation::Known(value(json!(1))),
+        )]),
+    );
+
+    let move_plan = plan(&desired, &stored, &remote);
+
+    assert!(move_plan.complete());
+    assert!(move_plan.applyable());
+    assert!(move_plan.changes().is_empty());
+}
+
+#[test]
+fn move_reports_remote_update_and_carries_field_and_checkpoint_diffs() {
     let old = address("application.backend");
     let new = address("application.api");
     let instance = instance();
@@ -1454,33 +1649,529 @@ fn move_and_removal_directives_block_instead_of_degrading_into_create_or_delete(
         &new,
         DesiredResource::new(BTreeMap::from([(
             PropertyPath::Replicas,
-            OwnedValue::Value(value(json!(1))),
+            OwnedValue::Value(value(json!(2))),
         )])),
     )
-    .with_moves(vec![MoveDirective::new(old.clone(), new)]);
-    let remote = RemoteState::try_new(instance.clone(), [])
-        .expect("empty remote state is structurally valid");
+    .with_moves(vec![MoveDirective::new(old.clone(), new.clone())]);
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                old.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([(
+                        PropertyPath::Replicas,
+                        PropertyObservation::Known(value(json!(1))),
+                    )]),
+                )),
+            ),
+            (new, RemoteObservation::Missing),
+        ],
+    )
+    .expect("move observations must be valid");
 
     let move_plan = plan(&desired, &stored, &remote);
 
-    assert!(move_plan.complete());
-    assert!(!move_plan.applyable());
-    assert!(move_plan.changes().is_empty());
-    assert_eq!(
-        move_plan.diagnostics()[0].unsupported(),
-        Some(UnsupportedDirectiveKind::Move)
-    );
+    let change = &move_plan.changes()[0];
+    assert_eq!(change.kind(), ChangeKind::Move);
+    assert_eq!(change.move_action(), Some(MoveAction::Update));
+    assert_eq!(change.fields().len(), 1);
+    assert_eq!(change.checkpoint().move_from(), Some(&old));
+    assert!(matches!(
+        change
+            .checkpoint()
+            .move_target()
+            .and_then(|target| target.property(&PropertyPath::Replicas)),
+        Some(CheckpointValueRef::NonSensitive(value)) if value == &json!(2)
+    ));
+}
 
+#[test]
+fn retain_removal_forgets_present_or_missing_resources_without_property_reads() {
+    let address = address("application.legacy");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), true);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
     let desired = DesiredState::try_new(digest(), BTreeMap::new())
         .expect("desired state must be valid")
-        .with_removals(vec![RemovalDirective::new(old, true)]);
+        .with_removals(vec![RemovalDirective::new(address.clone(), false)]);
+    let present = RemoteState::try_new(
+        instance.clone(),
+        [(
+            address.clone(),
+            RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+        )],
+    )
+    .expect("remote state must be valid");
+
+    let retained = plan(&desired, &stored, &present);
+
+    assert!(retained.applyable());
+    assert_eq!(retained.changes()[0].kind(), ChangeKind::Forget);
+    assert!(retained.drift().is_empty());
+
+    let missing = RemoteState::try_new(instance, [(address, RemoteObservation::Missing)])
+        .expect("remote state must be valid");
+    let forgotten = plan(&desired, &stored, &missing);
+    assert!(forgotten.applyable());
+    assert_eq!(forgotten.changes()[0].kind(), ChangeKind::Forget);
+    assert_eq!(
+        forgotten.drift()[0].kind(),
+        dokploy_core::DriftKind::Deleted
+    );
+}
+
+#[test]
+fn destroy_removal_honors_protection_but_does_not_require_property_reads() {
+    let address = address("application.legacy");
+    let instance = instance();
+    let protected_state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), true);
+    let protected = StoredState::try_from_state(&protected_state).expect("state must project");
+    let desired = DesiredState::try_new(digest(), BTreeMap::new())
+        .expect("desired state must be valid")
+        .with_removals(vec![RemovalDirective::new(address.clone(), true)]);
+    let remote = RemoteState::try_new(
+        instance.clone(),
+        [(
+            address.clone(),
+            RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+        )],
+    )
+    .expect("remote state must be valid");
+
+    let blocked = plan(&desired, &protected, &remote);
+    assert!(!blocked.applyable());
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::ProtectedDelete
+    );
+
+    let unprotected_state =
+        state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
+    let unprotected = StoredState::try_from_state(&unprotected_state).expect("state must project");
+    let deletion = plan(&desired, &unprotected, &remote);
+    assert!(deletion.applyable());
+    assert_eq!(deletion.changes()[0].kind(), ChangeKind::Delete);
+}
+
+#[test]
+fn persisted_removal_directives_are_idempotent_after_state_is_absent() {
+    let address = address("application.legacy");
+    let instance = instance();
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let remote = RemoteState::try_new(
+        instance,
+        [(
+            address.clone(),
+            RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+        )],
+    )
+    .expect("same-address unmanaged remote state is valid");
+
+    for destroy in [false, true] {
+        let desired = DesiredState::try_new(digest(), BTreeMap::new())
+            .expect("desired state must be valid")
+            .with_removals(vec![RemovalDirective::new(address.clone(), destroy)]);
+        let removal_plan = plan(&desired, &stored, &remote);
+
+        assert!(removal_plan.complete());
+        assert!(removal_plan.applyable());
+        assert!(removal_plan.changes().is_empty());
+        assert!(removal_plan.diagnostics().is_empty());
+    }
+}
+
+#[test]
+fn invalid_move_and_removal_declarations_block_the_whole_plan() {
+    let source = address("application.backend");
+    let target = address("application.api");
+    let instance = instance();
+    let source_state = state_with_resource(&source, &instance, json!({}), false);
+    let stored = StoredState::try_from_state(&source_state).expect("state must project");
+    let target_resource = DesiredResource::new(BTreeMap::new());
+
+    let missing_target = DesiredState::try_new(digest(), BTreeMap::new())
+        .expect("desired state must be valid")
+        .with_moves(vec![MoveDirective::new(source.clone(), target.clone())]);
+    let blocked = plan(
+        &missing_target,
+        &stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert!(blocked.changes().is_empty());
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::InvalidMoveDirective
+    );
+    assert_eq!(blocked.diagnostics()[0].address(), Some(&source));
+    assert_eq!(blocked.diagnostics()[0].related_address(), Some(&target));
+
+    let project_target = address("project.api");
+    let wrong_kind = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            project_target.clone(),
+            DesiredResource::new(BTreeMap::new()),
+        )]),
+    )
+    .expect("desired state must be valid")
+    .with_moves(vec![MoveDirective::new(
+        source.clone(),
+        project_target.clone(),
+    )]);
+    let blocked = plan(
+        &wrong_kind,
+        &stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::InvalidMoveDirective
+    );
+    assert_eq!(
+        blocked.diagnostics()[0].related_address(),
+        Some(&project_target)
+    );
+
+    let duplicate = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(target.clone(), target_resource)]),
+    )
+    .expect("desired state must be valid")
+    .with_moves(vec![
+        MoveDirective::new(source.clone(), target.clone()),
+        MoveDirective::new(source.clone(), target.clone()),
+    ]);
+    let blocked = plan(
+        &duplicate,
+        &stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert!(blocked.changes().is_empty());
+    assert!(
+        blocked
+            .diagnostics()
+            .iter()
+            .any(|issue| issue.code() == PlanDiagnosticCode::InvalidMoveDirective)
+    );
+
+    let chain_target = address("application.frontend");
+    let chain = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (target.clone(), DesiredResource::new(BTreeMap::new())),
+            (chain_target.clone(), DesiredResource::new(BTreeMap::new())),
+        ]),
+    )
+    .expect("desired state must be valid")
+    .with_moves(vec![
+        MoveDirective::new(source.clone(), target.clone()),
+        MoveDirective::new(target.clone(), chain_target),
+    ]);
+    let blocked = plan(
+        &chain,
+        &stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert!(blocked.changes().is_empty());
+    assert!(blocked.diagnostics().iter().all(|issue| {
+        issue.code() == PlanDiagnosticCode::InvalidMoveDirective
+            && issue.address().is_some()
+            && issue.related_address().is_some()
+    }));
+
+    let conflict = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(target.clone(), DesiredResource::new(BTreeMap::new()))]),
+    )
+    .expect("desired state must be valid")
+    .with_moves(vec![MoveDirective::new(source.clone(), target.clone())])
+    .with_removals(vec![RemovalDirective::new(source.clone(), false)]);
+    let blocked = plan(
+        &conflict,
+        &stored,
+        &RemoteState::try_new(instance, []).expect("remote state must be valid"),
+    );
+    assert!(blocked.changes().is_empty());
+    assert!(
+        blocked
+            .diagnostics()
+            .iter()
+            .any(|issue| issue.code() == PlanDiagnosticCode::InvalidMoveDirective)
+    );
+}
+
+#[test]
+fn move_requires_managed_source_free_target_and_conclusive_remote_probes() {
+    let source = address("application.backend");
+    let target = address("application.api");
+    let instance = instance();
+    let desired = desired_state(&target, DesiredResource::new(BTreeMap::new()))
+        .with_moves(vec![MoveDirective::new(source.clone(), target.clone())]);
+
+    let empty_state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    let empty_stored = StoredState::try_from_state(&empty_state).expect("state must project");
+    let missing_source = plan(
+        &desired,
+        &empty_stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert_eq!(
+        missing_source.diagnostics()[0].code(),
+        PlanDiagnosticCode::MoveSourceMissing
+    );
+    assert_eq!(
+        missing_source.diagnostics()[0].related_address(),
+        Some(&target)
+    );
+
+    let mut collision_state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(&mut collision_state, source.clone(), "source-1", Vec::new());
+    insert_state_resource(&mut collision_state, target.clone(), "target-1", Vec::new());
+    let collision_stored =
+        StoredState::try_from_state(&collision_state).expect("state must project");
+    let collision = plan(
+        &desired,
+        &collision_stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert_eq!(
+        collision.diagnostics()[0].code(),
+        PlanDiagnosticCode::MoveTargetCollision
+    );
+
+    let source_state = state_with_resource(&source, &instance, json!({}), false);
+    let stored = StoredState::try_from_state(&source_state).expect("state must project");
+    let remotely_missing = RemoteState::try_new(
+        instance.clone(),
+        [
+            (source.clone(), RemoteObservation::Missing),
+            (target.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+    let missing = plan(&desired, &stored, &remotely_missing);
+    assert_eq!(
+        missing.diagnostics()[0].code(),
+        PlanDiagnosticCode::MoveSourceMissing
+    );
+
+    let mismatched_source = RemoteState::try_new(
+        instance.clone(),
+        [
+            (
+                source.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("different-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (target.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+    let mismatched = plan(&desired, &stored, &mismatched_source);
+    assert_eq!(
+        mismatched.diagnostics()[0].code(),
+        PlanDiagnosticCode::RemoteIdentityMismatch
+    );
+
+    let unavailable_target = RemoteState::try_new(
+        instance.clone(),
+        [
+            (
+                source.clone(),
+                RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+            ),
+            (
+                target.clone(),
+                RemoteObservation::Unavailable(RemoteFailureKind::Unavailable),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+    let unavailable = plan(&desired, &stored, &unavailable_target);
+    assert!(!unavailable.complete());
+    assert_eq!(
+        unavailable.diagnostics()[0].code(),
+        PlanDiagnosticCode::RemoteUnavailable
+    );
+    assert_eq!(unavailable.diagnostics()[0].address(), Some(&source));
+    assert_eq!(
+        unavailable.diagnostics()[0].related_address(),
+        Some(&target)
+    );
+
+    let remote_collision = RemoteState::try_new(
+        instance,
+        [
+            (
+                source.clone(),
+                RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+            ),
+            (
+                target.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("target-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+    let collision = plan(&desired, &stored, &remote_collision);
+    assert!(collision.changes().is_empty());
+    assert_eq!(
+        collision.diagnostics()[0].code(),
+        PlanDiagnosticCode::MoveTargetCollision
+    );
+    assert_eq!(collision.diagnostics()[0].address(), Some(&source));
+    assert_eq!(collision.diagnostics()[0].related_address(), Some(&target));
+}
+
+#[test]
+fn retain_removal_fails_closed_on_ambiguous_identity() {
+    let address = address("application.legacy");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({}), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = DesiredState::try_new(digest(), BTreeMap::new())
+        .expect("desired state must be valid")
+        .with_removals(vec![RemovalDirective::new(address.clone(), false)]);
+
+    let unobserved = plan(
+        &desired,
+        &stored,
+        &RemoteState::try_new(instance.clone(), []).expect("remote state must be valid"),
+    );
+    assert!(!unobserved.complete());
+    assert_eq!(
+        unobserved.diagnostics()[0].code(),
+        PlanDiagnosticCode::MissingObservation
+    );
+
+    let unavailable = RemoteState::try_new(
+        instance.clone(),
+        [(
+            address.clone(),
+            RemoteObservation::Unavailable(RemoteFailureKind::Unavailable),
+        )],
+    )
+    .expect("remote state must be valid");
+    let unavailable_plan = plan(&desired, &stored, &unavailable);
+    assert!(!unavailable_plan.complete());
+    assert_eq!(
+        unavailable_plan.diagnostics()[0].code(),
+        PlanDiagnosticCode::RemoteUnavailable
+    );
+
+    let mismatched = RemoteState::try_new(
+        instance,
+        [(
+            address,
+            RemoteObservation::Present(RemoteResource::new(
+                RemoteId::new("different-1").expect("remote id must be valid"),
+                BTreeMap::new(),
+            )),
+        )],
+    )
+    .expect("remote state must be valid");
+    let blocked = plan(&desired, &stored, &mismatched);
+    assert!(blocked.changes().is_empty());
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::RemoteIdentityMismatch
+    );
+}
+
+#[test]
+fn duplicate_removal_declarations_block_instead_of_deleting() {
+    let address = address("application.legacy");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({}), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = DesiredState::try_new(digest(), BTreeMap::new())
+        .expect("desired state must be valid")
+        .with_removals(vec![
+            RemovalDirective::new(address.clone(), false),
+            RemovalDirective::new(address.clone(), true),
+        ]);
+    let remote = RemoteState::try_new(
+        instance,
+        [(
+            address.clone(),
+            RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+        )],
+    )
+    .expect("remote state must be valid");
+
+    let blocked = plan(&desired, &stored, &remote);
+
+    assert!(blocked.changes().is_empty());
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::InvalidRemovalDirective
+    );
+    assert_eq!(blocked.diagnostics()[0].address(), Some(&address));
+}
+
+#[test]
+fn explicit_removals_follow_stored_dependencies_dependent_first() {
+    let project = address("project.core");
+    let application = address("application.api");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(&mut state, project.clone(), "project-1", Vec::new());
+    insert_state_resource(
+        &mut state,
+        application.clone(),
+        "application-1",
+        vec![project.clone()],
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = DesiredState::try_new(digest(), BTreeMap::new())
+        .expect("desired state must be valid")
+        .with_removals(vec![
+            RemovalDirective::new(project.clone(), false),
+            RemovalDirective::new(application.clone(), false),
+        ]);
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                project.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("project-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (
+                application.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("application-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+
     let removal_plan = plan(&desired, &stored, &remote);
 
-    assert!(!removal_plan.applyable());
-    assert!(removal_plan.changes().is_empty());
+    assert!(removal_plan.applyable());
     assert_eq!(
-        removal_plan.diagnostics()[0].unsupported(),
-        Some(UnsupportedDirectiveKind::Removal)
+        removal_plan
+            .changes()
+            .iter()
+            .map(|change| (change.address(), change.kind()))
+            .collect::<Vec<_>>(),
+        vec![
+            (&application, ChangeKind::Forget),
+            (&project, ChangeKind::Forget),
+        ]
     );
 }
 
@@ -2018,6 +2709,19 @@ fn diagnostic_codes_and_plan_metadata_are_stable() {
     assert_eq!(
         PlanDiagnosticCode::StoredDependencyCycle.as_str(),
         "DOKPLAN011"
+    );
+    assert_eq!(
+        PlanDiagnosticCode::InvalidMoveDirective.as_str(),
+        "DOKPLAN012"
+    );
+    assert_eq!(
+        PlanDiagnosticCode::InvalidRemovalDirective.as_str(),
+        "DOKPLAN013"
+    );
+    assert_eq!(PlanDiagnosticCode::MoveSourceMissing.as_str(), "DOKPLAN014");
+    assert_eq!(
+        PlanDiagnosticCode::MoveTargetCollision.as_str(),
+        "DOKPLAN015"
     );
 
     let address = address("application.api");

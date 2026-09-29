@@ -48,7 +48,9 @@ path-level three-way diffs, value-free sensitive intent, fail-closed partial
 observations, protection checks, immutable state-checkpoint targets, and
 deterministic redaction-safe JSON output. Dependency graphs now reject cycles
 and deterministically order desired actions dependency-first before removals
-run dependent-first.
+run dependent-first. Explicit moves now preserve managed identity through an
+atomic source-to-target checkpoint, while removal directives choose retain or
+destroy semantics without weakening identity or protection checks.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

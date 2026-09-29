@@ -61,8 +61,10 @@ durable state semantics.
 - Order desired-resource actions dependency-first and removals dependent-first,
   with stable lexical ties, conservative mixed-action phases, and typed cycle
   diagnostics backed by `petgraph`.
+- Plan explicit identity-preserving moves and idempotent retain or destroy
+  removals with atomic checkpoint targets and fail-closed collision probes.
 - Build desired, stored, and fresh remote state models.
-- Add drift detection, deterministic diffs, replacement, moves, and removals.
+- Add drift detection, deterministic diffs, and replacement behavior.
 - Keep mutation code unreachable from the planner.
 
 ## Phase 6: executor MVP

@@ -22,7 +22,7 @@ pub enum ChangeKind {
     Delete,
     /// Preserve physical identity under a new logical address.
     Move,
-    /// Remove already-absent physical state from managed state.
+    /// Relinquish management while retaining a present object, or forget an absent one.
     Forget,
     /// Perform no remote mutation while allowing a state checkpoint.
     NoOp,
@@ -109,17 +109,31 @@ pub enum MetadataChangeKind {
     Dependencies,
 }
 
+/// Remote work coupled to a logical-address move.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MoveAction {
+    /// Only the durable logical address changes.
+    StateOnly,
+    /// The logical address and remote managed properties both change.
+    Update,
+}
+
 /// One deterministic resource-level plan entry.
 #[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannedChange {
-    pub(crate) address: ResourceAddress,
-    pub(crate) kind: ChangeKind,
-    pub(crate) origin: ChangeOrigin,
-    pub(crate) fields: Vec<FieldChange>,
-    pub(crate) metadata: Vec<MetadataChangeKind>,
+    address: ResourceAddress,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_address: Option<ResourceAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    move_action: Option<MoveAction>,
+    kind: ChangeKind,
+    origin: ChangeOrigin,
+    fields: Vec<FieldChange>,
+    metadata: Vec<MetadataChangeKind>,
     #[serde(skip)]
-    pub(crate) checkpoint: CheckpointTarget,
+    checkpoint: CheckpointTarget,
 }
 
 impl fmt::Debug for PlannedChange {
@@ -127,6 +141,8 @@ impl fmt::Debug for PlannedChange {
         formatter
             .debug_struct("PlannedChange")
             .field("address", &self.address)
+            .field("previous_address", &self.previous_address)
+            .field("move_action", &self.move_action)
             .field("kind", &self.kind)
             .field("origin", &self.origin)
             .field("fields", &self.fields)
@@ -137,10 +153,68 @@ impl fmt::Debug for PlannedChange {
 }
 
 impl PlannedChange {
+    pub(crate) fn resource(
+        address: ResourceAddress,
+        kind: ChangeKind,
+        origin: ChangeOrigin,
+        fields: Vec<FieldChange>,
+        metadata: Vec<MetadataChangeKind>,
+        checkpoint: CheckpointTarget,
+    ) -> Self {
+        assert_ne!(kind, ChangeKind::Move, "move changes require move_change");
+        assert!(
+            !matches!(checkpoint, CheckpointTarget::Move { .. }),
+            "ordinary changes cannot carry move checkpoints"
+        );
+        Self {
+            address,
+            previous_address: None,
+            move_action: None,
+            kind,
+            origin,
+            fields,
+            metadata,
+            checkpoint,
+        }
+    }
+
+    pub(crate) fn move_change(
+        from: ResourceAddress,
+        to: ResourceAddress,
+        action: MoveAction,
+        origin: ChangeOrigin,
+        fields: Vec<FieldChange>,
+        metadata: Vec<MetadataChangeKind>,
+        target: ResourceCheckpoint,
+    ) -> Self {
+        Self {
+            address: to,
+            previous_address: Some(from.clone()),
+            move_action: Some(action),
+            kind: ChangeKind::Move,
+            origin,
+            fields,
+            metadata,
+            checkpoint: CheckpointTarget::Move { from, target },
+        }
+    }
+
     /// Returns the logical resource address.
     #[must_use]
     pub const fn address(&self) -> &ResourceAddress {
         &self.address
+    }
+
+    /// Returns the prior logical address for a move.
+    #[must_use]
+    pub const fn previous_address(&self) -> Option<&ResourceAddress> {
+        self.previous_address.as_ref()
+    }
+
+    /// Returns the remote work coupled to a move, when this is a move entry.
+    #[must_use]
+    pub const fn move_action(&self) -> Option<MoveAction> {
+        self.move_action
     }
 
     /// Returns the selected convergence action.
@@ -181,6 +255,13 @@ pub enum CheckpointTarget {
     Absent,
     /// The logical resource remains managed with this validated state.
     Present(ResourceCheckpoint),
+    /// Atomically remove the source address and checkpoint the target address.
+    Move {
+        /// The managed address that must be removed.
+        from: ResourceAddress,
+        /// The exact target resource state.
+        target: ResourceCheckpoint,
+    },
 }
 
 impl CheckpointTarget {
@@ -194,8 +275,26 @@ impl CheckpointTarget {
     #[must_use]
     pub const fn present(&self) -> Option<&ResourceCheckpoint> {
         match self {
-            Self::Absent => None,
             Self::Present(target) => Some(target),
+            Self::Absent | Self::Move { .. } => None,
+        }
+    }
+
+    /// Returns the exact target state of an atomic move checkpoint.
+    #[must_use]
+    pub const fn move_target(&self) -> Option<&ResourceCheckpoint> {
+        match self {
+            Self::Move { target, .. } => Some(target),
+            Self::Absent | Self::Present(_) => None,
+        }
+    }
+
+    /// Returns the source address removed by an atomic move checkpoint.
+    #[must_use]
+    pub const fn move_from(&self) -> Option<&ResourceAddress> {
+        match self {
+            Self::Move { from, .. } => Some(from),
+            Self::Absent | Self::Present(_) => None,
         }
     }
 }
@@ -205,6 +304,11 @@ impl fmt::Debug for CheckpointTarget {
         match self {
             Self::Absent => formatter.write_str("Absent"),
             Self::Present(_) => formatter.write_str("Present([REDACTED])"),
+            Self::Move { from, .. } => formatter
+                .debug_struct("Move")
+                .field("from", from)
+                .field("target", &"[REDACTED]")
+                .finish(),
         }
     }
 }
@@ -325,10 +429,6 @@ impl DriftChange {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnsupportedDirectiveKind {
-    /// Logical-address move.
-    Move,
-    /// Managed resource removal policy.
-    Removal,
     /// Per-property ignore rule.
     IgnoreChanges,
     /// Per-property replacement rule.
@@ -360,6 +460,14 @@ pub enum PlanDiagnosticCode {
     DesiredDependencyCycle,
     /// Stored dependencies among removal actions contain a cycle.
     StoredDependencyCycle,
+    /// A move declaration conflicts with the desired or stored snapshots.
+    InvalidMoveDirective,
+    /// A removal declaration conflicts with the desired or stored snapshots.
+    InvalidRemovalDirective,
+    /// A move source is not conclusively available under managed identity.
+    MoveSourceMissing,
+    /// A move target is already occupied in stored or remote state.
+    MoveTargetCollision,
 }
 
 impl PlanDiagnosticCode {
@@ -378,6 +486,10 @@ impl PlanDiagnosticCode {
             Self::UnknownPropertyObservation => "DOKPLAN009",
             Self::DesiredDependencyCycle => "DOKPLAN010",
             Self::StoredDependencyCycle => "DOKPLAN011",
+            Self::InvalidMoveDirective => "DOKPLAN012",
+            Self::InvalidRemovalDirective => "DOKPLAN013",
+            Self::MoveSourceMissing => "DOKPLAN014",
+            Self::MoveTargetCollision => "DOKPLAN015",
         }
     }
 }
@@ -387,6 +499,7 @@ impl PlanDiagnosticCode {
 pub struct PlanDiagnostic {
     pub(crate) code: PlanDiagnosticCode,
     pub(crate) address: Option<ResourceAddress>,
+    pub(crate) related_address: Option<ResourceAddress>,
     pub(crate) property: Option<PropertyPath>,
     pub(crate) remote_failure: Option<RemoteFailureKind>,
     pub(crate) property_unknown: Option<PropertyUnknownReason>,
@@ -404,6 +517,12 @@ impl PlanDiagnostic {
     #[must_use]
     pub const fn address(&self) -> Option<&ResourceAddress> {
         self.address.as_ref()
+    }
+
+    /// Returns a second logical address for a move diagnostic.
+    #[must_use]
+    pub const fn related_address(&self) -> Option<&ResourceAddress> {
+        self.related_address.as_ref()
     }
 
     /// Returns the affected property, when applicable.
@@ -470,7 +589,7 @@ impl Plan {
         &self.config_digest
     }
 
-    /// Returns changes in deterministic logical-address order.
+    /// Returns changes in deterministic dependency-safe execution order.
     #[must_use]
     pub fn changes(&self) -> &[PlannedChange] {
         &self.changes
@@ -509,6 +628,7 @@ impl Plan {
             .map(|diagnostic| PlanDiagnosticDocument {
                 code: diagnostic.code.as_str(),
                 address: diagnostic.address.as_ref(),
+                related_address: diagnostic.related_address.as_ref(),
                 property: diagnostic.property.as_ref(),
                 remote_failure: diagnostic.remote_failure,
                 property_unknown: diagnostic.property_unknown,
@@ -552,6 +672,8 @@ struct PlanDiagnosticDocument<'a> {
     code: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     address: Option<&'a ResourceAddress>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    related_address: Option<&'a ResourceAddress>,
     #[serde(skip_serializing_if = "Option::is_none")]
     property: Option<&'a PropertyPath>,
     #[serde(skip_serializing_if = "Option::is_none")]

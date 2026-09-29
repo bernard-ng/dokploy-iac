@@ -145,7 +145,7 @@ impl fmt::Debug for DesiredResource {
     }
 }
 
-/// A logical-address move deferred to a later planner checkpoint.
+/// A requested identity-preserving logical-address move.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MoveDirective {
     from: ResourceAddress,
@@ -172,7 +172,7 @@ impl MoveDirective {
     }
 }
 
-/// A removal directive deferred to a later planner checkpoint.
+/// A requested retain-or-destroy removal from managed state.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RemovalDirective {
     address: ResourceAddress,
@@ -199,7 +199,7 @@ impl RemovalDirective {
     }
 }
 
-/// Desired resources and deferred directives indexed by logical address.
+/// Desired resources and lifecycle directives indexed by logical address.
 pub struct DesiredState {
     pub(crate) digest: ConfigDigest,
     pub(crate) resources: BTreeMap<ResourceAddress, DesiredResource>,
@@ -238,20 +238,18 @@ impl DesiredState {
         })
     }
 
-    /// Adds canonical move directives.
+    /// Orders move directives canonically while preserving duplicates for validation.
     #[must_use]
     pub fn with_moves(mut self, mut moves: Vec<MoveDirective>) -> Self {
         moves.sort();
-        moves.dedup();
         self.moves = moves;
         self
     }
 
-    /// Adds canonical removal directives.
+    /// Orders removal directives canonically while preserving duplicates for validation.
     #[must_use]
     pub fn with_removals(mut self, mut removals: Vec<RemovalDirective>) -> Self {
         removals.sort();
-        removals.dedup();
         self.removals = removals;
         self
     }

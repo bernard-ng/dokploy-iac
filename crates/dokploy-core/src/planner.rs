@@ -1,11 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dokploy_state::ResourceAddress;
 
 use crate::dependency::{DependencyGraphKind, DependencyOrdering};
 use crate::{
     ChangeKind, ChangeOrigin, CheckpointTarget, DesiredResource, DesiredState, DriftChange,
-    DriftKind, FieldChange, MetadataChangeKind, OwnedValue, Plan, PlanDiagnostic,
+    DriftKind, FieldChange, MetadataChangeKind, MoveAction, OwnedValue, Plan, PlanDiagnostic,
     PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, ProtectionIntent,
     RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint, StoredState,
     UnsupportedDirectiveKind, ValueState, plan::PLAN_FORMAT_VERSION, snapshot::StoredResource,
@@ -24,16 +24,18 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
         );
     }
 
-    let directive_diagnostics = unsupported_directive_diagnostics(desired);
-    if !directive_diagnostics.is_empty() {
-        return finish_plan(
-            desired,
-            stored,
-            Vec::new(),
-            Vec::new(),
-            directive_diagnostics,
-        );
-    }
+    let directives = match ValidatedDirectives::validate(desired, stored) {
+        Ok(directives) => directives,
+        Err(directive_diagnostics) => {
+            return finish_plan(
+                desired,
+                stored,
+                Vec::new(),
+                Vec::new(),
+                directive_diagnostics,
+            );
+        }
+    };
 
     let ordering = match DependencyOrdering::analyze(desired, stored) {
         Ok(ordering) => ordering,
@@ -61,6 +63,35 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
     let mut changes = Vec::new();
     let mut drift = Vec::new();
     let mut diagnostics = Vec::new();
+    for (source, target) in &directives.moves {
+        if !directives.pending_moves.contains(source) {
+            continue;
+        }
+        plan_move(
+            source,
+            target,
+            desired,
+            stored,
+            remote,
+            &mut changes,
+            &mut drift,
+            &mut diagnostics,
+        );
+    }
+    for (address, destroy) in &directives.removals {
+        if !directives.pending_removals.contains(address) {
+            continue;
+        }
+        plan_explicit_removal(
+            address,
+            *destroy,
+            stored,
+            remote,
+            &mut changes,
+            &mut drift,
+            &mut diagnostics,
+        );
+    }
     let relevant_addresses: BTreeSet<_> = desired
         .resources
         .keys()
@@ -69,6 +100,9 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
         .collect();
 
     for address in relevant_addresses {
+        if directives.handled.contains(&address) {
+            continue;
+        }
         let desired_resource = desired.resources.get(&address);
         let stored_resource = stored.resources.get(&address);
         let Some(observation) = remote.observation(&address) else {
@@ -109,25 +143,301 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
     finish_plan(desired, stored, changes, drift, diagnostics)
 }
 
-fn unsupported_directive_diagnostics(desired: &DesiredState) -> Vec<PlanDiagnostic> {
-    let mut diagnostics = Vec::new();
-    for directive in &desired.moves {
-        let mut issue = diagnostic(
-            PlanDiagnosticCode::UnsupportedDirective,
-            Some(directive.from().clone()),
-        );
-        issue.unsupported = Some(UnsupportedDirectiveKind::Move);
-        diagnostics.push(issue);
+struct ValidatedDirectives {
+    moves: BTreeMap<ResourceAddress, ResourceAddress>,
+    pending_moves: BTreeSet<ResourceAddress>,
+    removals: BTreeMap<ResourceAddress, bool>,
+    pending_removals: BTreeSet<ResourceAddress>,
+    handled: BTreeSet<ResourceAddress>,
+}
+
+impl ValidatedDirectives {
+    fn validate(desired: &DesiredState, stored: &StoredState) -> Result<Self, Vec<PlanDiagnostic>> {
+        let mut diagnostics = Vec::new();
+        let mut moves = BTreeMap::new();
+        let mut pending_moves = BTreeSet::new();
+        let mut targets = BTreeSet::new();
+        for directive in &desired.moves {
+            let from = directive.from();
+            let to = directive.to();
+            let invalid = from == to
+                || from.kind() != to.kind()
+                || desired.resources.contains_key(from)
+                || !desired.resources.contains_key(to)
+                || moves.contains_key(from)
+                || !targets.insert(to.clone());
+            if invalid {
+                diagnostics.push(move_diagnostic(
+                    PlanDiagnosticCode::InvalidMoveDirective,
+                    from,
+                    to,
+                ));
+                continue;
+            }
+            match (
+                stored.resources.contains_key(from),
+                stored.resources.contains_key(to),
+            ) {
+                (true, false) => {
+                    pending_moves.insert(from.clone());
+                }
+                (false, true) => {}
+                (false, false) => diagnostics.push(move_diagnostic(
+                    PlanDiagnosticCode::MoveSourceMissing,
+                    from,
+                    to,
+                )),
+                (true, true) => diagnostics.push(move_diagnostic(
+                    PlanDiagnosticCode::MoveTargetCollision,
+                    from,
+                    to,
+                )),
+            }
+            moves.insert(from.clone(), to.clone());
+        }
+
+        if let Some((source, target)) = moves.iter().find(|(source, _)| targets.contains(*source)) {
+            diagnostics.push(move_diagnostic(
+                PlanDiagnosticCode::InvalidMoveDirective,
+                source,
+                target,
+            ));
+        }
+
+        let mut removals = BTreeMap::new();
+        let mut pending_removals = BTreeSet::new();
+        for directive in &desired.removals {
+            let address = directive.address();
+            if let Some((source, target)) = moves
+                .iter()
+                .find(|(source, target)| *source == address || *target == address)
+            {
+                diagnostics.push(move_diagnostic(
+                    PlanDiagnosticCode::InvalidMoveDirective,
+                    source,
+                    target,
+                ));
+                continue;
+            }
+            if desired.resources.contains_key(address) || removals.contains_key(address) {
+                diagnostics.push(diagnostic(
+                    PlanDiagnosticCode::InvalidRemovalDirective,
+                    Some(address.clone()),
+                ));
+                continue;
+            }
+            if stored.resources.contains_key(address) {
+                pending_removals.insert(address.clone());
+            }
+            removals.insert(address.clone(), directive.destroy());
+        }
+
+        if !diagnostics.is_empty() {
+            return Err(diagnostics);
+        }
+        let handled = moves
+            .iter()
+            .flat_map(|(from, to)| {
+                if pending_moves.contains(from) {
+                    vec![from.clone(), to.clone()]
+                } else {
+                    vec![from.clone()]
+                }
+            })
+            .chain(pending_removals.iter().cloned())
+            .collect();
+        Ok(Self {
+            moves,
+            pending_moves,
+            removals,
+            pending_removals,
+            handled,
+        })
     }
-    for directive in &desired.removals {
-        let mut issue = diagnostic(
-            PlanDiagnosticCode::UnsupportedDirective,
-            Some(directive.address().clone()),
-        );
-        issue.unsupported = Some(UnsupportedDirectiveKind::Removal);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_move(
+    source: &ResourceAddress,
+    target: &ResourceAddress,
+    desired: &DesiredState,
+    stored: &StoredState,
+    remote: &RemoteState,
+    changes: &mut Vec<PlannedChange>,
+    drift: &mut Vec<DriftChange>,
+    diagnostics: &mut Vec<PlanDiagnostic>,
+) {
+    let Some(source_observation) = remote.observation(source) else {
+        diagnostics.push(move_diagnostic(
+            PlanDiagnosticCode::MissingObservation,
+            source,
+            target,
+        ));
+        return;
+    };
+    let Some(target_observation) = remote.observation(target) else {
+        diagnostics.push(move_diagnostic(
+            PlanDiagnosticCode::MissingObservation,
+            source,
+            target,
+        ));
+        return;
+    };
+    if let RemoteObservation::Unavailable(failure) = source_observation {
+        let mut issue = move_diagnostic(PlanDiagnosticCode::RemoteUnavailable, source, target);
+        issue.remote_failure = Some(*failure);
         diagnostics.push(issue);
+        return;
     }
-    diagnostics
+    if let RemoteObservation::Unavailable(failure) = target_observation {
+        let mut issue = move_diagnostic(PlanDiagnosticCode::RemoteUnavailable, source, target);
+        issue.remote_failure = Some(*failure);
+        diagnostics.push(issue);
+        return;
+    }
+    let RemoteObservation::Present(remote_resource) = source_observation else {
+        diagnostics.push(move_diagnostic(
+            PlanDiagnosticCode::MoveSourceMissing,
+            source,
+            target,
+        ));
+        return;
+    };
+    if !matches!(target_observation, RemoteObservation::Missing) {
+        diagnostics.push(move_diagnostic(
+            PlanDiagnosticCode::MoveTargetCollision,
+            source,
+            target,
+        ));
+        return;
+    }
+
+    let stored_resource = &stored.resources[source];
+    if stored_resource.remote_id != *remote_resource.remote_id() {
+        diagnostics.push(move_diagnostic(
+            PlanDiagnosticCode::RemoteIdentityMismatch,
+            source,
+            target,
+        ));
+        return;
+    }
+    let desired_resource = &desired.resources[target];
+    let diagnostic_start = diagnostics.len();
+    if add_unsupported_resource_diagnostics(target, desired_resource, diagnostics) {
+        for issue in &mut diagnostics[diagnostic_start..] {
+            issue.address = Some(source.clone());
+            issue.related_address = Some(target.clone());
+        }
+        return;
+    }
+    let mut property_diagnostics =
+        required_property_diagnostics(target, desired_resource, remote_resource);
+    if !property_diagnostics.is_empty() {
+        for issue in &mut property_diagnostics {
+            issue.address = Some(source.clone());
+            issue.related_address = Some(target.clone());
+        }
+        diagnostics.append(&mut property_diagnostics);
+        return;
+    }
+
+    let property_plan = compare_properties(desired_resource, stored_resource, remote_resource);
+    let (metadata, _) = metadata_changes(desired_resource, stored_resource);
+    if !property_plan.drifted.is_empty() {
+        drift.push(DriftChange {
+            address: target.clone(),
+            kind: DriftKind::Updated,
+            properties: property_plan.drifted.clone(),
+        });
+    }
+    changes.push(PlannedChange::move_change(
+        source.clone(),
+        target.clone(),
+        if property_plan.convergence_required {
+            MoveAction::Update
+        } else {
+            MoveAction::StateOnly
+        },
+        if property_plan.remote_changed {
+            ChangeOrigin::ConfigAndDrift
+        } else {
+            ChangeOrigin::Config
+        },
+        property_plan.fields,
+        metadata,
+        resource_checkpoint_for_desired(desired_resource, Some(stored_resource)),
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plan_explicit_removal(
+    address: &ResourceAddress,
+    destroy: bool,
+    stored: &StoredState,
+    remote: &RemoteState,
+    changes: &mut Vec<PlannedChange>,
+    drift: &mut Vec<DriftChange>,
+    diagnostics: &mut Vec<PlanDiagnostic>,
+) {
+    let Some(observation) = remote.observation(address) else {
+        diagnostics.push(diagnostic(
+            PlanDiagnosticCode::MissingObservation,
+            Some(address.clone()),
+        ));
+        return;
+    };
+    match observation {
+        RemoteObservation::Unavailable(failure) => {
+            let mut issue =
+                diagnostic(PlanDiagnosticCode::RemoteUnavailable, Some(address.clone()));
+            issue.remote_failure = Some(*failure);
+            diagnostics.push(issue);
+        }
+        RemoteObservation::Missing => {
+            drift.push(DriftChange {
+                address: address.clone(),
+                kind: DriftKind::Deleted,
+                properties: Vec::new(),
+            });
+            changes.push(PlannedChange::resource(
+                address.clone(),
+                ChangeKind::Forget,
+                ChangeOrigin::ConfigAndDrift,
+                Vec::new(),
+                Vec::new(),
+                CheckpointTarget::Absent,
+            ));
+        }
+        RemoteObservation::Present(remote_resource) => {
+            let stored_resource = &stored.resources[address];
+            if stored_resource.remote_id != *remote_resource.remote_id() {
+                diagnostics.push(diagnostic(
+                    PlanDiagnosticCode::RemoteIdentityMismatch,
+                    Some(address.clone()),
+                ));
+                return;
+            }
+            if destroy {
+                plan_present_delete(
+                    address.clone(),
+                    stored_resource,
+                    remote_resource,
+                    changes,
+                    drift,
+                    diagnostics,
+                );
+            } else {
+                changes.push(PlannedChange::resource(
+                    address.clone(),
+                    ChangeKind::Forget,
+                    ChangeOrigin::Config,
+                    Vec::new(),
+                    Vec::new(),
+                    CheckpointTarget::Absent,
+                ));
+            }
+        }
+    }
 }
 
 fn plan_missing_resource(
@@ -144,14 +454,14 @@ fn plan_missing_resource(
                 return;
             }
 
-            changes.push(PlannedChange {
+            changes.push(PlannedChange::resource(
                 address,
-                kind: ChangeKind::Create,
-                origin: ChangeOrigin::Config,
-                fields: create_field_changes(desired),
-                metadata: desired_metadata_for_create(desired),
-                checkpoint: checkpoint_for_desired(desired, None),
-            });
+                ChangeKind::Create,
+                ChangeOrigin::Config,
+                create_field_changes(desired),
+                desired_metadata_for_create(desired),
+                checkpoint_for_desired(desired, None),
+            ));
         }
         (Some(desired), Some(stored)) => {
             if add_unsupported_resource_diagnostics(&address, desired, diagnostics) {
@@ -165,18 +475,18 @@ fn plan_missing_resource(
                 kind: DriftKind::Deleted,
                 properties: Vec::new(),
             });
-            changes.push(PlannedChange {
+            changes.push(PlannedChange::resource(
                 address,
-                kind: ChangeKind::Create,
-                origin: if config_changed || metadata_changed {
+                ChangeKind::Create,
+                if config_changed || metadata_changed {
                     ChangeOrigin::ConfigAndDrift
                 } else {
                     ChangeOrigin::Drift
                 },
                 fields,
                 metadata,
-                checkpoint: checkpoint_for_desired(desired, Some(stored)),
-            });
+                checkpoint_for_desired(desired, Some(stored)),
+            ));
         }
         (None, Some(_)) => {
             drift.push(DriftChange {
@@ -184,14 +494,14 @@ fn plan_missing_resource(
                 kind: DriftKind::Deleted,
                 properties: Vec::new(),
             });
-            changes.push(PlannedChange {
+            changes.push(PlannedChange::resource(
                 address,
-                kind: ChangeKind::Forget,
-                origin: ChangeOrigin::ConfigAndDrift,
-                fields: Vec::new(),
-                metadata: Vec::new(),
-                checkpoint: CheckpointTarget::Absent,
-            });
+                ChangeKind::Forget,
+                ChangeOrigin::ConfigAndDrift,
+                Vec::new(),
+                Vec::new(),
+                CheckpointTarget::Absent,
+            ));
         }
         (None, None) => {}
     }
@@ -255,18 +565,18 @@ fn plan_present_resource(
         return;
     }
 
-    changes.push(PlannedChange {
+    changes.push(PlannedChange::resource(
         address,
-        kind: if property_plan.convergence_required {
+        if property_plan.convergence_required {
             ChangeKind::Update
         } else {
             ChangeKind::NoOp
         },
-        origin: change_origin(config_changed, remote_changed),
-        fields: property_plan.fields,
+        change_origin(config_changed, remote_changed),
+        property_plan.fields,
         metadata,
-        checkpoint: checkpoint_for_desired(desired, Some(stored)),
-    });
+        checkpoint_for_desired(desired, Some(stored)),
+    ));
 }
 
 fn plan_present_delete(
@@ -277,23 +587,13 @@ fn plan_present_delete(
     drift: &mut Vec<DriftChange>,
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) {
-    let mut property_diagnostics = stored_property_diagnostics(&address, stored, remote);
-    if !property_diagnostics.is_empty() {
-        diagnostics.append(&mut property_diagnostics);
-        return;
-    }
-
     let drifted = stored
         .properties
         .iter()
         .filter_map(|(key, stored_value)| {
-            let remote_value = observed_value(
-                key,
-                remote
-                    .property(key)
-                    .expect("stored property observations were validated"),
-            )
-            .expect("stored property observations were validated as known");
+            let remote_value = remote
+                .property(key)
+                .and_then(|observation| observed_value(key, observation))?;
             (remote_value.as_ref() != Some(stored_value)).then_some(key.clone())
         })
         .collect::<Vec<_>>();
@@ -314,18 +614,18 @@ fn plan_present_delete(
         return;
     }
 
-    changes.push(PlannedChange {
+    changes.push(PlannedChange::resource(
         address,
-        kind: ChangeKind::Delete,
-        origin: if remote_changed {
+        ChangeKind::Delete,
+        if remote_changed {
             ChangeOrigin::ConfigAndDrift
         } else {
             ChangeOrigin::Config
         },
-        fields: Vec::new(),
-        metadata: Vec::new(),
-        checkpoint: CheckpointTarget::Absent,
-    });
+        Vec::new(),
+        Vec::new(),
+        CheckpointTarget::Absent,
+    ));
 }
 
 fn add_unsupported_resource_diagnostics(
@@ -361,18 +661,6 @@ fn required_property_diagnostics(
     remote: &RemoteResource,
 ) -> Vec<PlanDiagnostic> {
     desired
-        .properties
-        .keys()
-        .filter_map(|key| property_diagnostic(address, key.clone(), remote))
-        .collect()
-}
-
-fn stored_property_diagnostics(
-    address: &ResourceAddress,
-    stored: &StoredResource,
-    remote: &RemoteResource,
-) -> Vec<PlanDiagnostic> {
-    stored
         .properties
         .keys()
         .filter_map(|key| property_diagnostic(address, key.clone(), remote))
@@ -603,15 +891,22 @@ fn checkpoint_for_desired(
     desired: &DesiredResource,
     stored: Option<&StoredResource>,
 ) -> CheckpointTarget {
+    CheckpointTarget::Present(resource_checkpoint_for_desired(desired, stored))
+}
+
+fn resource_checkpoint_for_desired(
+    desired: &DesiredResource,
+    stored: Option<&StoredResource>,
+) -> ResourceCheckpoint {
     let protected = match desired.protection {
         ProtectionIntent::Unmanaged => stored.is_some_and(|resource| resource.protected),
         ProtectionIntent::Set(value) => value,
     };
-    CheckpointTarget::Present(ResourceCheckpoint {
+    ResourceCheckpoint {
         protected,
         dependencies: desired.dependencies.clone(),
         properties: desired.properties.clone(),
-    })
+    }
 }
 
 fn change_origin(config_changed: bool, remote_changed: bool) -> ChangeOrigin {
@@ -627,11 +922,22 @@ fn diagnostic(code: PlanDiagnosticCode, address: Option<ResourceAddress>) -> Pla
     PlanDiagnostic {
         code,
         address,
+        related_address: None,
         property: None,
         remote_failure: None,
         property_unknown: None,
         unsupported: None,
     }
+}
+
+fn move_diagnostic(
+    code: PlanDiagnosticCode,
+    source: &ResourceAddress,
+    target: &ResourceAddress,
+) -> PlanDiagnostic {
+    let mut issue = diagnostic(code, Some(source.clone()));
+    issue.related_address = Some(target.clone());
+    issue
 }
 
 fn finish_plan(
@@ -646,6 +952,7 @@ fn finish_plan(
         left.code
             .cmp(&right.code)
             .then_with(|| left.address.cmp(&right.address))
+            .then_with(|| left.related_address.cmp(&right.related_address))
             .then_with(|| left.property.cmp(&right.property))
             .then_with(|| left.unsupported.cmp(&right.unsupported))
     });

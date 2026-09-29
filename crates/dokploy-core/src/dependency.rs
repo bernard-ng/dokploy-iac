@@ -75,16 +75,16 @@ impl DependencyOrdering {
             left_phase
                 .cmp(&right_phase)
                 .then_with(|| left_rank.cmp(&right_rank))
-                .then_with(|| left.address.cmp(&right.address))
+                .then_with(|| left.address().cmp(right.address()))
         });
     }
 
     fn change_key(&self, change: &PlannedChange) -> (u8, usize) {
-        if matches!(change.kind, ChangeKind::Delete | ChangeKind::Forget) {
+        if matches!(change.kind(), ChangeKind::Delete | ChangeKind::Forget) {
             (
                 1,
                 self.removal_rank
-                    .get(&change.address)
+                    .get(change.address())
                     .copied()
                     .unwrap_or(usize::MAX),
             )
@@ -92,7 +92,7 @@ impl DependencyOrdering {
             (
                 0,
                 self.desired_rank
-                    .get(&change.address)
+                    .get(change.address())
                     .copied()
                     .unwrap_or(usize::MAX),
             )
@@ -108,10 +108,17 @@ fn desired_graph(desired: &DesiredState) -> DiGraph<ResourceAddress, ()> {
 }
 
 fn removal_graph(desired: &DesiredState, stored: &StoredState) -> DiGraph<ResourceAddress, ()> {
+    let moved_sources = desired
+        .moves
+        .iter()
+        .map(|directive| directive.from())
+        .collect::<BTreeSet<_>>();
     let addresses = stored
         .resources
         .keys()
-        .filter(|address| !desired.resources.contains_key(*address))
+        .filter(|address| {
+            !desired.resources.contains_key(*address) && !moved_sources.contains(address)
+        })
         .cloned()
         .collect::<BTreeSet<_>>();
     build_graph(addresses, |address| {

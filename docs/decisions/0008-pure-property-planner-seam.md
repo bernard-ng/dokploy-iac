@@ -60,10 +60,28 @@ Physical identity is the pair of resource kind and Dokploy remote ID. Stored
 and remote projections reject duplicate identities within a kind, while the
 same raw identifier may appear in different resource kinds.
 
-Moves, removals, ignored changes, and replacement metadata are retained in
-desired input but produce typed blocking diagnostics until their dedicated
-planner slices exist. They must never degrade into create, update, or delete
-actions.
+Moves require a managed source and desired target of the same resource kind.
+A pending move also requires a conclusive present source observation with the
+stored remote identity and a separate explicit missing observation for the
+target address. The target probe is part of the remote adapter contract; a
+missing probe never means absence. A move is addressed to the target, exposes
+its previous address and whether remote property work is required, and carries
+an atomic checkpoint that removes the source while writing the exact target.
+If the target is already stored and the source is absent, the declaration is
+idempotently satisfied and the target plans normally. Pending move sources do
+not enter the stored-removal graph.
+
+Removal declarations are also idempotent once their address is absent from
+stored state. Retain removes a conclusively identified present resource from
+management without reading its properties or consulting protection. Destroy
+uses the normal identity and stored-protection checks; property observations
+are best-effort drift evidence and cannot prevent an otherwise safe delete.
+An already missing managed resource is forgotten for either policy. Invalid,
+conflicting, chained, or ambiguous directives block the whole plan rather than
+degrading into default create or delete actions.
+
+Ignored changes and replacement metadata remain retained in desired input but
+produce typed blocking diagnostics until their dedicated planner slices exist.
 
 Dependency ordering uses `petgraph` behind the planner seam. Desired-resource
 edges order create, recreate, update, and no-op checkpoint actions
@@ -88,9 +106,11 @@ misleading partial execution sequence.
   or future state should be interpreted.
 - State-only protection, dependency, and ownership changes are represented as
   no-op remote actions that a later executor must checkpoint.
+- Executing a move requires future atomic `StateFile` and journal support for
+  removing the source and writing the target as one recoverable transition.
+  This checkpoint defines that target but adds no executor behavior.
 - Dependency cycles are planning diagnostics, not desired-state construction
   errors; missing and self-dependencies still fail at the desired-state seam.
 - Adding a property path requires an explicit planner vocabulary, kind
   validation, state projection, and adapter update.
-- Moves, removal directives, ignored changes, and replacement behavior remain
-  later Phase 5 checkpoints.
+- Ignored changes and replacement behavior remain later Phase 5 checkpoints.

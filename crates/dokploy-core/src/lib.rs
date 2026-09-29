@@ -12,8 +12,8 @@ mod snapshot;
 
 pub use plan::{
     ChangeKind, ChangeOrigin, CheckpointTarget, CheckpointValueRef, DriftChange, DriftKind,
-    FieldChange, MetadataChangeKind, Plan, PlanDiagnostic, PlanDiagnosticCode, PlannedChange,
-    ResourceCheckpoint, UnsupportedDirectiveKind, ValueState,
+    FieldChange, MetadataChangeKind, MoveAction, Plan, PlanDiagnostic, PlanDiagnosticCode,
+    PlannedChange, ResourceCheckpoint, UnsupportedDirectiveKind, ValueState,
 };
 pub use planner::plan;
 pub use property::{

@@ -46,3 +46,6 @@ All notable changes to this project will be documented in this file.
   removal ordering, conservative mixed-plan phases, and typed cycle diagnostics
   backed by `petgraph`, with a crate-scoped Zlib license allowance for its
   `foldhash` dependency.
+- Add pure-planner move and removal semantics with idempotent declarations,
+  explicit target collision probes, atomic move checkpoint targets, retain or
+  destroy policies, and redaction-safe two-address diagnostics.
