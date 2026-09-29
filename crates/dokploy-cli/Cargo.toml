@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 directories.workspace = true
+dokploy-config.workspace = true
 dokploy-sdk.workspace = true
 keyring.workspace = true
 miette.workspace = true

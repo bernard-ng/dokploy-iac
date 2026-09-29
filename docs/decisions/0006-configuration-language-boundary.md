@@ -55,5 +55,5 @@ authoritative.
 - A future environment-qualified address format requires an explicit state
   migration; the MVP fails on cross-environment name collisions instead of
   guessing.
-- Filesystem secret resolution, dependency-cycle planning, and the CLI
-  commands remain separate checkpoints.
+- Filesystem secret resolution and dependency-cycle planning remain separate
+  checkpoints.

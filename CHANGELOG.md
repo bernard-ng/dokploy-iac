@@ -35,3 +35,6 @@ All notable changes to this project will be documented in this file.
   bounded parsing, typed references and containment, descriptor-only secrets,
   lifecycle rules, moves, removals, JSON Schema, and redaction-safe semantic
   diagnostics.
+- Add offline `dokploy init`, `dokploy schema`, and `dokploy validate`
+  commands with no-clobber initialization, bounded regular-file loading, and
+  deterministic schema and diagnostic output.

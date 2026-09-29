@@ -3,6 +3,7 @@
 pub mod cli;
 pub mod config;
 pub mod credentials;
+mod declarative;
 mod imperative;
 mod imperative_generated;
 mod redaction;
@@ -18,6 +19,8 @@ use dokploy_sdk::Dokploy;
 use miette::{IntoDiagnostic, Result};
 use settings::{ConnectionOptions, ProcessEnvironment, resolve_connection};
 
+pub use declarative::execute as execute_offline;
+
 /// Executes one parsed command against injected local configuration services.
 ///
 /// Keeping dispatch independent from process globals makes command behavior
@@ -28,6 +31,10 @@ pub async fn execute(
     credentials: &dyn CredentialStore,
     output: &mut dyn Write,
 ) -> Result<()> {
+    if cli.is_offline() {
+        return execute_offline(cli, output, false);
+    }
+
     let Cli {
         url,
         api_key,
@@ -35,6 +42,9 @@ pub async fn execute(
     } = cli;
 
     match command {
+        Command::Init { .. } | Command::Schema | Command::Validate { .. } => {
+            unreachable!("offline commands return before connection dispatch")
+        }
         Command::Context { command } => match command {
             ContextCommand::List => list_contexts(config, output),
             ContextCommand::Use { name } => use_context(config, &name, output),
@@ -133,8 +143,9 @@ mod tests {
     use std::thread::{self, JoinHandle};
 
     use clap::Parser;
+    use dokploy_config::DokployConfig;
 
-    use super::execute;
+    use super::{execute, execute_offline};
     use crate::cli::Cli;
     use crate::config::ConfigRepository;
     use crate::credentials::{ApiKey, CredentialStore, CredentialStoreError};
@@ -155,6 +166,22 @@ mod tests {
 
         fn delete(&self, _context: &str) -> Result<(), CredentialStoreError> {
             Ok(())
+        }
+    }
+
+    struct PanicCredentialStore;
+
+    impl CredentialStore for PanicCredentialStore {
+        fn get(&self, _context: &str) -> Result<Option<ApiKey>, CredentialStoreError> {
+            panic!("offline commands must not read credentials")
+        }
+
+        fn set(&self, _context: &str, _api_key: &ApiKey) -> Result<(), CredentialStoreError> {
+            panic!("offline commands must not write credentials")
+        }
+
+        fn delete(&self, _context: &str) -> Result<(), CredentialStoreError> {
+            panic!("offline commands must not delete credentials")
         }
     }
 
@@ -286,6 +313,359 @@ url = "https://deploy.example.com"
             "name: production\nurl: https://deploy.example.com\napi key: stored\n"
         );
         assert!(!output.contains(secret));
+    }
+
+    #[tokio::test]
+    async fn init_creates_a_configuration_that_is_ready_to_parse() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("dokploy.yaml");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "init",
+            "--empty",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect("init succeeds");
+
+        let source = fs::read_to_string(target).expect("configuration was created");
+        DokployConfig::parse(&source).expect("starter configuration is valid");
+        assert_eq!(
+            String::from_utf8(output).expect("output is UTF-8"),
+            "Created dokploy configuration.\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn init_never_overwrites_an_existing_path() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("dokploy.yaml");
+        let original = b"existing-content-that-must-survive";
+        fs::write(&target, original).expect("existing file is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "init",
+            "--empty",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect_err("existing targets are rejected");
+
+        assert_eq!(
+            fs::read(target).expect("existing file is readable"),
+            original
+        );
+        assert!(output.is_empty());
+        assert!(error.to_string().contains("already exists"));
+    }
+
+    #[tokio::test]
+    async fn non_interactive_init_requires_the_empty_flag() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("dokploy.yaml");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "init",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &PanicCredentialStore, &mut output)
+            .await
+            .expect_err("plain non-interactive init is rejected");
+
+        assert!(error.to_string().contains("--empty"));
+        assert!(!target.exists());
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn terminal_init_preserves_the_canonical_template_behavior() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("dokploy.yaml");
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "init",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        execute_offline(cli, &mut output, true).expect("terminal init succeeds");
+
+        let source = fs::read_to_string(target).expect("configuration was created");
+        DokployConfig::parse(&source).expect("starter configuration is valid");
+        assert_eq!(
+            String::from_utf8(output).expect("output is UTF-8"),
+            "Created dokploy configuration.\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn schema_prints_deterministic_pretty_json_with_one_trailing_newline() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+
+        execute(
+            Cli::try_parse_from(["dokploy", "schema"]).expect("command line is valid"),
+            &repository,
+            &credentials,
+            &mut first,
+        )
+        .await
+        .expect("schema succeeds");
+        execute(
+            Cli::try_parse_from(["dokploy", "schema"]).expect("command line is valid"),
+            &repository,
+            &credentials,
+            &mut second,
+        )
+        .await
+        .expect("schema succeeds");
+
+        assert_eq!(first, second);
+        assert!(first.ends_with(b"\n"));
+        assert!(!first.ends_with(b"\n\n"));
+        serde_json::from_slice::<serde_json::Value>(&first).expect("schema output is JSON");
+        assert!(first.windows(2).any(|window| window == b"\n "));
+    }
+
+    #[tokio::test]
+    async fn offline_commands_ignore_connection_overrides_and_poisoned_dependencies() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let context_path = temporary_directory.path().join("invalid-context.toml");
+        fs::write(&context_path, "this is not valid TOML = [").expect("poison context is writable");
+        let repository = ConfigRepository::new(context_path);
+        let api_key_canary = "offline-api-key-canary";
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "--url",
+            "not-a-valid-url",
+            "--api-key",
+            api_key_canary,
+            "schema",
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        execute(cli, &repository, &PanicCredentialStore, &mut output)
+            .await
+            .expect("schema bypasses all connection dependencies");
+
+        serde_json::from_slice::<serde_json::Value>(&output).expect("schema output is JSON");
+        assert!(!String::from_utf8_lossy(&output).contains(api_key_canary));
+    }
+
+    #[tokio::test]
+    async fn validate_accepts_a_valid_configuration() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("custom.yaml");
+        fs::write(
+            &target,
+            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+        )
+        .expect("fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "validate",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect("validation succeeds");
+
+        assert_eq!(
+            String::from_utf8(output).expect("output is UTF-8"),
+            "Configuration is valid.\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn validate_reports_semantic_codes_and_locations_without_source_values() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("invalid.yaml");
+        let canary = "scalar-canary-must-not-leak";
+        fs::write(
+            &target,
+            format!(
+                "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        depends_on: [redis.{canary}]\n"
+            ),
+        )
+        .expect("fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "validate",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect_err("semantic validation fails");
+        let display = error.to_string();
+        let debug = format!("{error:?}");
+
+        assert!(display.contains("DOKCFG005"));
+        assert!(display.contains("line "));
+        assert!(display.contains("column "));
+        assert!(!display.contains(canary));
+        assert!(!debug.contains(canary));
+        assert!(output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn validate_reports_every_semantic_issue_in_source_order() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("invalid.yaml");
+        fs::write(
+            &target,
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        depends_on: [redis.missing]\n      worker:\n        environment:\n          TOKEN:\n            secret:\n              file: ../unsafe\n",
+        )
+        .expect("fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "validate",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect_err("semantic validation fails");
+        let rendered = error.to_string();
+        let missing_dependency = rendered
+            .find("DOKCFG005")
+            .expect("missing dependency is reported");
+        let unsafe_secret = rendered
+            .find("DOKCFG011")
+            .expect("unsafe secret is reported");
+
+        assert!(missing_dependency < unsafe_secret);
+        assert_eq!(rendered.matches("DOKCFG").count(), 2);
+        assert!(output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn validate_does_not_echo_an_unsupported_version_scalar() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("invalid.yaml");
+        let canary = "777777";
+        fs::write(
+            &target,
+            format!("version: {canary}\nproject:\n  name: platform\n"),
+        )
+        .expect("fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "validate",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect_err("unsupported version is rejected");
+
+        assert!(!error.to_string().contains(canary));
+        assert!(!format!("{error:?}").contains(canary));
+        assert!(output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn validate_reports_a_missing_file_without_writing_success_output() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("missing.yaml");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "validate",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect_err("missing input is rejected");
+
+        assert!(error.to_string().contains("failed to read"));
+        assert!(output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn validate_rejects_an_oversized_file() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("oversized.yaml");
+        fs::write(&target, vec![b'#'; dokploy_config::MAX_CONFIG_BYTES + 1])
+            .expect("fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "validate",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        let error = execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect_err("oversized input is rejected");
+
+        assert!(error.to_string().contains("input limit"));
+        assert!(output.is_empty());
     }
 
     #[tokio::test]

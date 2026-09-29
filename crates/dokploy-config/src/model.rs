@@ -456,6 +456,70 @@ pub enum ValidationIssue {
     MoveRemovalConflict,
 }
 
+impl ValidationIssue {
+    /// Returns the stable public code for this semantic validation issue.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::InvalidResourceName { .. } => "DOKCFG001",
+            Self::DuplicateResourceAddress { .. } => "DOKCFG002",
+            Self::DuplicateDependency => "DOKCFG003",
+            Self::SelfDependency => "DOKCFG004",
+            Self::MissingDependency => "DOKCFG005",
+            Self::MissingReference => "DOKCFG006",
+            Self::CrossEnvironmentReference => "DOKCFG007",
+            Self::UnsupportedReferenceProperty => "DOKCFG008",
+            Self::InvalidEnvironmentVariable => "DOKCFG009",
+            Self::InvalidSecretEnvironment => "DOKCFG010",
+            Self::UnsafeSecretFile => "DOKCFG011",
+            Self::DuplicateIgnoredChange => "DOKCFG012",
+            Self::InvalidIgnoredChange => "DOKCFG013",
+            Self::DuplicateMoveSource => "DOKCFG014",
+            Self::DuplicateMoveTarget => "DOKCFG015",
+            Self::InvalidMove => "DOKCFG016",
+            Self::MoveSourceConfigured => "DOKCFG017",
+            Self::MoveTargetMissing => "DOKCFG018",
+            Self::DuplicateRemoval => "DOKCFG019",
+            Self::RemovedResourceConfigured => "DOKCFG020",
+            Self::MoveRemovalConflict => "DOKCFG021",
+        }
+    }
+
+    /// Returns a concise description that never contains source values.
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::InvalidResourceName { .. } => "resource name is invalid",
+            Self::DuplicateResourceAddress { .. } => "resource address is duplicated",
+            Self::DuplicateDependency => "dependency is duplicated",
+            Self::SelfDependency => "resource depends on itself",
+            Self::MissingDependency => "dependency does not exist",
+            Self::MissingReference => "referenced resource does not exist",
+            Self::CrossEnvironmentReference => "reference crosses environment boundaries",
+            Self::UnsupportedReferenceProperty => "referenced output is unsupported",
+            Self::InvalidEnvironmentVariable => "environment variable name is invalid",
+            Self::InvalidSecretEnvironment => "secret environment variable name is invalid",
+            Self::UnsafeSecretFile => "secret file path is unsafe",
+            Self::DuplicateIgnoredChange => "ignored lifecycle path is duplicated",
+            Self::InvalidIgnoredChange => "ignored lifecycle path is unsupported",
+            Self::DuplicateMoveSource => "move source is duplicated",
+            Self::DuplicateMoveTarget => "move target is duplicated",
+            Self::InvalidMove => "move declaration is invalid",
+            Self::MoveSourceConfigured => "move source is still configured",
+            Self::MoveTargetMissing => "move target is not configured",
+            Self::DuplicateRemoval => "removal is duplicated",
+            Self::RemovedResourceConfigured => "removed resource is still configured",
+            Self::MoveRemovalConflict => "move and removal declarations conflict",
+        }
+    }
+}
+
+impl fmt::Display for ValidationIssue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.code(), self.message())
+    }
+}
+
 /// A one-indexed, redaction-safe location in `dokploy.yaml`.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SourceLocation {
@@ -505,7 +569,7 @@ impl ValidationDiagnostic {
 }
 
 /// Configuration parsing or validation failed without retaining source text.
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum ConfigError {
     #[error("dokploy.yaml exceeds the {limit_bytes}-byte input limit")]
     InputTooLarge { limit_bytes: usize },
@@ -513,13 +577,41 @@ pub enum ConfigError {
     Parse { line: u64, column: u64 },
     #[error("dokploy.yaml is not valid")]
     ParseWithoutLocation,
-    #[error("dokploy.yaml version {found} is unsupported; expected version 1")]
+    #[error("dokploy.yaml version is unsupported; expected version 1")]
     UnsupportedVersion { found: u32 },
     #[error("dokploy.yaml failed semantic validation")]
     Invalid {
         issues: Vec<ValidationIssue>,
         diagnostics: Vec<ValidationDiagnostic>,
     },
+}
+
+impl fmt::Debug for ConfigError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InputTooLarge { limit_bytes } => formatter
+                .debug_struct("InputTooLarge")
+                .field("limit_bytes", limit_bytes)
+                .finish(),
+            Self::Parse { line, column } => formatter
+                .debug_struct("Parse")
+                .field("line", line)
+                .field("column", column)
+                .finish(),
+            Self::ParseWithoutLocation => formatter.write_str("ParseWithoutLocation"),
+            Self::UnsupportedVersion { .. } => {
+                formatter.write_str("UnsupportedVersion { found: [REDACTED] }")
+            }
+            Self::Invalid {
+                issues,
+                diagnostics,
+            } => formatter
+                .debug_struct("Invalid")
+                .field("issues", issues)
+                .field("diagnostics", diagnostics)
+                .finish(),
+        }
+    }
 }
 
 impl ConfigError {

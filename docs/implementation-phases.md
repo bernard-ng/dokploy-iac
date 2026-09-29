@@ -41,13 +41,15 @@ durable state semantics.
 - Bind journaled actions to their exact state transitions and refuse new
   mutations while recovery evidence is unresolved.
 
-## Phase 4: configuration
+## Phase 4: configuration — complete
 
-- Complete: add the versioned `dokploy.yaml` model, ownership-aware fields,
+- Add the versioned `dokploy.yaml` model, ownership-aware fields,
   typed references, descriptor-only secrets, dependencies, lifecycle rules,
   moves, removals, schema generation, containment, and semantic validation.
-- Next: expose `dokploy init`, `dokploy schema`, and `dokploy validate` without
-  requiring a connection context or contacting Dokploy.
+- Expose offline `dokploy init`, `dokploy schema`, and `dokploy validate`
+  commands without requiring a connection context or contacting Dokploy.
+- Create configuration files without overwriting existing paths and load only
+  bounded regular files.
 
 ## Phase 5: planner
 

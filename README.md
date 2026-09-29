@@ -35,11 +35,12 @@ instance binding, lineage and serial revisions, fail-fast writer locking,
 strict loading, atomic primary/backup checkpoints, durable operation journals,
 and fail-closed recovery detection.
 
-Phase 4 is in progress. Its configuration core now provides a versioned,
+Phase 4 is complete. The configuration subsystem provides a versioned,
 strictly bounded `dokploy.yaml` language with ownership-aware fields, typed
 references, deferred secret descriptors, parent relationships, lifecycle
 rules, moves, removals, JSON Schema, and redaction-safe semantic validation.
-The `init`, `schema`, and `validate` CLI commands are the next checkpoint.
+The offline `init`, `schema`, and `validate` commands do not require a Dokploy
+context, credentials, or network access.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

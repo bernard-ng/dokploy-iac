@@ -512,6 +512,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "directories",
+ "dokploy-config",
  "dokploy-sdk",
  "keyring",
  "miette",
@@ -531,10 +532,12 @@ name = "dokploy-config"
 version = "0.1.0"
 dependencies = [
  "dokploy-state",
+ "rustix",
  "schemars 1.2.2",
  "serde",
  "serde-saphyr",
  "serde_json",
+ "tempfile",
  "thiserror",
 ]
 

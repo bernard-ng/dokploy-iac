@@ -15,8 +15,6 @@ use crate::{
     SourceConfig,
 };
 
-const MAX_CONFIG_BYTES: usize = 1024 * 1024;
-
 type ResourceTables<'a> = (
     &'a mut BTreeMap<ResourceAddress, ResourceConfig>,
     &'a mut BTreeMap<ResourceAddress, ResourceAddress>,
@@ -142,9 +140,9 @@ struct RawDomain {
 impl DokployConfig {
     /// Parses untrusted YAML with strict syntax, resource budgets, and semantic validation.
     pub fn parse(source: &str) -> Result<Self, ConfigError> {
-        if source.len() > MAX_CONFIG_BYTES {
+        if source.len() > crate::MAX_CONFIG_BYTES {
             return Err(ConfigError::InputTooLarge {
-                limit_bytes: MAX_CONFIG_BYTES,
+                limit_bytes: crate::MAX_CONFIG_BYTES,
             });
         }
 
@@ -155,7 +153,7 @@ impl DokployConfig {
             reject_unsupported_tags: true,
             emit_comments: false,
             budget: serde_saphyr::budget! {
-                max_reader_input_bytes: Some(MAX_CONFIG_BYTES),
+                max_reader_input_bytes: Some(crate::MAX_CONFIG_BYTES),
                 max_events: 50_000,
                 max_aliases: 0,
                 max_anchors: 0,

@@ -14,11 +14,13 @@
 //! for safe diagnostics and do not affect normalized configuration equality.
 
 mod field;
+mod file;
 mod model;
 mod parser;
 mod types;
 
 pub use field::Field;
+pub use file::{ConfigFileError, DEFAULT_CONFIG_FILE, MAX_CONFIG_BYTES, initialize, load};
 pub use model::{
     ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, PostgresConfig,
     ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,

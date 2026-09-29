@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 use crate::imperative_generated::ImperativeCommand;
@@ -18,8 +20,47 @@ pub struct Cli {
     pub command: Command,
 }
 
+impl Cli {
+    #[must_use]
+    pub const fn is_offline(&self) -> bool {
+        matches!(
+            self.command,
+            Command::Init { .. } | Command::Schema | Command::Validate { .. }
+        )
+    }
+}
+
 #[derive(Subcommand)]
 pub enum Command {
+    /// Create a starter declarative configuration.
+    Init {
+        /// Configuration file to create.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+
+        /// Create the canonical empty configuration without prompting.
+        #[arg(long)]
+        empty: bool,
+    },
+
+    /// Print the declarative configuration JSON Schema.
+    Schema,
+
+    /// Parse and validate a declarative configuration offline.
+    Validate {
+        /// Configuration file to validate.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+    },
+
     /// Inspect or select local connection contexts.
     Context {
         #[command(subcommand)]
@@ -51,6 +92,8 @@ pub enum ContextCommand {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use clap::Parser;
 
     use super::{Cli, Command, ContextCommand};
@@ -65,6 +108,53 @@ mod tests {
             Command::Context {
                 command: ContextCommand::Use { ref name }
             } if name == "production"
+        ));
+    }
+
+    #[test]
+    fn init_uses_the_default_configuration_path() {
+        let cli =
+            Cli::try_parse_from(["dokploy", "init", "--empty"]).expect("command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Init { file, empty: true }
+                if file.as_path() == Path::new("dokploy.yaml")
+        ));
+    }
+
+    #[test]
+    fn plain_init_is_not_explicitly_empty() {
+        let cli = Cli::try_parse_from(["dokploy", "init"]).expect("command line is valid");
+
+        assert!(matches!(cli.command, Command::Init { empty: false, .. }));
+    }
+
+    #[test]
+    fn parses_schema_as_an_offline_top_level_command() {
+        let cli = Cli::try_parse_from(["dokploy", "schema"]).expect("command line is valid");
+
+        assert!(matches!(cli.command, Command::Schema));
+    }
+
+    #[test]
+    fn validate_accepts_a_configuration_path_override() {
+        let cli = Cli::try_parse_from(["dokploy", "validate", "--file", "custom.yaml"])
+            .expect("command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Validate { file } if file.as_path() == Path::new("custom.yaml")
+        ));
+    }
+
+    #[test]
+    fn validate_uses_the_default_configuration_path() {
+        let cli = Cli::try_parse_from(["dokploy", "validate"]).expect("command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Validate { file } if file.as_path() == Path::new("dokploy.yaml")
         ));
     }
 
