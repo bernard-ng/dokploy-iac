@@ -28,9 +28,13 @@ project, application, and Postgres reads, bounded GET retries, explicit
 outcome-unknown errors for interrupted mutations, and recursive secret
 redaction for CLI responses. Fixture tests and live tests run against the
 pinned local Dokploy `v0.30.6` environment. Phase 3 adds the durable state
-engine. Its typed state model, instance binding, fail-fast writer lock, strict
-loading, and atomic primary/backup checkpoints are implemented; operation
-journaling and recovery detection are next.
+engine.
+
+Phase 3 is complete. The state subsystem now includes typed resource identity,
+instance binding, lineage and serial revisions, fail-fast writer locking,
+strict loading, atomic primary/backup checkpoints, durable operation journals,
+and fail-closed recovery detection. Phase 4 adds the versioned configuration
+language and semantic validation.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

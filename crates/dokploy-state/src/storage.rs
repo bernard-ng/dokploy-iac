@@ -11,9 +11,12 @@ use fs4::{FileExt, TryLockError};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
-use crate::{InstanceIdentity, StateFile, StateRevision};
+use crate::journal::{RecoveryScanError, scan_recovery};
+use crate::{InstanceIdentity, RecoveryStatus, StateFile, StateRevision};
 
 const DEFAULT_MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
+const DEFAULT_MAX_JOURNAL_BYTES: u64 = 16 * 1024 * 1024;
+const DEFAULT_MAX_JOURNAL_RECORDS: usize = 10_000;
 const STATE_DIRECTORY: &str = ".dokploy";
 const STATE_FILE: &str = "state.json";
 const BACKUP_FILE: &str = "state.backup.json";
@@ -61,6 +64,8 @@ pub struct StateStore {
     state_directory: PathBuf,
     instance: InstanceIdentity,
     max_state_bytes: u64,
+    max_journal_bytes: u64,
+    max_journal_records: usize,
 }
 
 impl StateStore {
@@ -89,6 +94,8 @@ impl StateStore {
             workspace,
             instance,
             max_state_bytes,
+            max_journal_bytes: DEFAULT_MAX_JOURNAL_BYTES,
+            max_journal_records: DEFAULT_MAX_JOURNAL_RECORDS,
         };
         store.verified_state_directory()?;
 
@@ -118,11 +125,20 @@ impl StateStore {
             .map_err(|source| StateStoreError::io("harden state lock", source))?;
 
         match FileExt::try_lock(&lock) {
-            Ok(()) => Ok(WriteSession {
-                store: self,
-                lock,
-                state_directory,
-            }),
+            Ok(()) => {
+                let session = WriteSession {
+                    store: self,
+                    lock,
+                    state_directory,
+                    journal_pending: false,
+                };
+                match scan_recovery(self).map_err(StateStoreError::from_recovery_scan)? {
+                    RecoveryStatus::Clean => Ok(session),
+                    RecoveryStatus::RecoveryRequired(summary) => {
+                        Err(StateStoreError::RecoveryRequired { summary })
+                    }
+                }
+            }
             Err(TryLockError::WouldBlock) => Err(StateStoreError::LockContended),
             Err(TryLockError::Error(source)) => {
                 Err(StateStoreError::io("acquire state lock", source))
@@ -162,6 +178,19 @@ impl StateStore {
 
     fn state_path(&self) -> PathBuf {
         self.state_directory.join(STATE_FILE)
+    }
+
+    pub(crate) fn state_directory_path(&self) -> &Path {
+        &self.state_directory
+    }
+
+    pub(crate) fn journal_limits(&self) -> (u64, usize) {
+        (self.max_journal_bytes, self.max_journal_records)
+    }
+
+    pub(crate) fn current_state_for_journal(&self) -> Result<Option<StateFile>, StateStoreError> {
+        self.load_current()
+            .map(|loaded| loaded.map(|item| item.state))
     }
 
     fn ensure_state_directory(&self) -> Result<DirectoryIdentity, StateStoreError> {
@@ -263,6 +292,7 @@ pub struct WriteSession<'store> {
     store: &'store StateStore,
     lock: File,
     state_directory: DirectoryIdentity,
+    journal_pending: bool,
 }
 
 impl WriteSession<'_> {
@@ -272,13 +302,28 @@ impl WriteSession<'_> {
         expected: ExpectedState,
         proposed: &StateFile,
     ) -> Result<(), StateStoreError> {
-        let state_directory = self
-            .store
-            .verified_state_directory()?
-            .ok_or(StateStoreError::UnsafeStateDirectory)?;
-        if state_directory != self.state_directory {
-            return Err(StateStoreError::UnsafeStateDirectory);
+        if self.journal_pending {
+            return Err(StateStoreError::JournalOperationPending);
         }
+
+        self.checkpoint_internal(expected, proposed)
+    }
+
+    pub(crate) fn checkpoint_from_journal(
+        &mut self,
+        expected: ExpectedState,
+        proposed: &StateFile,
+    ) -> Result<(), StateStoreError> {
+        debug_assert!(self.journal_pending);
+        self.checkpoint_internal(expected, proposed)
+    }
+
+    fn checkpoint_internal(
+        &mut self,
+        expected: ExpectedState,
+        proposed: &StateFile,
+    ) -> Result<(), StateStoreError> {
+        self.revalidate_state_directory()?;
         self.store.verify_existing_artifacts()?;
 
         let current = self.store.load_current()?;
@@ -323,6 +368,66 @@ impl WriteSession<'_> {
         write_atomically(&self.store.state_path(), &bytes).map_err(|error| {
             map_atomic_write_error(error, PersistenceTarget::Primary, proposed.revision())
         })
+    }
+
+    pub(crate) fn current_state(&self) -> Result<StateFile, StateStoreError> {
+        self.store
+            .current_state_for_journal()?
+            .ok_or(StateStoreError::StateMissing)
+    }
+
+    pub(crate) fn state_directory(&self) -> &Path {
+        &self.state_directory.path
+    }
+
+    pub(crate) fn journal_limits(&self) -> (u64, usize) {
+        self.store.journal_limits()
+    }
+
+    pub(crate) fn reserve_journal(&mut self) -> Result<(), StateStoreError> {
+        if self.journal_pending {
+            return Err(StateStoreError::JournalOperationPending);
+        }
+        self.journal_pending = true;
+
+        Ok(())
+    }
+
+    pub(crate) fn revalidate_state_directory(&self) -> Result<(), StateStoreError> {
+        let state_directory = self
+            .store
+            .verified_state_directory()?
+            .ok_or(StateStoreError::UnsafeStateDirectory)?;
+        if state_directory != self.state_directory {
+            return Err(StateStoreError::UnsafeStateDirectory);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn complete_journal(&mut self) {
+        debug_assert!(self.journal_pending);
+        self.journal_pending = false;
+    }
+
+    pub(crate) fn assert_current_revision(
+        &self,
+        expected: StateRevision,
+    ) -> Result<(), StateStoreError> {
+        self.revalidate_state_directory()?;
+        self.store.verify_existing_artifacts()?;
+        let current = self
+            .store
+            .load_current()?
+            .ok_or(StateStoreError::StateMissing)?;
+        if current.state.revision() != expected {
+            return Err(StateStoreError::StaleState {
+                expected,
+                actual: current.state.revision(),
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -488,7 +593,7 @@ fn write_atomically_with_sync(
 }
 
 #[cfg(unix)]
-fn sync_directory(path: &Path) -> io::Result<()> {
+pub(crate) fn sync_directory(path: &Path) -> io::Result<()> {
     match File::open(path)?.sync_all() {
         Ok(()) => Ok(()),
         Err(source)
@@ -504,27 +609,27 @@ fn sync_directory(path: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn sync_directory(_path: &Path) -> io::Result<()> {
+pub(crate) fn sync_directory(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
 #[cfg(unix)]
-fn harden_directory_permissions(path: &Path) -> io::Result<()> {
+pub(crate) fn harden_directory_permissions(path: &Path) -> io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
 }
 
 #[cfg(not(unix))]
-fn harden_directory_permissions(_path: &Path) -> io::Result<()> {
+pub(crate) fn harden_directory_permissions(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
 #[cfg(unix)]
-fn harden_path_permissions(path: &Path) -> io::Result<()> {
+pub(crate) fn harden_path_permissions(path: &Path) -> io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))
 }
 
 #[cfg(not(unix))]
-fn harden_path_permissions(_path: &Path) -> io::Result<()> {
+pub(crate) fn harden_path_permissions(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -584,6 +689,14 @@ pub enum DurabilityStage {
 pub enum StateStoreError {
     #[error("another process holds the state write lock")]
     LockContended,
+    #[error("state mutation requires recovery for operation {summary:?}")]
+    RecoveryRequired { summary: crate::RecoverySummary },
+    #[error("operation journal is corrupt")]
+    JournalCorrupt,
+    #[error("multiple incomplete operation journals require manual recovery")]
+    RecoveryAmbiguous,
+    #[error("the write session has an active or recovery-pending operation journal")]
+    JournalOperationPending,
     #[error("state backup exists without a primary state file; recovery is required")]
     OrphanBackup,
     #[error("workspace path is not a directory")]
@@ -644,6 +757,14 @@ pub enum StateStoreError {
 impl StateStoreError {
     fn io(operation: &'static str, source: io::Error) -> Self {
         Self::Io { operation, source }
+    }
+
+    pub(crate) fn from_recovery_scan(error: RecoveryScanError) -> Self {
+        match error {
+            RecoveryScanError::Corrupt => Self::JournalCorrupt,
+            RecoveryScanError::Ambiguous => Self::RecoveryAmbiguous,
+            RecoveryScanError::Io(source) => Self::io("scan operation journals", source),
+        }
     }
 }
 

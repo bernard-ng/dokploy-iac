@@ -34,13 +34,12 @@ durable state semantics.
   unknown.
 - Verify the owned SDK and CLI redaction against local Dokploy `v0.30.6`.
 
-## Phase 3: state
+## Phase 3: state — complete
 
 - Add logical resource addresses, lineage, serials, instance binding, locking,
   atomic writes, backups, operation journals, and recovery detection.
-- Completed: typed state identities and mutations, instance-bound storage,
-  strict decoding, stale-write detection, and atomic primary/backup files.
-- Remaining: durable operation journals and recovery detection.
+- Bind journaled actions to their exact state transitions and refuse new
+  mutations while recovery evidence is unresolved.
 
 ## Phase 4: configuration
 

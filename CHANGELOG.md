@@ -28,3 +28,6 @@ All notable changes to this project will be documented in this file.
 - Add instance-bound local state persistence with fail-fast locking, strict
   decoding, stale-revision protection, owner-only artifacts, atomic writes,
   and previous-state backups.
+- Add durable JSONL operation journals with action-bound state transitions,
+  append-before-checkpoint ordering, constrained failure codes, strict recovery
+  scanning, and mutation refusal while recovery evidence is unresolved.
