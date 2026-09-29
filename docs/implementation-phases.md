@@ -68,13 +68,15 @@ durable state semantics.
 - Compile validated configuration into pure desired state plus a redacted,
   non-serializable execution sidecar that preserves logical containment,
   and domain references without resolving remote IDs. Reject concrete
-  sensitive inputs until the planner has a convergent intent fingerprint.
+  sensitive inputs until composition can resolve secrets, calculate intent
+  fingerprints, and load their key safely.
 - Project fresh project topology into explicit remote observations with
   authoritative absence, physical-ID matching for managed projects, exact-name
   collision probes, and fail-closed transport and topology diagnostics.
 - Persist non-null sensitive intent only as strict, versioned HMAC-SHA-256
-  receipts in state format version 2, while projecting value-free sensitive
-  ownership into the planner and keeping receipt comparison disabled.
+  receipts in state format version 2. Compare those receipts opaquely in the
+  pure planner, treating write-only remote observations as conclusive for
+  presence but never as comparable secret values.
 - Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.

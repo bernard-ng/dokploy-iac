@@ -21,7 +21,7 @@ three typed, in-memory snapshots. Stable path names match configuration paths,
 including `source.repository`, `source.branch`, and independently validated
 `environment.NAME` entries. Desired and stored snapshots represent ownership
 by path presence and distinguish omission, explicit null, an owned-empty
-environment, opaque non-sensitive values, and value-free sensitive intent.
+environment, opaque non-sensitive values, and opaque sensitive intent receipts.
 Collection roots are reserved for source clears and environment clear or empty
 intent; a root cannot coexist with one of its child paths.
 An owned source is either the root clear or a non-null repository with an
@@ -36,15 +36,18 @@ unknown reason. Desired, stored, and remote constructors validate paths against
 the resource kind. Desired construction also rejects self-dependencies and
 dependencies absent from the desired snapshot.
 
-Planning is a pure three-way comparison. Missing or unknown observations for
-desired properties make the plan incomplete. Property values and remote IDs
+Planning is a pure three-way comparison. Missing observations and unknown
+non-sensitive observations for desired properties make the plan incomplete.
+The sensitive unknown reason is a valid write-only observation: durable and
+desired fingerprints determine configuration change without claiming remote
+value equality. Property values, fingerprints, key identifiers, and remote IDs
 remain opaque and never enter plan JSON, debug output, drift metadata, or
 diagnostics. Omitting a previously owned property creates a state-only
 checkpoint and neither mutates nor reports drift for that property.
 
 Every planned change carries an immutable checkpoint target computed during
 planning. A present target contains effective protection, canonical
-dependencies, exact non-sensitive owned properties, and only value-free intent
+dependencies, exact non-sensitive owned properties, and opaque receipt identity
 for sensitive properties. Delete and forget changes target absence. Targets
 are available through a sensitivity-aware accessor but are excluded from plan
 JSON and redacted from debug output; a future executor must not reconstruct
@@ -119,18 +122,16 @@ The desired domain application property deliberately contains the canonical
 logical address, never a Dokploy remote ID. Remote ID resolution remains an
 adapter responsibility after discovery.
 
-Sensitive desired properties remain value-free. A change from one secret
-descriptor to another therefore does not yet produce a plannable rotation:
-safe rotation requires a non-secret intent fingerprint or equivalent durable
-comparison contract plus executor semantics. Until that contract exists, the
-compiler rejects every concrete application environment value and every set
+The planner accepts sensitive desired properties only through opaque intent
+fingerprints. The configuration compiler cannot calculate those fingerprints
+yet, so it rejects every concrete application environment value and every set
 Postgres or Redis password with `DOKCMP004`. Explicit clear and unmanaged
 sensitive fields remain supported. Sensitive descriptors and literal bytes do
 not enter the compiled sidecar or planner snapshot.
 
-Durable state format version 2 adds the first half of that convergence
-contract without changing planner comparison semantics. A non-null sensitive
-input is stored only as a version-one HMAC-SHA-256 receipt containing a
+Durable state format version 2 completes the persisted part of that convergence
+contract. A non-null sensitive input is stored only as a version-one
+HMAC-SHA-256 receipt containing a
 canonical, non-nil UUID key identifier and a 32-byte MAC encoded as exactly 64
 lowercase hexadecimal characters. The receipt serializes as `version`,
 `keyId`, and `mac`, with `version` fixed to `hmac-sha256-v1`. Its Rust interface
@@ -143,9 +144,10 @@ Sensitive receipts use a closed property vocabulary: `password` and uppercase
 paths only as explicit null clears. The application `environment` root may be
 null, empty, or contain canonical entries whose values are all null. Resource
 construction and decoding reject overlap between a clear and a receipt. Core
-state projection discards receipt bytes and exposes only
-`OwnedValue::Sensitive`; it still rejects a sensitive path on the wrong
-resource kind.
+state projection wraps each receipt in an opaque `SensitiveIntent` and exposes
+it only as `OwnedValue::Sensitive`; it still rejects a sensitive path on the
+wrong resource kind. The wrapper supports equality without exposing a MAC or
+key identifier.
 
 State format version 2 is a deliberate pre-release incompatibility. Version 1
 state is rejected rather than migrated or interpreted without sensitive-input
@@ -187,8 +189,11 @@ misleading partial execution sequence.
 - Replacement behavior remains a later Phase 5 checkpoint.
 - Configuration compilation never reads secret bytes or resolves logical
   references to physical IDs.
-- Sensitive fingerprints are durable but are not yet compared by the
-  value-free planner model, so concrete sensitive inputs still fail closed
-  during configuration compilation.
+- Sensitive fingerprints are compared only as opaque intent receipts. Matching
+  desired and stored receipts converge when the remote value is write-only;
+  changed receipts plan a write, known remote absence plans restoration,
+  explicit null remains a distinct clear, and omission relinquishes ownership
+  without a remote write. Concrete sensitive configuration inputs still fail
+  closed until composition can compute receipts safely.
 - State format version 1 cannot be opened by this pre-release implementation;
   callers must intentionally recreate state in version 2.

@@ -65,3 +65,7 @@ All notable changes to this project will be documented in this file.
   paths, raw-value rejection, disjoint clear ownership, and value-free planner
   projection in state format version 2. This is a deliberate pre-release
   incompatibility with version 1 state.
+- Add opaque sensitive-intent comparison to the pure planner so matching
+  durable receipts converge across write-only remote observations, while new,
+  changed, absent, cleared, and relinquished intents remain distinct and plan
+  without exposing receipt material.

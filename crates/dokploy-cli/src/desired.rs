@@ -107,7 +107,8 @@ impl CompileDesiredError {
 /// Compiles a validated configuration without performing I/O or resolving values.
 ///
 /// Concrete environment values and set database passwords fail closed until
-/// the planner can compare a durable, non-secret intent fingerprint.
+/// composition can resolve secrets and calculate a durable keyed intent
+/// fingerprint.
 pub fn compile_desired(
     config: &DokployConfig,
     digest: ConfigDigest,

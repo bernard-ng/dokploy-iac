@@ -5,8 +5,8 @@ use dokploy_core::{
     DesiredState, DesiredStateError, MetadataChangeKind, MoveAction, MoveDirective, OwnedValue,
     Plan, PlanDiagnosticCode, PropertyObservation, PropertyPath, PropertyUnknownReason,
     ProtectionIntent, RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState,
-    RemoteStateError, RemovalDirective, StoredState, StoredStateError, UnsupportedDirectiveKind,
-    ValueState, plan,
+    RemoteStateError, RemovalDirective, SensitiveIntent, StoredState, StoredStateError,
+    UnsupportedDirectiveKind, ValueState, plan,
 };
 use dokploy_state::{
     FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -15,6 +15,86 @@ use dokploy_state::{
 use semver::Version;
 use serde_json::json;
 use uuid::Uuid;
+
+#[test]
+fn matching_sensitive_intent_is_stable_when_remote_value_is_write_only() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({}),
+        ["password"],
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Password,
+            sensitive_intent(0xa5),
+        )])),
+    );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Password,
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        )]),
+    );
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert!(plan.drift().is_empty());
+    assert!(plan.diagnostics().is_empty());
+}
+
+#[test]
+fn sensitive_intent_key_rotation_is_a_configuration_change() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({}),
+        ["password"],
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Password,
+            sensitive_intent_with_key("0199a0c8-2351-7c31-8899-2c8f81983ea6", 0xa5),
+        )])),
+    );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Password,
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        )]),
+    );
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(plan.changes()[0].kind(), ChangeKind::Update);
+    assert_eq!(plan.changes()[0].origin(), ChangeOrigin::Config);
+    assert!(
+        !String::from_utf8(plan.to_json_bytes())
+            .expect("plan JSON must be UTF-8")
+            .contains("0199a0c8-2351-7c31-8899-2c8f81983ea6")
+    );
+}
 
 #[test]
 fn omitted_property_relinquishes_ownership_without_remote_update_or_drift() {
@@ -228,7 +308,7 @@ fn collection_root_intents_are_explicit_and_cannot_conflict_with_children() {
             address,
             DesiredResource::new(BTreeMap::from([
                 (PropertyPath::Environment, OwnedValue::EmptyCollection),
-                (variable, OwnedValue::Sensitive),
+                (variable, sensitive_intent(0xa5)),
             ])),
         )]),
     )
@@ -260,7 +340,7 @@ fn desired_source_branch_requires_a_non_null_repository() {
     for repository in [
         OwnedValue::Null,
         OwnedValue::EmptyCollection,
-        OwnedValue::Sensitive,
+        sensitive_intent(0xa5),
     ] {
         let error = DesiredState::try_new(
             digest(),
@@ -435,7 +515,7 @@ fn sensitive_values_and_remote_observations_are_enforced_at_snapshot_seams() {
         (
             postgres.clone(),
             PropertyPath::Database,
-            OwnedValue::Sensitive,
+            sensitive_intent(0xa5),
         ),
         (
             application.clone(),
@@ -497,7 +577,7 @@ fn sensitive_values_and_remote_observations_are_enforced_at_snapshot_seams() {
 }
 
 #[test]
-fn durable_sensitive_receipts_project_as_value_free_owned_properties() {
+fn durable_sensitive_receipts_project_as_opaque_owned_properties() {
     let address = address("postgres.main");
     let path = PropertyPath::Password;
     let state = state_with_sensitive_resource_details(
@@ -514,7 +594,7 @@ fn durable_sensitive_receipts_project_as_value_free_owned_properties() {
 
     assert!(matches!(
         stored.property(&address, &path),
-        Some(OwnedValue::Sensitive)
+        Some(OwnedValue::Sensitive(_))
     ));
     assert!(!format!("{state:?}{stored:?}").contains("a5a5"));
 }
@@ -745,7 +825,45 @@ fn a_partial_remote_property_read_makes_the_plan_incomplete() {
 }
 
 #[test]
-fn sensitive_unknown_property_blocks_planning_without_leaking_values() {
+fn missing_sensitive_property_observation_still_fails_closed() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({}),
+        ["password"],
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Password,
+            sensitive_intent(0xa5),
+        )])),
+    );
+    let remote = remote_state(instance, &address, BTreeMap::new());
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert!(!plan.complete());
+    assert!(!plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert_eq!(
+        plan.diagnostics()[0].code(),
+        PlanDiagnosticCode::MissingPropertyObservation
+    );
+    assert_eq!(
+        plan.diagnostics()[0].property(),
+        Some(&PropertyPath::Password)
+    );
+}
+
+#[test]
+fn changed_sensitive_intent_plans_a_redacted_write_against_write_only_remote_state() {
     let address = address("application.api");
     let secret_path =
         PropertyPath::environment_variable("FEATURE_FLAG").expect("environment path must be valid");
@@ -761,7 +879,7 @@ fn sensitive_unknown_property_blocks_planning_without_leaking_values() {
         &address,
         DesiredResource::new(BTreeMap::from([(
             secret_path.clone(),
-            OwnedValue::Sensitive,
+            sensitive_intent(0xb6),
         )])),
     );
     let stored = StoredState::try_from_state(&state).expect("stored state must project");
@@ -784,15 +902,211 @@ fn sensitive_unknown_property_blocks_planning_without_leaking_values() {
     let json = String::from_utf8(plan.to_json_bytes()).expect("plan JSON must be UTF-8");
     let debug = format!("{desired:?}{stored:?}{remote:?}{plan:?}");
 
-    assert!(!plan.complete());
-    assert!(!plan.applyable());
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.diagnostics().is_empty());
+    assert!(plan.drift().is_empty());
+    assert_eq!(plan.changes()[0].kind(), ChangeKind::Update);
+    assert_eq!(plan.changes()[0].origin(), ChangeOrigin::Config);
     assert_eq!(
-        plan.diagnostics()[0].property_unknown(),
-        Some(PropertyUnknownReason::Sensitive)
+        plan.changes()[0].fields()[0].stored(),
+        ValueState::Sensitive
     );
-    let canary = "stored-secret-canary";
-    assert!(!json.contains(canary));
-    assert!(!debug.contains(canary));
+    assert_eq!(
+        plan.changes()[0].fields()[0].desired(),
+        ValueState::Sensitive
+    );
+    assert_eq!(plan.changes()[0].fields()[0].remote(), ValueState::Unknown);
+    for canary in [
+        "stored-secret-canary",
+        "b6b6b6b6",
+        "0199a0c8-2351-7c31-8899-2c8f81983ea5",
+    ] {
+        assert!(!json.contains(canary));
+        assert!(!debug.contains(canary));
+    }
+}
+
+#[test]
+fn new_sensitive_intent_updates_a_present_resource_and_is_checkpointed_opaquely() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let state = state_with_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({}),
+        false,
+        Vec::new(),
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Password,
+            sensitive_intent(0xb6),
+        )])),
+    );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Password,
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        )]),
+    );
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert!(plan.complete());
+    assert_eq!(plan.changes()[0].kind(), ChangeKind::Update);
+    assert_eq!(
+        plan.changes()[0].fields()[0].stored(),
+        ValueState::Unmanaged
+    );
+    assert_eq!(
+        plan.changes()[0].fields()[0].desired(),
+        ValueState::Sensitive
+    );
+    assert_eq!(plan.changes()[0].fields()[0].remote(), ValueState::Unknown);
+    assert!(matches!(
+        plan.changes()[0]
+            .checkpoint()
+            .present()
+            .expect("resource remains managed")
+            .property(&PropertyPath::Password),
+        Some(CheckpointValueRef::Sensitive)
+    ));
+}
+
+#[test]
+fn new_sensitive_intent_is_included_in_create_without_exposing_its_receipt() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Password,
+            sensitive_intent(0xb6),
+        )])),
+    );
+    let remote = RemoteState::try_new(instance, [(address, RemoteObservation::Missing)])
+        .expect("remote observations must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(plan.changes()[0].kind(), ChangeKind::Create);
+    assert_eq!(
+        plan.changes()[0].fields()[0].desired(),
+        ValueState::Sensitive
+    );
+    assert_eq!(plan.changes()[0].fields()[0].remote(), ValueState::Null);
+    let rendered = String::from_utf8(plan.to_json_bytes()).expect("plan JSON must be UTF-8");
+    assert!(!rendered.contains("b6b6b6b6"));
+    assert!(!rendered.contains("0199a0c8-2351-7c31-8899-2c8f81983ea5"));
+}
+
+#[test]
+fn conclusively_absent_sensitive_value_is_drift_and_must_be_restored() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({}),
+        ["password"],
+        false,
+    );
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Password,
+            sensitive_intent(0xa5),
+        )])),
+    );
+    let remote = remote_state(
+        instance,
+        &address,
+        BTreeMap::from([(PropertyPath::Password, PropertyObservation::KnownAbsent)]),
+    );
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(plan.changes()[0].kind(), ChangeKind::Update);
+    assert_eq!(plan.changes()[0].origin(), ChangeOrigin::Drift);
+    assert_eq!(plan.changes()[0].fields()[0].remote(), ValueState::Null);
+    assert_eq!(plan.drift()[0].properties(), &[PropertyPath::Password]);
+}
+
+#[test]
+fn sensitive_clear_is_distinct_but_stable_after_its_receipt_is_checkpointed() {
+    let address = address("redis.cache");
+    let instance = instance();
+    let sensitive_state = state_with_sensitive_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({}),
+        ["password"],
+        false,
+    );
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(PropertyPath::Password, OwnedValue::Null)])),
+    );
+    let remote = remote_state(
+        instance.clone(),
+        &address,
+        BTreeMap::from([(
+            PropertyPath::Password,
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        )]),
+    );
+
+    let clear_plan = plan(
+        &desired,
+        &StoredState::try_from_state(&sensitive_state).expect("state must project"),
+        &remote,
+    );
+
+    assert_eq!(clear_plan.changes()[0].kind(), ChangeKind::Update);
+    assert_eq!(
+        clear_plan.changes()[0].fields()[0].stored(),
+        ValueState::Sensitive
+    );
+    assert_eq!(
+        clear_plan.changes()[0].fields()[0].desired(),
+        ValueState::Null
+    );
+    assert_eq!(
+        clear_plan.changes()[0].fields()[0].remote(),
+        ValueState::Unknown
+    );
+
+    let cleared_state = state_with_resource_details(
+        &address,
+        &instance,
+        ResourceKind::Redis,
+        "remote-1",
+        json!({ "password": null }),
+        false,
+        Vec::new(),
+    );
+    let stable_plan = plan(
+        &desired,
+        &StoredState::try_from_state(&cleared_state).expect("state must project"),
+        &remote,
+    );
+
+    assert!(stable_plan.changes().is_empty());
+    assert!(stable_plan.drift().is_empty());
 }
 
 #[test]
@@ -2466,7 +2780,7 @@ fn desired_state_rejects_sensitive_structural_and_replacement_overlapping_ignore
             address("postgres.main"),
             DesiredResource::new(BTreeMap::from([(
                 PropertyPath::Password,
-                OwnedValue::Sensitive,
+                sensitive_intent(0xa5),
             )]))
             .with_ignored_changes(vec![PropertyPath::Password]),
             false,
@@ -3260,12 +3574,12 @@ fn canonical_json_is_deterministic_and_never_contains_property_values_or_remote_
             PropertyPath::Description,
             OwnedValue::Value(value(json!("desired-value-canary"))),
         ),
-        (secret_path.clone(), OwnedValue::Sensitive),
+        (secret_path.clone(), sensitive_intent(0xa5)),
     ]
     .into_iter()
     .collect();
     let desired_properties_b = [
-        (secret_path.clone(), OwnedValue::Sensitive),
+        (secret_path.clone(), sensitive_intent(0xa5)),
         (
             PropertyPath::Description,
             OwnedValue::Value(value(json!("desired-value-canary"))),
@@ -3459,6 +3773,18 @@ fn remote_id() -> RemoteId {
 
 fn value(value: serde_json::Value) -> ComparableValue {
     ComparableValue::try_from_json(value).expect("comparable value must be valid")
+}
+
+fn sensitive_intent(mac_byte: u8) -> OwnedValue {
+    sensitive_intent_with_key("0199a0c8-2351-7c31-8899-2c8f81983ea5", mac_byte)
+}
+
+fn sensitive_intent_with_key(key_id: &str, mac_byte: u8) -> OwnedValue {
+    let key_id = FingerprintKeyId::new(Uuid::parse_str(key_id).expect("UUID must parse"))
+        .expect("key ID must be valid");
+    OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(
+        SensitiveFingerprint::new_v1(key_id, [mac_byte; 32]),
+    ))
 }
 
 fn desired_state(address: &ResourceAddress, resource: DesiredResource) -> DesiredState {

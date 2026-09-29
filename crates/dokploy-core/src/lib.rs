@@ -18,7 +18,7 @@ pub use plan::{
 pub use planner::plan;
 pub use property::{
     ComparableValue, ComparableValueError, EnvironmentVariableName, EnvironmentVariableNameError,
-    OwnedValue, PropertyPath, PropertyPathError,
+    OwnedValue, PropertyPath, PropertyPathError, SensitiveIntent,
 };
 pub use snapshot::{
     ConfigDigest, ConfigDigestError, DesiredResource, DesiredState, DesiredStateError,

@@ -6,9 +6,9 @@ use crate::dependency::{DependencyGraphKind, DependencyOrdering};
 use crate::{
     ChangeKind, ChangeOrigin, CheckpointTarget, DesiredResource, DesiredState, DriftChange,
     DriftKind, FieldChange, MetadataChangeKind, MoveAction, OwnedValue, Plan, PlanDiagnostic,
-    PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, ProtectionIntent,
-    RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint, StoredState,
-    UnsupportedDirectiveKind, ValueState,
+    PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, PropertyUnknownReason,
+    ProtectionIntent, RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint,
+    StoredState, UnsupportedDirectiveKind, ValueState,
     plan::PLAN_FORMAT_VERSION,
     snapshot::{StoredResource, owned_source_shape_valid},
 };
@@ -714,6 +714,11 @@ fn property_diagnostic(
             issue.property = Some(key);
             Some(issue)
         }
+        Some(PropertyObservation::Unknown(PropertyUnknownReason::Sensitive))
+            if key.is_sensitive() =>
+        {
+            None
+        }
         Some(PropertyObservation::Unknown(reason)) => {
             let mut issue = diagnostic(
                 PlanDiagnosticCode::UnknownPropertyObservation,
@@ -776,16 +781,18 @@ fn compare_properties(
             continue;
         };
 
-        let remote_value = observed_value(
-            &key,
-            remote
-                .property(&key)
-                .expect("desired property observations were validated"),
-        )
-        .expect("desired property observations were validated as known");
+        let observation = remote
+            .property(&key)
+            .expect("desired property observations were validated");
         let config_changed = stored_value != Some(desired_value);
-        let remote_changed = stored_value.is_some() && remote_value.as_ref() != stored_value;
-        let convergence = remote_value.as_ref() != Some(desired_value);
+        let remote_value = observed_value(&key, observation);
+        let (remote_changed, convergence) = match remote_value.as_ref() {
+            Some(remote_value) => (
+                stored_value.is_some() && remote_value.as_ref() != stored_value,
+                remote_value.as_ref() != Some(desired_value),
+            ),
+            None => (false, config_changed),
+        };
 
         if remote_changed {
             drifted.push(key.clone());
@@ -795,7 +802,10 @@ fn compare_properties(
                 key: key.clone(),
                 stored: value_state(stored_value),
                 desired: value_state(Some(desired_value)),
-                remote: value_state(remote_value.as_ref()),
+                remote: remote_value.as_ref().map_or_else(
+                    || observation_state(Some(observation)),
+                    |value| value_state(value.as_ref()),
+                ),
                 origin: change_origin(config_changed, remote_changed),
             });
         }
@@ -962,7 +972,7 @@ fn value_state(value: Option<&OwnedValue>) -> ValueState {
         None => ValueState::Unmanaged,
         Some(OwnedValue::Null) => ValueState::Null,
         Some(OwnedValue::EmptyCollection | OwnedValue::Value(_)) => ValueState::Present,
-        Some(OwnedValue::Sensitive) => ValueState::Sensitive,
+        Some(OwnedValue::Sensitive(_)) => ValueState::Sensitive,
     }
 }
 

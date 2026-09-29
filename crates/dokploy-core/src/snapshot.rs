@@ -5,7 +5,7 @@ use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{ComparableValue, OwnedValue, PropertyPath};
+use crate::{ComparableValue, OwnedValue, PropertyPath, SensitiveIntent};
 
 /// A lowercase SHA-256 digest of the configuration used to build desired state.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -392,7 +392,7 @@ fn property_paths_overlap(left: &PropertyPath, right: &PropertyPath) -> bool {
 
 fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
     if path.is_sensitive() {
-        return matches!(value, OwnedValue::Null | OwnedValue::Sensitive);
+        return matches!(value, OwnedValue::Null | OwnedValue::Sensitive(_));
     }
     match path {
         PropertyPath::Source => matches!(value, OwnedValue::Null),
@@ -487,7 +487,17 @@ impl StoredState {
                         address: address.clone(),
                     });
                 }
-                insert_projected(address, &mut properties, path, OwnedValue::Sensitive)?;
+                let fingerprint = resource
+                    .sensitive_inputs()
+                    .fingerprint(sensitive_path)
+                    .expect("a sensitive input path always has a receipt")
+                    .clone();
+                insert_projected(
+                    address,
+                    &mut properties,
+                    path,
+                    OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(fingerprint)),
+                )?;
             }
             validate_root_child_combinations(address, &properties).map_err(|()| {
                 StoredStateError::ConflictingPropertyPaths {
@@ -721,7 +731,7 @@ fn project_owned_value(path: &PropertyPath, value: &serde_json::Value) -> OwnedV
     if value.is_null() {
         OwnedValue::Null
     } else if path.is_sensitive() {
-        OwnedValue::Sensitive
+        unreachable!("ManagedInputs rejects non-null sensitive values")
     } else {
         OwnedValue::Value(
             ComparableValue::try_from_json(value.clone())

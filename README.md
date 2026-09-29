@@ -44,7 +44,7 @@ context, credentials, or network access.
 
 Phase 5 is underway. Its first checkpoint adds a pure planner seam over
 explicit desired, stored, and remote property snapshots, with ownership-aware
-path-level three-way diffs, value-free sensitive intent, fail-closed partial
+path-level three-way diffs, opaque sensitive intent, fail-closed partial
 observations, protection checks, immutable state-checkpoint targets, and
 deterministic redaction-safe JSON output. Dependency graphs now reject cycles
 and deterministically order desired actions dependency-first before removals
@@ -62,8 +62,10 @@ The durable sensitive-state foundation now stores non-null password and
 application environment intent only as opaque, versioned HMAC-SHA-256
 receipts. State format version 2 rejects raw sensitive values, ambiguous
 clear-and-receipt ownership, noncanonical receipts, and version 1 state. The
-planner currently receives only value-free sensitive ownership; key storage,
-receipt computation, and fingerprint comparison remain later Phase 5 work.
+planner compares those receipts without exposing their MACs or key identifiers
+and treats write-only remote observations without inventing drift. Key storage,
+receipt computation, and secret resolution remain later Phase 5 work, so the
+configuration compiler still rejects concrete sensitive inputs.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use dokploy_state::ResourceKind;
+use dokploy_state::{ResourceKind, SensitiveFingerprint};
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
@@ -225,6 +225,41 @@ impl fmt::Debug for ComparableValue {
 #[error("comparable values cannot be null; use explicit property null ownership")]
 pub struct ComparableValueError;
 
+/// An opaque, comparable receipt for one sensitive desired input.
+///
+/// The receipt can be compared inside the planner, but its key identifier and
+/// MAC are never exposed through this interface, debug output, or plan data.
+#[derive(Clone)]
+pub struct SensitiveIntent(SensitiveFingerprint);
+
+impl SensitiveIntent {
+    /// Wraps a durable fingerprint for pure intent comparison.
+    #[must_use]
+    pub const fn from_fingerprint(fingerprint: SensitiveFingerprint) -> Self {
+        Self(fingerprint)
+    }
+
+    /// Compares two receipts without exposing their representation.
+    #[must_use]
+    pub fn matches(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl PartialEq for SensitiveIntent {
+    fn eq(&self, other: &Self) -> bool {
+        self.matches(other)
+    }
+}
+
+impl Eq for SensitiveIntent {}
+
+impl fmt::Debug for SensitiveIntent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SensitiveIntent([REDACTED])")
+    }
+}
+
 /// A property value owned by desired or durable stored state.
 #[derive(Clone, Eq, PartialEq)]
 pub enum OwnedValue {
@@ -234,8 +269,8 @@ pub enum OwnedValue {
     EmptyCollection,
     /// The property is owned with an opaque comparable value.
     Value(ComparableValue),
-    /// A sensitive value is owned, but its bytes never enter planner snapshots.
-    Sensitive,
+    /// A sensitive value is owned through an opaque intent receipt.
+    Sensitive(SensitiveIntent),
 }
 
 impl fmt::Debug for OwnedValue {
@@ -244,7 +279,7 @@ impl fmt::Debug for OwnedValue {
             Self::Null => formatter.write_str("Null"),
             Self::EmptyCollection => formatter.write_str("EmptyCollection"),
             Self::Value(_) => formatter.write_str("Value([REDACTED])"),
-            Self::Sensitive => formatter.write_str("Sensitive([REDACTED])"),
+            Self::Sensitive(_) => formatter.write_str("Sensitive([REDACTED])"),
         }
     }
 }

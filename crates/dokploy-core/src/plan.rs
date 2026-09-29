@@ -370,7 +370,7 @@ impl ResourceCheckpoint {
             OwnedValue::Null => CheckpointValueRef::Null,
             OwnedValue::EmptyCollection => CheckpointValueRef::EmptyCollection,
             OwnedValue::Value(value) => CheckpointValueRef::NonSensitive(value.as_json()),
-            OwnedValue::Sensitive => CheckpointValueRef::Sensitive,
+            OwnedValue::Sensitive(_) => CheckpointValueRef::Sensitive,
         })
     }
 }
