@@ -77,6 +77,9 @@ durable state semantics.
   receipts in state format version 2. Compare those receipts opaquely in the
   pure planner, treating write-only remote observations as conclusive for
   presence but never as comparable secret values.
+- Store one random fingerprint key per normalized Dokploy instance in the OS
+  credential store and calculate domain-separated, path-bound HMAC-SHA-256
+  receipts without exposing key or MAC bytes through the CLI module seam.
 - Project fresh environment state into the same snapshot as projects, using
   managed physical IDs, parent-scoped name probes, separate collection
   authority, containment validation, and secret-safe description reads.

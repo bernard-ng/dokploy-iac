@@ -136,7 +136,8 @@ canonical, non-nil UUID key identifier and a 32-byte MAC encoded as exactly 64
 lowercase hexadecimal characters. The receipt serializes as `version`,
 `keyId`, and `mac`, with `version` fixed to `hmac-sha256-v1`. Its Rust interface
 does not expose the MAC or implement display, and debug output is fully
-redacted. Key generation, key storage, HMAC computation, and secret resolution
+redacted. The CLI now owns per-instance key generation, OS credential storage,
+and HMAC computation. Bounded secret resolution and compiler integration
 remain later checkpoints.
 
 Sensitive receipts use a closed property vocabulary: `password` and uppercase

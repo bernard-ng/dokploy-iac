@@ -9,6 +9,9 @@ mod imperative;
 mod imperative_generated;
 mod redaction;
 pub mod remote;
+// This foundation becomes reachable when the desired compiler accepts sensitive inputs.
+#[allow(dead_code)]
+mod sensitive;
 pub mod settings;
 pub mod telemetry;
 

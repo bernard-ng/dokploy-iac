@@ -69,6 +69,9 @@ All notable changes to this project will be documented in this file.
   durable receipts converge across write-only remote observations, while new,
   changed, absent, cleared, and relinquished intents remain distinct and plan
   without exposing receipt material.
+- Add per-instance sensitive-fingerprint keys in the OS credential store with
+  strict versioned envelopes, fail-closed initialization, immediate readback,
+  zeroized key buffers, and domain-separated HMAC-SHA-256 receipt calculation.
 - Add combined project and environment remote discovery with separate
   authority assertions, parent-scoped exact-name probes, managed-ID and
   containment validation, presence-aware descriptions, move and removal
