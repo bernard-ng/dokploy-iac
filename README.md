@@ -71,11 +71,16 @@ receipts. State format version 2 rejects raw sensitive values, ambiguous
 clear-and-receipt ownership, noncanonical receipts, and version 1 state. The
 planner compares those receipts without exposing their MACs or key identifiers
 and treats write-only remote observations without inventing drift. A private
-CLI module now keeps one random fingerprint key per normalized Dokploy
-instance in the OS credential store and calculates domain-separated,
-path-bound receipts without exposing raw key or MAC bytes. Secret resolution
-remains later Phase 5 work, so the configuration compiler still rejects
-concrete sensitive inputs.
+CLI module keeps one random fingerprint key per normalized Dokploy instance in
+the OS credential store.
+
+The instance-bound compiler now preflights unsupported references before any
+external access, resolves literal, environment, and bounded workspace-relative
+file sources exactly once, derives path-bound receipts, and returns exact bytes
+only through a redacted one-shot execution sidecar. Effective configuration
+digests include canonical receipt identities, so content and key rotation plan
+updates while unchanged intent converges. The offline compiler still rejects
+concrete sensitive inputs and keeps clear or unmanaged fields I/O-free.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

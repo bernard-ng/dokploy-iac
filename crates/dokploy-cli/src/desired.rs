@@ -1,21 +1,27 @@
-//! Compiles validated configuration into planner input and deferred execution bindings.
+//! Compiles validated configuration into planner input and execution bindings.
 //!
 //! This module is the composition seam between configuration syntax and the
-//! pure planning domain. Compilation never resolves remote IDs, environment
-//! variables, secret files, or secret bytes.
+//! pure planning domain. The offline seam never performs I/O. The
+//! instance-bound seam resolves configured sensitive sources exactly once,
+//! derives opaque planner receipts, and retains bytes only in a redacted
+//! one-shot execution sidecar. Neither seam resolves remote IDs.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
+    path::Path,
 };
 
 use dokploy_config::{ConfigValue, DokployConfig, Field, ResourceConfig, SourceConfig};
 use dokploy_core::{
     ConfigDigest, DesiredResource, DesiredState, DesiredStateError, MoveDirective, OwnedValue,
-    PropertyPath, ProtectionIntent, RemovalDirective,
+    PropertyPath, ProtectionIntent, RemovalDirective, SensitiveIntent,
 };
-use dokploy_state::ResourceAddress;
+use dokploy_state::{InstanceIdentity, ResourceAddress, SensitiveFingerprint};
 use thiserror::Error;
+use zeroize::Zeroizing;
+
+mod sensitive_compilation;
 
 /// Planner input paired with deferred values needed by a future executor.
 pub struct CompiledDesired {
@@ -35,6 +41,20 @@ impl CompiledDesired {
     pub const fn bindings(&self) -> &ExecutionBindings {
         &self.bindings
     }
+
+    /// Removes one resolved sensitive value from the execution sidecar.
+    ///
+    /// A value can be taken at most once and never appears in debug or
+    /// serialized planner data.
+    pub fn take_sensitive(
+        &mut self,
+        address: &ResourceAddress,
+        path: &PropertyPath,
+    ) -> Option<SensitiveExecutionValue> {
+        self.bindings
+            .sensitive
+            .remove(&(address.clone(), path.clone()))
+    }
 }
 
 impl fmt::Debug for CompiledDesired {
@@ -52,6 +72,7 @@ impl fmt::Debug for CompiledDesired {
 pub struct ExecutionBindings {
     parents: BTreeMap<ResourceAddress, ResourceAddress>,
     domain_applications: BTreeMap<ResourceAddress, ResourceAddress>,
+    sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
 }
 
 impl ExecutionBindings {
@@ -65,6 +86,29 @@ impl ExecutionBindings {
     #[must_use]
     pub fn domain_application(&self, address: &ResourceAddress) -> Option<&ResourceAddress> {
         self.domain_applications.get(address)
+    }
+}
+
+/// Resolved sensitive execution input paired with its durable receipt.
+///
+/// The value is non-cloneable and non-serializable. Taking it apart transfers
+/// ownership to the future executor while retaining zeroization on drop.
+pub struct SensitiveExecutionValue {
+    value: Zeroizing<Vec<u8>>,
+    fingerprint: SensitiveFingerprint,
+}
+
+impl SensitiveExecutionValue {
+    /// Transfers the exact resolved bytes and opaque receipt to the caller.
+    #[must_use]
+    pub fn into_parts(self) -> (Zeroizing<Vec<u8>>, SensitiveFingerprint) {
+        (self.value, self.fingerprint)
+    }
+}
+
+impl fmt::Debug for SensitiveExecutionValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SensitiveExecutionValue([REDACTED])")
     }
 }
 
@@ -89,6 +133,24 @@ pub enum CompileDesiredError {
     /// A sensitive value lacks the durable intent needed for convergent planning.
     #[error("DOKCMP004: sensitive desired values are unsupported")]
     SensitiveIntentUnsupported,
+    /// The per-instance fingerprint key could not be loaded safely.
+    #[error("DOKCMP005: sensitive fingerprint key storage is unavailable")]
+    SensitiveFingerprintUnavailable,
+    /// A configured environment source is absent.
+    #[error("DOKCMP006: sensitive environment source is missing")]
+    SensitiveEnvironmentMissing,
+    /// A configured environment source cannot be represented as UTF-8.
+    #[error("DOKCMP007: sensitive environment source is not valid UTF-8")]
+    SensitiveEnvironmentNotUtf8,
+    /// A configured file source could not be opened and read safely.
+    #[error("DOKCMP008: sensitive file source is unavailable or unsafe")]
+    SensitiveFileUnavailable,
+    /// A configured file source exceeds the strict byte limit.
+    #[error("DOKCMP009: sensitive file source exceeds the one MiB limit")]
+    SensitiveFileTooLarge,
+    /// A configured file source is not valid UTF-8.
+    #[error("DOKCMP010: sensitive file source is not valid UTF-8")]
+    SensitiveFileNotUtf8,
 }
 
 impl CompileDesiredError {
@@ -100,18 +162,31 @@ impl CompileDesiredError {
             Self::UnsupportedLifecycleProperty => "DOKCMP002",
             Self::InvalidDesiredState(_) => "DOKCMP003",
             Self::SensitiveIntentUnsupported => "DOKCMP004",
+            Self::SensitiveFingerprintUnavailable => "DOKCMP005",
+            Self::SensitiveEnvironmentMissing => "DOKCMP006",
+            Self::SensitiveEnvironmentNotUtf8 => "DOKCMP007",
+            Self::SensitiveFileUnavailable => "DOKCMP008",
+            Self::SensitiveFileTooLarge => "DOKCMP009",
+            Self::SensitiveFileNotUtf8 => "DOKCMP010",
         }
     }
 }
 
 /// Compiles a validated configuration without performing I/O or resolving values.
 ///
-/// Concrete environment values and set database passwords fail closed until
-/// composition can resolve secrets and calculate a durable keyed intent
-/// fingerprint.
+/// Concrete sensitive values fail closed with DOKCMP004; clear and unmanaged
+/// sensitive fields remain available to offline callers.
 pub fn compile_desired(
     config: &DokployConfig,
     digest: ConfigDigest,
+) -> Result<CompiledDesired, CompileDesiredError> {
+    compile_desired_with_fingerprints(config, digest, &BTreeMap::new())
+}
+
+fn compile_desired_with_fingerprints(
+    config: &DokployConfig,
+    digest: ConfigDigest,
+    fingerprints: &BTreeMap<(ResourceAddress, PropertyPath), SensitiveFingerprint>,
 ) -> Result<CompiledDesired, CompileDesiredError> {
     let mut resources = BTreeMap::new();
 
@@ -141,20 +216,31 @@ pub fn compile_desired(
                     application.replicas(),
                 );
                 compile_source(&mut properties, application.source());
-                compile_environment(&mut properties, application.environment())?;
+                compile_environment(
+                    &mut properties,
+                    address,
+                    application.environment(),
+                    fingerprints,
+                )?;
             }
             ResourceConfig::Postgres(postgres) => {
                 compile_string_field(&mut properties, PropertyPath::Database, postgres.database());
                 compile_string_field(&mut properties, PropertyPath::Username, postgres.username());
                 compile_sensitive_field(
                     &mut properties,
+                    address,
                     PropertyPath::Password,
                     postgres.password(),
+                    fingerprints,
                 )?;
             }
-            ResourceConfig::Redis(redis) => {
-                compile_sensitive_field(&mut properties, PropertyPath::Password, redis.password())?
-            }
+            ResourceConfig::Redis(redis) => compile_sensitive_field(
+                &mut properties,
+                address,
+                PropertyPath::Password,
+                redis.password(),
+                fingerprints,
+            )?,
             ResourceConfig::Domain(domain) => {
                 compile_string_field(&mut properties, PropertyPath::Host, domain.host());
                 let application = match domain.application() {
@@ -175,7 +261,6 @@ pub fn compile_desired(
         };
 
         let dependencies = compile_dependencies(address, resource, config.parents());
-
         let ignored_changes = resource
             .lifecycle()
             .ignore_changes()
@@ -215,6 +300,25 @@ pub fn compile_desired(
         desired_state,
         bindings: compile_bindings(config),
     })
+}
+
+/// Compiles desired state for one normalized Dokploy instance.
+///
+/// Concrete sensitive values are resolved once, fingerprinted for convergent
+/// planning, and retained only in the non-serializable execution sidecar.
+/// Clear and unmanaged sensitive fields remain fully offline.
+pub fn compile_desired_for_instance(
+    config: &DokployConfig,
+    source_digest: ConfigDigest,
+    instance: InstanceIdentity,
+    workspace_directory: &Path,
+) -> Result<CompiledDesired, CompileDesiredError> {
+    sensitive_compilation::compile_for_instance(
+        config,
+        source_digest,
+        instance,
+        workspace_directory,
+    )
 }
 
 fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
@@ -301,13 +405,20 @@ fn compile_u32_field(
 
 fn compile_sensitive_field<T>(
     properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+    address: &ResourceAddress,
     path: PropertyPath,
     field: &Field<T>,
+    fingerprints: &BTreeMap<(ResourceAddress, PropertyPath), SensitiveFingerprint>,
 ) -> Result<(), CompileDesiredError> {
     let value = match field {
         Field::Unmanaged => return Ok(()),
         Field::Clear => OwnedValue::Null,
-        Field::Set(_) => return Err(CompileDesiredError::SensitiveIntentUnsupported),
+        Field::Set(_) => {
+            let fingerprint = fingerprints
+                .get(&(address.clone(), path.clone()))
+                .ok_or(CompileDesiredError::SensitiveIntentUnsupported)?;
+            OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(fingerprint.clone()))
+        }
     };
     properties.insert(path, value);
 
@@ -336,7 +447,9 @@ fn compile_source(
 
 fn compile_environment(
     properties: &mut BTreeMap<PropertyPath, OwnedValue>,
-    environment: &Field<BTreeMap<String, Field<dokploy_config::ConfigValue>>>,
+    address: &ResourceAddress,
+    environment: &Field<BTreeMap<String, Field<ConfigValue>>>,
+    fingerprints: &BTreeMap<(ResourceAddress, PropertyPath), SensitiveFingerprint>,
 ) -> Result<(), CompileDesiredError> {
     let variables = match environment {
         Field::Unmanaged => return Ok(()),
@@ -354,7 +467,7 @@ fn compile_environment(
     for (name, value) in variables {
         let path = PropertyPath::environment_variable(name)
             .expect("validated configuration has valid environment names");
-        compile_sensitive_field(properties, path, value)?;
+        compile_sensitive_field(properties, address, path, value, fingerprints)?;
     }
 
     Ok(())

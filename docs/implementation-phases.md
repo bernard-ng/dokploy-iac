@@ -66,10 +66,11 @@ durable state semantics.
 - Preserve stored ownership baselines for ignored existing-resource paths and
   expose deterministic write exclusions without treating them as drift.
 - Compile validated configuration into pure desired state plus a redacted,
-  non-serializable execution sidecar that preserves logical containment,
-  and domain references without resolving remote IDs. Reject concrete
-  sensitive inputs until composition can resolve secrets, calculate intent
-  fingerprints, and load their key safely.
+  non-serializable execution sidecar that preserves logical containment and
+  domain references without resolving remote IDs. The instance-bound seam
+  preflights unsupported references, resolves literal, environment, and
+  bounded file sources once, calculates keyed intent receipts, and derives an
+  effective digest from source syntax plus canonical receipt identities.
 - Project fresh project topology into explicit remote observations with
   authoritative absence, physical-ID matching for managed projects, exact-name
   collision probes, and fail-closed transport and topology diagnostics.

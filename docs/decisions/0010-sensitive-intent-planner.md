@@ -49,6 +49,6 @@ reports only that a value is sensitive; it does not expose its receipt.
 - Key rotation changes receipt identity and deliberately plans a write.
 - Remote mutation outside the tool cannot be detected for write-only values;
   only conclusive absence is reportable drift.
-- The CLI now owns key storage and HMAC calculation, while the configuration
-  compiler continues to reject concrete sensitive input with `DOKCMP004`
-  until bounded secret resolution and the execution sidecar are implemented.
+- The offline compiler continues to reject concrete sensitive input with
+  `DOKCMP004`. ADR 0013 adds an instance-bound compiler that resolves values
+  once and returns a redacted one-shot execution sidecar.

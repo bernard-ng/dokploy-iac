@@ -124,10 +124,10 @@ adapter responsibility after discovery.
 
 The planner accepts sensitive desired properties only through opaque intent
 fingerprints. The configuration compiler cannot calculate those fingerprints
-yet, so it rejects every concrete application environment value and every set
-Postgres or Redis password with `DOKCMP004`. Explicit clear and unmanaged
-sensitive fields remain supported. Sensitive descriptors and literal bytes do
-not enter the compiled sidecar or planner snapshot.
+at this checkpoint, so it rejects every concrete application environment value
+and every set Postgres or Redis password with `DOKCMP004`. Explicit clear and
+unmanaged sensitive fields remain supported. ADR 0013 later adds a separate
+instance-bound compiler seam while preserving this offline behavior.
 
 Durable state format version 2 completes the persisted part of that convergence
 contract. A non-null sensitive input is stored only as a version-one
@@ -137,8 +137,8 @@ lowercase hexadecimal characters. The receipt serializes as `version`,
 `keyId`, and `mac`, with `version` fixed to `hmac-sha256-v1`. Its Rust interface
 does not expose the MAC or implement display, and debug output is fully
 redacted. The CLI now owns per-instance key generation, OS credential storage,
-and HMAC computation. Bounded secret resolution and compiler integration
-remain later checkpoints.
+and HMAC computation. Bounded secret resolution and compiler integration are
+completed by ADR 0013.
 
 Sensitive receipts use a closed property vocabulary: `password` and uppercase
 `environment.NAME` entries. Durable non-sensitive inputs may represent those

@@ -178,6 +178,11 @@ impl SensitiveFingerprinter {
         Ok(Self::from_key(instance, key))
     }
 
+    #[cfg(test)]
+    pub(crate) fn fixture(instance: InstanceIdentity, id: &str, bytes: [u8; 32]) -> Self {
+        Self::from_key(instance, FingerprintKey::fixture(id, bytes))
+    }
+
     pub(crate) fn fingerprint(
         &self,
         address: &ResourceAddress,

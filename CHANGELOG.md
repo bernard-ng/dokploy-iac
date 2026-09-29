@@ -76,3 +76,7 @@ All notable changes to this project will be documented in this file.
   authority assertions, parent-scoped exact-name probes, managed-ID and
   containment validation, presence-aware descriptions, move and removal
   support, fresh reads, and secret-safe SDK response models.
+- Add instance-bound sensitive configuration compilation with reference
+  preflight, one-pass zeroized literal and environment resolution, secure
+  bounded workspace-relative file reads, opaque desired receipts, effective
+  content-aware digests, and a redacted one-shot execution sidecar.

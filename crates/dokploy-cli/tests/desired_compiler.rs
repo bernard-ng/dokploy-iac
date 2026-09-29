@@ -1,6 +1,7 @@
-use dokploy_cli::desired::{CompileDesiredError, compile_desired};
+use dokploy_cli::desired::{CompileDesiredError, compile_desired, compile_desired_for_instance};
 use dokploy_config::DokployConfig;
 use dokploy_core::{ComparableValue, ConfigDigest, OwnedValue, PropertyPath, ProtectionIntent};
+use dokploy_state::InstanceIdentity;
 
 fn digest() -> ConfigDigest {
     ConfigDigest::parse("a".repeat(64)).expect("valid test digest")
@@ -8,6 +9,25 @@ fn digest() -> ConfigDigest {
 
 fn value(value: serde_json::Value) -> OwnedValue {
     OwnedValue::Value(ComparableValue::try_from_json(value).expect("non-null test value"))
+}
+
+#[test]
+fn instance_bound_compilation_without_sensitive_inputs_preserves_the_source_digest() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+"#,
+    )
+    .expect("valid configuration");
+    let workspace = tempfile::tempdir().expect("temporary workspace");
+    let instance = InstanceIdentity::parse("https://deploy.example.test").unwrap();
+
+    let compiled = compile_desired_for_instance(&config, digest(), instance, workspace.path())
+        .expect("configuration without sensitive inputs compiles without external access");
+
+    assert_eq!(compiled.desired_state().digest().as_str(), "a".repeat(64));
 }
 
 #[test]

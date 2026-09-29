@@ -48,10 +48,10 @@ therefore have unrelated receipts. The receipt also includes the key
 identifier, so key rotation is an intentional configuration change even in
 the theoretical case where two keys produce the same MAC.
 
-This checkpoint does not connect the module to configuration compilation.
-`compile_desired` continues to reject concrete sensitive input with
-`DOKCMP004` until bounded one-pass value resolution and the redacted execution
-sidecar are implemented.
+The instance-bound compiler now consumes this module through the design in
+[ADR 0013](0013-instance-bound-sensitive-compilation.md). The offline
+`compile_desired` seam continues to reject concrete sensitive input with
+`DOKCMP004` so offline validation never opens the credential store.
 
 ## Consequences
 
