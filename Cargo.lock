@@ -542,6 +542,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dokploy-core"
+version = "0.1.0"
+dependencies = [
+ "dokploy-state",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "dokploy-sdk"
 version = "0.1.0"
 dependencies = [

@@ -53,6 +53,11 @@ durable state semantics.
 
 ## Phase 5: planner
 
+- Complete the first pure planner checkpoint: typed path-level ownership across
+  desired, stored, and remote snapshots; nested source and environment paths;
+  value-free sensitive intent; three-way diffs and drift origins; fail-closed
+  partial observations; immutable state-checkpoint targets; protected deletion;
+  and deterministic redaction-safe JSON.
 - Build desired, stored, and fresh remote state models.
 - Add drift detection, deterministic diffs, dependency ordering, replacement,
   moves, and removals.

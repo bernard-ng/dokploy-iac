@@ -42,6 +42,12 @@ rules, moves, removals, JSON Schema, and redaction-safe semantic validation.
 The offline `init`, `schema`, and `validate` commands do not require a Dokploy
 context, credentials, or network access.
 
+Phase 5 is underway. Its first checkpoint adds a pure planner seam over
+explicit desired, stored, and remote property snapshots, with ownership-aware
+path-level three-way diffs, value-free sensitive intent, fail-closed partial
+observations, protection checks, immutable state-checkpoint targets, and
+deterministic redaction-safe JSON output.
+
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.
 

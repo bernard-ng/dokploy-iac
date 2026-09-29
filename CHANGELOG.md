@@ -38,3 +38,7 @@ All notable changes to this project will be documented in this file.
 - Add offline `dokploy init`, `dokploy schema`, and `dokploy validate`
   commands with no-clobber initialization, bounded regular-file loading, and
   deterministic schema and diagnostic output.
+- Add the first pure Phase 5 planner checkpoint with typed nested property
+  paths, value-free sensitive ownership, three-way drift attribution, immutable
+  state targets, protected deletion, deterministic redaction-safe plans, and
+  fail-closed snapshot validation and partial remote observations.

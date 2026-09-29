@@ -3,6 +3,7 @@ members = [
     "crates/dokploy-api",
     "crates/dokploy-cli",
     "crates/dokploy-config",
+    "crates/dokploy-core",
     "crates/dokploy-sdk",
     "crates/dokploy-state",
     "xtask",
@@ -21,6 +22,7 @@ clap = { version = "4.5.48", features = ["derive"] }
 directories = "6.0.0"
 dokploy-api = { path = "crates/dokploy-api", version = "0.1.0" }
 dokploy-config = { path = "crates/dokploy-config", version = "0.1.0" }
+dokploy-core = { path = "crates/dokploy-core", version = "0.1.0" }
 dokploy-sdk = { path = "crates/dokploy-sdk", version = "0.1.0" }
 dokploy-state = { path = "crates/dokploy-state", version = "0.1.0" }
 fs4 = { version = "1.1.0", features = ["sync"] }
