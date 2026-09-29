@@ -1,6 +1,6 @@
 use crate::{
-    ApplicationDetails, ApplicationId, Dokploy, Error, PostgresDetails, PostgresId, ProjectDetails,
-    ProjectId, ProjectTopology,
+    ApplicationDetails, ApplicationId, Dokploy, EnvironmentCollection, EnvironmentDetails,
+    EnvironmentId, Error, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
 };
 
 /// Read operations for Dokploy projects.
@@ -37,6 +37,29 @@ impl<'a> Applications<'a> {
     /// Reads one application from fresh remote state.
     pub async fn get(&self, application_id: ApplicationId) -> Result<ApplicationDetails, Error> {
         self.client.application_get(application_id.as_str()).await
+    }
+}
+
+/// Read operations for Dokploy environments.
+pub struct Environments<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Environments<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one environment from fresh remote state.
+    pub async fn get(&self, environment_id: EnvironmentId) -> Result<EnvironmentDetails, Error> {
+        self.client.environment_get(environment_id.as_str()).await
+    }
+
+    /// Reads the fresh environment collection scoped to one project.
+    pub async fn by_project(&self, project_id: ProjectId) -> Result<EnvironmentCollection, Error> {
+        self.client
+            .environments_by_project(project_id.as_str())
+            .await
     }
 }
 

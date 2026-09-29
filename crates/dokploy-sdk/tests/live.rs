@@ -1,6 +1,6 @@
 use std::env;
 
-use dokploy_sdk::{ApplicationId, Dokploy, PostgresId, ProjectId};
+use dokploy_sdk::{ApplicationId, Dokploy, EnvironmentId, PostgresId, ProjectId};
 
 const LIVE_TEST_FLAG: &str = "DOKPLOY_SDK_LIVE_TEST";
 
@@ -76,6 +76,46 @@ async fn projects_get_reads_the_selected_live_project() {
             .first()
             .map(|item| &item.environment_id)
     );
+}
+
+#[tokio::test]
+#[ignore = "requires an explicit local Dokploy integration run"]
+async fn environments_read_the_live_parent_collection_and_selected_environment() {
+    let client = live_client();
+    let topology = client
+        .projects()
+        .all()
+        .await
+        .expect("the live project topology must be readable");
+    let project = topology
+        .projects()
+        .iter()
+        .find(|project| !project.environments.is_empty())
+        .expect("the live fixture must contain an environment");
+    let expected = project
+        .environments
+        .first()
+        .expect("the selected project must contain an environment");
+
+    let collection = client
+        .environments()
+        .by_project(ProjectId::new(project.project_id.as_str()))
+        .await
+        .expect("the live environment collection must be readable");
+    let environment = client
+        .environments()
+        .get(EnvironmentId::new(expected.environment_id.as_str()))
+        .await
+        .expect("the selected live environment must be readable");
+
+    assert!(
+        collection
+            .environments()
+            .iter()
+            .any(|item| item.environment_id == expected.environment_id)
+    );
+    assert_eq!(environment.environment_id, expected.environment_id);
+    assert_eq!(environment.project_id, project.project_id);
 }
 
 #[tokio::test]

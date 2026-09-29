@@ -58,6 +58,13 @@ observations, binding the client to the state instance, preserving omitted
 versus null response fields, matching managed projects by physical ID, and
 probing unmanaged names without exposing any mutation path.
 
+The same composition seam now returns one combined project-and-environment
+snapshot. Environment discovery binds managed resources by physical ID,
+validates their containing project, probes unmanaged names only inside a
+proved-present parent, distinguishes authoritative from partial collections,
+and preserves description omission versus null without admitting Dokploy's
+environment variables or nested resource payloads into planner state.
+
 The durable sensitive-state foundation now stores non-null password and
 application environment intent only as opaque, versioned HMAC-SHA-256
 receipts. State format version 2 rejects raw sensitive values, ambiguous

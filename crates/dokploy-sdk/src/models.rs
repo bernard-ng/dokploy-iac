@@ -141,6 +141,44 @@ pub struct EnvironmentTopology {
     pub postgres: Vec<PostgresSummary>,
 }
 
+/// A safe subset of the response returned by `environment.one`.
+///
+/// Environment variables and nested resources are deliberately omitted so
+/// secret-bearing runtime fields cannot cross into discovery snapshots.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentDetails {
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    #[serde(default)]
+    pub description: ResponseField<String>,
+    pub project_id: ProjectId,
+}
+
+/// One safe environment entry returned by `environment.byProjectId`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvironmentSummary {
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    #[serde(default)]
+    pub description: ResponseField<String>,
+}
+
+/// The parent-scoped environment collection returned by `environment.byProjectId`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(transparent)]
+pub struct EnvironmentCollection {
+    environments: Vec<EnvironmentSummary>,
+}
+
+impl EnvironmentCollection {
+    #[must_use]
+    pub fn environments(&self) -> &[EnvironmentSummary] {
+        &self.environments
+    }
+}
+
 /// The role-dependent application projection embedded in `project.all`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

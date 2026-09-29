@@ -741,17 +741,10 @@ project:
 }
 
 #[tokio::test]
-async fn unsupported_resource_kinds_are_rejected_before_remote_transport() {
-    let url = "http://127.0.0.1:9";
-    let client = Dokploy::builder()
-        .url(url)
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-    let state = StateFile::new(
-        "0.1.0".parse().expect("version is valid"),
-        InstanceIdentity::parse(url).expect("instance is valid"),
-    );
+async fn project_discovery_filters_non_project_addresses() {
+    let server = TestServer::respond_in_sequence(vec![("200 OK", "[]")]);
+    let client = server.client();
+    let state = server.state();
     let desired = compile(
         r#"
 version: 1
@@ -762,19 +755,25 @@ environments:
 "#,
     );
 
-    let error = discover_projects(
+    let remote = discover_projects(
         &client,
         &desired,
         &state,
         ProjectTopologyAuthority::Authoritative,
     )
     .await
-    .expect_err("project discovery cannot project environment addresses");
+    .expect("project discovery owns only project addresses");
 
     assert!(matches!(
-        error,
-        DiscoverProjectsError::UnsupportedResourceKind { .. }
+        remote.observation(&"project.platform".parse().unwrap()),
+        Some(RemoteObservation::Missing)
     ));
+    assert!(
+        remote
+            .observation(&"environment.production".parse().unwrap())
+            .is_none()
+    );
+    assert_eq!(server.finish().len(), 1);
 }
 
 #[tokio::test]

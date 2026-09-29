@@ -69,3 +69,7 @@ All notable changes to this project will be documented in this file.
   durable receipts converge across write-only remote observations, while new,
   changed, absent, cleared, and relinquished intents remain distinct and plan
   without exposing receipt material.
+- Add combined project and environment remote discovery with separate
+  authority assertions, parent-scoped exact-name probes, managed-ID and
+  containment validation, presence-aware descriptions, move and removal
+  support, fresh reads, and secret-safe SDK response models.

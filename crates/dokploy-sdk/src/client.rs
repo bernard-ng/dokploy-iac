@@ -2,8 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dokploy_api::{
-    APPLICATION_ONE, ApplicationOneRequest, ApplicationOneRequestQuery, DokployApiClient, Endpoint,
-    EndpointMethod, POSTGRES_ONE, PROJECT_ALL, PROJECT_ONE, PostgresOneRequest,
+    APPLICATION_ONE, ApplicationOneRequest, ApplicationOneRequestQuery, DokployApiClient,
+    ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint, EndpointMethod,
+    EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentOneRequest,
+    EnvironmentOneRequestQuery, POSTGRES_ONE, PROJECT_ALL, PROJECT_ONE, PostgresOneRequest,
     PostgresOneRequestQuery, ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery,
     endpoint_by_operation, validate_request,
 };
@@ -18,8 +20,11 @@ use crate::error::{BuildError, DokployError, Error};
 use crate::imperative::{
     Imperative, ImperativeBody, ImperativeMethod, ImperativeRequest, MultipartField,
 };
-use crate::models::{ApplicationDetails, PostgresDetails, ProjectDetails, ProjectTopology};
-use crate::services::{Applications, Postgres, Projects};
+use crate::models::{
+    ApplicationDetails, EnvironmentCollection, EnvironmentDetails, PostgresDetails, ProjectDetails,
+    ProjectTopology,
+};
+use crate::services::{Applications, Environments, Postgres, Projects};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -64,6 +69,12 @@ impl Dokploy {
         Applications::new(self)
     }
 
+    /// Returns access to environment read operations.
+    #[must_use]
+    pub fn environments(&self) -> Environments<'_> {
+        Environments::new(self)
+    }
+
     /// Returns access to Postgres read operations.
     #[must_use]
     pub fn postgres(&self) -> Postgres<'_> {
@@ -106,6 +117,35 @@ impl Dokploy {
         validate_generated_request(APPLICATION_ONE, &request)?;
 
         self.read_query_json(APPLICATION_ONE, &request.query).await
+    }
+
+    pub(crate) async fn environment_get(
+        &self,
+        environment_id: &str,
+    ) -> Result<EnvironmentDetails, Error> {
+        let request = EnvironmentOneRequest {
+            query: EnvironmentOneRequestQuery {
+                environment_id: environment_id.to_owned(),
+            },
+        };
+        validate_generated_request(ENVIRONMENT_ONE, &request)?;
+
+        self.read_query_json(ENVIRONMENT_ONE, &request.query).await
+    }
+
+    pub(crate) async fn environments_by_project(
+        &self,
+        project_id: &str,
+    ) -> Result<EnvironmentCollection, Error> {
+        let request = EnvironmentByProjectIdRequest {
+            query: EnvironmentByProjectIdRequestQuery {
+                project_id: project_id.to_owned(),
+            },
+        };
+        validate_generated_request(ENVIRONMENT_BY_PROJECT_ID, &request)?;
+
+        self.read_query_json(ENVIRONMENT_BY_PROJECT_ID, &request.query)
+            .await
     }
 
     pub(crate) async fn postgres_get(&self, postgres_id: &str) -> Result<PostgresDetails, Error> {

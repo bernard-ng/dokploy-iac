@@ -3,7 +3,9 @@ use std::net::TcpListener;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 
-use dokploy_sdk::{ApplicationId, Dokploy, Error, ImperativeRequest, ProjectId};
+use dokploy_sdk::{
+    ApplicationId, Dokploy, EnvironmentId, Error, ImperativeRequest, ProjectId, ResponseField,
+};
 
 struct TestServer {
     url: String,
@@ -209,6 +211,120 @@ async fn projects_get_uses_a_strong_id_and_decodes_project_details() {
     assert!(request.starts_with("GET /api/project.one?projectId=project-1 HTTP/1.1\r\n"));
     assert_eq!(project.project_id.as_str(), "project-1");
     assert_eq!(project.name, "IaC Contract Test");
+}
+
+#[tokio::test]
+async fn environments_get_uses_a_strong_id_and_omits_secret_bearing_fields() {
+    let server = TestServer::respond_with_json(
+        r#"{
+          "environmentId":"environment-1",
+          "name":"production",
+          "description":"Production environment",
+          "projectId":"project-1",
+          "env":"SECRET=environment-secret-canary",
+          "applications":[{"env":"application-secret-canary"}]
+        }"#,
+    );
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let environment = client
+        .environments()
+        .get(EnvironmentId::new("environment-1"))
+        .await
+        .expect("environment is readable");
+
+    let request = server.finish();
+    let debug = format!("{environment:?}");
+    assert!(
+        request.starts_with("GET /api/environment.one?environmentId=environment-1 HTTP/1.1\r\n")
+    );
+    assert_eq!(environment.environment_id.as_str(), "environment-1");
+    assert_eq!(environment.project_id.as_str(), "project-1");
+    assert_eq!(
+        environment.description,
+        ResponseField::Value("Production environment".to_owned())
+    );
+    assert!(!debug.contains("environment-secret-canary"));
+    assert!(!debug.contains("application-secret-canary"));
+}
+
+#[tokio::test]
+async fn environments_by_project_preserves_description_presence() {
+    let server = TestServer::respond_with_json(
+        r#"[
+          {"environmentId":"environment-1","name":"omitted"},
+          {"environmentId":"environment-2","name":"null","description":null},
+          {"environmentId":"environment-3","name":"value","description":"Known"}
+        ]"#,
+    );
+    let client = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let environments = client
+        .environments()
+        .by_project(ProjectId::new("project-1"))
+        .await
+        .expect("environment collection is readable");
+
+    let request = server.finish();
+    let descriptions = environments
+        .environments()
+        .iter()
+        .map(|environment| environment.description.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        request.starts_with("GET /api/environment.byProjectId?projectId=project-1 HTTP/1.1\r\n")
+    );
+    assert_eq!(
+        descriptions,
+        vec![
+            ResponseField::NotReturned,
+            ResponseField::Null,
+            ResponseField::Value("Known".to_owned()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn environment_reads_reject_empty_identifiers_before_transport() {
+    let client = Dokploy::builder()
+        .url("http://127.0.0.1:9")
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid");
+
+    let environment_error = client
+        .environments()
+        .get(EnvironmentId::new(""))
+        .await
+        .expect_err("an empty environment ID is invalid");
+    let project_error = client
+        .environments()
+        .by_project(ProjectId::new(""))
+        .await
+        .expect_err("an empty project ID is invalid");
+
+    assert!(matches!(
+        environment_error,
+        Error::InvalidRequest {
+            operation: "environment.one",
+            ..
+        }
+    ));
+    assert!(matches!(
+        project_error,
+        Error::InvalidRequest {
+            operation: "environment.byProjectId",
+            ..
+        }
+    ));
 }
 
 #[tokio::test]

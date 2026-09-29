@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for the project-only Phase 5 checkpoint.
+Accepted for the project-only Phase 5 checkpoint. ADR 0011 extends the public
+discovery seam to mixed project and environment state and replaces the
+non-project rejection with kind-specific filtering.
 
 ## Context
 
