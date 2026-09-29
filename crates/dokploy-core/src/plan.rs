@@ -356,6 +356,10 @@ pub enum PlanDiagnosticCode {
     MissingPropertyObservation,
     /// A desired property observation is unknown.
     UnknownPropertyObservation,
+    /// Desired dependencies contain a cycle.
+    DesiredDependencyCycle,
+    /// Stored dependencies among removal actions contain a cycle.
+    StoredDependencyCycle,
 }
 
 impl PlanDiagnosticCode {
@@ -372,6 +376,8 @@ impl PlanDiagnosticCode {
             Self::UnsupportedDirective => "DOKPLAN007",
             Self::MissingPropertyObservation => "DOKPLAN008",
             Self::UnknownPropertyObservation => "DOKPLAN009",
+            Self::DesiredDependencyCycle => "DOKPLAN010",
+            Self::StoredDependencyCycle => "DOKPLAN011",
         }
     }
 }

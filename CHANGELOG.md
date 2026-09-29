@@ -42,3 +42,7 @@ All notable changes to this project will be documented in this file.
   paths, value-free sensitive ownership, three-way drift attribution, immutable
   state targets, protected deletion, deterministic redaction-safe plans, and
   fail-closed snapshot validation and partial remote observations.
+- Add deterministic dependency-first desired action ordering, dependent-first
+  removal ordering, conservative mixed-plan phases, and typed cycle diagnostics
+  backed by `petgraph`, with a crate-scoped Zlib license allowance for its
+  `foldhash` dependency.

@@ -58,9 +58,11 @@ durable state semantics.
   value-free sensitive intent; three-way diffs and drift origins; fail-closed
   partial observations; immutable state-checkpoint targets; protected deletion;
   and deterministic redaction-safe JSON.
+- Order desired-resource actions dependency-first and removals dependent-first,
+  with stable lexical ties, conservative mixed-action phases, and typed cycle
+  diagnostics backed by `petgraph`.
 - Build desired, stored, and fresh remote state models.
-- Add drift detection, deterministic diffs, dependency ordering, replacement,
-  moves, and removals.
+- Add drift detection, deterministic diffs, replacement, moves, and removals.
 - Keep mutation code unreachable from the planner.
 
 ## Phase 6: executor MVP

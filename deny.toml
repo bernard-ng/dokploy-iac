@@ -13,6 +13,7 @@ allow = [
 ]
 confidence-threshold = 0.8
 exceptions = [
+    { allow = ["Zlib"], crate = "foldhash@0.1.5" },
     { allow = ["ISC"], crate = "is_ci@1.2.0" },
     { allow = ["MPL-2.0"], crate = "option-ext@0.2.0" },
 ]

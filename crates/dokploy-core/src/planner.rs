@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use dokploy_state::ResourceAddress;
 
+use crate::dependency::{DependencyGraphKind, DependencyOrdering};
 use crate::{
     ChangeKind, ChangeOrigin, CheckpointTarget, DesiredResource, DesiredState, DriftChange,
     DriftKind, FieldChange, MetadataChangeKind, OwnedValue, Plan, PlanDiagnostic,
@@ -33,6 +34,29 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
             directive_diagnostics,
         );
     }
+
+    let ordering = match DependencyOrdering::analyze(desired, stored) {
+        Ok(ordering) => ordering,
+        Err(cycles) => {
+            let diagnostics = cycles
+                .into_iter()
+                .map(|cycle| {
+                    diagnostic(
+                        match cycle.graph {
+                            DependencyGraphKind::Desired => {
+                                PlanDiagnosticCode::DesiredDependencyCycle
+                            }
+                            DependencyGraphKind::StoredRemoval => {
+                                PlanDiagnosticCode::StoredDependencyCycle
+                            }
+                        },
+                        Some(cycle.address),
+                    )
+                })
+                .collect();
+            return finish_plan(desired, stored, Vec::new(), Vec::new(), diagnostics);
+        }
+    };
 
     let mut changes = Vec::new();
     let mut drift = Vec::new();
@@ -81,6 +105,7 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
         }
     }
 
+    ordering.order_changes(&mut changes);
     finish_plan(desired, stored, changes, drift, diagnostics)
 }
 
@@ -612,11 +637,10 @@ fn diagnostic(code: PlanDiagnosticCode, address: Option<ResourceAddress>) -> Pla
 fn finish_plan(
     desired: &DesiredState,
     stored: &StoredState,
-    mut changes: Vec<PlannedChange>,
+    changes: Vec<PlannedChange>,
     mut drift: Vec<DriftChange>,
     mut diagnostics: Vec<PlanDiagnostic>,
 ) -> Plan {
-    changes.sort_by(|left, right| left.address.cmp(&right.address));
     drift.sort_by(|left, right| left.address.cmp(&right.address));
     diagnostics.sort_by(|left, right| {
         left.code

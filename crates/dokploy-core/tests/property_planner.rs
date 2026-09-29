@@ -854,7 +854,7 @@ fn dependency_change_is_a_state_only_checkpoint() {
         instance,
         [
             (
-                resource_address,
+                resource_address.clone(),
                 RemoteObservation::Present(RemoteResource::new(
                     remote_id(),
                     BTreeMap::from([(
@@ -869,20 +869,578 @@ fn dependency_change_is_a_state_only_checkpoint() {
     .expect("remote observations must be valid");
 
     let plan = plan(&desired, &stored, &remote);
+    let checkpoint_change = plan
+        .changes()
+        .iter()
+        .find(|change| change.address() == &resource_address)
+        .expect("application has a dependency checkpoint");
 
-    assert_eq!(plan.changes()[0].kind(), ChangeKind::NoOp);
+    assert_eq!(checkpoint_change.kind(), ChangeKind::NoOp);
     assert_eq!(
-        plan.changes()[0].metadata(),
+        checkpoint_change.metadata(),
         &[MetadataChangeKind::Dependencies]
     );
     assert_eq!(
-        plan.changes()[0]
+        checkpoint_change
             .checkpoint()
             .present()
             .expect("resource remains managed")
             .dependencies(),
         &[new_dependency]
     );
+}
+
+#[test]
+fn create_changes_are_ordered_dependency_first() {
+    let project = address("project.platform");
+    let environment = address("environment.production");
+    let application = address("application.api");
+    let instance = instance();
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (
+                application.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![environment.clone()]),
+            ),
+            (
+                environment.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![project.clone()]),
+            ),
+            (project.clone(), DesiredResource::new(BTreeMap::new())),
+        ]),
+    )
+    .expect("desired dependency graph must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (application.clone(), RemoteObservation::Missing),
+            (environment.clone(), RemoteObservation::Missing),
+            (project.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote observations must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(
+        plan.changes()
+            .iter()
+            .map(|change| change.address())
+            .collect::<Vec<_>>(),
+        vec![&project, &environment, &application]
+    );
+}
+
+#[test]
+fn diamond_dependencies_use_lexical_ties_and_stable_json() {
+    let root = address("project.platform");
+    let postgres = address("postgres.main");
+    let redis = address("redis.cache");
+    let leaf = address("application.api");
+    let instance = instance();
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let resources = |leaf_dependencies: Vec<ResourceAddress>, reverse: bool| {
+        let mut entries = vec![
+            (
+                leaf.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(leaf_dependencies),
+            ),
+            (
+                postgres.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![root.clone()]),
+            ),
+            (
+                redis.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![root.clone()]),
+            ),
+            (root.clone(), DesiredResource::new(BTreeMap::new())),
+        ];
+        if reverse {
+            entries.reverse();
+        }
+        entries.into_iter().collect()
+    };
+    let desired_a = DesiredState::try_new(
+        digest(),
+        resources(vec![redis.clone(), postgres.clone()], false),
+    )
+    .expect("desired graph must be valid");
+    let desired_b = DesiredState::try_new(
+        digest(),
+        resources(vec![postgres.clone(), redis.clone()], true),
+    )
+    .expect("desired graph must be valid");
+    let observations_a = [
+        (redis.clone(), RemoteObservation::Missing),
+        (leaf.clone(), RemoteObservation::Missing),
+        (root.clone(), RemoteObservation::Missing),
+        (postgres.clone(), RemoteObservation::Missing),
+    ];
+    let observations_b = [
+        (postgres.clone(), RemoteObservation::Missing),
+        (root.clone(), RemoteObservation::Missing),
+        (leaf.clone(), RemoteObservation::Missing),
+        (redis.clone(), RemoteObservation::Missing),
+    ];
+    let remote_a =
+        RemoteState::try_new(instance.clone(), observations_a).expect("remote state must be valid");
+    let remote_b =
+        RemoteState::try_new(instance, observations_b).expect("remote state must be valid");
+
+    let plan_a = plan(&desired_a, &stored, &remote_a);
+    let plan_b = plan(&desired_b, &stored, &remote_b);
+
+    assert_eq!(
+        plan_a
+            .changes()
+            .iter()
+            .map(|change| change.address())
+            .collect::<Vec<_>>(),
+        vec![&root, &postgres, &redis, &leaf]
+    );
+    assert_eq!(plan_a.to_json_bytes(), plan_b.to_json_bytes());
+}
+
+#[test]
+fn independent_changes_use_lexical_address_order() {
+    let application = address("application.api");
+    let postgres = address("postgres.main");
+    let redis = address("redis.cache");
+    let instance = instance();
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (redis.clone(), DesiredResource::new(BTreeMap::new())),
+            (application.clone(), DesiredResource::new(BTreeMap::new())),
+            (postgres.clone(), DesiredResource::new(BTreeMap::new())),
+        ]),
+    )
+    .expect("desired state must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (redis.clone(), RemoteObservation::Missing),
+            (postgres.clone(), RemoteObservation::Missing),
+            (application.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(
+        plan.changes()
+            .iter()
+            .map(|change| change.address())
+            .collect::<Vec<_>>(),
+        vec![&application, &postgres, &redis]
+    );
+}
+
+#[test]
+fn desired_dependency_cycle_blocks_without_an_execution_order() {
+    let application = address("application.api");
+    let postgres = address("postgres.main");
+    let instance = instance();
+    let stored =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (
+                application.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![postgres.clone()]),
+            ),
+            (
+                postgres.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![application.clone()]),
+            ),
+        ]),
+    )
+    .expect("cycles are a planner concern");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (postgres.clone(), RemoteObservation::Missing),
+            (application.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert!(plan.complete());
+    assert!(!plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert_eq!(plan.diagnostics().len(), 2);
+    assert!(
+        plan.diagnostics()
+            .iter()
+            .all(|issue| issue.code() == PlanDiagnosticCode::DesiredDependencyCycle)
+    );
+    assert_eq!(
+        plan.diagnostics()
+            .iter()
+            .map(|issue| issue.address().expect("cycle member has an address"))
+            .collect::<Vec<_>>(),
+        vec![&application, &postgres]
+    );
+}
+
+#[test]
+fn stored_removal_cycle_blocks_without_an_execution_order() {
+    let application = address("application.api");
+    let postgres = address("postgres.main");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(
+        &mut state,
+        application.clone(),
+        "application-1",
+        vec![postgres.clone()],
+    );
+    insert_state_resource(
+        &mut state,
+        postgres.clone(),
+        "postgres-1",
+        vec![application.clone()],
+    );
+    let stored = StoredState::try_from_state(&state).expect("stored state must project");
+    let desired =
+        DesiredState::try_new(digest(), BTreeMap::new()).expect("desired state must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                postgres.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("postgres-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (
+                application.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("application-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert!(plan.complete());
+    assert!(!plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert_eq!(plan.diagnostics().len(), 2);
+    assert!(
+        plan.diagnostics()
+            .iter()
+            .all(|issue| issue.code() == PlanDiagnosticCode::StoredDependencyCycle)
+    );
+    assert_eq!(
+        plan.diagnostics()
+            .iter()
+            .map(|issue| issue.address().expect("cycle member has an address"))
+            .collect::<Vec<_>>(),
+        vec![&application, &postgres]
+    );
+}
+
+#[test]
+fn delete_and_forget_changes_are_ordered_dependent_first() {
+    let project = address("project.platform");
+    let environment = address("environment.production");
+    let application = address("application.api");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(&mut state, project.clone(), "project-1", Vec::new());
+    insert_state_resource(
+        &mut state,
+        environment.clone(),
+        "environment-1",
+        vec![project.clone()],
+    );
+    insert_state_resource(
+        &mut state,
+        application.clone(),
+        "application-1",
+        vec![environment.clone()],
+    );
+    let stored = StoredState::try_from_state(&state).expect("stored state must project");
+    let desired =
+        DesiredState::try_new(digest(), BTreeMap::new()).expect("desired state must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                project.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("project-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (environment.clone(), RemoteObservation::Missing),
+            (
+                application.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("application-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(
+        plan.changes()
+            .iter()
+            .map(|change| (change.address(), change.kind()))
+            .collect::<Vec<_>>(),
+        vec![
+            (&application, ChangeKind::Delete),
+            (&environment, ChangeKind::Forget),
+            (&project, ChangeKind::Delete),
+        ]
+    );
+}
+
+#[test]
+fn independent_removals_keep_lexical_ties_and_stable_json() {
+    let application = address("application.api");
+    let postgres = address("postgres.main");
+    let redis = address("redis.cache");
+    let instance = instance();
+    let base = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    let mut state_a = base.clone();
+    insert_state_resource(&mut state_a, redis.clone(), "redis-1", Vec::new());
+    insert_state_resource(
+        &mut state_a,
+        application.clone(),
+        "application-1",
+        Vec::new(),
+    );
+    insert_state_resource(&mut state_a, postgres.clone(), "postgres-1", Vec::new());
+    let mut state_b = base;
+    insert_state_resource(&mut state_b, postgres.clone(), "postgres-1", Vec::new());
+    insert_state_resource(
+        &mut state_b,
+        application.clone(),
+        "application-1",
+        Vec::new(),
+    );
+    insert_state_resource(&mut state_b, redis.clone(), "redis-1", Vec::new());
+    let stored_a = StoredState::try_from_state(&state_a).expect("stored state must project");
+    let stored_b = StoredState::try_from_state(&state_b).expect("stored state must project");
+    let desired =
+        DesiredState::try_new(digest(), BTreeMap::new()).expect("desired state must be valid");
+    let present = |remote_id: &str| {
+        RemoteObservation::Present(RemoteResource::new(
+            RemoteId::new(remote_id).expect("remote id must be valid"),
+            BTreeMap::new(),
+        ))
+    };
+    let remote_a = RemoteState::try_new(
+        instance.clone(),
+        [
+            (redis.clone(), RemoteObservation::Missing),
+            (application.clone(), present("application-1")),
+            (postgres.clone(), present("postgres-1")),
+        ],
+    )
+    .expect("remote state must be valid");
+    let remote_b = RemoteState::try_new(
+        instance,
+        [
+            (postgres.clone(), present("postgres-1")),
+            (application.clone(), present("application-1")),
+            (redis.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan_a = plan(&desired, &stored_a, &remote_a);
+    let plan_b = plan(&desired, &stored_b, &remote_b);
+
+    assert_eq!(
+        plan_a
+            .changes()
+            .iter()
+            .map(|change| (change.address(), change.kind()))
+            .collect::<Vec<_>>(),
+        vec![
+            (&application, ChangeKind::Delete),
+            (&postgres, ChangeKind::Delete),
+            (&redis, ChangeKind::Forget),
+        ]
+    );
+    assert_eq!(plan_a.to_json_bytes(), plan_b.to_json_bytes());
+}
+
+#[test]
+fn mixed_plans_finish_dependency_first_changes_before_removals() {
+    let project = address("project.shared");
+    let environment = address("environment.new");
+    let updated = address("application.updated");
+    let removed = address("application.old");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(&mut state, project.clone(), "project-1", Vec::new());
+    state
+        .upsert_resource(
+            updated.clone(),
+            ResourceState::new(
+                ResourceKind::Application,
+                RemoteId::new("updated-1").expect("remote id must be valid"),
+                false,
+                ManagedInputs::try_from_json(json!({ "description": "old" }))
+                    .expect("managed inputs must be valid"),
+                Vec::new(),
+            ),
+        )
+        .expect("state insert must succeed");
+    insert_state_resource(
+        &mut state,
+        removed.clone(),
+        "removed-1",
+        vec![project.clone()],
+    );
+    let stored = StoredState::try_from_state(&state).expect("stored state must project");
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (
+                project.clone(),
+                DesiredResource::new(BTreeMap::new()).with_protection(ProtectionIntent::Set(true)),
+            ),
+            (
+                environment.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![project.clone()]),
+            ),
+            (
+                updated.clone(),
+                DesiredResource::new(BTreeMap::from([(
+                    PropertyPath::Description,
+                    OwnedValue::Value(value(json!("new"))),
+                )]))
+                .with_dependencies(vec![environment.clone()]),
+            ),
+        ]),
+    )
+    .expect("desired graph must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                removed.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("removed-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (
+                updated.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("updated-1").expect("remote id must be valid"),
+                    BTreeMap::from([(
+                        PropertyPath::Description,
+                        PropertyObservation::Known(value(json!("old"))),
+                    )]),
+                )),
+            ),
+            (environment.clone(), RemoteObservation::Missing),
+            (
+                project.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("project-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert_eq!(
+        plan.changes()
+            .iter()
+            .map(|change| (change.address(), change.kind()))
+            .collect::<Vec<_>>(),
+        vec![
+            (&project, ChangeKind::NoOp),
+            (&environment, ChangeKind::Create),
+            (&updated, ChangeKind::Update),
+            (&removed, ChangeKind::Delete),
+        ]
+    );
+}
+
+#[test]
+fn unchanged_dependencies_do_not_create_state_only_changes() {
+    let project = address("project.platform");
+    let application = address("application.api");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    insert_state_resource(&mut state, project.clone(), "project-1", Vec::new());
+    insert_state_resource(
+        &mut state,
+        application.clone(),
+        "application-1",
+        vec![project.clone()],
+    );
+    let stored = StoredState::try_from_state(&state).expect("stored state must project");
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (project.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                application.clone(),
+                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![project.clone()]),
+            ),
+        ]),
+    )
+    .expect("desired graph must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                application,
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("application-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (
+                project,
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("project-1").expect("remote id must be valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+        ],
+    )
+    .expect("remote state must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
 }
 
 #[test]
@@ -1453,6 +2011,14 @@ fn diagnostic_codes_and_plan_metadata_are_stable() {
         PlanDiagnosticCode::UnknownPropertyObservation.as_str(),
         "DOKPLAN009"
     );
+    assert_eq!(
+        PlanDiagnosticCode::DesiredDependencyCycle.as_str(),
+        "DOKPLAN010"
+    );
+    assert_eq!(
+        PlanDiagnosticCode::StoredDependencyCycle.as_str(),
+        "DOKPLAN011"
+    );
 
     let address = address("application.api");
     let instance = instance();
@@ -1583,4 +2149,24 @@ fn state_with_resource_details(
         )
         .expect("state insert must succeed");
     state
+}
+
+fn insert_state_resource(
+    state: &mut StateFile,
+    address: ResourceAddress,
+    remote_id: &str,
+    dependencies: Vec<ResourceAddress>,
+) {
+    state
+        .upsert_resource(
+            address.clone(),
+            ResourceState::new(
+                address.kind(),
+                RemoteId::new(remote_id).expect("remote id must be valid"),
+                false,
+                ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+                dependencies,
+            ),
+        )
+        .expect("state insert must succeed");
 }

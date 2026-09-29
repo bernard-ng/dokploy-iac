@@ -65,6 +65,20 @@ desired input but produce typed blocking diagnostics until their dedicated
 planner slices exist. They must never degrade into create, update, or delete
 actions.
 
+Dependency ordering uses `petgraph` behind the planner seam. Desired-resource
+edges order create, recreate, update, and no-op checkpoint actions
+dependency-first. Stored dependencies among resources leaving desired state
+order delete and forget actions dependent-first. Independent ready resources
+use lexical address order.
+
+Mixed plans use two stable phases: every desired-resource action completes in
+dependency order before removal actions begin in reverse stored-dependency
+order. This conservative policy avoids destroying old resources while desired
+resources are still converging. No later lexical sort replaces the graph
+order. A cycle in either relevant graph emits typed diagnostics for its members,
+blocks the plan, and suppresses all change ordering rather than presenting a
+misleading partial execution sequence.
+
 ## Consequences
 
 - Remote adapters must provide explicit observations for every desired
@@ -74,7 +88,9 @@ actions.
   or future state should be interpreted.
 - State-only protection, dependency, and ownership changes are represented as
   no-op remote actions that a later executor must checkpoint.
+- Dependency cycles are planning diagnostics, not desired-state construction
+  errors; missing and self-dependencies still fail at the desired-state seam.
 - Adding a property path requires an explicit planner vocabulary, kind
   validation, state projection, and adapter update.
-- Dependency ordering, moves, removals, ignored changes, and replacement
-  behavior remain later Phase 5 checkpoints.
+- Moves, removal directives, ignored changes, and replacement behavior remain
+  later Phase 5 checkpoints.

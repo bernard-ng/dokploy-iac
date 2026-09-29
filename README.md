@@ -46,7 +46,9 @@ Phase 5 is underway. Its first checkpoint adds a pure planner seam over
 explicit desired, stored, and remote property snapshots, with ownership-aware
 path-level three-way diffs, value-free sensitive intent, fail-closed partial
 observations, protection checks, immutable state-checkpoint targets, and
-deterministic redaction-safe JSON output.
+deterministic redaction-safe JSON output. Dependency graphs now reject cycles
+and deterministically order desired actions dependency-first before removals
+run dependent-first.
 
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.

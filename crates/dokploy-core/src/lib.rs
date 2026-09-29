@@ -4,6 +4,7 @@
 //! Callers supply three in-memory snapshots and receive a plan; planning cannot
 //! read or mutate remote infrastructure.
 
+mod dependency;
 mod plan;
 mod planner;
 mod property;
