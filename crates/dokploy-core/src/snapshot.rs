@@ -471,11 +471,29 @@ impl StoredState {
                 });
             }
 
-            let properties = project_managed_inputs(
+            let mut properties = project_managed_inputs(
                 address,
                 resource.kind(),
                 resource.last_applied().as_json(),
             )?;
+            for sensitive_path in resource.sensitive_inputs().paths() {
+                let path: PropertyPath = sensitive_path.to_string().parse().map_err(|_| {
+                    StoredStateError::UnsupportedProperty {
+                        address: address.clone(),
+                    }
+                })?;
+                if !path.is_sensitive() || !path.valid_for_kind(resource.kind()) {
+                    return Err(StoredStateError::InvalidPropertyPath {
+                        address: address.clone(),
+                    });
+                }
+                insert_projected(address, &mut properties, path, OwnedValue::Sensitive)?;
+            }
+            validate_root_child_combinations(address, &properties).map_err(|()| {
+                StoredStateError::ConflictingPropertyPaths {
+                    address: address.clone(),
+                }
+            })?;
 
             resources.insert(
                 address.clone(),
@@ -512,6 +530,14 @@ impl StoredState {
     #[must_use]
     pub const fn instance(&self) -> &InstanceIdentity {
         &self.instance
+    }
+
+    /// Returns one value-free durable property projection.
+    #[must_use]
+    pub fn property(&self, address: &ResourceAddress, path: &PropertyPath) -> Option<&OwnedValue> {
+        self.resources
+            .get(address)
+            .and_then(|resource| resource.properties.get(path))
     }
 }
 

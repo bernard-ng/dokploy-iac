@@ -58,6 +58,13 @@ observations, binding the client to the state instance, preserving omitted
 versus null response fields, matching managed projects by physical ID, and
 probing unmanaged names without exposing any mutation path.
 
+The durable sensitive-state foundation now stores non-null password and
+application environment intent only as opaque, versioned HMAC-SHA-256
+receipts. State format version 2 rejects raw sensitive values, ambiguous
+clear-and-receipt ownership, noncanonical receipts, and version 1 state. The
+planner currently receives only value-free sensitive ownership; key storage,
+receipt computation, and fingerprint comparison remain later Phase 5 work.
+
 See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
 decision record.
 

@@ -6,10 +6,11 @@ use thiserror::Error;
 use url::Url;
 use uuid::Uuid;
 
+use crate::sensitive::valid_environment_name;
 use crate::strict_json::reject_duplicate_keys;
-use crate::{ResourceAddress, ResourceKind};
+use crate::{ResourceAddress, ResourceKind, SensitiveInputs, SensitivePropertyPath};
 
-const CURRENT_FORMAT_VERSION: u32 = 1;
+const CURRENT_FORMAT_VERSION: u32 = 2;
 
 const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "password",
@@ -170,12 +171,13 @@ impl<'de> Deserialize<'de> for RemoteId {
 #[error("remote identifier cannot be empty")]
 pub struct RemoteIdError;
 
-/// The non-sensitive inputs that Dokploy was last asked to manage.
+/// The non-sensitive inputs and explicit sensitive clears last sent to Dokploy.
 ///
-/// This type is the state seam for managed JSON. It rejects scalar roots and
-/// known secret-bearing field families recursively. Resource-specific adapters
-/// remain responsible for passing only fields owned by their configuration
-/// schema; secret values under an unrelated key cannot be inferred from JSON.
+/// This type is the state seam for managed JSON. It rejects scalar roots, raw
+/// sensitive values, noncanonical environment entries, and unknown
+/// secret-bearing field families recursively. Resource-specific adapters remain
+/// responsible for passing only fields owned by their configuration schema;
+/// secret values under an unrelated key cannot be inferred from JSON.
 #[derive(Clone, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct ManagedInputs(serde_json::Value);
@@ -196,7 +198,11 @@ impl ManagedInputs {
             return Err(ManagedInputsError::NotObject);
         }
 
-        validate_non_sensitive_json(&value, "$".to_owned())?;
+        validate_managed_input_object(
+            value
+                .as_object()
+                .expect("the managed input root was checked as an object"),
+        )?;
 
         Ok(Self(value))
     }
@@ -231,6 +237,58 @@ pub enum ManagedInputsError {
     NotObject,
     #[error("managed inputs contain secret-bearing field `{path}`")]
     SensitiveField { path: String },
+    #[error("managed inputs contain a non-null sensitive value at `{path}`")]
+    NonNullSensitiveValue { path: String },
+    #[error("managed inputs contain an invalid application environment at `{path}`")]
+    InvalidEnvironment { path: String },
+}
+
+fn validate_managed_input_object(
+    fields: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), ManagedInputsError> {
+    for (key, value) in fields {
+        let path = format!("$.{key}");
+        match key.as_str() {
+            "password" => {
+                if !value.is_null() {
+                    return Err(ManagedInputsError::NonNullSensitiveValue { path });
+                }
+            }
+            "environment" => validate_environment_clears(value, path)?,
+            _ => {
+                if is_sensitive_key(key) {
+                    return Err(ManagedInputsError::SensitiveField { path });
+                }
+                validate_non_sensitive_json(value, path)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_environment_clears(
+    value: &serde_json::Value,
+    path: String,
+) -> Result<(), ManagedInputsError> {
+    if value.is_null() {
+        return Ok(());
+    }
+    let Some(entries) = value.as_object() else {
+        return Err(ManagedInputsError::InvalidEnvironment { path });
+    };
+
+    for (name, value) in entries {
+        let entry_path = format!("{path}.{name}");
+        if !valid_environment_name(name) {
+            return Err(ManagedInputsError::InvalidEnvironment { path: entry_path });
+        }
+        if !value.is_null() {
+            return Err(ManagedInputsError::NonNullSensitiveValue { path: entry_path });
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_non_sensitive_json(
@@ -241,7 +299,7 @@ fn validate_non_sensitive_json(
         serde_json::Value::Object(fields) => {
             for (key, value) in fields {
                 let child_path = format!("{path}.{key}");
-                if is_sensitive_key(key) {
+                if key == "environment" || is_sensitive_key(key) {
                     return Err(ManagedInputsError::SensitiveField { path: child_path });
                 }
 
@@ -279,6 +337,7 @@ pub struct ResourceState {
     remote_id: RemoteId,
     protected: bool,
     last_applied: ManagedInputs,
+    sensitive_inputs: SensitiveInputs,
     dependencies: Vec<ResourceAddress>,
 }
 
@@ -290,6 +349,10 @@ impl fmt::Debug for ResourceState {
             .field("remote_id", &"[REDACTED]")
             .field("protected", &self.protected)
             .field("last_applied", &"[REDACTED]")
+            .field(
+                "sensitive_input_count",
+                &self.sensitive_inputs.paths().count(),
+            )
             .field("dependency_count", &self.dependencies.len())
             .finish()
     }
@@ -303,18 +366,40 @@ impl ResourceState {
         remote_id: RemoteId,
         protected: bool,
         last_applied: ManagedInputs,
-        mut dependencies: Vec<ResourceAddress>,
+        dependencies: Vec<ResourceAddress>,
     ) -> Self {
-        dependencies.sort();
-        dependencies.dedup();
-
-        Self {
+        Self::try_new(
             kind,
             remote_id,
             protected,
             last_applied,
+            SensitiveInputs::default(),
             dependencies,
-        }
+        )
+        .expect("empty sensitive inputs cannot overlap managed inputs")
+    }
+
+    /// Creates resource state with opaque sensitive intent receipts.
+    pub fn try_new(
+        kind: ResourceKind,
+        remote_id: RemoteId,
+        protected: bool,
+        last_applied: ManagedInputs,
+        sensitive_inputs: SensitiveInputs,
+        mut dependencies: Vec<ResourceAddress>,
+    ) -> Result<Self, ResourceStateError> {
+        ensure_disjoint_inputs(&last_applied, &sensitive_inputs)?;
+        dependencies.sort();
+        dependencies.dedup();
+
+        Ok(Self {
+            kind,
+            remote_id,
+            protected,
+            last_applied,
+            sensitive_inputs,
+            dependencies,
+        })
     }
 
     /// Returns the remote resource kind.
@@ -341,6 +426,12 @@ impl ResourceState {
         &self.last_applied
     }
 
+    /// Returns opaque receipts for non-null sensitive input intents.
+    #[must_use]
+    pub const fn sensitive_inputs(&self) -> &SensitiveInputs {
+        &self.sensitive_inputs
+    }
+
     /// Returns the canonical dependency list.
     #[must_use]
     pub fn dependencies(&self) -> &[ResourceAddress] {
@@ -361,19 +452,61 @@ impl<'de> Deserialize<'de> for ResourceState {
             remote_id: RemoteId,
             protected: bool,
             last_applied: ManagedInputs,
+            sensitive_inputs: SensitiveInputs,
             dependencies: Vec<ResourceAddress>,
         }
 
         let state = SerializedResourceState::deserialize(deserializer)?;
 
-        Ok(Self::new(
+        Self::try_new(
             state.kind,
             state.remote_id,
             state.protected,
             state.last_applied,
+            state.sensitive_inputs,
             state.dependencies,
-        ))
+        )
+        .map_err(de::Error::custom)
     }
+}
+
+/// Resource inputs that cannot be represented without ambiguous ownership.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ResourceStateError {
+    #[error("managed and sensitive inputs overlap at `{path}`")]
+    OverlappingInput { path: SensitivePropertyPath },
+}
+
+fn ensure_disjoint_inputs(
+    managed: &ManagedInputs,
+    sensitive: &SensitiveInputs,
+) -> Result<(), ResourceStateError> {
+    let managed = managed
+        .as_json()
+        .as_object()
+        .expect("ManagedInputs guarantees an object root");
+    let environment = managed.get("environment");
+
+    for path in sensitive.paths() {
+        let overlaps = if path.is_password() {
+            managed.contains_key("password")
+        } else if let Some(name) = path.environment_name() {
+            match environment {
+                Some(serde_json::Value::Null) => true,
+                Some(serde_json::Value::Object(entries)) if entries.is_empty() => true,
+                Some(serde_json::Value::Object(entries)) => entries.contains_key(name),
+                _ => false,
+            }
+        } else {
+            false
+        };
+
+        if overlaps {
+            return Err(ResourceStateError::OverlappingInput { path: path.clone() });
+        }
+    }
+
+    Ok(())
 }
 
 /// One versioned state lineage bound to exactly one Dokploy instance.

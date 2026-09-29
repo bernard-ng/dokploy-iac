@@ -128,6 +128,30 @@ Postgres or Redis password with `DOKCMP004`. Explicit clear and unmanaged
 sensitive fields remain supported. Sensitive descriptors and literal bytes do
 not enter the compiled sidecar or planner snapshot.
 
+Durable state format version 2 adds the first half of that convergence
+contract without changing planner comparison semantics. A non-null sensitive
+input is stored only as a version-one HMAC-SHA-256 receipt containing a
+canonical, non-nil UUID key identifier and a 32-byte MAC encoded as exactly 64
+lowercase hexadecimal characters. The receipt serializes as `version`,
+`keyId`, and `mac`, with `version` fixed to `hmac-sha256-v1`. Its Rust interface
+does not expose the MAC or implement display, and debug output is fully
+redacted. Key generation, key storage, HMAC computation, and secret resolution
+remain later checkpoints.
+
+Sensitive receipts use a closed property vocabulary: `password` and uppercase
+`environment.NAME` entries. Durable non-sensitive inputs may represent those
+paths only as explicit null clears. The application `environment` root may be
+null, empty, or contain canonical entries whose values are all null. Resource
+construction and decoding reject overlap between a clear and a receipt. Core
+state projection discards receipt bytes and exposes only
+`OwnedValue::Sensitive`; it still rejects a sensitive path on the wrong
+resource kind.
+
+State format version 2 is a deliberate pre-release incompatibility. Version 1
+state is rejected rather than migrated or interpreted without sensitive-input
+invariants. No released state compatibility promise exists yet, and failing
+closed avoids silently adopting a raw secret-bearing legacy shape.
+
 Dependency ordering uses `petgraph` behind the planner seam. Desired-resource
 edges order create, recreate, update, and no-op checkpoint actions
 dependency-first. Stored dependencies among resources leaving desired state
@@ -163,5 +187,8 @@ misleading partial execution sequence.
 - Replacement behavior remains a later Phase 5 checkpoint.
 - Configuration compilation never reads secret bytes or resolves logical
   references to physical IDs.
-- Secret descriptor changes are not detectable by the current value-free
-  planner model, so concrete sensitive inputs fail closed before planning.
+- Sensitive fingerprints are durable but are not yet compared by the
+  value-free planner model, so concrete sensitive inputs still fail closed
+  during configuration compilation.
+- State format version 1 cannot be opened by this pre-release implementation;
+  callers must intentionally recreate state in version 2.

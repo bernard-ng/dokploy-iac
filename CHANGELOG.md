@@ -61,3 +61,7 @@ All notable changes to this project will be documented in this file.
   unmanaged-name matching, explicit replacement collisions, move and removal
   probes, fresh reads, duplicate-topology rejection, and redaction-safe failure
   classification.
+- Add strict durable sensitive-intent receipts, canonical sensitive property
+  paths, raw-value rejection, disjoint clear ownership, and value-free planner
+  projection in state format version 2. This is a deliberate pre-release
+  incompatibility with version 1 state.

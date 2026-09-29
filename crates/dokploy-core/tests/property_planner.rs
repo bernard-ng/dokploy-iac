@@ -9,11 +9,12 @@ use dokploy_core::{
     ValueState, plan,
 };
 use dokploy_state::{
-    InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind, ResourceState,
-    StateFile,
+    FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
+    ResourceState, SensitiveFingerprint, SensitiveInputs, SensitivePropertyPath, StateFile,
 };
 use semver::Version;
 use serde_json::json;
+use uuid::Uuid;
 
 #[test]
 fn omitted_property_relinquishes_ownership_without_remote_update_or_drift() {
@@ -123,10 +124,11 @@ fn omitting_one_environment_entry_relinquishes_only_that_entry() {
     let kept = PropertyPath::environment_variable("FEATURE_A").expect("path must be valid");
     let relinquished = PropertyPath::environment_variable("FEATURE_B").expect("path must be valid");
     let instance = instance();
-    let state = state_with_resource(
+    let state = state_with_sensitive_resource(
         &address,
         &instance,
-        json!({ "environment": { "FEATURE_A": "old-a", "FEATURE_B": "old-b" } }),
+        json!({}),
+        ["environment.FEATURE_A", "environment.FEATURE_B"],
         false,
     );
     let stored = StoredState::try_from_state(&state).expect("stored state must project");
@@ -495,6 +497,86 @@ fn sensitive_values_and_remote_observations_are_enforced_at_snapshot_seams() {
 }
 
 #[test]
+fn durable_sensitive_receipts_project_as_value_free_owned_properties() {
+    let address = address("postgres.main");
+    let path = PropertyPath::Password;
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance(),
+        ResourceKind::Postgres,
+        "postgres-1",
+        json!({}),
+        ["password"],
+        false,
+    );
+
+    let stored = StoredState::try_from_state(&state).expect("sensitive state must project");
+
+    assert!(matches!(
+        stored.property(&address, &path),
+        Some(OwnedValue::Sensitive)
+    ));
+    assert!(!format!("{state:?}{stored:?}").contains("a5a5"));
+}
+
+#[test]
+fn durable_sensitive_null_clears_remain_explicit_null_properties() {
+    let postgres = address("postgres.main");
+    let postgres_state = state_with_resource_details(
+        &postgres,
+        &instance(),
+        ResourceKind::Postgres,
+        "postgres-1",
+        json!({ "password": null }),
+        false,
+        Vec::new(),
+    );
+    let stored = StoredState::try_from_state(&postgres_state).expect("password clear must project");
+    assert!(matches!(
+        stored.property(&postgres, &PropertyPath::Password),
+        Some(OwnedValue::Null)
+    ));
+
+    let application = address("application.api");
+    let environment = PropertyPath::environment_variable("API_TOKEN").expect("path must be valid");
+    let application_state = state_with_resource(
+        &application,
+        &instance(),
+        json!({ "environment": { "API_TOKEN": null } }),
+        false,
+    );
+    let stored =
+        StoredState::try_from_state(&application_state).expect("environment clear must project");
+    assert!(matches!(
+        stored.property(&application, &environment),
+        Some(OwnedValue::Null)
+    ));
+}
+
+#[test]
+fn durable_sensitive_receipts_fail_closed_for_the_wrong_resource_kind() {
+    let address = address("postgres.main");
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance(),
+        ResourceKind::Postgres,
+        "postgres-1",
+        json!({}),
+        ["environment.API_TOKEN"],
+        false,
+    );
+
+    let error = StoredState::try_from_state(&state)
+        .expect_err("application environment paths cannot belong to Postgres");
+
+    assert!(matches!(
+        error,
+        StoredStateError::InvalidPropertyPath { .. }
+    ));
+    assert!(!format!("{error:?}").contains("a5a5"));
+}
+
+#[test]
 fn desired_state_rejects_wrong_kind_and_invalid_dependencies() {
     let application = address("application.api");
     let postgres = address("postgres.main");
@@ -668,10 +750,11 @@ fn sensitive_unknown_property_blocks_planning_without_leaking_values() {
     let secret_path =
         PropertyPath::environment_variable("FEATURE_FLAG").expect("environment path must be valid");
     let instance = instance();
-    let state = state_with_resource(
+    let state = state_with_sensitive_resource(
         &address,
         &instance,
-        json!({ "environment": { "FEATURE_FLAG": "stored-secret-canary" } }),
+        json!({}),
+        ["environment.FEATURE_FLAG"],
         false,
     );
     let desired = desired_state(
@@ -3162,17 +3245,14 @@ fn canonical_json_is_deterministic_and_never_contains_property_values_or_remote_
     let secret_path =
         PropertyPath::environment_variable("FEATURE_FLAG").expect("environment path must be valid");
     let instance = instance();
-    let state = state_with_resource_details(
+    let state = state_with_sensitive_resource_details(
         &address,
         &instance,
         ResourceKind::Application,
         "remote-id-canary",
-        json!({
-            "description": "stored-value-canary",
-            "environment": { "FEATURE_FLAG": "stored-secret-canary" }
-        }),
+        json!({ "description": "stored-value-canary" }),
+        ["environment.FEATURE_FLAG"],
         false,
-        Vec::new(),
     );
     let stored = StoredState::try_from_state(&state).expect("state must project");
     let desired_properties_a = [
@@ -3444,6 +3524,62 @@ fn state_with_resource(
         protected,
         Vec::new(),
     )
+}
+
+fn state_with_sensitive_resource<const N: usize>(
+    address: &ResourceAddress,
+    instance: &InstanceIdentity,
+    previous: serde_json::Value,
+    paths: [&str; N],
+    protected: bool,
+) -> StateFile {
+    state_with_sensitive_resource_details(
+        address,
+        instance,
+        ResourceKind::Application,
+        "remote-1",
+        previous,
+        paths,
+        protected,
+    )
+}
+
+fn state_with_sensitive_resource_details<const N: usize>(
+    address: &ResourceAddress,
+    instance: &InstanceIdentity,
+    kind: ResourceKind,
+    remote_id: &str,
+    previous: serde_json::Value,
+    paths: [&str; N],
+    protected: bool,
+) -> StateFile {
+    let key_id = FingerprintKeyId::new(
+        Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").expect("UUID must parse"),
+    )
+    .expect("key ID must be valid");
+    let sensitive_inputs = SensitiveInputs::try_from_entries(paths.into_iter().map(|path| {
+        (
+            SensitivePropertyPath::parse(path).expect("sensitive path must be valid"),
+            SensitiveFingerprint::new_v1(key_id.clone(), [0xa5; 32]),
+        )
+    }))
+    .expect("sensitive inputs must be valid");
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    state
+        .upsert_resource(
+            address.clone(),
+            ResourceState::try_new(
+                kind,
+                RemoteId::new(remote_id).expect("remote ID must be valid"),
+                protected,
+                ManagedInputs::try_from_json(previous).expect("managed inputs must be valid"),
+                sensitive_inputs,
+                Vec::new(),
+            )
+            .expect("managed and sensitive inputs must be disjoint"),
+        )
+        .expect("state insert must succeed");
+    state
 }
 
 fn state_with_resource_details(

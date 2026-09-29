@@ -72,6 +72,9 @@ durable state semantics.
 - Project fresh project topology into explicit remote observations with
   authoritative absence, physical-ID matching for managed projects, exact-name
   collision probes, and fail-closed transport and topology diagnostics.
+- Persist non-null sensitive intent only as strict, versioned HMAC-SHA-256
+  receipts in state format version 2, while projecting value-free sensitive
+  ownership into the planner and keeping receipt comparison disabled.
 - Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.
