@@ -39,7 +39,16 @@ pub enum ApplicationTopologyAuthority {
     Partial,
 }
 
-/// Visibility assertions required by combined project, environment, and application discovery.
+/// Whether a fully paginated parent-scoped Postgres search is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PostgresTopologyAuthority {
+    /// Exhaustive absence below a proven environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
+/// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
     /// Completeness of `project.all`.
@@ -48,6 +57,8 @@ pub struct DiscoveryAuthority {
     pub environments: EnvironmentTopologyAuthority,
     /// Completeness of each fully paginated `application.search` collection.
     pub applications: ApplicationTopologyAuthority,
+    /// Completeness of each fully paginated `postgres.search` collection.
+    pub postgres: PostgresTopologyAuthority,
 }
 
 /// A redaction-safe combined discovery failure.
@@ -86,6 +97,24 @@ pub enum DiscoverRemoteError {
     /// More than one application has the same physical identity.
     #[error("DOKREM015: application topology contains a duplicate remote identity")]
     DuplicateApplicationId,
+    /// A Postgres database has no unambiguous containing environment.
+    #[error("DOKREM016: Postgres containment is unavailable")]
+    PostgresContainment,
+    /// A Postgres physical identity does not satisfy the state contract.
+    #[error("DOKREM017: Postgres topology contains an invalid remote identity")]
+    InvalidPostgresId,
+    /// More than one Postgres database has the same name within one environment.
+    #[error("DOKREM018: Postgres topology contains a duplicate scoped name")]
+    DuplicatePostgresName,
+    /// More than one Postgres database has the same physical identity.
+    #[error("DOKREM019: Postgres topology contains a duplicate remote identity")]
+    DuplicatePostgresId,
+    /// A Postgres dependency change would require an unsupported remote reparent.
+    #[error("DOKREM020: Postgres reparenting is not supported")]
+    PostgresReparentUnsupported,
+    /// Direct and collection Postgres reads contradict each other.
+    #[error("DOKREM021: Postgres read endpoints returned conflicting topology")]
+    PostgresTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -128,7 +157,7 @@ pub async fn discover_projects(
         .map_err(DiscoverProjectsError::InvalidRemoteState)
 }
 
-/// Reads fresh project, environment, and application state into one planner snapshot.
+/// Reads fresh project, environment, application, and Postgres state into one planner snapshot.
 ///
 /// This is the public discovery seam for the current remote-projection
 /// checkpoint. Every invocation performs fresh reads and retains no cache.
@@ -162,9 +191,142 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(applications);
+    let postgres =
+        discover_postgres_observations(client, compiled, state, &observations, authority.postgres)
+            .await?;
+    observations.extend(postgres);
 
     RemoteState::try_new(state.instance().clone(), observations)
         .map_err(DiscoverRemoteError::InvalidRemoteState)
+}
+
+async fn discover_postgres_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: PostgresTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::Postgres)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![postgres_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = postgres_parent_from_state(address, state)?;
+            validate_postgres_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(environment_id) = trusted_environment_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .postgres()
+                .by_environment(dokploy_sdk::EnvironmentId::new(&environment_id))
+                .await;
+            collections.insert(environment_id, collection);
+        }
+    }
+    validate_postgres_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = postgres_parent_from_state(&address, state)?;
+            match client
+                .postgres()
+                .get(dokploy_sdk::PostgresId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(postgres) => {
+                    let remote_id = RemoteId::new(postgres.postgres_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidPostgresId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidPostgresId);
+                    }
+                    let expected_environment_id =
+                        trusted_environment_id(&current_parent, compiled, state, topology)
+                            .ok_or(DiscoverRemoteError::PostgresContainment)?;
+                    if postgres.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::PostgresContainment);
+                    }
+                    validate_direct_postgres_against_collection(
+                        &postgres,
+                        &expected_environment_id,
+                        &collections,
+                        authority,
+                    )?;
+                    if !seen_direct_ids.insert(remote_id.clone()) {
+                        return Err(DiscoverRemoteError::DuplicatePostgresId);
+                    }
+                    RemoteObservation::Present(RemoteResource::new(
+                        remote_id,
+                        postgres_properties(&address, compiled, &postgres),
+                    ))
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if postgres_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_postgres_under_parent(
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = postgres_parent_from_desired(&address, compiled, state)?;
+            observe_postgres_under_parent(
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
 }
 
 fn instances_match(client: &Dokploy, state: &StateFile) -> bool {
@@ -580,7 +742,7 @@ fn observe_reparent_target(
             RemoteFailureKind::InvalidResponse,
         )));
     };
-    match effective_environment_observation(&desired_parent, compiled, topology) {
+    match effective_environment_observation(&desired_parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(None),
         Some(RemoteObservation::Unavailable(failure)) => {
             return Ok(Some(RemoteObservation::Unavailable(*failure)));
@@ -674,7 +836,7 @@ fn observe_application_under_parent(
     collections: &BTreeMap<String, Result<dokploy_sdk::ApplicationCollection, dokploy_sdk::Error>>,
     authority: ApplicationTopologyAuthority,
 ) -> Result<RemoteObservation, DiscoverRemoteError> {
-    match effective_environment_observation(parent, compiled, topology) {
+    match effective_environment_observation(parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
         Some(RemoteObservation::Unavailable(failure)) => {
             return Ok(RemoteObservation::Unavailable(*failure));
@@ -791,12 +953,7 @@ fn trusted_environment_id(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
 ) -> Option<String> {
-    let effective = compiled
-        .desired_state()
-        .moves()
-        .iter()
-        .find(|directive| directive.to() == parent)
-        .map_or(parent, |directive| directive.from());
+    let effective = effective_environment_address(parent, compiled, state);
     let stored = state.resource(effective)?;
     match observation(topology, effective) {
         Some(RemoteObservation::Present(environment))
@@ -816,15 +973,31 @@ fn trusted_environment_id(
 fn effective_environment_observation<'a>(
     parent: &ResourceAddress,
     compiled: &CompiledDesired,
+    state: &StateFile,
     topology: &'a [(ResourceAddress, RemoteObservation)],
 ) -> Option<&'a RemoteObservation> {
-    let effective = compiled
+    let effective = effective_environment_address(parent, compiled, state);
+
+    observation(topology, effective)
+}
+
+fn effective_environment_address<'a>(
+    parent: &'a ResourceAddress,
+    compiled: &'a CompiledDesired,
+    state: &StateFile,
+) -> &'a ResourceAddress {
+    compiled
         .desired_state()
         .moves()
         .iter()
         .find(|directive| directive.to() == parent)
-        .map_or(parent, |directive| directive.from());
-    observation(topology, effective)
+        .map_or(parent, |directive| {
+            if state.resource(parent).is_some() {
+                parent
+            } else {
+                directive.from()
+            }
+        })
 }
 
 fn observation<'a>(
@@ -875,6 +1048,264 @@ fn application_properties(
     }
 
     properties
+}
+
+fn postgres_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    postgres: &dokploy_sdk::PostgresDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let observed = match path {
+            PropertyPath::Database => observe_string_field(&postgres.database_name),
+            PropertyPath::Username => observe_string_field(&postgres.database_user),
+            PropertyPath::Password => {
+                PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+            }
+            PropertyPath::Description
+            | PropertyPath::Replicas
+            | PropertyPath::Source
+            | PropertyPath::SourceRepository
+            | PropertyPath::SourceBranch
+            | PropertyPath::Environment
+            | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::Host
+            | PropertyPath::Application
+            | PropertyPath::DeploymentStatus => continue,
+        };
+        properties.insert(path.clone(), observed);
+    }
+
+    properties
+}
+
+fn validate_postgres_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::PostgresCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (environment_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_names = BTreeSet::new();
+        for postgres in collection.postgres() {
+            let remote_id = RemoteId::new(postgres.postgres_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidPostgresId)?;
+            if postgres.environment_id.as_str() != environment_id {
+                return Err(DiscoverRemoteError::PostgresContainment);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicatePostgresId);
+            }
+            if !scoped_names.insert(postgres.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicatePostgresName);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn observe_postgres_under_parent(
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::PostgresCollection, dokploy_sdk::Error>>,
+    authority: PostgresTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some(Ok(collection)) => {
+            if let Some(postgres) = collection
+                .postgres()
+                .iter()
+                .find(|postgres| postgres.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(postgres.postgres_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidPostgresId)?;
+                return Ok(RemoteObservation::Present(RemoteResource::new(
+                    remote_id,
+                    BTreeMap::new(),
+                )));
+            }
+            if authority == PostgresTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_postgres_against_collection(
+    postgres: &dokploy_sdk::PostgresDetails,
+    environment_id: &str,
+    collections: &BTreeMap<String, Result<dokploy_sdk::PostgresCollection, dokploy_sdk::Error>>,
+    authority: PostgresTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, result)| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .postgres()
+                        .iter()
+                        .any(|item| item.postgres_id == postgres.postgres_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::PostgresTopologyConflict);
+    }
+    let Some(collection) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::PostgresTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Ok(());
+    };
+    let matching = collection
+        .postgres()
+        .iter()
+        .find(|item| item.postgres_id == postgres.postgres_id);
+    match matching {
+        Some(item) if item.name == postgres.name => Ok(()),
+        Some(_) => Err(DiscoverRemoteError::PostgresTopologyConflict),
+        None if authority == PostgresTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::PostgresTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn postgres_collections_contain_id(
+    remote_id: &RemoteId,
+    collections: &BTreeMap<String, Result<dokploy_sdk::PostgresCollection, dokploy_sdk::Error>>,
+) -> bool {
+    collections.values().any(|result| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .postgres()
+                .iter()
+                .any(|postgres| postgres.postgres_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_postgres_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+
+    Err(DiscoverRemoteError::PostgresReparentUnsupported)
+}
+
+fn postgres_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::PostgresContainment)?;
+    let mut parents = resource
+        .dependencies()
+        .iter()
+        .filter(|dependency| dependency.kind() == ResourceKind::Environment);
+    let parent = parents
+        .next()
+        .ok_or(DiscoverRemoteError::PostgresContainment)?;
+    if parents.next().is_some() {
+        return Err(DiscoverRemoteError::PostgresContainment);
+    }
+
+    Ok(parent.clone())
+}
+
+fn postgres_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::PostgresContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::PostgresContainment);
+        }
+        if state.resource(target).is_some() {
+            return postgres_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return postgres_parent_from_state(source, state);
+    }
+    postgres_parent_from_state(address, state)
 }
 
 fn desired_resource_for_observation<'a>(

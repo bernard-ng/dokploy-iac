@@ -84,3 +84,7 @@ All notable changes to this project will be documented in this file.
   authority, bounded stable pagination, managed-ID and containment checks,
   exact parent-scoped collision probes, move and reparent support,
   presence-aware owned fields, and value-free secret environment projection.
+- Add combined Postgres remote discovery with separately asserted search
+  authority, bounded stable pagination, managed-ID and containment checks,
+  exact parent-scoped collision probes, presence-aware database fields,
+  write-only password observations, and fail-closed physical reparenting.

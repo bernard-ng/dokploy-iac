@@ -12,6 +12,7 @@ pub use imperative::{Imperative, ImperativeMethod, ImperativeRequest};
 pub use models::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentShape, ApplicationId,
     ApplicationSearchItem, ApplicationSummary, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, EnvironmentSummary, EnvironmentTopology, PostgresDetails, PostgresId,
-    PostgresSummary, ProjectDetails, ProjectId, ProjectTopology, ResponseField, ServerId,
+    EnvironmentId, EnvironmentSummary, EnvironmentTopology, PostgresCollection, PostgresDetails,
+    PostgresId, PostgresSearchItem, PostgresSummary, ProjectDetails, ProjectId, ProjectTopology,
+    ResponseField, ServerId,
 };

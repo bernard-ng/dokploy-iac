@@ -6,9 +6,10 @@ use dokploy_api::{
     ApplicationSearchRequest, ApplicationSearchRequestQuery, DokployApiClient,
     ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint, EndpointMethod,
     EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentOneRequest,
-    EnvironmentOneRequestQuery, POSTGRES_ONE, PROJECT_ALL, PROJECT_ONE, PostgresOneRequest,
-    PostgresOneRequestQuery, ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery,
-    endpoint_by_operation, validate_request,
+    EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL, PROJECT_ONE,
+    PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery,
+    ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery, endpoint_by_operation,
+    validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -23,7 +24,8 @@ use crate::imperative::{
 };
 use crate::models::{
     ApplicationCollection, ApplicationDetails, ApplicationSearchPage, EnvironmentCollection,
-    EnvironmentDetails, PostgresDetails, ProjectDetails, ProjectTopology,
+    EnvironmentDetails, PostgresCollection, PostgresDetails, PostgresSearchPage, ProjectDetails,
+    ProjectTopology,
 };
 use crate::services::{Applications, Environments, Postgres, Projects};
 
@@ -32,6 +34,8 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("dokploy-iac/", env!("CARGO_PKG_VERSION"));
 const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
+const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
+const POSTGRES_SEARCH_ITEM_LIMIT: usize = 10_000;
 
 /// A configured client for the Dokploy API.
 #[derive(Clone)]
@@ -216,6 +220,62 @@ impl Dokploy {
         validate_generated_request(POSTGRES_ONE, &request)?;
 
         self.read_query_json(POSTGRES_ONE, &request.query).await
+    }
+
+    pub(crate) async fn postgres_by_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<PostgresCollection, Error> {
+        if environment_id.is_empty() {
+            return Err(invalid_request(
+                POSTGRES_SEARCH.operation(),
+                "environment ID cannot be empty",
+            ));
+        }
+        let mut postgres = Vec::new();
+        let mut expected_total = None;
+
+        loop {
+            let request = PostgresSearchRequest {
+                query: PostgresSearchRequestQuery {
+                    environment_id: Some(environment_id.to_owned()),
+                    limit: Some(POSTGRES_SEARCH_PAGE_SIZE as f64),
+                    offset: Some(postgres.len() as f64),
+                    ..PostgresSearchRequestQuery::default()
+                },
+            };
+            validate_generated_request(POSTGRES_SEARCH, &request)?;
+            let page: PostgresSearchPage = self
+                .read_query_json(POSTGRES_SEARCH, &request.query)
+                .await?;
+
+            let expected = *expected_total.get_or_insert(page.total);
+            if page.total != expected
+                || expected > POSTGRES_SEARCH_ITEM_LIMIT as u64
+                || page.items.len() > POSTGRES_SEARCH_PAGE_SIZE
+            {
+                return Err(Error::UnexpectedResponse {
+                    operation: POSTGRES_SEARCH.operation(),
+                });
+            }
+            let expected = usize::try_from(expected).map_err(|_| Error::UnexpectedResponse {
+                operation: POSTGRES_SEARCH.operation(),
+            })?;
+            let page_would_exceed_total = postgres
+                .len()
+                .checked_add(page.items.len())
+                .is_none_or(|count| count > expected);
+            if page_would_exceed_total || (page.items.is_empty() && postgres.len() < expected) {
+                return Err(Error::UnexpectedResponse {
+                    operation: POSTGRES_SEARCH.operation(),
+                });
+            }
+
+            postgres.extend(page.items);
+            if postgres.len() == expected {
+                return Ok(PostgresCollection { postgres });
+            }
+        }
     }
 
     async fn read_json<T>(&self, endpoint: Endpoint) -> Result<T, Error>

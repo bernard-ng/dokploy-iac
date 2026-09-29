@@ -1,6 +1,6 @@
 use std::env;
 
-use dokploy_sdk::{ApplicationId, Dokploy, EnvironmentId, PostgresId, ProjectId};
+use dokploy_sdk::{ApplicationId, Dokploy, EnvironmentId, PostgresId, ProjectId, ResponseField};
 
 const LIVE_TEST_FLAG: &str = "DOKPLOY_SDK_LIVE_TEST";
 
@@ -162,7 +162,7 @@ async fn applications_get_reads_the_selected_live_application() {
 
 #[tokio::test]
 #[ignore = "requires an explicit local Dokploy integration run"]
-async fn postgres_get_reads_the_selected_live_database_without_mutation() {
+async fn postgres_reads_the_selected_live_database_and_parent_collection() {
     let client = live_client();
     let topology = client
         .projects()
@@ -185,12 +185,29 @@ async fn postgres_get_reads_the_selected_live_database_without_mutation() {
         .get(PostgresId::new(expected.postgres_id.as_str()))
         .await
         .expect("the selected live Postgres database must be readable");
+    let collection = client
+        .postgres()
+        .by_environment(EnvironmentId::new(environment.environment_id.as_str()))
+        .await
+        .expect("the live parent-scoped Postgres collection must be readable");
 
     assert_eq!(postgres.postgres_id, expected.postgres_id);
     assert_eq!(postgres.environment_id, environment.environment_id);
+    assert!(
+        collection
+            .postgres()
+            .iter()
+            .any(|item| item.postgres_id == expected.postgres_id)
+    );
     assert!(!postgres.name.trim().is_empty());
-    assert!(!postgres.database_name.trim().is_empty());
-    assert!(!postgres.database_user.trim().is_empty());
+    assert!(matches!(
+        postgres.database_name,
+        ResponseField::Value(value) if !value.trim().is_empty()
+    ));
+    assert!(matches!(
+        postgres.database_user,
+        ResponseField::Value(value) if !value.trim().is_empty()
+    ));
 }
 
 #[tokio::test]

@@ -72,6 +72,13 @@ replacement parents, preserves owned field presence, and reduces the
 secret-bearing runtime environment document to a value-free shape before it
 crosses the SDK seam.
 
+Postgres discovery uses the same combined snapshot with its own collection
+authority. It exhausts bounded parent-scoped search, validates managed IDs and
+current containment, preserves database and username field presence, and
+represents every requested password as a write-only sensitive observation.
+Logical moves remain safe inside one physical environment, while physical
+reparenting fails closed until an explicit remote action exists.
+
 The durable sensitive-state foundation now stores non-null password and
 application environment intent only as opaque, versioned HMAC-SHA-256
 receipts. State format version 2 rejects raw sensitive values, ambiguous

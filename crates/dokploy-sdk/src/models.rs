@@ -177,8 +177,10 @@ pub struct PostgresDetails {
     pub name: String,
     pub app_name: String,
     pub docker_image: String,
-    pub database_name: String,
-    pub database_user: String,
+    #[serde(default)]
+    pub database_name: ResponseField<String>,
+    #[serde(default)]
+    pub database_user: ResponseField<String>,
     #[serde(default)]
     pub application_status: Option<String>,
     #[serde(default)]
@@ -187,6 +189,37 @@ pub struct PostgresDetails {
     pub external_port: Option<u16>,
     #[serde(default)]
     pub server_id: Option<ServerId>,
+}
+
+/// One safe Postgres entry returned by `postgres.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PostgresSearchItem {
+    pub postgres_id: PostgresId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+}
+
+/// The fully collected Postgres search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PostgresCollection {
+    pub(crate) postgres: Vec<PostgresSearchItem>,
+}
+
+impl PostgresCollection {
+    /// Returns all Postgres databases discovered in the parent environment.
+    #[must_use]
+    pub fn postgres(&self) -> &[PostgresSearchItem] {
+        &self.postgres
+    }
+}
+
+/// One page returned by the runtime `postgres.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PostgresSearchPage {
+    pub(crate) items: Vec<PostgresSearchItem>,
+    pub(crate) total: u64,
 }
 
 /// The project collection returned by `project.all`.
@@ -429,5 +462,34 @@ mod tests {
         assert!(!debug.contains("password-canary"));
         assert!(!debug.contains("environment-secret-canary"));
         assert!(!debug.contains("build-secret-canary"));
+    }
+
+    #[test]
+    fn postgres_owned_fields_preserve_omitted_null_and_value() {
+        let cases = [
+            (
+                r#"{"postgresId":"postgres-1","environmentId":"environment-1","name":"omitted","appName":"omitted","dockerImage":"postgres:16"}"#,
+                ResponseField::NotReturned,
+                ResponseField::NotReturned,
+            ),
+            (
+                r#"{"postgresId":"postgres-1","environmentId":"environment-1","name":"null","appName":"null","dockerImage":"postgres:16","databaseName":null,"databaseUser":null}"#,
+                ResponseField::Null,
+                ResponseField::Null,
+            ),
+            (
+                r#"{"postgresId":"postgres-1","environmentId":"environment-1","name":"value","appName":"value","dockerImage":"postgres:16","databaseName":"app","databaseUser":"owner"}"#,
+                ResponseField::Value("app".to_owned()),
+                ResponseField::Value("owner".to_owned()),
+            ),
+        ];
+
+        for (json, expected_database, expected_user) in cases {
+            let postgres: PostgresDetails =
+                serde_json::from_str(json).expect("Postgres details are valid");
+
+            assert_eq!(postgres.database_name, expected_database);
+            assert_eq!(postgres.database_user, expected_user);
+        }
     }
 }
