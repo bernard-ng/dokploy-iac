@@ -88,3 +88,6 @@ All notable changes to this project will be documented in this file.
   authority, bounded stable pagination, managed-ID and containment checks,
   exact parent-scoped collision probes, presence-aware database fields,
   write-only password observations, and fail-closed physical reparenting.
+- Add a failure-safe disposable Redis contract capture with owner-only raw
+  evidence, deterministic secret-safe fixtures, provenance metadata, and
+  three-way post-removal verification without deploying the resource.

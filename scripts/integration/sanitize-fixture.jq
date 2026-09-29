@@ -1,18 +1,22 @@
 def normalized_scalar:
   if .key == "projectId" then
-    .value = "project-1"
+    if .value == null then . else .value = "project-1" end
   elif .key == "environmentId" then
-    .value = "environment-1"
+    if .value == null then . else .value = "environment-1" end
   elif .key == "applicationId" then
-    .value = "application-1"
+    if .value == null then . else .value = "application-1" end
   elif .key == "postgresId" then
-    .value = "postgres-1"
+    if .value == null then . else .value = "postgres-1" end
+  elif .key == "redisId" then
+    if .value == null then . else .value = "redis-1" end
   elif .key == "mountId" then
-    .value = "mount-1"
+    if .value == null then . else .value = "mount-1" end
+  elif .key == "volumeName" then
+    if .value == null then . else .value = "volume-1" end
   elif .key == "organizationId" then
-    .value = "organization-1"
+    if .value == null then . else .value = "organization-1" end
   elif .key == "ownerId" or .key == "userId" then
-    .value = "user-1"
+    if .value == null then . else .value = "user-1" end
   elif .key == "createdAt" or .key == "updatedAt" then
     if .value == null then . else .value = "2026-09-28T00:00:00.000Z" end
   elif .key == "env"
@@ -36,6 +40,14 @@ walk(
         .appName = "application-contract-test"
       elif has("postgresId") and has("appName") then
         .appName = "postgres-contract-test"
+      elif has("redisId") then
+        (if has("appName") then .appName = "redis-contract-test" else . end)
+        | (if has("name") then .name = "Redis Contract Test" else . end)
+        | (if has("description") and .description != null then
+            .description = "Disposable Redis contract capture"
+          else
+            .
+          end)
       else
         .
       end

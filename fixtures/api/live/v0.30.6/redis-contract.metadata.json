@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-09-29",
+  "cleanupEvidence": {
+    "oneStatus": 404,
+    "projectOneAbsent": true,
+    "searchEmpty": true
+  },
+  "deployed": false,
+  "endpoints": [
+    "redis.create",
+    "redis.one",
+    "redis.search",
+    "redis.remove",
+    "project.one"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "role": "owner",
+  "sanitized": true,
+  "version": "v0.30.6"
+}

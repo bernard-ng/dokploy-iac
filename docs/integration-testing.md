@@ -49,6 +49,45 @@ The capture process keeps raw responses under ignored `.integration/` storage,
 normalizes unstable identifiers and timestamps, redacts secret-like fields, and
 writes only sanitized responses under `fixtures/api/live/`.
 
+## Disposable Redis contract capture
+
+Capture the currently undocumented Redis response shapes separately from the
+long-lived Phase 0 topology:
+
+```bash
+scripts/integration/capture-redis-contract.sh
+```
+
+The command requires the populated `IaC Contract Test` project and an empty
+Redis collection in its `production` environment. It creates one
+collision-resistant Redis record, reads it through `redis.one` and
+`redis.search`, and removes it without deploying it. A cleanup trap is
+installed before the create request. If creation returns an incomplete or
+interrupted response, cleanup recovers only a unique record carrying the run's
+name and ownership description from `project.one`; ambiguous matches are never
+deleted.
+
+API keys and generated passwords are passed to the HTTP client through
+owner-only files rather than command arguments. Raw requests and responses are
+captured in a mode-`0700` run directory under `.integration/state/`, with files
+set to mode `0600`. A successful, fully verified run deletes this private
+workspace; a failed run retains it for cleanup diagnosis. Retained raw evidence
+contains secrets and must not be copied into tracked paths. The tracked fixtures
+normalize IDs, timestamps, generated application names, and volume names, and
+redact every secret-bearing field. The complete candidate fixture tree is
+validated before a rollback-safe directory replacement publishes it.
+
+A successful capture first proves that `project.one` exposes exactly one record
+matching the collision-resistant name and ownership description used by
+failure recovery. It then proves cleanup three ways: `redis.one` returns 404,
+the environment-scoped `redis.search` result is empty, and `project.one` no
+longer contains the owned record. The proof and exact Dokploy image provenance
+are recorded in `redis-contract.metadata.json`. `check-fixtures.sh` validates
+these invariants and scans tracked fixtures against every available local
+integration secret. The capture also verifies the running container's exact
+image reference and requires the Redis record to remain idle with no assigned
+server before recording that no deployment occurred.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK
