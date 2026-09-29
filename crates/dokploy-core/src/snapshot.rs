@@ -130,6 +130,12 @@ impl DesiredResource {
     pub fn dependencies(&self) -> &[ResourceAddress] {
         &self.dependencies
     }
+
+    /// Returns lifecycle paths that must retain their previous ownership baseline.
+    #[must_use]
+    pub fn ignored_changes(&self) -> &[PropertyPath] {
+        &self.ignore_changes
+    }
 }
 
 impl fmt::Debug for DesiredResource {

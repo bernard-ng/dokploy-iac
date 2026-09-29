@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod credentials;
 mod declarative;
+pub mod desired;
 mod imperative;
 mod imperative_generated;
 mod redaction;

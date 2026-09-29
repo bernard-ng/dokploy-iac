@@ -106,6 +106,28 @@ explicit move interaction, recoverable journal steps, and a checkpoint that
 accepts the new physical identity. Until those inputs and executor semantics
 exist, replacement cannot degrade into create, update, or move.
 
+The CLI crate is the composition seam from validated `dokploy.yaml` models to
+core desired state. One compiler maps all MVP resource variants, lifecycle
+metadata, containment and reference dependencies, moves, and removals without
+performing I/O. Its configuration digest is supplied by the caller; digest
+derivation is a separate checkpoint.
+
+Values needed only when execution eventually occurs live in a non-serializable
+sidecar with fully redacted debug output. At this checkpoint the sidecar
+retains direct logical parents and domain-to-application logical references.
+The desired domain application property deliberately contains the canonical
+logical address, never a Dokploy remote ID. Remote ID resolution remains an
+adapter responsibility after discovery.
+
+Sensitive desired properties remain value-free. A change from one secret
+descriptor to another therefore does not yet produce a plannable rotation:
+safe rotation requires a non-secret intent fingerprint or equivalent durable
+comparison contract plus executor semantics. Until that contract exists, the
+compiler rejects every concrete application environment value and every set
+Postgres or Redis password with `DOKCMP004`. Explicit clear and unmanaged
+sensitive fields remain supported. Sensitive descriptors and literal bytes do
+not enter the compiled sidecar or planner snapshot.
+
 Dependency ordering uses `petgraph` behind the planner seam. Desired-resource
 edges order create, recreate, update, and no-op checkpoint actions
 dependency-first. Stored dependencies among resources leaving desired state
@@ -139,3 +161,7 @@ misleading partial execution sequence.
 - Adding a property path requires an explicit planner vocabulary, kind
   validation, state projection, and adapter update.
 - Replacement behavior remains a later Phase 5 checkpoint.
+- Configuration compilation never reads secret bytes or resolves logical
+  references to physical IDs.
+- Secret descriptor changes are not detectable by the current value-free
+  planner model, so concrete sensitive inputs fail closed before planning.

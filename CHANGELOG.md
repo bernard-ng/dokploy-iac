@@ -52,3 +52,7 @@ All notable changes to this project will be documented in this file.
 - Add stored-baseline `ignore_changes` planning for existing resources,
   including explicit write exclusions, create and recreate semantics, move
   support, lifecycle-only suppression, and fail-closed selector validation.
+- Add a configuration-to-planner compiler for all MVP resource kinds with
+  derived containment and reference dependencies, lifecycle directives, and a
+  redacted deferred-execution sidecar for logical references. Concrete
+  sensitive inputs fail closed until a convergent intent fingerprint exists.

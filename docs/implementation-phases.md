@@ -65,6 +65,10 @@ durable state semantics.
   removals with atomic checkpoint targets and fail-closed collision probes.
 - Preserve stored ownership baselines for ignored existing-resource paths and
   expose deterministic write exclusions without treating them as drift.
+- Compile validated configuration into pure desired state plus a redacted,
+  non-serializable execution sidecar that preserves logical containment,
+  and domain references without resolving remote IDs. Reject concrete
+  sensitive inputs until the planner has a convergent intent fingerprint.
 - Build desired, stored, and fresh remote state models.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.
