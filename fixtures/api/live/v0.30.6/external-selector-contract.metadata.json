@@ -1,0 +1,19 @@
+{
+  "version": "v0.30.6",
+  "sanitized": true,
+  "mutations": 0,
+  "endpoints": [
+    "server.all",
+    "registry.all",
+    "destination.all"
+  ],
+  "boundedItemLimit": 10000,
+  "duplicateIdsRejected": true,
+  "duplicateNamesPreserved": true,
+  "sensitiveFieldsExcluded": true,
+  "observedCounts": {
+    "servers": 0,
+    "registries": 0,
+    "destinations": 0
+  }
+}

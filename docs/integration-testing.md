@@ -477,3 +477,30 @@ state entry, and requires a final no-op plan. It scans all captured command
 streams, configuration, state, and journals for the original and rejected
 passwords. Cleanup verifies project and database absence, retains owner-only
 evidence if any proof fails, and never deploys the database.
+
+## External selector contract capture
+
+Capture the read-only server, registry, and backup-destination selector
+contracts against the pinned local instance with:
+
+```bash
+scripts/integration/capture-external-selectors-contract.sh
+```
+
+The command performs only `server.all`, `registry.all`, and `destination.all`
+reads. It validates the array envelopes, required public fields, 10,000-item
+limit, and unique physical IDs. Raw responses can contain server commands,
+metrics tokens, registry credentials, and destination access keys, so they
+remain in owner-only ignored storage. Published fixtures contain only
+normalized IDs, names, and server types; duplicate names remain duplicate so
+the later declarative resolver can test ambiguity. The complete candidate
+fixture tree passes the secret checker before rollback-safe publication.
+
+Exercise the public SDK against the same three inert reads with:
+
+```bash
+scripts/integration/test-external-selectors-sdk.sh
+```
+
+The wrapper requires Dokploy `v0.30.6` and performs no creates, updates,
+deletes, deployments, or executions.

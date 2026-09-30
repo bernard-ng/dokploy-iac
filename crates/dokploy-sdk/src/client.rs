@@ -9,7 +9,7 @@ use dokploy_api::{
     ApplicationOneRequestQuery, ApplicationRedeployRequestBody, ApplicationSearchRequest,
     ApplicationSearchRequestQuery, COMPOSE_CREATE, COMPOSE_DELETE, COMPOSE_ONE, COMPOSE_SEARCH,
     COMPOSE_UPDATE, ComposeDeleteRequest, ComposeDeleteRequestBody, ComposeOneRequest,
-    ComposeOneRequestQuery, ComposeSearchRequest, ComposeSearchRequestQuery,
+    ComposeOneRequestQuery, ComposeSearchRequest, ComposeSearchRequestQuery, DESTINATION_ALL,
     DOMAIN_BY_APPLICATION_ID, DOMAIN_CREATE, DOMAIN_DELETE, DOMAIN_ONE, DOMAIN_UPDATE,
     DokployApiClient, DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery,
     DomainCreateRequest, DomainCreateRequestBody, DomainDeleteRequest, DomainIdRequestBody,
@@ -37,15 +37,15 @@ use dokploy_api::{
     PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
     ProjectCreateRequestBody, ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
     ProjectRemoveRequest, REDIRECTS_CREATE, REDIRECTS_DELETE, REDIRECTS_ONE, REDIRECTS_UPDATE,
-    REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedirectIdRequestBody,
-    RedirectsDeleteRequest, RedirectsOneRequest, RedirectsOneRequestQuery, RedisIdRequestBody,
-    RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
-    RedisSearchRequestQuery, SCHEDULE_CREATE, SCHEDULE_DELETE, SCHEDULE_LIST, SCHEDULE_ONE,
-    SCHEDULE_UPDATE, SECURITY_CREATE, SECURITY_DELETE, SECURITY_ONE, SECURITY_UPDATE,
-    ScheduleCreateRequestBodyScheduleType, ScheduleDeleteRequest, ScheduleIdRequestBody,
-    ScheduleListRequest, ScheduleListRequestQuery, ScheduleOneRequest, ScheduleOneRequestQuery,
-    SecurityDeleteRequest, SecurityIdRequestBody, SecurityOneRequest, SecurityOneRequestQuery,
-    endpoint_by_operation, validate_request,
+    REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, REGISTRY_ALL,
+    RedirectIdRequestBody, RedirectsDeleteRequest, RedirectsOneRequest, RedirectsOneRequestQuery,
+    RedisIdRequestBody, RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest,
+    RedisSearchRequest, RedisSearchRequestQuery, SCHEDULE_CREATE, SCHEDULE_DELETE, SCHEDULE_LIST,
+    SCHEDULE_ONE, SCHEDULE_UPDATE, SECURITY_CREATE, SECURITY_DELETE, SECURITY_ONE, SECURITY_UPDATE,
+    SERVER_ALL, ScheduleCreateRequestBodyScheduleType, ScheduleDeleteRequest,
+    ScheduleIdRequestBody, ScheduleListRequest, ScheduleListRequestQuery, ScheduleOneRequest,
+    ScheduleOneRequestQuery, SecurityDeleteRequest, SecurityIdRequestBody, SecurityOneRequest,
+    SecurityOneRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -63,20 +63,21 @@ use crate::models::{
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse,
     ApplicationPortCollectionResponse, ApplicationRedirectCollectionResponse,
     ApplicationSearchPage, ApplicationSecurityCollectionResponse, ComposeCollection,
-    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DomainCollection,
-    DomainCreateResponse, DomainDetails, EnvironmentCollection, EnvironmentCreateResponse,
-    EnvironmentDetails, LibSqlCollection, LibSqlDetails, MariaDbCollection, MariaDbCreateResponse,
-    MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
-    MongoSearchPage, MountCollection, MountDetails, MySqlCollection, MySqlCreateResponse,
-    MySqlDetails, MySqlSearchPage, PortCollection, PortDetails, PostgresCollection,
-    PostgresCreateResponse, PostgresDetails, PostgresSearchPage, ProjectCreateResponse,
-    ProjectDetails, ProjectTopology, RedirectCollection, RedirectDetails, RedisCollection,
-    RedisCreateResponse, RedisDetails, RedisSearchPage, ScheduleCollection, ScheduleDetails,
-    ScheduleProofDetails, SecurityCollection, SecurityDetails,
+    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DestinationCollection,
+    DestinationSummary, DomainCollection, DomainCreateResponse, DomainDetails,
+    EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails, LibSqlCollection,
+    LibSqlDetails, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails, MariaDbSearchPage,
+    MongoCollection, MongoCreateResponse, MongoDetails, MongoSearchPage, MountCollection,
+    MountDetails, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
+    PortCollection, PortDetails, PostgresCollection, PostgresCreateResponse, PostgresDetails,
+    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedirectCollection,
+    RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails, RedisSearchPage,
+    RegistryCollection, RegistrySummary, ScheduleCollection, ScheduleDetails, ScheduleProofDetails,
+    SecurityCollection, SecurityDetails, ServerCollection, ServerSummary,
 };
 use crate::services::{
-    Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Ports,
-    Postgres, Projects, Redirects, Redis, Schedules, Security,
+    Applications, Composes, Destinations, Domains, Environments, LibSql, MariaDb, Mongo, Mounts,
+    MySql, Ports, Postgres, Projects, Redirects, Redis, Registries, Schedules, Security, Servers,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
@@ -115,6 +116,7 @@ const PORT_LIST_ITEM_LIMIT: usize = 10_000;
 const REDIRECT_LIST_ITEM_LIMIT: usize = 10_000;
 const SCHEDULE_LIST_ITEM_LIMIT: usize = 10_000;
 const SECURITY_LIST_ITEM_LIMIT: usize = 10_000;
+const EXTERNAL_SELECTOR_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -153,6 +155,24 @@ impl Dokploy {
     #[must_use]
     pub fn projects(&self) -> Projects<'_> {
         Projects::new(self)
+    }
+
+    /// Returns access to external server selector reads.
+    #[must_use]
+    pub fn servers(&self) -> Servers<'_> {
+        Servers::new(self)
+    }
+
+    /// Returns access to external registry selector reads.
+    #[must_use]
+    pub fn registries(&self) -> Registries<'_> {
+        Registries::new(self)
+    }
+
+    /// Returns access to external backup-destination selector reads.
+    #[must_use]
+    pub fn destinations(&self) -> Destinations<'_> {
+        Destinations::new(self)
     }
 
     /// Returns access to application read operations.
@@ -256,6 +276,42 @@ impl Dokploy {
         validate_generated_request(PROJECT_ALL, &request)?;
 
         self.read_json(PROJECT_ALL).await
+    }
+
+    pub(crate) async fn server_all(&self) -> Result<ServerCollection, Error> {
+        let servers: Vec<ServerSummary> = self.read_json_secret(SERVER_ALL).await?;
+        validate_external_selector_collection(
+            SERVER_ALL,
+            &servers,
+            |server| server.server_id.as_str(),
+            |server| !server.name.is_empty() && !server.server_type.is_empty(),
+        )?;
+
+        Ok(ServerCollection { servers })
+    }
+
+    pub(crate) async fn registry_all(&self) -> Result<RegistryCollection, Error> {
+        let registries: Vec<RegistrySummary> = self.read_json_secret(REGISTRY_ALL).await?;
+        validate_external_selector_collection(
+            REGISTRY_ALL,
+            &registries,
+            |registry| registry.registry_id.as_str(),
+            |registry| !registry.registry_name.is_empty(),
+        )?;
+
+        Ok(RegistryCollection { registries })
+    }
+
+    pub(crate) async fn destination_all(&self) -> Result<DestinationCollection, Error> {
+        let destinations: Vec<DestinationSummary> = self.read_json_secret(DESTINATION_ALL).await?;
+        validate_external_selector_collection(
+            DESTINATION_ALL,
+            &destinations,
+            |destination| destination.destination_id.as_str(),
+            |destination| !destination.name.is_empty(),
+        )?;
+
+        Ok(DestinationCollection { destinations })
     }
 
     pub(crate) async fn project_get(&self, project_id: &str) -> Result<ProjectDetails, Error> {
@@ -2077,6 +2133,15 @@ impl Dokploy {
         decode_json_response(endpoint, response).await
     }
 
+    async fn read_json_secret<T>(&self, endpoint: Endpoint) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+    {
+        let response = self.send(endpoint, self.request(endpoint)).await?;
+
+        decode_json_response_secret(endpoint, response).await
+    }
+
     async fn read_query_json<T, Q>(&self, endpoint: Endpoint, query: &Q) -> Result<T, Error>
     where
         T: DeserializeOwned,
@@ -2404,6 +2469,35 @@ where
             source,
         },
     })
+}
+
+fn validate_external_selector_collection<T, I, V>(
+    endpoint: Endpoint,
+    items: &[T],
+    identity: I,
+    valid: V,
+) -> Result<(), Error>
+where
+    I: Fn(&T) -> &str,
+    V: Fn(&T) -> bool,
+{
+    if items.len() > EXTERNAL_SELECTOR_ITEM_LIMIT {
+        return Err(Error::UnexpectedResponse {
+            operation: endpoint.operation(),
+        });
+    }
+
+    let mut identities = HashSet::with_capacity(items.len());
+    for item in items {
+        let item_id = identity(item);
+        if item_id.is_empty() || !valid(item) || !identities.insert(item_id) {
+            return Err(Error::UnexpectedResponse {
+                operation: endpoint.operation(),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn response_body_too_large(endpoint: Endpoint, status: StatusCode) -> Error {

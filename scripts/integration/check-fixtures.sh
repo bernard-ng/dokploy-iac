@@ -190,6 +190,13 @@ required_schedule_fixtures=(
     "schedule-contract.metadata.json"
 )
 
+required_external_selector_fixtures=(
+    "server-all.selectors.json"
+    "registry-all.selectors.json"
+    "destination-all.selectors.json"
+    "external-selector-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -270,6 +277,13 @@ done
 for fixture_name in "${required_schedule_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Schedule contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_external_selector_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing external-selector contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1521,6 +1535,57 @@ fi
 
 if grep -R -E -q 'schedule-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Schedule project name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    type == "array" and length <= 10000
+    and all(.[]; keys == ["name", "serverId", "serverType"]
+        and (.serverId | type) == "string" and .serverId != ""
+        and (.name | type) == "string" and .name != ""
+        and (.serverType | type) == "string" and .serverType != "")
+    and ([.[].serverId] | length == (unique | length))
+' "$versioned_fixture_directory/server-all.selectors.json" >/dev/null; then
+    echo "Sanitized server selector fixture is invalid or exposes extra fields." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    type == "array" and length <= 10000
+    and all(.[]; keys == ["registryId", "registryName"]
+        and (.registryId | type) == "string" and .registryId != ""
+        and (.registryName | type) == "string" and .registryName != "")
+    and ([.[].registryId] | length == (unique | length))
+' "$versioned_fixture_directory/registry-all.selectors.json" >/dev/null; then
+    echo "Sanitized registry selector fixture is invalid or exposes extra fields." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    type == "array" and length <= 10000
+    and all(.[]; keys == ["destinationId", "name"]
+        and (.destinationId | type) == "string" and .destinationId != ""
+        and (.name | type) == "string" and .name != "")
+    and ([.[].destinationId] | length == (unique | length))
+' "$versioned_fixture_directory/destination-all.selectors.json" >/dev/null; then
+    echo "Sanitized destination selector fixture is invalid or exposes extra fields." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .sanitized == true
+    and .mutations == 0
+    and .endpoints == ["server.all", "registry.all", "destination.all"]
+    and .boundedItemLimit == 10000
+    and .duplicateIdsRejected == true
+    and .duplicateNamesPreserved == true
+    and .sensitiveFieldsExcluded == true
+    and (.observedCounts.servers | type) == "number"
+    and (.observedCounts.registries | type) == "number"
+    and (.observedCounts.destinations | type) == "number"
+' "$versioned_fixture_directory/external-selector-contract.metadata.json" >/dev/null; then
+    echo "External-selector metadata does not prove safe inert contract capture." >&2
     exit 1
 fi
 

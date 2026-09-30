@@ -52,8 +52,88 @@ identifier!(DomainId);
 identifier!(SecurityId);
 identifier!(ScheduleId);
 identifier!(ServerId);
+identifier!(RegistryId);
+identifier!(DestinationId);
 
 const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32";
+
+/// Minimal non-sensitive server identity returned by `server.all`.
+///
+/// Command configuration, metrics tokens, connection data, and nested runtime
+/// records are deliberately not represented. Unknown response fields are
+/// ignored so the selector boundary tolerates unrelated upstream additions.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerSummary {
+    pub server_id: ServerId,
+    pub name: String,
+    pub server_type: String,
+}
+
+/// The complete bounded server selector collection.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ServerCollection {
+    pub(crate) servers: Vec<ServerSummary>,
+}
+
+impl ServerCollection {
+    /// Returns every server selector candidate in upstream order.
+    #[must_use]
+    pub fn servers(&self) -> &[ServerSummary] {
+        &self.servers
+    }
+}
+
+/// Minimal non-sensitive registry identity returned by `registry.all`.
+///
+/// Credentials and other registry connection settings are deliberately not
+/// represented.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrySummary {
+    pub registry_id: RegistryId,
+    pub registry_name: String,
+}
+
+/// The complete bounded registry selector collection.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegistryCollection {
+    pub(crate) registries: Vec<RegistrySummary>,
+}
+
+impl RegistryCollection {
+    /// Returns every registry selector candidate in upstream order.
+    #[must_use]
+    pub fn registries(&self) -> &[RegistrySummary] {
+        &self.registries
+    }
+}
+
+/// Minimal non-sensitive backup-destination identity returned by
+/// `destination.all`.
+///
+/// Provider configuration, access keys, secret keys, and bucket details are
+/// deliberately not represented.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DestinationSummary {
+    pub destination_id: DestinationId,
+    pub name: String,
+}
+
+/// The complete bounded backup-destination selector collection.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DestinationCollection {
+    pub(crate) destinations: Vec<DestinationSummary>,
+}
+
+impl DestinationCollection {
+    /// Returns every backup-destination selector candidate in upstream order.
+    #[must_use]
+    pub fn destinations(&self) -> &[DestinationSummary] {
+        &self.destinations
+    }
+}
 
 /// Runtime mode used by one Dokploy Compose record.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

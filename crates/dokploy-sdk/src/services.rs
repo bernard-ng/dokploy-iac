@@ -1,15 +1,17 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
-    ComposeCollection, ComposeDetails, ComposeId, ComposeVolumePolicy, Dokploy, DomainCollection,
-    DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
-    LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection, MariaDbDetails, MariaDbId,
-    MongoCollection, MongoDetails, MongoId, MountCollection, MountDetails, MountId,
-    MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
-    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
-    RedirectCollection, RedirectDetails, RedirectId, RedisCollection, RedisDetails, RedisId,
-    ScheduleCollection, ScheduleDetails, ScheduleId, ScheduleTarget, SecurityCollection,
-    SecurityDetails, SecurityId, ServiceTarget,
+    ComposeCollection, ComposeDetails, ComposeId, ComposeVolumePolicy, DestinationCollection,
+    Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
+    EnvironmentId, Error, LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection,
+    MariaDbDetails, MariaDbId, MongoCollection, MongoDetails, MongoId, MountCollection,
+    MountDetails, MountId, MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails,
+    PortId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId,
+    ProjectTopology, RedirectCollection, RedirectDetails, RedirectId, RedisCollection,
+    RedisDetails, RedisId, RegistryCollection, ScheduleCollection, ScheduleDetails, ScheduleId,
+    ScheduleTarget, SecurityCollection, SecurityDetails, SecurityId, ServerCollection,
+    ServiceTarget,
 };
+
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
@@ -22,6 +24,54 @@ use crate::{
     UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule,
     UpdateSecurity,
 };
+
+/// Read operations for external Dokploy servers.
+pub struct Servers<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Servers<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads the complete bounded collection of server selector candidates.
+    pub async fn all(&self) -> Result<ServerCollection, Error> {
+        self.client.server_all().await
+    }
+}
+
+/// Read operations for external container registries.
+pub struct Registries<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Registries<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads the complete bounded collection of registry selector candidates.
+    pub async fn all(&self) -> Result<RegistryCollection, Error> {
+        self.client.registry_all().await
+    }
+}
+
+/// Read operations for external backup destinations.
+pub struct Destinations<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Destinations<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads the complete bounded collection of destination selector candidates.
+    pub async fn all(&self) -> Result<DestinationCollection, Error> {
+        self.client.destination_all().await
+    }
+}
 
 /// Read operations for Dokploy projects.
 pub struct Projects<'a> {

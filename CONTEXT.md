@@ -32,3 +32,9 @@ _Avoid_: Endpoint support
 A structured owned value that is validated, planned, and checkpointed as one
 indivisible property because its fields are not independently meaningful.
 _Avoid_: Property group
+
+**External Selector**:
+A stable human reference resolved against fresh remote infrastructure whose
+lifecycle is not owned by the workspace. Zero or multiple exact matches block
+planning.
+_Avoid_: Imported external ID

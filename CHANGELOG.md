@@ -31,6 +31,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add bounded, typed, secret-safe external selector reads for Dokploy servers,
+  container registries, and backup destinations, with duplicate-ID rejection,
+  ambiguity-preserving names, inert live verification, and sanitized fixtures.
 - Add end-to-end declarative MongoDB reconciliation with authoritative
   environment-scoped discovery, direct-read agreement, collision detection,
   journaled batched mutations, outcome-unknown recovery, protected secret-free
