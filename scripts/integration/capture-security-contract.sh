@@ -41,6 +41,9 @@ security_id=""
 mutation_attempted=false
 cleanup_confirmed=false
 capture_succeeded=false
+publication_started=false
+publication_complete=false
+published_fixture_backup="$workspace/published-fixtures.backup"
 created_password="security-created-$(openssl rand -hex 24)"
 updated_password="security-updated-$(openssl rand -hex 24)"
 
@@ -103,8 +106,33 @@ cleanup() {
     local exit_code="$?"
     local status
     local verify
+    local restore_ready=true
     trap - EXIT INT TERM
     set +e
+    if [[ "$publication_started" == true && "$publication_complete" == false ]]; then
+        if [[ -d "$published_fixture_backup" ]]; then
+            if [[ -e "$fixture_directory" ]] \
+                && ! mv "$fixture_directory" "$workspace/failed-publication"
+            then
+                echo "Could not quarantine the partially published fixture directory." >&2
+                restore_ready=false
+                exit_code=1
+            fi
+
+            if [[ "$restore_ready" == true && ! -e "$fixture_directory" ]]; then
+                if ! mv "$published_fixture_backup" "$fixture_directory"; then
+                    echo "Could not restore the previous tracked fixture directory." >&2
+                    exit_code=1
+                fi
+            else
+                echo "Could not restore the previous tracked fixture directory." >&2
+                exit_code=1
+            fi
+        else
+            echo "Fixture publication was interrupted without a recoverable backup." >&2
+            exit_code=1
+        fi
+    fi
     if [[ "$mutation_attempted" == true && "$cleanup_confirmed" == false ]]; then
         recover_project_id
         if [[ -n "$project_id" ]]; then
@@ -316,11 +344,38 @@ jq -n --sort-keys --indent 2 \
     }
 ' >"$publish_directory/security-contract.metadata.json"
 
-mkdir -p "$fixture_directory"
+candidate_fixture_root="$workspace/candidate/api/live"
+candidate_versioned_fixture_directory="$candidate_fixture_root/v0.30.6"
+mkdir -p "$candidate_versioned_fixture_directory"
+cp -R "$fixture_directory/." "$candidate_versioned_fixture_directory/"
 for fixture in "$publish_directory"/*.json; do
-    cp "$fixture" "$fixture_directory/$(basename "$fixture")"
+    cp "$fixture" "$candidate_versioned_fixture_directory/$(basename "$fixture")"
 done
 
-"$script_directory/check-fixtures.sh"
+find "$candidate_fixture_root" -type d -exec chmod 755 {} +
+find "$candidate_fixture_root" -type f -exec chmod 644 {} +
+
+if grep -R -F -q -f "$api_key_file" "$candidate_fixture_root"; then
+    echo "Sanitized Security fixtures contain the local API key." >&2
+    exit 1
+fi
+
+if grep -R -F -q -- "$created_password" "$candidate_fixture_root"; then
+    echo "Sanitized Security fixtures contain the created password." >&2
+    exit 1
+fi
+
+if grep -R -F -q -- "$updated_password" "$candidate_fixture_root"; then
+    echo "Sanitized Security fixtures contain the updated password." >&2
+    exit 1
+fi
+
+DOKPLOY_FIXTURE_DIRECTORY="$candidate_fixture_root" \
+    "$script_directory/check-fixtures.sh"
+
+publication_started=true
+mv "$fixture_directory" "$published_fixture_backup"
+mv "$candidate_versioned_fixture_directory" "$fixture_directory"
+publication_complete=true
 capture_succeeded=true
 echo "Captured the sanitized Security contract without deploying the application."
