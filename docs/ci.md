@@ -24,6 +24,12 @@ Unicode-3.0 licensed code from crates.io. Exact transitive crates have narrow
 ISC and MPL-2.0 exceptions where their dependency paths require them. New
 sources or broader licenses require an explicit policy review.
 
+Headless reconciliation that resolves sensitive values must set
+`DOKPLOY_FINGERPRINT_KEY` from a masked secret. The value format is
+`<non-nil UUID>:<64 lowercase hexadecimal characters>`. The same value and the
+same protected `.dokploy` workspace state must be reused between planning and
+apply; a plan artifact alone does not replace either input.
+
 Run the equivalent checks locally with:
 
 ```bash

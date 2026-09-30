@@ -11,6 +11,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add `dokploy apply --auto-approve` for explicitly non-interactive execution
+  while preserving fresh plan rendering and validation.
+- Add offline shell completion generation for Bash, Zsh, Fish, PowerShell, and
+  Elvish from the public CLI command tree.
+- Add an explicit `DOKPLOY_FINGERPRINT_KEY` source for deterministic,
+  keyring-free sensitive-intent receipts in headless CI environments.
 - Add typed, single-attempt delete operations for all six MVP SDK resources,
   preserving structured remote rejections and outcome-unknown transport errors.
 - Add read-only `dokploy state list` and `dokploy state show` commands with

@@ -33,12 +33,20 @@ The binary credential value has one strict representation: the eight-byte
 32-byte HMAC key. Any other length, marker, or identifier is malformed. The
 key and transient envelope buffers are zeroized when dropped.
 
-If an entry is absent, the CLI obtains 48 bytes from the operating-system
-random source, constructs a version-four UUID and a 32-byte key, stores the
-envelope, and immediately reads it back. Fingerprinting uses only the value
-read back from the store. A malformed entry, unavailable credential store,
-failed write, missing readback, or unavailable entropy fails closed. There is
-no environment-variable, filesystem, or state-file fallback.
+Headless automation may instead set `DOKPLOY_FINGERPRINT_KEY` explicitly. Its
+strict value is `<non-nil UUID>:<64 lowercase hexadecimal characters>`. This
+source takes precedence over the credential store and never writes to it. A
+malformed value fails closed without being echoed. CI must keep the value in a
+masked secret and reuse it with the same protected local state; changing its
+UUID or key bytes intentionally rotates sensitive intent.
+
+Without that explicit source, the CLI obtains 48 bytes from the
+operating-system random source when an entry is absent, constructs a
+version-four UUID and a 32-byte key, stores the envelope, and immediately reads
+it back. Fingerprinting uses only the value read back from the store. A
+malformed entry, unavailable credential store, failed write, missing readback,
+or unavailable entropy fails closed. There is no implicit filesystem or state
+file fallback.
 
 Receipts use HMAC-SHA-256 with an unambiguous length-prefixed message. The
 message includes a fixed versioned domain plus the normalized instance,
@@ -55,13 +63,13 @@ The instance-bound compiler now consumes this module through the design in
 
 ## Consequences
 
-- Copying state to a machine without the credential creates a new key on first
-  use and causes configured sensitive values to be rewritten once resolution
-  is available.
+- Copying state to another machine requires either the same explicit CI key or
+  the corresponding credential-store entry. A newly generated key causes
+  configured sensitive values to be rewritten once resolution is available.
 - Replacing the credential intentionally rotates every configured sensitive
   receipt for that instance.
 - Locked or unavailable OS credential storage prevents sensitive planning;
-  the CLI never weakens storage to preserve availability.
+  automation must supply the explicit key rather than relying on a fallback.
 - Concurrent first use relies on immediate readback. A later competing writer
   can cause one additional future rewrite, but cannot produce a false no-op or
   disclose key material. Cross-process creation locking can be added if this

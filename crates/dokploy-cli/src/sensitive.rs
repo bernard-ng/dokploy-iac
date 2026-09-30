@@ -20,6 +20,7 @@ const KEY_ENVELOPE_MAGIC: &[u8; 8] = b"DOKHMAC1";
 const KEY_ENVELOPE_LENGTH: usize = KEY_ENVELOPE_MAGIC.len() + 16 + 32;
 const KEYRING_ACCOUNT_PREFIX: &str = "hmac-sha256-v1:";
 const KEYRING_SERVICE: &str = "dokploy-sensitive-intent";
+pub(crate) const DOKPLOY_FINGERPRINT_KEY: &str = "DOKPLOY_FINGERPRINT_KEY";
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub(crate) enum SensitiveFingerprintError {
@@ -29,6 +30,8 @@ pub(crate) enum SensitiveFingerprintError {
     MalformedStoredKey,
     #[error("DOKSEC003: operating-system entropy is unavailable")]
     EntropyUnavailable,
+    #[error("DOKSEC004: the explicit sensitive fingerprint key is malformed")]
+    MalformedExplicitKey,
 }
 
 trait FingerprintSecretStore {
@@ -130,6 +133,28 @@ impl FingerprintKey {
         envelope.extend_from_slice(self.bytes.as_ref());
         envelope
     }
+
+    fn decode_explicit(value: &str) -> Result<Self, SensitiveFingerprintError> {
+        let (id, encoded_key) = value
+            .split_once(':')
+            .ok_or(SensitiveFingerprintError::MalformedExplicitKey)?;
+        if id.is_empty() || encoded_key.len() != 64 || encoded_key.contains(':') {
+            return Err(SensitiveFingerprintError::MalformedExplicitKey);
+        }
+        let id = id
+            .parse::<uuid::Uuid>()
+            .map_err(|_| SensitiveFingerprintError::MalformedExplicitKey)?;
+        let id = FingerprintKeyId::new(id)
+            .map_err(|_| SensitiveFingerprintError::MalformedExplicitKey)?;
+        let mut bytes = Zeroizing::new([0_u8; 32]);
+        for (index, pair) in encoded_key.as_bytes().chunks_exact(2).enumerate() {
+            let high = decode_hex_nibble(pair[0])?;
+            let low = decode_hex_nibble(pair[1])?;
+            bytes[index] = (high << 4) | low;
+        }
+
+        Ok(Self { id, bytes })
+    }
 }
 
 impl std::fmt::Debug for FingerprintKey {
@@ -145,8 +170,18 @@ pub(crate) struct SensitiveFingerprinter {
 
 impl SensitiveFingerprinter {
     pub(crate) fn load(instance: InstanceIdentity) -> Result<Self, SensitiveFingerprintError> {
-        Self::load_with(
+        let explicit = match std::env::var_os(DOKPLOY_FINGERPRINT_KEY) {
+            Some(value) => {
+                Some(Zeroizing::new(value.into_string().map_err(|_| {
+                    SensitiveFingerprintError::MalformedExplicitKey
+                })?))
+            }
+            None => None,
+        };
+
+        Self::load_with_explicit(
             instance,
+            explicit.as_deref().map(String::as_str),
             &KeyringFingerprintSecretStore,
             &SystemFingerprintKeyGenerator,
         )
@@ -161,6 +196,22 @@ impl SensitiveFingerprinter {
         store: &dyn FingerprintSecretStore,
         generator: &dyn FingerprintKeyGenerator,
     ) -> Result<Self, SensitiveFingerprintError> {
+        Self::load_with_explicit(instance, None, store, generator)
+    }
+
+    fn load_with_explicit(
+        instance: InstanceIdentity,
+        explicit: Option<&str>,
+        store: &dyn FingerprintSecretStore,
+        generator: &dyn FingerprintKeyGenerator,
+    ) -> Result<Self, SensitiveFingerprintError> {
+        if let Some(explicit) = explicit {
+            return Ok(Self::from_key(
+                instance,
+                FingerprintKey::decode_explicit(explicit)?,
+            ));
+        }
+
         let account = keyring_account(&instance);
         let stored = match store.get(&account)? {
             Some(stored) => stored,
@@ -217,6 +268,14 @@ fn encode_hex(value: &[u8]) -> String {
     }
 
     encoded
+}
+
+fn decode_hex_nibble(value: u8) -> Result<u8, SensitiveFingerprintError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        _ => Err(SensitiveFingerprintError::MalformedExplicitKey),
+    }
 }
 
 impl std::fmt::Debug for SensitiveFingerprinter {
@@ -575,6 +634,75 @@ mod tests {
 
             assert_eq!(error, SensitiveFingerprintError::MalformedStoredKey);
             assert_eq!(store.sets.get(), 0);
+        }
+    }
+
+    #[test]
+    fn explicit_ci_key_is_deterministic_and_bypasses_keyring_and_entropy() {
+        let key_id = "0199a0c8-2351-7c31-8899-2c8f81983ea5";
+        let encoded_key = "0b".repeat(32);
+        let explicit = format!("{key_id}:{encoded_key}");
+        let instance = InstanceIdentity::parse("https://deploy.example.test").unwrap();
+
+        let first = SensitiveFingerprinter::load_with_explicit(
+            instance.clone(),
+            Some(&explicit),
+            &FailingStore,
+            &FailingGenerator,
+        )
+        .expect("an explicit key requires no desktop services");
+        let second = SensitiveFingerprinter::load_with_explicit(
+            instance.clone(),
+            Some(&explicit),
+            &FailingStore,
+            &FailingGenerator,
+        )
+        .expect("the same explicit key loads in another process");
+        let expected =
+            SensitiveFingerprinter::from_key(instance, FingerprintKey::fixture(key_id, [0x0b; 32]));
+        let address: ResourceAddress = "redis.cache".parse().unwrap();
+        let path = SensitivePropertyPath::parse("password").unwrap();
+
+        assert_eq!(
+            first.fingerprint(&address, &path, b"value"),
+            second.fingerprint(&address, &path, b"value")
+        );
+        assert_eq!(
+            first.fingerprint(&address, &path, b"value"),
+            expected.fingerprint(&address, &path, b"value")
+        );
+    }
+
+    #[test]
+    fn malformed_explicit_ci_keys_fail_closed_without_echoing_input() {
+        let instance = InstanceIdentity::parse("https://deploy.example.test").unwrap();
+        let canary = "explicit-key-canary";
+        let malformed = [
+            "".to_owned(),
+            canary.to_owned(),
+            format!("00000000-0000-0000-0000-000000000000:{}", "01".repeat(32)),
+            format!("0199a0c8-2351-7c31-8899-2c8f81983ea5:{}", "AB".repeat(32)),
+            format!(
+                "0199a0c8-2351-7c31-8899-2c8f81983ea5:{}:extra",
+                "01".repeat(32)
+            ),
+        ];
+
+        for value in malformed {
+            let error = SensitiveFingerprinter::load_with_explicit(
+                instance.clone(),
+                Some(&value),
+                &FailingStore,
+                &FailingGenerator,
+            )
+            .expect_err("malformed explicit key must be rejected");
+            let rendered = format!("{error:?} {error}");
+
+            assert_eq!(error, SensitiveFingerprintError::MalformedExplicitKey);
+            if !value.is_empty() {
+                assert!(!rendered.contains(&value));
+            }
+            assert!(!rendered.contains(canary));
         }
     }
 

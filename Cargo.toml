@@ -19,6 +19,7 @@ repository = "https://github.com/bernard-ng/dokploy-iac"
 [workspace.dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.48", features = ["derive"] }
+clap_complete = "4.6.11"
 directories = "6.0.0"
 dokploy-api = { path = "crates/dokploy-api", version = "0.1.0" }
 dokploy-config = { path = "crates/dokploy-config", version = "0.1.0" }

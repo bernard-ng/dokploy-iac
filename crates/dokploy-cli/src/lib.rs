@@ -71,7 +71,10 @@ pub async fn execute_with_input(
     } = cli;
 
     match command {
-        Command::Init { .. } | Command::Schema | Command::Validate { .. } => {
+        Command::Init { .. }
+        | Command::Schema
+        | Command::Validate { .. }
+        | Command::Completions { .. } => {
             unreachable!("offline commands return before connection dispatch")
         }
         Command::Context { command } => {
@@ -140,7 +143,11 @@ pub async fn execute_with_input(
                 Ok(CommandStatus::Success)
             }
         }
-        Command::Apply { file, parallelism } => {
+        Command::Apply {
+            file,
+            parallelism,
+            auto_approve,
+        } => {
             let configuration = config.load()?;
             let settings = resolve_connection(
                 ConnectionOptions {
@@ -160,7 +167,11 @@ pub async fn execute_with_input(
                 executor::ApplyOptions::new(usize::from(parallelism)).into_diagnostic()?;
             let result = executor::apply_workspace_with_approval(&client, &file, options, |plan| {
                 plan_output::render(plan, output)?;
-                if plan.changes().is_empty() || !plan.complete() || !plan.applyable() {
+                if auto_approve
+                    || plan.changes().is_empty()
+                    || !plan.complete()
+                    || !plan.applyable()
+                {
                     return Ok(true);
                 }
 
@@ -320,7 +331,7 @@ mod tests {
 
     struct TestServer {
         url: String,
-        requests: Receiver<String>,
+        requests: Receiver<Vec<String>>,
         thread: JoinHandle<()>,
     }
 
@@ -343,7 +354,7 @@ mod tests {
                 }
 
                 sender
-                    .send(String::from_utf8(bytes).expect("request is UTF-8"))
+                    .send(vec![String::from_utf8(bytes).expect("request is UTF-8")])
                     .expect("test receives the request");
                 write!(
                     stream,
@@ -361,10 +372,57 @@ mod tests {
             }
         }
 
+        fn respond_in_sequence(responses: Vec<(&'static str, &'static str)>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+            let address = listener.local_addr().expect("test server has an address");
+            let (sender, requests) = mpsc::channel();
+            let thread = thread::spawn(move || {
+                let mut captured = Vec::new();
+                for (status, body) in responses {
+                    let (mut stream, _) = listener.accept().expect("test server accepts a request");
+                    let mut bytes = Vec::new();
+                    let mut buffer = [0_u8; 1024];
+
+                    loop {
+                        let count = stream.read(&mut buffer).expect("request is readable");
+                        bytes.extend_from_slice(&buffer[..count]);
+                        if count == 0 || request_is_complete(&bytes) {
+                            break;
+                        }
+                    }
+
+                    captured.push(String::from_utf8(bytes).expect("request is UTF-8"));
+                    write!(
+                        stream,
+                        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .expect("response is writable");
+                }
+                sender
+                    .send(captured)
+                    .expect("test receives captured requests");
+            });
+
+            Self {
+                url: format!("http://{address}"),
+                requests,
+                thread,
+            }
+        }
+
         fn finish(self) -> String {
-            let request = self.requests.recv().expect("test receives the request");
+            let mut requests = self.requests.recv().expect("test receives the request");
             self.thread.join().expect("test server exits cleanly");
-            request
+            assert_eq!(requests.len(), 1, "test expected exactly one request");
+            requests.remove(0)
+        }
+
+        fn finish_all(self) -> Vec<String> {
+            let requests = self.requests.recv().expect("test receives the requests");
+            self.thread.join().expect("test server exits cleanly");
+            requests
         }
     }
 
@@ -586,6 +644,40 @@ url = "https://deploy.example.com"
         assert!(!first.ends_with(b"\n\n"));
         serde_json::from_slice::<serde_json::Value>(&first).expect("schema output is JSON");
         assert!(first.windows(2).any(|window| window == b"\n "));
+    }
+
+    #[tokio::test]
+    async fn completions_are_generated_offline_from_the_public_command_tree() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-config.toml"));
+        let mut output = Vec::new();
+
+        execute(
+            Cli::try_parse_from(["dokploy", "completions", "bash"]).expect("command line is valid"),
+            &repository,
+            &PanicCredentialStore,
+            &mut output,
+        )
+        .await
+        .expect("completion generation succeeds without connection dependencies");
+
+        let output = String::from_utf8(output).expect("completion output is UTF-8");
+        assert!(output.contains("_dokploy"));
+        for command in [
+            "apply",
+            "completions",
+            "context",
+            "init",
+            "plan",
+            "schema",
+            "state",
+            "validate",
+        ] {
+            assert!(output.contains(command), "missing `{command}` completion");
+        }
+        assert!(output.contains("--auto-approve"));
+        assert!(output.contains("--detailed-exitcode"));
     }
 
     #[tokio::test]
@@ -1054,5 +1146,53 @@ url = "https://deploy.example.com"
         assert!(output.contains("Apply cancelled."));
         let request = server.finish();
         assert!(request.starts_with("GET /api/project.all HTTP/1.1\r\n"));
+    }
+
+    #[tokio::test]
+    async fn public_apply_auto_approve_does_not_read_confirmation_input() {
+        let server = TestServer::respond_in_sequence(vec![
+            ("200 OK", "[]"),
+            (
+                "200 OK",
+                include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+            ),
+        ]);
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let config_file = temporary_directory.path().join("dokploy.yaml");
+        fs::write(
+            &config_file,
+            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+        )
+        .expect("configuration fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-config.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "--url",
+            &server.url,
+            "--api-key",
+            "test-api-key",
+            "apply",
+            "--file",
+            config_file.to_str().expect("fixture path is UTF-8"),
+            "--auto-approve",
+        ])
+        .expect("apply command line is valid");
+        let mut input = Cursor::new(Vec::<u8>::new());
+        let mut output = Vec::new();
+
+        let status = execute_with_input(cli, &repository, &credentials, &mut input, &mut output)
+            .await
+            .expect("auto-approved apply succeeds");
+
+        assert_eq!(status, super::CommandStatus::Success);
+        let output = String::from_utf8(output).expect("output is UTF-8");
+        assert!(output.contains("Plan: 1 change(s), 0 drift record(s)"));
+        assert!(!output.contains("Type 'yes'"));
+        assert!(output.contains("Apply complete: 1 change(s)."));
+        let requests = server.finish_all();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].starts_with("POST /api/project.create HTTP/1.1\r\n"));
     }
 }

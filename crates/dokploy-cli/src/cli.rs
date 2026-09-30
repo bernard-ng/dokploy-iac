@@ -25,7 +25,10 @@ impl Cli {
     pub const fn is_offline(&self) -> bool {
         matches!(
             self.command,
-            Command::Init { .. } | Command::Schema | Command::Validate { .. }
+            Command::Init { .. }
+                | Command::Schema
+                | Command::Validate { .. }
+                | Command::Completions { .. }
         )
     }
 }
@@ -61,6 +64,13 @@ pub enum Command {
         file: PathBuf,
     },
 
+    /// Generate a shell completion script on standard output.
+    Completions {
+        /// Shell whose completion format should be generated.
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+
     /// Compare configuration, durable state, and fresh Dokploy state without mutating anything.
     Plan {
         /// Configuration file to plan.
@@ -93,6 +103,10 @@ pub enum Command {
         /// Maximum number of independent remote operations in flight.
         #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u8).range(1..=64))]
         parallelism: u8,
+
+        /// Apply a complete plan without interactive confirmation.
+        #[arg(long)]
+        auto_approve: bool,
     },
 
     /// Inspect resources tracked in the local workspace state.
@@ -219,6 +233,20 @@ mod tests {
     }
 
     #[test]
+    fn completions_selects_a_supported_shell_offline() {
+        let cli = Cli::try_parse_from(["dokploy", "completions", "zsh"])
+            .expect("completion command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Completions {
+                shell: clap_complete::Shell::Zsh
+            }
+        ));
+        assert!(cli.is_offline());
+    }
+
+    #[test]
     fn plan_supports_json_and_detailed_exit_status() {
         let cli = Cli::try_parse_from([
             "dokploy",
@@ -246,7 +274,11 @@ mod tests {
             Cli::try_parse_from(["dokploy", "apply"]).expect("default apply command line is valid");
         assert!(matches!(
             default.command,
-            Command::Apply { file, parallelism: 4 }
+            Command::Apply {
+                file,
+                parallelism: 4,
+                auto_approve: false,
+            }
                 if file.as_path() == Path::new("dokploy.yaml")
         ));
 
@@ -257,11 +289,16 @@ mod tests {
             "stack.yaml",
             "--parallelism",
             "8",
+            "--auto-approve",
         ])
         .expect("explicit apply command line is valid");
         assert!(matches!(
             explicit.command,
-            Command::Apply { file, parallelism: 8 }
+            Command::Apply {
+                file,
+                parallelism: 8,
+                auto_approve: true,
+            }
                 if file.as_path() == Path::new("stack.yaml")
         ));
         assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "0"]).is_err());

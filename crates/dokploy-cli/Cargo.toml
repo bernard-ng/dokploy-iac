@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+clap_complete.workspace = true
 directories.workspace = true
 dokploy-config.workspace = true
 dokploy-core.workspace = true

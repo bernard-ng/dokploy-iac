@@ -2,6 +2,7 @@ use std::fmt::Write as _;
 use std::io::Write;
 use std::path::Path;
 
+use clap::CommandFactory;
 use miette::{IntoDiagnostic, Result};
 
 use crate::cli::{Cli, Command};
@@ -32,6 +33,10 @@ pub fn execute(cli: Cli, output: &mut dyn Write, terminal_available: bool) -> Re
             Ok(())
         }
         Command::Validate { file } => validate_configuration(&file, output),
+        Command::Completions { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "dokploy", output);
+            Ok(())
+        }
         Command::Plan { .. }
         | Command::Apply { .. }
         | Command::State { .. }
