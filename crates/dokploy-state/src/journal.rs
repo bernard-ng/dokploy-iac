@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
@@ -128,8 +129,8 @@ pub struct OperationJournal<'journal, 'store> {
     operation_id: Uuid,
     current_state: StateFile,
     next_sequence: u64,
-    open_step: Option<StepToken>,
-    terminal: bool,
+    open_steps: BTreeMap<u64, StepToken>,
+    failed: bool,
     poisoned: bool,
     record_count: usize,
     max_bytes: u64,
@@ -166,8 +167,8 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             operation_id,
             current_state,
             next_sequence: 1,
-            open_step: None,
-            terminal: false,
+            open_steps: BTreeMap::new(),
+            failed: false,
             poisoned: false,
             record_count: 0,
             max_bytes,
@@ -191,16 +192,17 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
         self.operation_id
     }
 
-    /// Durably records the start of exactly one remote mutation.
+    /// Durably records the start of one remote mutation.
     pub fn start_step(
         &mut self,
         address: ResourceAddress,
         action: JournalAction,
     ) -> Result<StepToken, JournalError> {
-        self.ensure_active()?;
-        if self.open_step.is_some() {
-            return Err(JournalError::StepAlreadyOpen);
-        }
+        self.ensure_startable()?;
+        let next_sequence = self
+            .next_sequence
+            .checked_add(1)
+            .ok_or(JournalError::SequenceOverflow)?;
 
         let token = StepToken {
             operation_id: self.operation_id,
@@ -213,7 +215,8 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             address: token.address.clone(),
             action: token.action,
         })?;
-        self.open_step = Some(token.clone());
+        self.open_steps.insert(token.sequence, token.clone());
+        self.next_sequence = next_sequence;
 
         Ok(token)
     }
@@ -225,7 +228,7 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
         remote_id: Option<RemoteId>,
         proposed: &StateFile,
     ) -> Result<(), JournalError> {
-        self.ensure_active()?;
+        self.ensure_resolvable()?;
         self.validate_token(&token)?;
         validate_success_remote_id(token.action, remote_id.as_ref())?;
         self.append_or_poison(&JournalRecord::StepSucceeded {
@@ -243,23 +246,19 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             .map_err(JournalError::state)?;
 
         self.current_state = proposed.clone();
-        self.open_step = None;
-        self.next_sequence = self
-            .next_sequence
-            .checked_add(1)
-            .ok_or(JournalError::SequenceOverflow)?;
+        self.open_steps.remove(&token.sequence);
         self.poisoned = false;
 
         Ok(())
     }
 
-    /// Durably records a constrained terminal failure without arbitrary text.
+    /// Durably records a constrained failure without arbitrary text.
     pub fn fail(
         &mut self,
         token: StepToken,
         failure_code: FailureCode,
     ) -> Result<(), JournalError> {
-        self.ensure_active()?;
+        self.ensure_resolvable()?;
         self.validate_token(&token)?;
         self.append_or_poison(&JournalRecord::StepFailed {
             sequence: token.sequence,
@@ -267,16 +266,16 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             action: token.action,
             failure_code,
         })?;
-        self.open_step = None;
-        self.terminal = true;
+        self.open_steps.remove(&token.sequence);
+        self.failed = true;
 
         Ok(())
     }
 
     /// Durably closes a successful operation at its current state revision.
     pub fn commit(mut self) -> Result<(), JournalError> {
-        self.ensure_active()?;
-        if self.open_step.is_some() {
+        self.ensure_startable()?;
+        if !self.open_steps.is_empty() {
             return Err(JournalError::StepStillOpen);
         }
         if let Err(error) = self
@@ -296,15 +295,25 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
     }
 
     fn validate_token(&self, token: &StepToken) -> Result<(), JournalError> {
-        if self.open_step.as_ref() != Some(token) || token.operation_id != self.operation_id {
+        if self.open_steps.get(&token.sequence) != Some(token)
+            || token.operation_id != self.operation_id
+        {
             return Err(JournalError::InvalidStepToken);
         }
 
         Ok(())
     }
 
-    fn ensure_active(&self) -> Result<(), JournalError> {
-        if self.terminal || self.poisoned {
+    fn ensure_startable(&self) -> Result<(), JournalError> {
+        if self.failed || self.poisoned {
+            return Err(JournalError::Terminal);
+        }
+
+        Ok(())
+    }
+
+    fn ensure_resolvable(&self) -> Result<(), JournalError> {
+        if self.poisoned {
             return Err(JournalError::Terminal);
         }
 
@@ -451,9 +460,7 @@ enum JournalRecord {
 pub enum JournalError {
     #[error("journal directory is not a trusted canonical directory")]
     UnsafeJournalDirectory,
-    #[error("a journal step is already open")]
-    StepAlreadyOpen,
-    #[error("the supplied step token is not the open journal step")]
+    #[error("the supplied step token is not an open journal step")]
     InvalidStepToken,
     #[error("the journal still has an open step")]
     StepStillOpen,
@@ -781,12 +788,12 @@ fn validate_records(
 
     let mut next_sequence = 1_u64;
     let mut journal_serial = starting_serial;
-    let mut open: Option<ScannedStep> = None;
-    let mut last_succeeded: Option<ScannedStep> = None;
+    let mut open = BTreeMap::<u64, ScannedStep>::new();
+    let mut succeeded = Vec::new();
     let mut failed: Option<(ScannedStep, FailureCode)> = None;
     let mut committed = None;
     for record in records.into_iter().skip(1) {
-        if committed.is_some() || failed.is_some() {
+        if committed.is_some() {
             return Err(RecoveryScanError::Corrupt);
         }
 
@@ -797,14 +804,20 @@ fn validate_records(
                 address,
                 action,
             } => {
-                if open.is_some() || sequence != next_sequence {
+                if failed.is_some() || sequence != next_sequence {
                     return Err(RecoveryScanError::Corrupt);
                 }
-                open = Some(ScannedStep {
+                open.insert(
                     sequence,
-                    address,
-                    action,
-                });
+                    ScannedStep {
+                        sequence,
+                        address,
+                        action,
+                    },
+                );
+                next_sequence = next_sequence
+                    .checked_add(1)
+                    .ok_or(RecoveryScanError::Corrupt)?;
             }
             JournalRecord::StepSucceeded {
                 sequence,
@@ -817,10 +830,7 @@ fn validate_records(
                 journal_serial = journal_serial
                     .checked_add(1)
                     .ok_or(RecoveryScanError::Corrupt)?;
-                next_sequence = next_sequence
-                    .checked_add(1)
-                    .ok_or(RecoveryScanError::Corrupt)?;
-                last_succeeded = Some(step);
+                succeeded.push(step);
             }
             JournalRecord::StepFailed {
                 sequence,
@@ -829,10 +839,10 @@ fn validate_records(
                 failure_code,
             } => {
                 let step = take_matching_step(&mut open, sequence, &address, action)?;
-                failed = Some((step, failure_code));
+                failed.get_or_insert((step, failure_code));
             }
             JournalRecord::Commit { final_serial } => {
-                if open.is_some() || final_serial != journal_serial {
+                if !open.is_empty() || failed.is_some() || final_serial != journal_serial {
                     return Err(RecoveryScanError::Corrupt);
                 }
                 committed = Some(final_serial);
@@ -853,35 +863,44 @@ fn validate_records(
 
     let durable_serial = state.serial();
     let success_without_checkpoint =
-        last_succeeded.is_some() && durable_serial.checked_add(1) == Some(journal_serial);
+        !succeeded.is_empty() && durable_serial.checked_add(1) == Some(journal_serial);
     if durable_serial != journal_serial && !success_without_checkpoint {
         return Err(RecoveryScanError::Corrupt);
     }
-    if open.is_some() && durable_serial != journal_serial {
+    if !open.is_empty() && durable_serial != journal_serial {
         return Err(RecoveryScanError::Corrupt);
     }
     if failed.is_some() && durable_serial != journal_serial {
         return Err(RecoveryScanError::Corrupt);
     }
 
-    let confirmed_count = durable_serial
-        .checked_sub(starting_serial)
-        .ok_or(RecoveryScanError::Corrupt)?;
-    let last_confirmed_sequence = (confirmed_count > 0).then_some(confirmed_count);
+    let confirmed_count = usize::try_from(
+        durable_serial
+            .checked_sub(starting_serial)
+            .ok_or(RecoveryScanError::Corrupt)?,
+    )
+    .map_err(|_| RecoveryScanError::Corrupt)?;
+    if confirmed_count > succeeded.len() {
+        return Err(RecoveryScanError::Corrupt);
+    }
+    let last_confirmed_sequence = confirmed_count
+        .checked_sub(1)
+        .and_then(|index| succeeded.get(index))
+        .map(|step| step.sequence);
     let uncertain_step = if success_without_checkpoint {
-        last_succeeded.clone().map(recovery_step)
+        succeeded.last().cloned().map(recovery_step)
     } else {
-        open.clone().map(recovery_step)
+        open.values().next().cloned().map(recovery_step)
     };
     let reason = if trailing_tail {
         RecoveryReason::TruncatedTail
-    } else if let Some((_, failure_code)) = failed {
-        RecoveryReason::Failed(failure_code)
-    } else if open.is_some() {
+    } else if !open.is_empty() {
         RecoveryReason::StepInProgress
     } else if success_without_checkpoint {
         RecoveryReason::SuccessWithoutCheckpoint
-    } else if last_succeeded.is_some() {
+    } else if let Some((_, failure_code)) = failed {
+        RecoveryReason::Failed(failure_code)
+    } else if !succeeded.is_empty() {
         RecoveryReason::CheckpointedWithoutCommit
     } else {
         RecoveryReason::Begun
@@ -900,12 +919,12 @@ fn validate_records(
 }
 
 fn take_matching_step(
-    open: &mut Option<ScannedStep>,
+    open: &mut BTreeMap<u64, ScannedStep>,
     sequence: u64,
     address: &ResourceAddress,
     action: JournalAction,
 ) -> Result<ScannedStep, RecoveryScanError> {
-    let step = open.take().ok_or(RecoveryScanError::Corrupt)?;
+    let step = open.remove(&sequence).ok_or(RecoveryScanError::Corrupt)?;
     if step.sequence != sequence || step.address != *address || step.action != action {
         return Err(RecoveryScanError::Corrupt);
     }

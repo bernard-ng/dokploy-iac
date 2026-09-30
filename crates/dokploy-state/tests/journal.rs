@@ -166,6 +166,56 @@ fn constrained_failure_is_terminal_and_requires_recovery() {
 }
 
 #[test]
+fn concurrent_steps_checkpoint_successes_that_finish_after_a_sibling_failure() {
+    let (_workspace, store, initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    let mut journal = OperationJournal::begin(&mut session, digest()).expect("journal must begin");
+    let failed = journal
+        .start_step(address("api"), JournalAction::Create)
+        .expect("first step must start");
+    let succeeded = journal
+        .start_step(address("worker"), JournalAction::Create)
+        .expect("second step must start while the first is in flight");
+
+    journal
+        .fail(failed, FailureCode::RemoteRejected)
+        .expect("failure must be durable");
+    assert!(
+        journal
+            .start_step(address("later"), JournalAction::Create)
+            .is_err(),
+        "new work must stop after the first failure"
+    );
+
+    let proposed = next_state(&initial, "worker");
+    journal
+        .succeed(succeeded, Some(remote_id("remote-worker")), &proposed)
+        .expect("already-running success must still checkpoint");
+    assert!(
+        journal.commit().is_err(),
+        "a failed operation cannot commit"
+    );
+    drop(session);
+
+    assert_eq!(
+        store
+            .inspect()
+            .expect("state must remain readable")
+            .expect("state must exist")
+            .resource(&address("worker"))
+            .expect("successful sibling must be durable")
+            .remote_id(),
+        &remote_id("remote-worker")
+    );
+    let summary = recovery_summary(&store);
+    assert_eq!(
+        summary.reason(),
+        &RecoveryReason::Failed(FailureCode::RemoteRejected)
+    );
+    assert_eq!(summary.last_confirmed_sequence(), Some(2));
+}
+
+#[test]
 fn trailing_fragment_is_recoverable_but_a_complete_malformed_record_is_corrupt() {
     let (workspace, store, _initial) = initialized_store();
     let journal_path = begin_and_drop(&store, &workspace);
