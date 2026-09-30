@@ -110,6 +110,20 @@ impl StateStore {
 
     /// Acquires the fail-fast exclusive writer lock.
     pub fn begin_write(&self) -> Result<WriteSession<'_>, StateStoreError> {
+        let session = self.acquire_write_session()?;
+        match scan_recovery(self).map_err(StateStoreError::from_recovery_scan)? {
+            RecoveryStatus::Clean => Ok(session),
+            RecoveryStatus::RecoveryRequired(summary) => {
+                Err(StateStoreError::RecoveryRequired { summary })
+            }
+        }
+    }
+
+    pub(crate) fn begin_recovery_write(&self) -> Result<WriteSession<'_>, StateStoreError> {
+        self.acquire_write_session()
+    }
+
+    fn acquire_write_session(&self) -> Result<WriteSession<'_>, StateStoreError> {
         let state_directory = self.ensure_state_directory()?;
         self.harden_existing_artifacts()?;
 
@@ -125,20 +139,12 @@ impl StateStore {
             .map_err(|source| StateStoreError::io("harden state lock", source))?;
 
         match FileExt::try_lock(&lock) {
-            Ok(()) => {
-                let session = WriteSession {
-                    store: self,
-                    lock,
-                    state_directory,
-                    journal_pending: false,
-                };
-                match scan_recovery(self).map_err(StateStoreError::from_recovery_scan)? {
-                    RecoveryStatus::Clean => Ok(session),
-                    RecoveryStatus::RecoveryRequired(summary) => {
-                        Err(StateStoreError::RecoveryRequired { summary })
-                    }
-                }
-            }
+            Ok(()) => Ok(WriteSession {
+                store: self,
+                lock,
+                state_directory,
+                journal_pending: false,
+            }),
             Err(TryLockError::WouldBlock) => Err(StateStoreError::LockContended),
             Err(TryLockError::Error(source)) => {
                 Err(StateStoreError::io("acquire state lock", source))
@@ -690,7 +696,9 @@ pub enum StateStoreError {
     #[error("another process holds the state write lock")]
     LockContended,
     #[error("state mutation requires recovery for operation {summary:?}")]
-    RecoveryRequired { summary: crate::RecoverySummary },
+    RecoveryRequired {
+        summary: Box<crate::RecoverySummary>,
+    },
     #[error("operation journal is corrupt")]
     JournalCorrupt,
     #[error("multiple incomplete operation journals require manual recovery")]

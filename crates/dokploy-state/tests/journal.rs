@@ -5,9 +5,10 @@ use std::{
 };
 
 use dokploy_state::{
-    ExpectedState, FailureCode, InstanceIdentity, JournalAction, ManagedInputs, OperationJournal,
-    PlanDigest, RecoveryReason, RecoveryStatus, RemoteId, ResourceAddress, ResourceKind,
-    ResourceState, StateFile, StateStore, StateStoreError,
+    ExpectedCheckpoint, ExpectedState, FailureCode, InstanceIdentity, JournalAction, ManagedInputs,
+    OperationJournal, PlanDigest, RecoveryError, RecoveryReason, RecoveryStatus,
+    RecoveryStepOutcome, RemoteId, ResourceAddress, ResourceKind, ResourceState, StateFile,
+    StateStore, StateStoreError,
 };
 use semver::Version;
 use serde_json::json;
@@ -89,6 +90,336 @@ fn an_open_step_is_reported_as_uncertain() {
     assert_eq!(uncertain.sequence(), 1);
     assert_eq!(uncertain.address(), &address("api"));
     assert_eq!(uncertain.action(), JournalAction::Update);
+}
+
+#[test]
+fn recoverable_steps_expose_exact_safe_intent_and_plan_identity() {
+    let (workspace, store, initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    let mut journal = OperationJournal::begin(&mut session, digest()).expect("journal must begin");
+    let target = application_state("remote-placeholder", "public value");
+    let expected = ExpectedCheckpoint::create(target).expect("create intent must be valid");
+
+    journal
+        .start_recoverable_step(address("api"), JournalAction::Create, expected.clone())
+        .expect("recoverable step must start");
+    journal
+        .start_recoverable_step(
+            address("worker"),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(application_state(
+                "remote-placeholder",
+                "other public value",
+            ))
+            .expect("create intent must be valid"),
+        )
+        .expect("a concurrent recoverable step must start");
+    drop(journal);
+    drop(session);
+
+    let bytes = journal_bytes(workspace.path());
+    assert!(bytes.contains("public value"));
+    assert!(!bytes.contains("remote-placeholder"));
+    let summary = recovery_summary(&store);
+    assert_eq!(summary.plan_digest(), &digest());
+    assert_eq!(summary.steps().len(), 2);
+    assert_eq!(summary.steps()[0].expected_checkpoint(), Some(&expected));
+    assert!(summary.steps()[0].outcome().is_in_progress());
+    assert_eq!(summary.steps()[1].address(), &address("worker"));
+    assert!(summary.steps()[1].outcome().is_in_progress());
+    assert!(!format!("{summary:?}").contains("public value"));
+    assert_eq!(
+        store.inspect().expect("state remains readable"),
+        Some(initial)
+    );
+}
+
+#[test]
+fn recovery_evidence_includes_open_succeeded_and_failed_steps_in_sequence_order() {
+    let (_workspace, store, initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    let mut journal = OperationJournal::begin(&mut session, digest()).expect("journal must begin");
+    let failed = journal
+        .start_step(address("api"), JournalAction::Create)
+        .expect("failed step must start");
+    let succeeded = journal
+        .start_step(address("worker"), JournalAction::Create)
+        .expect("successful step must start");
+    journal
+        .start_step(address("later"), JournalAction::Create)
+        .expect("open step must start");
+    journal
+        .fail(failed, FailureCode::RemoteRejected)
+        .expect("failure must persist");
+    let proposed = next_state(&initial, "worker");
+    journal
+        .succeed(succeeded, Some(remote_id("remote-worker")), &proposed)
+        .expect("success must checkpoint");
+    drop(journal);
+    drop(session);
+
+    let summary = recovery_summary(&store);
+    assert_eq!(summary.steps().len(), 3);
+    assert!(matches!(
+        summary.steps()[0].outcome(),
+        RecoveryStepOutcome::Failed(FailureCode::RemoteRejected)
+    ));
+    assert!(summary.steps()[1].outcome().is_checkpointed());
+    assert!(summary.steps()[2].outcome().is_in_progress());
+}
+
+#[test]
+fn begin_only_recovery_resolves_once_and_releases_the_writer() {
+    let (_workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    drop(OperationJournal::begin(&mut session, digest()).expect("journal must begin"));
+    drop(session);
+
+    store
+        .begin_recovery()
+        .expect("begin-only journal is recoverable")
+        .resolve()
+        .expect("recovery resolution must persist");
+
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    assert!(matches!(
+        store.begin_recovery(),
+        Err(RecoveryError::NoRecoveryRequired)
+    ));
+    store.begin_write().expect("writer must be available");
+}
+
+#[test]
+fn success_append_checkpoint_and_resolve_boundaries_are_retryable() {
+    let (_workspace, store, initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    let mut journal = OperationJournal::begin(&mut session, digest()).expect("journal must begin");
+    journal
+        .start_recoverable_step(
+            address("api"),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(application_state("placeholder", "public value")).unwrap(),
+        )
+        .expect("step must start");
+    drop(journal);
+    drop(session);
+
+    let mut recovery = store.begin_recovery().expect("recovery must begin");
+    let invalid = next_state(&initial, "other");
+    assert!(
+        recovery
+            .checkpoint_uncertain_success(1, Some(remote_id("remote-api")), &invalid)
+            .is_err(),
+        "success is durable before the rejected checkpoint"
+    );
+    drop(recovery);
+
+    let mut recovery = store
+        .begin_recovery()
+        .expect("recorded success must reopen");
+    assert_eq!(
+        recovery.evidence().reason(),
+        &RecoveryReason::SuccessWithoutCheckpoint
+    );
+    let proposed = next_state(&initial, "api");
+    recovery
+        .checkpoint_recorded_success(1, &proposed)
+        .expect("recorded success must checkpoint exactly once");
+    drop(recovery);
+
+    let recovery = store
+        .begin_recovery()
+        .expect("checkpointed success must reopen");
+    assert_eq!(
+        recovery.evidence().reason(),
+        &RecoveryReason::CheckpointedWithoutCommit
+    );
+    recovery.resolve().expect("resolution must persist");
+    assert_eq!(store.inspect().unwrap(), Some(proposed));
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+}
+
+#[test]
+fn interrupted_forget_is_recovered_as_state_only_removal() {
+    let (_workspace, store, initial) = initialized_store();
+    let current = next_state(&initial, "api");
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&initial), &current)
+        .unwrap();
+    let before = current.resource(&address("api")).unwrap().clone();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    journal
+        .start_recoverable_step(
+            address("api"),
+            JournalAction::Forget,
+            ExpectedCheckpoint::remove(before),
+        )
+        .unwrap();
+    drop(journal);
+    drop(session);
+
+    let mut recovery = store.begin_recovery().expect("forget must be recoverable");
+    assert_eq!(
+        recovery.evidence().steps()[0].action(),
+        JournalAction::Forget
+    );
+    let proposed = recovery
+        .expected_proposed_state(1, None)
+        .expect("forget target must reconstruct from state-only evidence");
+    recovery
+        .checkpoint_uncertain_success(1, None, &proposed)
+        .expect("forget requires no remote identity");
+    recovery.resolve().expect("forget recovery must resolve");
+
+    assert!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&address("api"))
+            .is_none()
+    );
+}
+
+#[test]
+fn legacy_uncertain_evidence_fails_closed_but_safe_terminal_cases_resolve() {
+    let (workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    let operation_id = journal.operation_id();
+    journal
+        .start_step(address("api"), JournalAction::Create)
+        .unwrap();
+    drop(journal);
+    drop(session);
+    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
+    assert!(matches!(
+        store.begin_recovery(),
+        Err(RecoveryError::UnsafeLegacyEvidence)
+    ));
+
+    let (workspace, store, _initial) = initialized_store();
+    let path = begin_and_drop(&store, &workspace);
+    rewrite_format_version(&path, 1);
+    store.begin_recovery().unwrap().resolve().unwrap();
+
+    let (workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    let operation_id = journal.operation_id();
+    let token = journal
+        .start_step(address("api"), JournalAction::Create)
+        .unwrap();
+    journal.fail(token, FailureCode::RemoteRejected).unwrap();
+    drop(journal);
+    drop(session);
+    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
+    store.begin_recovery().unwrap().resolve().unwrap();
+
+    let (workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    let operation_id = journal.operation_id();
+    let token = journal
+        .start_step(address("api"), JournalAction::Create)
+        .unwrap();
+    journal
+        .fail(token, FailureCode::TransportOutcomeUnknown)
+        .unwrap();
+    drop(journal);
+    drop(session);
+    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
+    assert!(matches!(
+        store.begin_recovery(),
+        Err(RecoveryError::UnsafeLegacyEvidence)
+    ));
+
+    let (workspace, store, initial) = initialized_store();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    let operation_id = journal.operation_id();
+    let token = journal
+        .start_step(address("api"), JournalAction::Create)
+        .unwrap();
+    journal
+        .succeed(
+            token,
+            Some(remote_id("remote-api")),
+            &next_state(&initial, "api"),
+        )
+        .unwrap();
+    drop(journal);
+    drop(session);
+    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
+    store.begin_recovery().unwrap().resolve().unwrap();
+}
+
+#[test]
+fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() {
+    let (workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    let path = journal_path(workspace.path(), journal.operation_id());
+    journal
+        .start_recoverable_step(
+            address("api"),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(application_state("placeholder", "public value")).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(session);
+    append(&path, b"{\"type\":\"stepSucceeded\"");
+    let original = fs::read(&path).unwrap();
+
+    let recovery = store
+        .begin_recovery()
+        .expect("tail must be archived and trimmed");
+    let archives = fs::read_dir(workspace.path().join(".dokploy/journal/archive"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(archives.len(), 1);
+    assert_eq!(fs::read(&archives[0]).unwrap(), original);
+    assert!(fs::read(&path).unwrap().ends_with(b"\n"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            fs::metadata(workspace.path().join(".dokploy/journal/archive"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&archives[0]).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    drop(recovery);
+
+    append(&path, b"{\"type\":\"stepSucceeded\"");
+    let mut recovery = store
+        .begin_recovery()
+        .expect("an identical archived tail must be retryable");
+    recovery
+        .confirm_no_change(1)
+        .expect("the open mutation may be proven unchanged");
+    drop(recovery);
+
+    append(&path, b"{\"type\":\"recoveryResolved\"");
+    store
+        .begin_recovery()
+        .expect("partial resolution must trim safely")
+        .resolve()
+        .expect("resolution retry must succeed");
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
 }
 
 #[test]
@@ -440,7 +771,7 @@ fn success_rejects_wrong_address_remote_id_and_action_transition_after_recording
 }
 
 #[test]
-fn scanner_rejects_a_tail_after_failure_but_accepts_a_partial_failure_record() {
+fn scanner_preserves_truncated_evidence_after_complete_or_partial_failure_records() {
     let (workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().expect("writer must start");
     let mut journal = OperationJournal::begin(&mut session, digest()).expect("journal must begin");
@@ -457,7 +788,13 @@ fn scanner_rejects_a_tail_after_failure_but_accepts_a_partial_failure_record() {
         &journal_path(workspace.path(), operation_id),
         b"{trailing fragment",
     );
-    assert_journal_corrupt(&store);
+    let summary = recovery_summary(&store);
+    assert_eq!(summary.reason(), &RecoveryReason::TruncatedTail);
+    store
+        .begin_recovery()
+        .expect("definitive failure may trim its archived tail")
+        .resolve()
+        .expect("definitive failure may resolve");
 
     let (workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().expect("writer must start");
@@ -608,7 +945,7 @@ fn begin_and_drop(store: &StateStore, workspace: &TempDir) -> PathBuf {
 
 fn recovery_summary(store: &StateStore) -> dokploy_state::RecoverySummary {
     match store.recovery_status().expect("scan must succeed") {
-        RecoveryStatus::RecoveryRequired(summary) => summary,
+        RecoveryStatus::RecoveryRequired(summary) => *summary,
         RecoveryStatus::Clean => panic!("recovery must be required"),
     }
 }
@@ -648,21 +985,25 @@ fn add_application(state: &mut StateFile, name: &str, description: &str) {
     state
         .upsert_resource(
             address(name),
-            ResourceState::new(
-                ResourceKind::Application,
-                remote_id(&format!("remote-{name}")),
-                false,
-                ManagedInputs::try_from_json(json!({ "description": description }))
-                    .expect("managed inputs must be safe"),
-                Some(
-                    "environment.production"
-                        .parse()
-                        .expect("containment must parse"),
-                ),
-                Vec::new(),
-            ),
+            application_state(&format!("remote-{name}"), description),
         )
         .expect("state must mutate");
+}
+
+fn application_state(remote: &str, description: &str) -> ResourceState {
+    ResourceState::new(
+        ResourceKind::Application,
+        remote_id(remote),
+        false,
+        ManagedInputs::try_from_json(json!({ "description": description }))
+            .expect("managed inputs must be safe"),
+        Some(
+            "environment.production"
+                .parse()
+                .expect("containment must parse"),
+        ),
+        Vec::new(),
+    )
 }
 
 fn journal_path(workspace: &Path, operation_id: Uuid) -> PathBuf {
@@ -688,6 +1029,19 @@ fn append(path: &Path, bytes: &[u8]) {
         .expect("journal must open")
         .write_all(bytes)
         .expect("journal bytes must append");
+}
+
+fn rewrite_format_version(path: &Path, version: u32) {
+    let bytes = fs::read_to_string(path).expect("journal must be readable");
+    fs::write(
+        path,
+        bytes.replacen(
+            "\"formatVersion\":2",
+            &format!("\"formatVersion\":{version}"),
+            1,
+        ),
+    )
+    .expect("journal format must be rewritten");
 }
 
 fn write_state_directly(workspace: &Path, state: &StateFile) {

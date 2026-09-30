@@ -8,8 +8,10 @@ mod storage;
 mod strict_json;
 
 pub use journal::{
-    FailureCode, JournalAction, JournalDurabilityStage, JournalError, OperationJournal, PlanDigest,
-    PlanDigestError, RecoveryReason, RecoveryStatus, RecoveryStep, RecoverySummary, StepToken,
+    ExpectedCheckpoint, ExpectedCheckpointError, FailureCode, JournalAction,
+    JournalDurabilityStage, JournalError, OperationJournal, PlanDigest, PlanDigestError,
+    RecoveryError, RecoveryReason, RecoverySession, RecoveryStatus, RecoveryStep,
+    RecoveryStepOutcome, RecoverySummary, StepToken,
 };
 pub use resource::{
     ResourceAddress, ResourceAddressParseError, ResourceKind, ResourceKindParseError, ResourceName,
