@@ -769,6 +769,7 @@ dependencies = [
  "miette",
  "rustix",
  "semver",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",
@@ -802,10 +803,12 @@ name = "dokploy-core"
 version = "0.1.0"
 dependencies = [
  "dokploy-state",
+ "hmac",
  "petgraph",
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "uuid",
 ]

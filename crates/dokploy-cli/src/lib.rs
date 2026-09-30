@@ -13,11 +13,13 @@ pub mod planning;
 pub mod recovery;
 mod redaction;
 pub mod remote;
+pub mod saved_plan;
 mod state_command;
 // This foundation becomes reachable when the desired compiler accepts sensitive inputs.
 #[allow(dead_code)]
 mod sensitive;
 pub mod settings;
+mod strict_json;
 pub mod telemetry;
 
 /// Process-level outcome selected by a successfully dispatched command.
@@ -101,6 +103,7 @@ pub async fn execute_with_input(
             file,
             json,
             detailed_exitcode,
+            out,
         } => {
             let configuration = config.load()?;
             let settings = resolve_connection(
@@ -117,15 +120,33 @@ pub async fn execute_with_input(
                 .api_key(settings.api_key().expose())
                 .build()
                 .into_diagnostic()?;
-            let plan = planning::plan_workspace(&client, &file)
+            let prepared = planning::prepare_workspace(&client, &file)
                 .await
                 .into_diagnostic()?;
+            let plan = prepared.plan();
+
+            if let Some(path) = out
+                && plan.complete()
+                && plan.applyable()
+            {
+                let fingerprinter =
+                    sensitive::SensitiveFingerprinter::load(prepared.instance().clone())
+                        .into_diagnostic()?;
+                let remote_receipt = fingerprinter.remote_binding_receipt(prepared.remote());
+                let document = saved_plan::SavedPlan::from_fresh_plan(
+                    prepared.instance().clone(),
+                    plan,
+                    remote_receipt,
+                )
+                .into_diagnostic()?;
+                saved_plan::write_new(&path, &document).into_diagnostic()?;
+            }
 
             if json {
                 output.write_all(&plan.to_json_bytes()).into_diagnostic()?;
                 writeln!(output).into_diagnostic()?;
             } else {
-                plan_output::render(&plan, output).into_diagnostic()?;
+                plan_output::render(plan, output).into_diagnostic()?;
             }
 
             if !plan.complete() || !plan.applyable() {

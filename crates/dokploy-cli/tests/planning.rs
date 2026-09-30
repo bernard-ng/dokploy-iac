@@ -108,6 +108,10 @@ fn public_plan_json_uses_detailed_exit_code_two_for_changes() {
 
     let output = Command::new(env!("CARGO_BIN_EXE_dokploy"))
         .current_dir(directory.path())
+        .env(
+            "DOKPLOY_FINGERPRINT_KEY",
+            format!("0199a0c8-2351-7c31-8899-2c8f81983ea5:{}", "07".repeat(32)),
+        )
         .args([
             "--url",
             &server.url,
@@ -116,6 +120,8 @@ fn public_plan_json_uses_detailed_exit_code_two_for_changes() {
             "plan",
             "--json",
             "--detailed-exitcode",
+            "--out",
+            "saved-plan.json",
         ])
         .output()
         .expect("dokploy plan runs");
@@ -124,6 +130,19 @@ fn public_plan_json_uses_detailed_exit_code_two_for_changes() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout is a JSON plan");
     assert_eq!(document["changes"][0]["kind"], "create");
+    let saved = directory.path().join("saved-plan.json");
+    let saved_document: serde_json::Value =
+        serde_json::from_slice(&fs::read(saved).expect("saved plan artifact is readable"))
+            .expect("saved plan artifact is JSON");
+    assert_eq!(saved_document["formatVersion"], 1);
+    assert_eq!(saved_document["plan"], document);
+    assert_eq!(
+        saved_document["remoteReceipt"]
+            .as_str()
+            .expect("receipt is a string")
+            .len(),
+        64
+    );
     assert!(!directory.path().join(".dokploy").exists());
     assert_eq!(server.finish().len(), 1);
 }

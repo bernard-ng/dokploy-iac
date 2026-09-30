@@ -11,11 +11,52 @@ use thiserror::Error;
 use crate::desired::{CompileDesiredError, compile_desired_for_instance};
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
 
+/// A fresh plan paired with the remote evidence used to construct it.
+pub struct PreparedPlan {
+    plan: Plan,
+    remote: dokploy_core::RemoteState,
+    instance: InstanceIdentity,
+}
+
+impl PreparedPlan {
+    /// Returns the deterministic public plan.
+    #[must_use]
+    pub const fn plan(&self) -> &Plan {
+        &self.plan
+    }
+
+    /// Returns the fresh remote snapshot for keyed saved-plan binding.
+    #[must_use]
+    pub const fn remote(&self) -> &dokploy_core::RemoteState {
+        &self.remote
+    }
+
+    /// Returns the normalized Dokploy instance used for planning.
+    #[must_use]
+    pub const fn instance(&self) -> &InstanceIdentity {
+        &self.instance
+    }
+
+    /// Consumes the evidence wrapper and returns the public plan.
+    #[must_use]
+    pub fn into_plan(self) -> Plan {
+        self.plan
+    }
+}
+
 /// Builds one fresh, mutation-free plan for a configuration workspace.
 pub async fn plan_workspace(
     client: &Dokploy,
     config_file: &Path,
 ) -> Result<Plan, PlanWorkspaceError> {
+    Ok(prepare_workspace(client, config_file).await?.into_plan())
+}
+
+/// Builds one fresh plan while retaining its in-memory remote binding evidence.
+pub async fn prepare_workspace(
+    client: &Dokploy,
+    config_file: &Path,
+) -> Result<PreparedPlan, PlanWorkspaceError> {
     let loaded = dokploy_config::load_with_digest(config_file)?;
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
@@ -36,7 +77,7 @@ pub async fn plan_workspace(
             env!("CARGO_PKG_VERSION")
                 .parse()
                 .expect("crate version is valid semver"),
-            instance,
+            instance.clone(),
         )
     });
     let remote = discover_remote(
@@ -53,11 +94,13 @@ pub async fn plan_workspace(
         return Err(PlanWorkspaceError::StateChanged);
     }
 
-    Ok(dokploy_core::plan(
-        compiled.desired_state(),
-        &stored,
-        &remote,
-    ))
+    let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
+
+    Ok(PreparedPlan {
+        plan,
+        remote,
+        instance,
+    })
 }
 
 fn canonical_workspace(config_file: &Path) -> Result<PathBuf, PlanWorkspaceError> {

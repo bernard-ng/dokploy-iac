@@ -88,6 +88,10 @@ pub enum Command {
         /// Return status 2 when a complete, applyable plan contains changes.
         #[arg(long)]
         detailed_exitcode: bool,
+
+        /// Save a bound plan envelope for a later verified apply.
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
     },
 
     /// Preview and reconcile configuration against fresh Dokploy state.
@@ -312,6 +316,8 @@ mod tests {
             "stack.yaml",
             "--json",
             "--detailed-exitcode",
+            "--out",
+            "plan.json",
         ])
         .expect("plan command line is valid");
 
@@ -321,7 +327,9 @@ mod tests {
                 file,
                 json: true,
                 detailed_exitcode: true,
+                out: Some(out),
             } if file.as_path() == Path::new("stack.yaml")
+                && out.as_path() == Path::new("plan.json")
         ));
     }
 

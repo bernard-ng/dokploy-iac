@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, fmt};
 
 use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, ResourceKind, StateFile};
+use hmac::{Hmac, Mac};
 use serde::Serialize;
+use sha2::Sha256;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -1054,12 +1056,98 @@ impl RemoteState {
         self.observations.get(address)
     }
 
+    /// Binds every fresh identity and property observation into one keyed receipt.
+    ///
+    /// The returned bytes are safe to persist in a saved-plan envelope; remote
+    /// identifiers and low-entropy property values never leave this method.
+    #[must_use]
+    pub fn binding_receipt(&self, key: &[u8]) -> [u8; 32] {
+        const DOMAIN: &[u8] = b"dokploy-iac\0remote-state\0hmac-sha256-v1";
+
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA-256 accepts keys of any length");
+        receipt_field(&mut mac, b"domain", DOMAIN);
+        receipt_field(&mut mac, b"instance", self.instance.as_str().as_bytes());
+        receipt_u64(&mut mac, self.observations.len());
+        for (address, observation) in &self.observations {
+            receipt_field(&mut mac, b"address", address.to_string().as_bytes());
+            match observation {
+                RemoteObservation::Missing => receipt_field(&mut mac, b"status", b"missing"),
+                RemoteObservation::Unavailable(reason) => {
+                    receipt_field(&mut mac, b"status", b"unavailable");
+                    receipt_field(
+                        &mut mac,
+                        b"reason",
+                        match reason {
+                            RemoteFailureKind::Unavailable => b"unavailable",
+                            RemoteFailureKind::Unauthorized => b"unauthorized",
+                            RemoteFailureKind::InvalidResponse => b"invalid_response",
+                        },
+                    );
+                }
+                RemoteObservation::Present(resource) => {
+                    receipt_field(&mut mac, b"status", b"present");
+                    receipt_field(
+                        &mut mac,
+                        b"remote_id",
+                        resource.remote_id.as_str().as_bytes(),
+                    );
+                    receipt_u64(&mut mac, resource.properties.len());
+                    for (path, property) in &resource.properties {
+                        receipt_field(&mut mac, b"property", path.to_string().as_bytes());
+                        match property {
+                            PropertyObservation::Known(value) => {
+                                receipt_field(&mut mac, b"state", b"known");
+                                let encoded = serde_json::to_vec(value.as_json())
+                                    .expect("comparable JSON always serializes");
+                                receipt_field(&mut mac, b"value", &encoded);
+                            }
+                            PropertyObservation::KnownAbsent => {
+                                receipt_field(&mut mac, b"state", b"absent");
+                            }
+                            PropertyObservation::Unknown(reason) => {
+                                receipt_field(&mut mac, b"state", b"unknown");
+                                receipt_field(
+                                    &mut mac,
+                                    b"reason",
+                                    match reason {
+                                        PropertyUnknownReason::Sensitive => b"sensitive",
+                                        PropertyUnknownReason::NotReturned => b"not_returned",
+                                        PropertyUnknownReason::InvalidResponse => {
+                                            b"invalid_response"
+                                        }
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        mac.finalize().into_bytes().into()
+    }
+
     pub(crate) fn mutation_contract(
         &self,
         address: &ResourceAddress,
     ) -> Option<&crate::MutationContract> {
         self.mutation_contracts.get(address)
     }
+}
+
+fn receipt_u64(mac: &mut Hmac<Sha256>, value: usize) {
+    let value = u64::try_from(value).expect("in-memory collection lengths fit in u64");
+    mac.update(&value.to_be_bytes());
+}
+
+fn receipt_field(mac: &mut Hmac<Sha256>, label: &[u8], value: &[u8]) {
+    let label_length = u64::try_from(label.len()).expect("receipt labels fit in u64");
+    let value_length = u64::try_from(value.len()).expect("memory slices fit in u64");
+    mac.update(&label_length.to_be_bytes());
+    mac.update(label);
+    mac.update(&value_length.to_be_bytes());
+    mac.update(value);
 }
 
 impl fmt::Debug for RemoteState {

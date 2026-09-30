@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
+use dokploy_core::RemoteState;
 use dokploy_state::{
     FingerprintKeyId, InstanceIdentity, ResourceAddress, SensitiveFingerprint,
     SensitivePropertyPath,
@@ -250,6 +251,11 @@ impl SensitiveFingerprinter {
         let bytes: [u8; 32] = mac.finalize().into_bytes().into();
 
         SensitiveFingerprint::new_v1(self.key.id.clone(), bytes)
+    }
+
+    /// Produces a persistable receipt for one complete fresh remote snapshot.
+    pub(crate) fn remote_binding_receipt(&self, remote: &RemoteState) -> [u8; 32] {
+        remote.binding_receipt(self.key.bytes.as_ref())
     }
 }
 

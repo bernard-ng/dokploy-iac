@@ -7,9 +7,11 @@ publish = false
 
 [dependencies]
 dokploy-state.workspace = true
+hmac.workspace = true
 petgraph.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 
