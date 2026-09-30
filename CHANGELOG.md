@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add typed, single-attempt delete operations for all six MVP SDK resources,
+  preserving structured remote rejections and outcome-unknown transport errors.
 - Add read-only `dokploy state list` and `dokploy state show` commands with
   workspace-instance validation and value-free managed-field rendering.
 - Add owned, read-only Domain SDK operations with strong identifiers and

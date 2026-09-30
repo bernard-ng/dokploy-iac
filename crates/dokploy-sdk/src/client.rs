@@ -2,22 +2,26 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dokploy_api::{
-    APPLICATION_CREATE, APPLICATION_DEPLOY, APPLICATION_ONE, APPLICATION_SEARCH,
-    APPLICATION_UPDATE, ApplicationCreateRequest, ApplicationCreateRequestBody,
-    ApplicationOneRequest, ApplicationOneRequestQuery, ApplicationRedeployRequestBody,
-    ApplicationSearchRequest, ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID,
-    DOMAIN_CREATE, DOMAIN_ONE, DOMAIN_UPDATE, DokployApiClient, DomainByApplicationIdRequest,
+    APPLICATION_CREATE, APPLICATION_DELETE, APPLICATION_DEPLOY, APPLICATION_ONE,
+    APPLICATION_SEARCH, APPLICATION_UPDATE, ApplicationCreateRequest, ApplicationCreateRequestBody,
+    ApplicationDeleteRequest, ApplicationIdRequestBody, ApplicationOneRequest,
+    ApplicationOneRequestQuery, ApplicationRedeployRequestBody, ApplicationSearchRequest,
+    ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID, DOMAIN_CREATE, DOMAIN_DELETE,
+    DOMAIN_ONE, DOMAIN_UPDATE, DokployApiClient, DomainByApplicationIdRequest,
     DomainByApplicationIdRequestQuery, DomainCreateRequest, DomainCreateRequestBody,
-    DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE,
-    ENVIRONMENT_ONE, ENVIRONMENT_UPDATE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
+    DomainDeleteRequest, DomainIdRequestBody, DomainOneRequest, DomainOneRequestQuery,
+    ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE, ENVIRONMENT_ONE, ENVIRONMENT_REMOVE,
+    ENVIRONMENT_UPDATE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
     EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
-    EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
-    POSTGRES_SEARCH, POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PROJECT_UPDATE,
-    PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery,
-    ProjectAllRequest, ProjectCreateRequest, ProjectCreateRequestBody, ProjectOneRequest,
-    ProjectOneRequestQuery, REDIS_CREATE, REDIS_ONE, REDIS_SEARCH, REDIS_UPDATE, RedisOneRequest,
-    RedisOneRequestQuery, RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation,
-    validate_request,
+    EnvironmentIdRequestBody, EnvironmentOneRequest, EnvironmentOneRequestQuery,
+    EnvironmentRemoveRequest, POSTGRES_CREATE, POSTGRES_ONE, POSTGRES_REMOVE, POSTGRES_SEARCH,
+    POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PROJECT_REMOVE, PROJECT_UPDATE,
+    PostgresIdRequestBody, PostgresOneRequest, PostgresOneRequestQuery, PostgresRemoveRequest,
+    PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
+    ProjectCreateRequestBody, ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
+    ProjectRemoveRequest, REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE,
+    RedisIdRequestBody, RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest,
+    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -42,8 +46,9 @@ use crate::services::{Applications, Domains, Environments, Postgres, Projects, R
 use crate::{
     ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
     CreateProject, CreateRedis, CreatedApplication, CreatedDomain, CreatedEnvironment,
-    CreatedPostgres, CreatedProject, CreatedRedis, UpdateApplication, UpdateDomain,
-    UpdateEnvironment, UpdatePostgres, UpdateProject, UpdateRedis,
+    CreatedPostgres, CreatedProject, CreatedRedis, DomainId, EnvironmentId, PostgresId, ProjectId,
+    RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres, UpdateProject,
+    UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -165,6 +170,17 @@ impl Dokploy {
         self.mutate_body_ok(PROJECT_UPDATE, &input).await
     }
 
+    pub(crate) async fn project_delete(&self, project_id: ProjectId) -> Result<(), Error> {
+        let request = ProjectRemoveRequest {
+            body: ProjectIdRequestBody {
+                project_id: project_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(PROJECT_REMOVE, &request)?;
+
+        self.mutate_body_ok(PROJECT_REMOVE, &request.body).await
+    }
+
     pub(crate) async fn application_get(
         &self,
         application_id: &str,
@@ -223,6 +239,20 @@ impl Dokploy {
         };
 
         self.mutate_body_ok(APPLICATION_DEPLOY, &body).await
+    }
+
+    pub(crate) async fn application_delete(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<(), Error> {
+        let request = ApplicationDeleteRequest {
+            body: ApplicationIdRequestBody {
+                application_id: application_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(APPLICATION_DELETE, &request)?;
+
+        self.mutate_body_ok(APPLICATION_DELETE, &request.body).await
     }
 
     pub(crate) async fn application_environment(
@@ -350,6 +380,20 @@ impl Dokploy {
         self.mutate_body_ok(ENVIRONMENT_UPDATE, &input).await
     }
 
+    pub(crate) async fn environment_delete(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<(), Error> {
+        let request = EnvironmentRemoveRequest {
+            body: EnvironmentIdRequestBody {
+                environment_id: environment_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(ENVIRONMENT_REMOVE, &request)?;
+
+        self.mutate_body_ok(ENVIRONMENT_REMOVE, &request.body).await
+    }
+
     pub(crate) async fn postgres_get(&self, postgres_id: &str) -> Result<PostgresDetails, Error> {
         let request = PostgresOneRequest {
             query: PostgresOneRequestQuery {
@@ -386,6 +430,17 @@ impl Dokploy {
         }
 
         self.mutate_body_ok(POSTGRES_UPDATE, &input).await
+    }
+
+    pub(crate) async fn postgres_delete(&self, postgres_id: PostgresId) -> Result<(), Error> {
+        let request = PostgresRemoveRequest {
+            body: PostgresIdRequestBody {
+                postgres_id: postgres_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(POSTGRES_REMOVE, &request)?;
+
+        self.mutate_body_ok(POSTGRES_REMOVE, &request.body).await
     }
 
     pub(crate) async fn postgres_by_environment(
@@ -478,6 +533,17 @@ impl Dokploy {
         self.mutate_body_ok(REDIS_UPDATE, &input).await
     }
 
+    pub(crate) async fn redis_delete(&self, redis_id: RedisId) -> Result<(), Error> {
+        let request = RedisRemoveRequest {
+            body: RedisIdRequestBody {
+                redis_id: redis_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(REDIS_REMOVE, &request)?;
+
+        self.mutate_body_ok(REDIS_REMOVE, &request.body).await
+    }
+
     pub(crate) async fn redis_by_environment(
         &self,
         environment_id: &str,
@@ -568,6 +634,17 @@ impl Dokploy {
         }
 
         self.mutate_body_ok(DOMAIN_UPDATE, &input).await
+    }
+
+    pub(crate) async fn domain_delete(&self, domain_id: DomainId) -> Result<(), Error> {
+        let request = DomainDeleteRequest {
+            body: DomainIdRequestBody {
+                domain_id: domain_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(DOMAIN_DELETE, &request)?;
+
+        self.mutate_body_ok(DOMAIN_DELETE, &request.body).await
     }
 
     pub(crate) async fn domains_by_application(

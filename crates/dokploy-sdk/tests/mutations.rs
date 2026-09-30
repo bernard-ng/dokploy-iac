@@ -19,6 +19,10 @@ struct TestServer {
 
 impl TestServer {
     fn respond_with_json(body: &'static str) -> Self {
+        Self::respond("200 OK", body)
+    }
+
+    fn respond(status: &'static str, body: &'static str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
         let address = listener.local_addr().expect("test server has an address");
         let (sender, request) = mpsc::channel();
@@ -41,11 +45,41 @@ impl TestServer {
                 .expect("test receives the request");
             write!(
                 stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
                 body.len(),
                 body
             )
             .expect("response is writable");
+        });
+
+        Self {
+            url: format!("http://{address}"),
+            request,
+            thread,
+        }
+    }
+
+    fn close_after_request() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+        let address = listener.local_addr().expect("test server has an address");
+        let (sender, request) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test server accepts a request");
+            let mut bytes = Vec::new();
+            let mut buffer = [0_u8; 1024];
+
+            loop {
+                let count = stream.read(&mut buffer).expect("request is readable");
+                bytes.extend_from_slice(&buffer[..count]);
+
+                if count == 0 || request_is_complete(&bytes) {
+                    break;
+                }
+            }
+
+            sender
+                .send(String::from_utf8(bytes).expect("request is UTF-8"))
+                .expect("test receives the request");
         });
 
         Self {
@@ -399,4 +433,149 @@ async fn resource_updates_send_only_the_owned_fields() {
     let request = domain_server.finish();
     assert!(request.starts_with("POST /api/domain.update HTTP/1.1\r\n"));
     assert!(request.contains(r#""domainId":"domain-1","host":"next.example.test""#));
+}
+
+#[tokio::test]
+async fn resource_deletes_use_the_owned_typed_endpoints() {
+    let project_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    project_server
+        .client()
+        .projects()
+        .delete(ProjectId::new("project-1"))
+        .await
+        .expect("project deletion succeeds");
+    assert_delete_request(
+        project_server.finish(),
+        "project.remove",
+        serde_json::json!({"projectId": "project-1"}),
+    );
+
+    let environment_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    environment_server
+        .client()
+        .environments()
+        .delete(EnvironmentId::new("environment-1"))
+        .await
+        .expect("environment deletion succeeds");
+    assert_delete_request(
+        environment_server.finish(),
+        "environment.remove",
+        serde_json::json!({"environmentId": "environment-1"}),
+    );
+
+    let application_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    application_server
+        .client()
+        .applications()
+        .delete(ApplicationId::new("application-1"))
+        .await
+        .expect("application deletion succeeds");
+    assert_delete_request(
+        application_server.finish(),
+        "application.delete",
+        serde_json::json!({"applicationId": "application-1"}),
+    );
+
+    let postgres_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    postgres_server
+        .client()
+        .postgres()
+        .delete(PostgresId::new("postgres-1"))
+        .await
+        .expect("Postgres deletion succeeds");
+    assert_delete_request(
+        postgres_server.finish(),
+        "postgres.remove",
+        serde_json::json!({"postgresId": "postgres-1"}),
+    );
+
+    let redis_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    redis_server
+        .client()
+        .redis()
+        .delete(RedisId::new("redis-1"))
+        .await
+        .expect("Redis deletion succeeds");
+    assert_delete_request(
+        redis_server.finish(),
+        "redis.remove",
+        serde_json::json!({"redisId": "redis-1"}),
+    );
+
+    let domain_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    domain_server
+        .client()
+        .domains()
+        .delete(DomainId::new("domain-1"))
+        .await
+        .expect("Domain deletion succeeds");
+    assert_delete_request(
+        domain_server.finish(),
+        "domain.delete",
+        serde_json::json!({"domainId": "domain-1"}),
+    );
+}
+
+#[tokio::test]
+async fn resource_delete_preserves_remote_rejection_and_unknown_outcome() {
+    let rejected_server = TestServer::respond(
+        "409 Conflict",
+        r#"{"code":"CONFLICT","message":"Resource is still in use"}"#,
+    );
+    let error = rejected_server
+        .client()
+        .projects()
+        .delete(ProjectId::new("project-1"))
+        .await
+        .expect_err("a remote rejection must be returned");
+    let details = error
+        .dokploy()
+        .expect("Dokploy error details are preserved");
+    assert_eq!(details.status(), 409);
+    assert_eq!(details.code(), "CONFLICT");
+    assert_delete_request(
+        rejected_server.finish(),
+        "project.remove",
+        serde_json::json!({"projectId": "project-1"}),
+    );
+
+    let unknown_server = TestServer::close_after_request();
+    let error = unknown_server
+        .client()
+        .domains()
+        .delete(DomainId::new("domain-1"))
+        .await
+        .expect_err("a missing mutation response has an unknown outcome");
+    assert!(matches!(
+        error,
+        dokploy_sdk::Error::OutcomeUnknown {
+            operation: "domain.delete",
+            ..
+        }
+    ));
+    assert_delete_request(
+        unknown_server.finish(),
+        "domain.delete",
+        serde_json::json!({"domainId": "domain-1"}),
+    );
+}
+
+fn assert_delete_request(request: String, operation: &str, expected_body: serde_json::Value) {
+    assert!(
+        request.starts_with(&format!("POST /api/{operation} HTTP/1.1\r\n")),
+        "unexpected request target: {request}"
+    );
+    assert!(
+        request
+            .to_ascii_lowercase()
+            .contains("x-api-key: test-api-key")
+    );
+    let body = request
+        .split_once("\r\n\r\n")
+        .expect("request contains a body")
+        .1;
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(body).expect("request body is JSON"),
+        expected_body
+    );
 }

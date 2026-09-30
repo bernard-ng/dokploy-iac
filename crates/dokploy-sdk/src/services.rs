@@ -40,6 +40,11 @@ impl<'a> Projects<'a> {
     pub async fn update(&self, input: UpdateProject) -> Result<(), Error> {
         self.client.project_update(input).await
     }
+
+    /// Permanently removes one project and its Dokploy-owned descendants.
+    pub async fn delete(&self, project_id: ProjectId) -> Result<(), Error> {
+        self.client.project_delete(project_id).await
+    }
 }
 
 /// Read operations for Dokploy applications.
@@ -82,6 +87,11 @@ impl<'a> Applications<'a> {
         self.client.application_deploy(application_id).await
     }
 
+    /// Permanently removes one application.
+    pub async fn delete(&self, application_id: ApplicationId) -> Result<(), Error> {
+        self.client.application_delete(application_id).await
+    }
+
     /// Reads the transient raw environment document for a preservation merge.
     pub async fn environment(
         &self,
@@ -122,6 +132,11 @@ impl<'a> Environments<'a> {
     pub async fn update(&self, input: UpdateEnvironment) -> Result<(), Error> {
         self.client.environment_update(input).await
     }
+
+    /// Permanently removes one environment.
+    pub async fn delete(&self, environment_id: EnvironmentId) -> Result<(), Error> {
+        self.client.environment_delete(environment_id).await
+    }
 }
 
 /// Read operations for Dokploy Postgres databases.
@@ -157,6 +172,11 @@ impl<'a> Postgres<'a> {
     /// Updates an explicit subset of owned Postgres fields.
     pub async fn update(&self, input: UpdatePostgres) -> Result<(), Error> {
         self.client.postgres_update(input).await
+    }
+
+    /// Permanently removes one Postgres database.
+    pub async fn delete(&self, postgres_id: PostgresId) -> Result<(), Error> {
+        self.client.postgres_delete(postgres_id).await
     }
 }
 
@@ -194,6 +214,11 @@ impl<'a> Redis<'a> {
     pub async fn update(&self, input: UpdateRedis) -> Result<(), Error> {
         self.client.redis_update(input).await
     }
+
+    /// Permanently removes one Redis database.
+    pub async fn delete(&self, redis_id: RedisId) -> Result<(), Error> {
+        self.client.redis_delete(redis_id).await
+    }
 }
 
 /// Read operations for Dokploy application domains.
@@ -229,5 +254,10 @@ impl<'a> Domains<'a> {
     /// Updates the Domain host while preserving its application attachment.
     pub async fn update(&self, input: UpdateDomain) -> Result<(), Error> {
         self.client.domain_update(input).await
+    }
+
+    /// Permanently removes one domain attachment.
+    pub async fn delete(&self, domain_id: DomainId) -> Result<(), Error> {
+        self.client.domain_delete(domain_id).await
     }
 }
