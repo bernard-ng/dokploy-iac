@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Require Schedule update and delete to prove a supported authoritative target
+  before mutation, reject rename collisions, compare exact executable response
+  bytes in zeroizing private proofs, and verify create/delete identity deltas.
 - Bound every buffered SDK JSON response to 16 MiB with incremental zeroizing
   reads, redaction-safe oversized remote errors, and outcome-unknown
   classification when an accepted mutation response is malformed or too large.

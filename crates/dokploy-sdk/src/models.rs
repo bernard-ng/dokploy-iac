@@ -810,7 +810,8 @@ impl CreateSchedule {
                 .is_none_or(|timezone| !timezone.is_empty())
     }
 
-    pub(crate) fn matches(&self, details: &ScheduleDetails) -> bool {
+    pub(crate) fn matches(&self, proof: &ScheduleProofDetails) -> bool {
+        let details = proof.details();
         details.is_valid()
             && details.target == self.target
             && details.name == self.name
@@ -821,6 +822,9 @@ impl CreateSchedule {
             && details.script_present == self.script.is_some()
             && details.enabled == self.enabled
             && details.timezone == self.timezone
+            && proof.command.as_str() == self.command.as_str()
+            && proof.script.as_ref().map(|script| script.as_str())
+                == self.script.as_ref().map(|script| script.as_str())
     }
 }
 
@@ -955,11 +959,20 @@ impl UpdateSchedule {
                 .is_none_or(|timezone| !timezone.is_empty())
     }
 
+    pub(crate) const fn schedule_id(&self) -> &ScheduleId {
+        &self.schedule_id
+    }
+
     pub(crate) const fn target(&self) -> &ScheduleTarget {
         &self.target
     }
 
-    pub(crate) fn matches(&self, details: &ScheduleDetails) -> bool {
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn matches(&self, proof: &ScheduleProofDetails) -> bool {
+        let details = proof.details();
         details.is_valid()
             && details.schedule_id == self.schedule_id
             && details.target == self.target
@@ -971,6 +984,9 @@ impl UpdateSchedule {
             && details.script_present == self.script.is_some()
             && details.enabled == self.enabled
             && details.timezone == self.timezone
+            && proof.command.as_str() == self.command.as_str()
+            && proof.script.as_ref().map(|script| script.as_str())
+                == self.script.as_ref().map(|script| script.as_str())
     }
 }
 
@@ -3677,42 +3693,58 @@ enum ScheduleTypeResponse {
     DokployServer,
 }
 
+fn schedule_target_from_response(
+    schedule_type: ScheduleTypeResponse,
+    application_id: Option<ApplicationId>,
+    compose_id: Option<ComposeId>,
+    server_id: Option<ServerId>,
+    service_name: Option<String>,
+) -> Result<ScheduleTarget, &'static str> {
+    match schedule_type {
+        ScheduleTypeResponse::Application => {
+            match (
+                application_id,
+                compose_id,
+                server_id,
+                service_name.as_deref(),
+            ) {
+                (Some(application_id), None, None, None | Some("")) => {
+                    Ok(ScheduleTarget::Application(application_id))
+                }
+                _ => Err("invalid application Schedule target"),
+            }
+        }
+        ScheduleTypeResponse::Compose => {
+            match (application_id, compose_id, server_id, service_name) {
+                (None, Some(compose_id), None, Some(service_name)) if !service_name.is_empty() => {
+                    Ok(ScheduleTarget::Compose {
+                        compose_id,
+                        service_name,
+                    })
+                }
+                _ => Err("invalid Compose Schedule target"),
+            }
+        }
+        ScheduleTypeResponse::Server | ScheduleTypeResponse::DokployServer => {
+            Err("unsupported privileged Schedule target")
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for ScheduleDetails {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let response = ScheduleResponse::deserialize(deserializer)?;
-        let target = match response.schedule_type {
-            ScheduleTypeResponse::Application => match (
-                response.application_id,
-                response.compose_id,
-                response.server_id,
-                response.service_name.as_deref(),
-            ) {
-                (Some(application_id), None, None, None | Some("")) => {
-                    ScheduleTarget::Application(application_id)
-                }
-                _ => return Err(de::Error::custom("invalid application Schedule target")),
-            },
-            ScheduleTypeResponse::Compose => match (
-                response.application_id,
-                response.compose_id,
-                response.server_id,
-                response.service_name,
-            ) {
-                (None, Some(compose_id), None, Some(service_name)) if !service_name.is_empty() => {
-                    ScheduleTarget::Compose {
-                        compose_id,
-                        service_name,
-                    }
-                }
-                _ => return Err(de::Error::custom("invalid Compose Schedule target")),
-            },
-            ScheduleTypeResponse::Server | ScheduleTypeResponse::DokployServer => {
-                return Err(de::Error::custom("unsupported privileged Schedule target"));
-            }
-        };
+        let target = schedule_target_from_response(
+            response.schedule_type,
+            response.application_id,
+            response.compose_id,
+            response.server_id,
+            response.service_name,
+        )
+        .map_err(de::Error::custom)?;
 
         Ok(Self {
             schedule_id: response.schedule_id,
@@ -3727,6 +3759,104 @@ impl<'de> Deserialize<'de> for ScheduleDetails {
             timezone: response.timezone,
         })
     }
+}
+
+pub(crate) struct ScheduleProofDetails {
+    details: ScheduleDetails,
+    command: Zeroizing<String>,
+    script: Option<Zeroizing<String>>,
+}
+
+impl ScheduleProofDetails {
+    pub(crate) const fn details(&self) -> &ScheduleDetails {
+        &self.details
+    }
+
+    pub(crate) fn into_details(self) -> ScheduleDetails {
+        self.details
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleProofResponse {
+    schedule_id: ScheduleId,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    cron_expression: String,
+    shell_type: ShellType,
+    schedule_type: ScheduleTypeResponse,
+    #[serde(default)]
+    application_id: Option<ApplicationId>,
+    #[serde(default)]
+    compose_id: Option<ComposeId>,
+    #[serde(default)]
+    server_id: Option<ServerId>,
+    #[serde(default)]
+    service_name: Option<String>,
+    #[serde(deserialize_with = "deserialize_zeroizing_string")]
+    command: Zeroizing<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_zeroizing_string")]
+    script: Option<Zeroizing<String>>,
+    enabled: bool,
+    #[serde(default)]
+    timezone: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for ScheduleProofDetails {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let response = ScheduleProofResponse::deserialize(deserializer)?;
+        let target = schedule_target_from_response(
+            response.schedule_type,
+            response.application_id,
+            response.compose_id,
+            response.server_id,
+            response.service_name,
+        )
+        .map_err(de::Error::custom)?;
+        let command_present = !response.command.is_empty();
+        let script_present = response
+            .script
+            .as_ref()
+            .is_some_and(|script| !script.is_empty());
+
+        Ok(Self {
+            details: ScheduleDetails {
+                schedule_id: response.schedule_id,
+                target,
+                name: response.name,
+                description: response.description,
+                cron_expression: response.cron_expression,
+                shell_type: response.shell_type,
+                command_present,
+                script_present,
+                enabled: response.enabled,
+                timezone: response.timezone,
+            },
+            command: response.command,
+            script: response.script,
+        })
+    }
+}
+
+fn deserialize_zeroizing_string<'de, D>(deserializer: D) -> Result<Zeroizing<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(Zeroizing::new)
+}
+
+fn deserialize_optional_zeroizing_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<Zeroizing<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(|value| value.map(Zeroizing::new))
 }
 
 /// The complete bounded Schedule collection for one exact supported target.

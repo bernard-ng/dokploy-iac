@@ -85,7 +85,7 @@ async fn exercise_target(client: &Dokploy, target: ScheduleTarget, name: &str) {
 
     client
         .schedules()
-        .delete(schedule_id.clone())
+        .delete(schedule_id.clone(), target.clone())
         .await
         .expect("live Schedule deletion succeeds");
     let removed = client

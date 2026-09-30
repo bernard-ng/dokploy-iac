@@ -183,6 +183,22 @@ fn compose_target() -> ScheduleTarget {
     }
 }
 
+fn privileged_response(schedule_type: &str) -> &'static str {
+    Box::leak(
+        APPLICATION_RESPONSE
+            .replace(
+                "\"scheduleType\":\"application\"",
+                &format!("\"scheduleType\":\"{schedule_type}\""),
+            )
+            .replace(
+                "\"applicationId\":\"application-1\"",
+                "\"applicationId\":null",
+            )
+            .replace("\"serverId\":null", "\"serverId\":\"server-1\"")
+            .into_boxed_str(),
+    )
+}
+
 fn create_input(target: ScheduleTarget, name: &str) -> CreateSchedule {
     CreateSchedule::new(
         target,
@@ -199,6 +215,27 @@ fn create_input(target: ScheduleTarget, name: &str) -> CreateSchedule {
 
 fn list_with(entries: &str) -> &'static str {
     Box::leak(format!("[{entries}]").into_boxed_str())
+}
+
+fn proof_response(response: &str) -> &'static str {
+    proof_response_with_secrets(response, COMMAND_CANARY, Some(SCRIPT_CANARY))
+}
+
+fn proof_response_with_secrets(
+    response: &str,
+    command: &str,
+    script: Option<&str>,
+) -> &'static str {
+    let script = script.map_or_else(
+        || "null".to_owned(),
+        |value| serde_json::to_string(value).unwrap(),
+    );
+    Box::leak(
+        response
+            .replace(RESPONSE_COMMAND_CANARY, command)
+            .replace(&format!("\"{RESPONSE_SCRIPT_CANARY}\""), &script)
+            .into_boxed_str(),
+    )
 }
 
 fn assert_request(request: &str, operation: &str, expected: serde_json::Value) {
@@ -243,17 +280,8 @@ fn safe_schedule_models_consume_commands_and_reject_privileged_targets() {
     assert!(SCHEDULE_FIXTURE.contains("<redacted>"));
 
     for schedule_type in ["server", "dokploy-server"] {
-        let response = APPLICATION_RESPONSE
-            .replace(
-                "\"scheduleType\":\"application\"",
-                &format!("\"scheduleType\":\"{schedule_type}\""),
-            )
-            .replace(
-                "\"applicationId\":\"application-1\"",
-                "\"applicationId\":null",
-            )
-            .replace("\"serverId\":null", "\"serverId\":\"server-1\"");
-        let error = serde_json::from_str::<ScheduleDetails>(&response).unwrap_err();
+        let error = serde_json::from_str::<ScheduleDetails>(privileged_response(schedule_type))
+            .unwrap_err();
         assert_no_canary(&error);
     }
 }
@@ -418,7 +446,7 @@ async fn schedule_list_is_bounded_target_consistent_and_unique() {
 async fn schedule_create_checks_collision_returned_identity_and_list() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", "[]"),
-        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", proof_response(APPLICATION_RESPONSE)),
         ("200 OK", list_with(APPLICATION_RESPONSE)),
     ]);
     let created = client(&server)
@@ -456,15 +484,12 @@ async fn schedule_create_checks_collision_returned_identity_and_list() {
 
 #[tokio::test]
 async fn schedule_create_rejects_mismatched_or_uncollected_identity() {
-    let wrong_name = APPLICATION_RESPONSE.replace("application-job", "wrong-job");
+    let wrong_name = proof_response(&APPLICATION_RESPONSE.replace("application-job", "wrong-job"));
     let cases = [
+        vec![("200 OK", "[]"), ("200 OK", wrong_name)],
         vec![
             ("200 OK", "[]"),
-            ("200 OK", Box::leak(wrong_name.into_boxed_str())),
-        ],
-        vec![
-            ("200 OK", "[]"),
-            ("200 OK", APPLICATION_RESPONSE),
+            ("200 OK", proof_response(APPLICATION_RESPONSE)),
             ("200 OK", "[]"),
         ],
     ];
@@ -504,6 +529,85 @@ async fn schedule_create_rejects_mismatched_or_uncollected_identity() {
 }
 
 #[tokio::test]
+async fn schedule_create_requires_exact_new_identity_and_executable_proof() {
+    let unrelated = APPLICATION_RESPONSE
+        .replace("schedule-1", "schedule-2")
+        .replace("application-job", "unrelated-job");
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        ("200 OK", proof_response(APPLICATION_RESPONSE)),
+        (
+            "200 OK",
+            list_with(&format!("{APPLICATION_RESPONSE},{unrelated}")),
+        ),
+    ]);
+    let error = client(&server)
+        .schedules()
+        .create(create_input(application_target(), "application-job"))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "schedule.create",
+            ..
+        }
+    ));
+    server.finish_all();
+
+    let existing = APPLICATION_RESPONSE.replace("application-job", "existing-job");
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", list_with(&existing)),
+        ("200 OK", proof_response(APPLICATION_RESPONSE)),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+    ]);
+    let error = client(&server)
+        .schedules()
+        .create(create_input(application_target(), "application-job"))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "schedule.create",
+            ..
+        }
+    ));
+    server.finish_all();
+
+    for response in [
+        proof_response_with_secrets(
+            APPLICATION_RESPONSE,
+            "wrong-command-proof-canary",
+            Some(SCRIPT_CANARY),
+        ),
+        proof_response_with_secrets(
+            APPLICATION_RESPONSE,
+            COMMAND_CANARY,
+            Some("wrong-script-proof-canary"),
+        ),
+    ] {
+        let server = TestServer::respond_in_sequence(vec![("200 OK", "[]"), ("200 OK", response)]);
+        let error = client(&server)
+            .schedules()
+            .create(create_input(application_target(), "application-job"))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::OutcomeUnknown {
+                operation: "schedule.create",
+                ..
+            }
+        ));
+        let rendered = format!("{error:?}");
+        assert!(!rendered.contains("wrong-command-proof-canary"));
+        assert!(!rendered.contains("wrong-script-proof-canary"));
+        server.finish_all();
+    }
+}
+
+#[tokio::test]
 async fn schedule_update_and_delete_use_exact_requests() {
     let updated_response = APPLICATION_RESPONSE
         .replace("application-job", "updated-job")
@@ -524,16 +628,18 @@ async fn schedule_update_and_delete_use_exact_requests() {
         Some("UTC".to_owned()),
     );
     assert_no_canary(&update);
-    let updated_response = Box::leak(updated_response.into_boxed_str());
+    let updated_response = proof_response(&updated_response);
     let updated_list = list_with(updated_response);
     let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
         ("200 OK", updated_response),
         ("200 OK", updated_list),
     ]);
     client(&server).schedules().update(update).await.unwrap();
     let requests = server.finish_all();
     assert_request(
-        &requests[0],
+        &requests[2],
         "schedule.update",
         serde_json::json!({
             "scheduleId":"schedule-1","name":"updated-job","description":"updated",
@@ -541,21 +647,30 @@ async fn schedule_update_and_delete_use_exact_requests() {
             "script":SCRIPT_CANARY,"enabled":true,"timezone":"UTC"
         }),
     );
-    assert!(requests[1].starts_with(
+    assert!(requests[3].starts_with(
         "GET /api/schedule.list?id=application-1&scheduleType=application HTTP/1.1\r\n"
     ));
 
-    let server = TestServer::respond_with_json("true");
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", "[]"),
+    ]);
     client(&server)
         .schedules()
-        .delete(ScheduleId::new("schedule-1"))
+        .delete(ScheduleId::new("schedule-1"), application_target())
         .await
         .unwrap();
+    let requests = server.finish_all();
     assert_request(
-        &server.finish(),
+        &requests[2],
         "schedule.delete",
         serde_json::json!({"scheduleId":"schedule-1"}),
     );
+    assert!(requests[3].starts_with(
+        "GET /api/schedule.list?id=application-1&scheduleType=application HTTP/1.1\r\n"
+    ));
 }
 
 #[tokio::test]
@@ -567,8 +682,12 @@ async fn schedule_update_requires_safe_response_and_collection_proof() {
         .replace("\"bash\"", "\"sh\"")
         .replace("\"enabled\":false", "\"enabled\":true")
         .replace("application-1", "application-2");
-    for response in [Box::leak(wrong_target.into_boxed_str()), "{not-json"] {
-        let server = TestServer::respond_with_json(response);
+    for response in [proof_response(&wrong_target), "{not-json"] {
+        let server = TestServer::respond_in_sequence(vec![
+            ("200 OK", APPLICATION_RESPONSE),
+            ("200 OK", list_with(APPLICATION_RESPONSE)),
+            ("200 OK", response),
+        ]);
         let error = client(&server)
             .schedules()
             .update(UpdateSchedule::new(
@@ -593,7 +712,7 @@ async fn schedule_update_requires_safe_response_and_collection_proof() {
             }
         ));
         assert_no_canary(&error);
-        server.finish();
+        assert_eq!(server.finish_all().len(), 3);
     }
 
     let updated_response = APPLICATION_RESPONSE
@@ -603,7 +722,9 @@ async fn schedule_update_requires_safe_response_and_collection_proof() {
         .replace("\"bash\"", "\"sh\"")
         .replace("\"enabled\":false", "\"enabled\":true");
     let server = TestServer::respond_in_sequence(vec![
-        ("200 OK", Box::leak(updated_response.into_boxed_str())),
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+        ("200 OK", proof_response(&updated_response)),
         ("200 OK", "[]"),
     ]);
     let error = client(&server)
@@ -631,6 +752,206 @@ async fn schedule_update_requires_safe_response_and_collection_proof() {
     ));
     assert_no_canary(&error);
     server.finish_all();
+}
+
+#[tokio::test]
+async fn schedule_update_preflight_rejects_rename_collisions_and_wrong_targets() {
+    let other = APPLICATION_RESPONSE
+        .replace("schedule-1", "schedule-2")
+        .replace("application-job", "taken-job");
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        (
+            "200 OK",
+            list_with(&format!("{APPLICATION_RESPONSE},{other}")),
+        ),
+    ]);
+    let error = client(&server)
+        .schedules()
+        .update(UpdateSchedule::new(
+            ScheduleId::new("schedule-1"),
+            application_target(),
+            "taken-job",
+            None,
+            "0 0 * * *",
+            ShellType::Bash,
+            Zeroizing::new(COMMAND_CANARY.to_owned()),
+            Some(Zeroizing::new(SCRIPT_CANARY.to_owned())),
+            false,
+            Some("UTC".to_owned()),
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "schedule.update"
+        }
+    ));
+    assert_eq!(server.finish_all().len(), 2);
+
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+    ]);
+    let error = client(&server)
+        .schedules()
+        .update(UpdateSchedule::new(
+            ScheduleId::new("schedule-1"),
+            compose_target(),
+            "application-job",
+            Some("initial".to_owned()),
+            "0 0 * * *",
+            ShellType::Bash,
+            Zeroizing::new(COMMAND_CANARY.to_owned()),
+            Some(Zeroizing::new(SCRIPT_CANARY.to_owned())),
+            false,
+            Some("UTC".to_owned()),
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "schedule.update"
+        }
+    ));
+    assert_eq!(server.finish_all().len(), 2);
+}
+
+#[tokio::test]
+async fn schedule_update_requires_exact_command_and_script_proof() {
+    let updated = APPLICATION_RESPONSE
+        .replace("application-job", "updated-job")
+        .replace("initial", "updated")
+        .replace("0 0 * * *", "30 2 * * 1")
+        .replace("\"bash\"", "\"sh\"")
+        .replace("\"enabled\":false", "\"enabled\":true");
+    for response in [
+        proof_response_with_secrets(&updated, "wrong-command-proof-canary", Some(SCRIPT_CANARY)),
+        proof_response_with_secrets(&updated, COMMAND_CANARY, Some("wrong-script-proof-canary")),
+    ] {
+        let server = TestServer::respond_in_sequence(vec![
+            ("200 OK", APPLICATION_RESPONSE),
+            ("200 OK", list_with(APPLICATION_RESPONSE)),
+            ("200 OK", response),
+        ]);
+        let error = client(&server)
+            .schedules()
+            .update(UpdateSchedule::new(
+                ScheduleId::new("schedule-1"),
+                application_target(),
+                "updated-job",
+                Some("updated".to_owned()),
+                "30 2 * * 1",
+                ShellType::Sh,
+                Zeroizing::new(COMMAND_CANARY.to_owned()),
+                Some(Zeroizing::new(SCRIPT_CANARY.to_owned())),
+                true,
+                Some("UTC".to_owned()),
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::OutcomeUnknown {
+                operation: "schedule.update",
+                ..
+            }
+        ));
+        let rendered = format!("{error:?}");
+        assert!(!rendered.contains("wrong-command-proof-canary"));
+        assert!(!rendered.contains("wrong-script-proof-canary"));
+        assert_eq!(server.finish_all().len(), 3);
+    }
+}
+
+#[tokio::test]
+async fn schedule_mutations_reject_privileged_schedule_identities_before_post() {
+    for schedule_type in ["server", "dokploy-server"] {
+        let update_server = TestServer::respond_with_json(privileged_response(schedule_type));
+        let error = client(&update_server)
+            .schedules()
+            .update(UpdateSchedule::new(
+                ScheduleId::new("schedule-1"),
+                application_target(),
+                "job",
+                None,
+                "0 0 * * *",
+                ShellType::Bash,
+                Zeroizing::new(COMMAND_CANARY.to_owned()),
+                Some(Zeroizing::new(SCRIPT_CANARY.to_owned())),
+                false,
+                None,
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Decode {
+                operation: "schedule.one",
+                ..
+            }
+        ));
+        assert_no_canary(&error);
+        assert_eq!(update_server.finish_all().len(), 1);
+
+        let delete_server = TestServer::respond_with_json(privileged_response(schedule_type));
+        let error = client(&delete_server)
+            .schedules()
+            .delete(ScheduleId::new("schedule-1"), application_target())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::Decode {
+                operation: "schedule.one",
+                ..
+            }
+        ));
+        assert_no_canary(&error);
+        assert_eq!(delete_server.finish_all().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn schedule_delete_requires_target_agreement_and_authoritative_absence() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+    ]);
+    let error = client(&server)
+        .schedules()
+        .delete(ScheduleId::new("schedule-1"), compose_target())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "schedule.delete"
+        }
+    ));
+    assert_eq!(server.finish_all().len(), 2);
+
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+    ]);
+    let error = client(&server)
+        .schedules()
+        .delete(ScheduleId::new("schedule-1"), application_target())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "schedule.delete",
+            ..
+        }
+    ));
+    assert_eq!(server.finish_all().len(), 4);
 }
 
 #[tokio::test]
@@ -687,7 +1008,18 @@ async fn schedule_rejects_invalid_inputs_before_transport() {
             .unwrap_err(),
         client
             .schedules()
-            .delete(ScheduleId::new(""))
+            .delete(ScheduleId::new(""), application_target())
+            .await
+            .unwrap_err(),
+        client
+            .schedules()
+            .delete(
+                ScheduleId::new("schedule-1"),
+                ScheduleTarget::Compose {
+                    compose_id: ComposeId::new("compose-1"),
+                    service_name: String::new(),
+                },
+            )
             .await
             .unwrap_err(),
     ];
@@ -716,7 +1048,10 @@ async fn schedule_mutations_are_single_attempt_and_secret_safe_on_unknown_outcom
     assert_no_canary(&error);
     assert_eq!(create_server.finish_all().len(), 2);
 
-    let update_server = TestServer::close_after_requests(vec![]);
+    let update_server = TestServer::close_after_requests(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+    ]);
     let error = client(&update_server)
         .schedules()
         .update(UpdateSchedule::new(
@@ -741,12 +1076,15 @@ async fn schedule_mutations_are_single_attempt_and_secret_safe_on_unknown_outcom
         }
     ));
     assert_no_canary(&error);
-    assert_eq!(update_server.finish_all().len(), 1);
+    assert_eq!(update_server.finish_all().len(), 3);
 
-    let delete_server = TestServer::close_after_requests(vec![]);
+    let delete_server = TestServer::close_after_requests(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+    ]);
     let error = client(&delete_server)
         .schedules()
-        .delete(ScheduleId::new("schedule-1"))
+        .delete(ScheduleId::new("schedule-1"), application_target())
         .await
         .unwrap_err();
     assert!(matches!(
@@ -756,7 +1094,7 @@ async fn schedule_mutations_are_single_attempt_and_secret_safe_on_unknown_outcom
             ..
         }
     ));
-    assert_eq!(delete_server.finish_all().len(), 1);
+    assert_eq!(delete_server.finish_all().len(), 3);
 }
 
 #[tokio::test]
@@ -781,7 +1119,11 @@ async fn schedule_mutation_rejections_never_retain_echoed_commands_or_scripts() 
     assert_no_canary(&error);
     assert_eq!(create_server.finish_all().len(), 2);
 
-    let update_server = TestServer::respond_in_sequence(vec![("422 Unprocessable Entity", echoed)]);
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", APPLICATION_RESPONSE),
+        ("200 OK", list_with(APPLICATION_RESPONSE)),
+        ("422 Unprocessable Entity", echoed),
+    ]);
     let error = client(&update_server)
         .schedules()
         .update(UpdateSchedule::new(
@@ -804,5 +1146,5 @@ async fn schedule_mutation_rejections_never_retain_echoed_commands_or_scripts() 
     assert_eq!(dokploy.message(), "Unprocessable Entity");
     assert!(dokploy.issues().is_empty());
     assert_no_canary(&error);
-    assert_eq!(update_server.finish_all().len(), 1);
+    assert_eq!(update_server.finish_all().len(), 3);
 }

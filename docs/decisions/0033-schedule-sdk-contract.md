@@ -28,24 +28,37 @@ A Compose target requires both its `ComposeId` and service name. Host and
 Dokploy-server targets are rejected rather than represented as raw strings.
 
 Command and script inputs are owned by `Zeroizing<String>` and redacted from
-debug output. Secret-aware read and mutation paths discard response bytes after
-decoding and keep only command and script presence. Remote rejections preserve
-the status code while dropping server-provided messages and issues that could
-echo executable text.
+debug output. Public direct and collection models keep only command and script
+presence. Create and update decode their immediate response into a private
+zeroizing proof model, compare the exact executable bytes with the request,
+then discard them before returning. Secret-aware transport paths zeroize the
+bounded response buffer. Remote rejections preserve the status code while
+dropping server-provided messages and issues that could echo executable text.
 
 Create reads the authoritative target collection before mutation and rejects a
 name collision. It attempts `schedule.create` once, validates the returned
-nonempty identity, target, name, and every safe mutable field, then requires
-the same record in a postflight `schedule.list`. Direct reads require the same
-record in that collection. Collections reject more than 10,000 records,
-invalid or contradictory targets, and duplicate identities or names.
+nonempty identity, target, name, every safe mutable field, and exact command and
+script bytes. It then compares the preflight and postflight identity sets. All
+preexisting identities must remain and exactly one new identity must equal the
+returned identity and record. Reused identities, unrelated concurrent
+additions, and mismatched executable bodies are outcome-unknown. Direct reads
+require the same safe record in `schedule.list`. Collections reject more than
+10,000 records, invalid or contradictory targets, and duplicate identities or
+names.
 
-Update sends every mutable field while retaining the expected target only for
-validation. It cannot change an application, Compose owner, or Compose service
-in place. The returned row must match the expected target and fields, then
-agree with the authoritative collection. Target or service changes remain
-replacement operations for later declarative work. Collection absence is the
-authoritative deletion proof.
+Update first reads `schedule.one` and requires agreement with the authoritative
+supported-target collection. The physical identity must belong to the caller's
+expected target, and the desired name must not collide with another identity
+in that collection. It then sends every mutable field without serializing the
+target. The returned row must match the target, safe fields, and exact command
+and script bytes, then agree with the authoritative collection. Target or
+service changes remain replacement operations for later declarative work.
+
+Delete requires both the physical identity and a supported `ScheduleTarget`.
+It performs the same direct and collection proof before POST, preventing a bare
+server or Dokploy-server Schedule identity from crossing the mutation seam.
+After an accepted delete, target-collection absence is required; a failed
+postflight proof is outcome-unknown.
 
 Any transport interruption, malformed successful mutation response, or failed
 post-mutation proof is outcome-unknown and is never retried automatically.
@@ -68,5 +81,6 @@ key, command, script, and contract checks.
 - Privileged Schedule targets remain unavailable until their authority and
   secret boundaries receive separate evidence.
 - Concurrent or contradictory collection changes prevent identity adoption.
+- Bare privileged Schedule identities cannot reach update or delete.
 - Target changes cannot pass through the in-place update seam.
 - Uncertain mutations require recovery; the SDK never guesses or retries.

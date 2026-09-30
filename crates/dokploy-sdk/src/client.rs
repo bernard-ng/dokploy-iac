@@ -72,7 +72,7 @@ use crate::models::{
     PostgresCreateResponse, PostgresDetails, PostgresSearchPage, ProjectCreateResponse,
     ProjectDetails, ProjectTopology, RedirectCollection, RedirectDetails, RedisCollection,
     RedisCreateResponse, RedisDetails, RedisSearchPage, ScheduleCollection, ScheduleDetails,
-    SecurityCollection, SecurityDetails,
+    ScheduleProofDetails, SecurityCollection, SecurityDetails,
 };
 use crate::services::{
     Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Ports,
@@ -1043,6 +1043,15 @@ impl Dokploy {
     }
 
     pub(crate) async fn schedule_get(&self, schedule_id: &str) -> Result<ScheduleDetails, Error> {
+        self.schedule_get_with_collection(schedule_id)
+            .await
+            .map(|(details, _)| details)
+    }
+
+    async fn schedule_get_with_collection(
+        &self,
+        schedule_id: &str,
+    ) -> Result<(ScheduleDetails, ScheduleCollection), Error> {
         let request = ScheduleOneRequest {
             query: ScheduleOneRequestQuery {
                 schedule_id: schedule_id.to_owned(),
@@ -1068,7 +1077,7 @@ impl Dokploy {
             });
         }
 
-        Ok(details)
+        Ok((details, collection))
     }
 
     pub(crate) async fn schedules_by_target(
@@ -1134,20 +1143,36 @@ impl Dokploy {
             });
         }
 
-        let created: ScheduleDetails = self
+        let created: ScheduleProofDetails = self
             .mutate_body_json_secret(SCHEDULE_CREATE, &input)
             .await?;
         if !input.matches(&created) {
             return Err(post_mutation_proof_unknown(SCHEDULE_CREATE));
         }
+        let created = created.into_details();
         let after = self
             .schedules_by_target(input.target())
             .await
             .map_err(|_| post_mutation_proof_unknown(SCHEDULE_CREATE))?;
+        let before_ids = before
+            .schedules()
+            .iter()
+            .map(|schedule| schedule.schedule_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let after_ids = after
+            .schedules()
+            .iter()
+            .map(|schedule| schedule.schedule_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let new_ids = after_ids.difference(&before_ids).collect::<Vec<_>>();
         let matching = after.schedules().iter().find(|schedule| {
             schedule.schedule_id == created.schedule_id && schedule.name == created.name
         });
-        if matching != Some(&created) {
+        if !before_ids.is_subset(&after_ids)
+            || new_ids.len() != 1
+            || new_ids[0].as_str() != created.schedule_id.as_str()
+            || matching != Some(&created)
+        {
             return Err(post_mutation_proof_unknown(SCHEDULE_CREATE));
         }
 
@@ -1161,12 +1186,25 @@ impl Dokploy {
                 "Schedule update fields are invalid",
             ));
         }
-        let updated: ScheduleDetails = self
+        let (existing, before) = self
+            .schedule_get_with_collection(input.schedule_id().as_str())
+            .await?;
+        if existing.target != *input.target()
+            || before.schedules().iter().any(|schedule| {
+                schedule.schedule_id != *input.schedule_id() && schedule.name == input.name()
+            })
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_UPDATE.operation(),
+            });
+        }
+        let updated: ScheduleProofDetails = self
             .mutate_body_json_secret(SCHEDULE_UPDATE, &input)
             .await?;
         if !input.matches(&updated) {
             return Err(post_mutation_proof_unknown(SCHEDULE_UPDATE));
         }
+        let updated = updated.into_details();
         let after = self
             .schedules_by_target(input.target())
             .await
@@ -1182,15 +1220,47 @@ impl Dokploy {
         Ok(())
     }
 
-    pub(crate) async fn schedule_delete(&self, schedule_id: ScheduleId) -> Result<(), Error> {
+    pub(crate) async fn schedule_delete(
+        &self,
+        schedule_id: ScheduleId,
+        target: ScheduleTarget,
+    ) -> Result<(), Error> {
+        if !target.is_valid() {
+            return Err(invalid_request(
+                SCHEDULE_DELETE.operation(),
+                "Schedule target fields are invalid",
+            ));
+        }
         let request = ScheduleDeleteRequest {
             body: ScheduleIdRequestBody {
                 schedule_id: schedule_id.as_str().to_owned(),
             },
         };
         validate_generated_request(SCHEDULE_DELETE, &request)?;
+        let (existing, _) = self
+            .schedule_get_with_collection(schedule_id.as_str())
+            .await?;
+        if existing.target != target {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_DELETE.operation(),
+            });
+        }
 
-        self.mutate_body_ok(SCHEDULE_DELETE, &request.body).await
+        self.mutate_body_ok(SCHEDULE_DELETE, &request.body).await?;
+
+        let after = self
+            .schedules_by_target(&target)
+            .await
+            .map_err(|_| post_mutation_proof_unknown(SCHEDULE_DELETE))?;
+        if after
+            .schedules()
+            .iter()
+            .any(|schedule| schedule.schedule_id == schedule_id)
+        {
+            return Err(post_mutation_proof_unknown(SCHEDULE_DELETE));
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn environment_get(

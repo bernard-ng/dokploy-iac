@@ -379,9 +379,13 @@ impl<'a> Schedules<'a> {
         self.client.schedule_update(input).await
     }
 
-    /// Permanently removes one Schedule by physical identity.
-    pub async fn delete(&self, schedule_id: ScheduleId) -> Result<(), Error> {
-        self.client.schedule_delete(schedule_id).await
+    /// Permanently removes one Schedule after proving its supported target.
+    pub async fn delete(
+        &self,
+        schedule_id: ScheduleId,
+        target: ScheduleTarget,
+    ) -> Result<(), Error> {
+        self.client.schedule_delete(schedule_id, target).await
     }
 }
 
