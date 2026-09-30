@@ -11,8 +11,9 @@ pub use error::{BuildError, DokployError, Error};
 pub use imperative::{Imperative, ImperativeMethod, ImperativeRequest};
 pub use models::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentShape, ApplicationId,
-    ApplicationSearchItem, ApplicationSummary, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, EnvironmentSummary, EnvironmentTopology, PostgresCollection, PostgresDetails,
-    PostgresId, PostgresSearchItem, PostgresSummary, ProjectDetails, ProjectId, ProjectTopology,
-    RedisCollection, RedisDetails, RedisId, RedisSearchItem, RedisSummary, ResponseField, ServerId,
+    ApplicationSearchItem, ApplicationSummary, DomainCollection, DomainDetails, DomainId,
+    EnvironmentCollection, EnvironmentDetails, EnvironmentId, EnvironmentSummary,
+    EnvironmentTopology, PostgresCollection, PostgresDetails, PostgresId, PostgresSearchItem,
+    PostgresSummary, ProjectDetails, ProjectId, ProjectTopology, RedisCollection, RedisDetails,
+    RedisId, RedisSearchItem, RedisSummary, ResponseField, ServerId,
 };

@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add owned, read-only Domain SDK operations with strong identifiers and
+  fixture-backed models that expose only host and application linkage.
+
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid
   containment and older formats instead of inferring parents from general

@@ -3,14 +3,15 @@ use std::time::Duration;
 
 use dokploy_api::{
     APPLICATION_ONE, APPLICATION_SEARCH, ApplicationOneRequest, ApplicationOneRequestQuery,
-    ApplicationSearchRequest, ApplicationSearchRequestQuery, DokployApiClient,
-    ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint, EndpointMethod,
-    EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentOneRequest,
-    EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL, PROJECT_ONE,
-    PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery,
-    ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery, REDIS_ONE, REDIS_SEARCH,
-    RedisOneRequest, RedisOneRequestQuery, RedisSearchRequest, RedisSearchRequestQuery,
-    endpoint_by_operation, validate_request,
+    ApplicationSearchRequest, ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID, DOMAIN_ONE,
+    DokployApiClient, DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery,
+    DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint,
+    EndpointMethod, EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery,
+    EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL,
+    PROJECT_ONE, PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest,
+    PostgresSearchRequestQuery, ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery,
+    REDIS_ONE, REDIS_SEARCH, RedisOneRequest, RedisOneRequestQuery, RedisSearchRequest,
+    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -24,11 +25,12 @@ use crate::imperative::{
     Imperative, ImperativeBody, ImperativeMethod, ImperativeRequest, MultipartField,
 };
 use crate::models::{
-    ApplicationCollection, ApplicationDetails, ApplicationSearchPage, EnvironmentCollection,
-    EnvironmentDetails, PostgresCollection, PostgresDetails, PostgresSearchPage, ProjectDetails,
-    ProjectTopology, RedisCollection, RedisDetails, RedisSearchPage,
+    ApplicationCollection, ApplicationDetails, ApplicationSearchPage, DomainCollection,
+    DomainDetails, EnvironmentCollection, EnvironmentDetails, PostgresCollection, PostgresDetails,
+    PostgresSearchPage, ProjectDetails, ProjectTopology, RedisCollection, RedisDetails,
+    RedisSearchPage,
 };
-use crate::services::{Applications, Environments, Postgres, Projects, Redis};
+use crate::services::{Applications, Domains, Environments, Postgres, Projects, Redis};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -95,6 +97,12 @@ impl Dokploy {
     #[must_use]
     pub fn redis(&self) -> Redis<'_> {
         Redis::new(self)
+    }
+
+    /// Returns access to domain read operations.
+    #[must_use]
+    pub fn domains(&self) -> Domains<'_> {
+        Domains::new(self)
     }
 
     /// Returns broad raw access to operations from the pinned OpenAPI contract.
@@ -350,6 +358,32 @@ impl Dokploy {
                 return Ok(RedisCollection { redis });
             }
         }
+    }
+
+    pub(crate) async fn domain_get(&self, domain_id: &str) -> Result<DomainDetails, Error> {
+        let request = DomainOneRequest {
+            query: DomainOneRequestQuery {
+                domain_id: domain_id.to_owned(),
+            },
+        };
+        validate_generated_request(DOMAIN_ONE, &request)?;
+
+        self.read_query_json(DOMAIN_ONE, &request.query).await
+    }
+
+    pub(crate) async fn domains_by_application(
+        &self,
+        application_id: &str,
+    ) -> Result<DomainCollection, Error> {
+        let request = DomainByApplicationIdRequest {
+            query: DomainByApplicationIdRequestQuery {
+                application_id: application_id.to_owned(),
+            },
+        };
+        validate_generated_request(DOMAIN_BY_APPLICATION_ID, &request)?;
+
+        self.read_query_json(DOMAIN_BY_APPLICATION_ID, &request.query)
+            .await
     }
 
     async fn read_json<T>(&self, endpoint: Endpoint) -> Result<T, Error>

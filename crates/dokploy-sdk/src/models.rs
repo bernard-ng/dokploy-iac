@@ -28,6 +28,7 @@ identifier!(EnvironmentId);
 identifier!(PostgresId);
 identifier!(ProjectId);
 identifier!(RedisId);
+identifier!(DomainId);
 identifier!(ServerId);
 
 /// Presence-aware value returned by a tolerant Dokploy response model.
@@ -274,6 +275,34 @@ impl RedisCollection {
 pub(crate) struct RedisSearchPage {
     pub(crate) items: Vec<RedisSearchItem>,
     pub(crate) total: u64,
+}
+
+/// A safe subset of the response returned by `domain.one`.
+///
+/// Routing middleware and application runtime details are deliberately absent;
+/// reconciliation owns only the domain identity, host, and application link.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainDetails {
+    pub domain_id: DomainId,
+    pub host: String,
+    #[serde(default)]
+    pub application_id: Option<ApplicationId>,
+}
+
+/// The complete domain collection returned by `domain.byApplicationId`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(transparent)]
+pub struct DomainCollection {
+    domains: Vec<DomainDetails>,
+}
+
+impl DomainCollection {
+    /// Returns all domains discovered for the selected application.
+    #[must_use]
+    pub fn domains(&self) -> &[DomainDetails] {
+        &self.domains
+    }
 }
 
 /// The project collection returned by `project.all`.

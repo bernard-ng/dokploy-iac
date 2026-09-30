@@ -1,7 +1,8 @@
 use crate::{
-    ApplicationCollection, ApplicationDetails, ApplicationId, Dokploy, EnvironmentCollection,
-    EnvironmentDetails, EnvironmentId, Error, PostgresCollection, PostgresDetails, PostgresId,
-    ProjectDetails, ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
+    ApplicationCollection, ApplicationDetails, ApplicationId, Dokploy, DomainCollection,
+    DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
+    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
+    RedisCollection, RedisDetails, RedisId,
 };
 
 /// Read operations for Dokploy projects.
@@ -122,6 +123,32 @@ impl<'a> Redis<'a> {
     ) -> Result<RedisCollection, Error> {
         self.client
             .redis_by_environment(environment_id.as_str())
+            .await
+    }
+}
+
+/// Read operations for Dokploy application domains.
+pub struct Domains<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Domains<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one domain from fresh remote state.
+    pub async fn get(&self, domain_id: DomainId) -> Result<DomainDetails, Error> {
+        self.client.domain_get(domain_id.as_str()).await
+    }
+
+    /// Reads every domain attached to one application from fresh remote state.
+    pub async fn by_application(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<DomainCollection, Error> {
+        self.client
+            .domains_by_application(application_id.as_str())
             .await
     }
 }
