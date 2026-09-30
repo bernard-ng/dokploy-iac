@@ -1,0 +1,51 @@
+name: Dokploy apply example
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# This must match the plan workflow. Never let two jobs mutate the same state
+# workspace concurrently.
+concurrency:
+  group: dokploy-iac-production-state
+  cancel-in-progress: false
+
+env:
+  DOKPLOY_WORKSPACE: /var/lib/dokploy-iac/production
+
+jobs:
+  apply:
+    # Configure required reviewers and deployment restrictions on this GitHub
+    # Environment before enabling the workflow.
+    environment: production
+    runs-on: [self-hosted, linux, dokploy-iac-production]
+    timeout-minutes: 30
+    env:
+      DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+      DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+      DOKPLOY_FINGERPRINT_KEY: ${{ secrets.DOKPLOY_FINGERPRINT_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: source
+          persist-credentials: false
+
+      - name: Build pinned source
+        run: cargo build --manifest-path source/Cargo.toml --release --locked --package dokploy-cli
+
+      - name: Refresh configuration without replacing state
+        shell: bash
+        run: |
+          install -d -m 0700 "$DOKPLOY_WORKSPACE"
+          install -m 0600 source/dokploy.yaml "$DOKPLOY_WORKSPACE/dokploy.yaml"
+
+      # Apply obtains the workspace writer lock and computes a fresh plan. The
+      # plan artifact from the review workflow is not a saved executable plan.
+      - name: Apply a fresh approved plan
+        run: |
+          source/target/release/dokploy apply \
+            --file "$DOKPLOY_WORKSPACE/dokploy.yaml" \
+            --auto-approve

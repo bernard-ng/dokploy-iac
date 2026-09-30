@@ -1,0 +1,77 @@
+name: Dokploy plan example
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Use the same group in the apply workflow so only one process can read or
+# write this workspace at a time.
+concurrency:
+  group: dokploy-iac-production-state
+  cancel-in-progress: false
+
+env:
+  DOKPLOY_WORKSPACE: /var/lib/dokploy-iac/production
+
+jobs:
+  plan:
+    # This label should select the same persistent, access-controlled runner
+    # used by dokploy-apply.yml.
+    runs-on: [self-hosted, linux, dokploy-iac-production]
+    timeout-minutes: 20
+    env:
+      DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+      DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+      DOKPLOY_FINGERPRINT_KEY: ${{ secrets.DOKPLOY_FINGERPRINT_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: source
+          persist-credentials: false
+
+      - name: Build pinned source
+        run: cargo build --manifest-path source/Cargo.toml --release --locked --package dokploy-cli
+
+      - name: Refresh configuration without replacing state
+        shell: bash
+        run: |
+          install -d -m 0700 "$DOKPLOY_WORKSPACE"
+          install -m 0600 source/dokploy.yaml "$DOKPLOY_WORKSPACE/dokploy.yaml"
+
+      - name: Plan
+        id: plan
+        shell: bash
+        run: |
+          set +e
+          source/target/release/dokploy plan \
+            --file "$DOKPLOY_WORKSPACE/dokploy.yaml" \
+            --json \
+            --detailed-exitcode > "$RUNNER_TEMP/dokploy-plan.json"
+          status=$?
+          set -e
+
+          case "$status" in
+            0)
+              echo "changes=false" >> "$GITHUB_OUTPUT"
+              echo "No applyable changes." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            2)
+              echo "changes=true" >> "$GITHUB_OUTPUT"
+              echo "Applyable changes found." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "dokploy plan failed with status $status" >&2
+              exit "$status"
+              ;;
+          esac
+
+      - name: Upload redaction-safe plan for review
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: dokploy-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/dokploy-plan.json
+          retention-days: 5
+          if-no-files-found: error
