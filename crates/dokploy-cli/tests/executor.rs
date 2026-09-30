@@ -237,3 +237,191 @@ async fn non_default_environment_is_created_under_the_checkpointed_project() {
     assert!(requests[2].starts_with("POST /api/environment.create HTTP/1.1\r\n"));
     assert!(requests[2].contains(r#""projectId":"project-1""#));
 }
+
+#[tokio::test]
+async fn application_is_created_under_the_checkpointed_environment() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api: {}\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("application apply succeeds");
+
+    assert_eq!(summary.applied(), 3);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    let application: ResourceAddress = "application.api".parse().expect("address is valid");
+    assert_eq!(
+        state
+            .resource(&application)
+            .expect("application is checkpointed")
+            .remote_id()
+            .as_str(),
+        "application-1"
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[2].starts_with("POST /api/application.create HTTP/1.1\r\n"));
+    assert!(requests[2].contains(r#""environmentId":"environment-1""#));
+}
+
+#[tokio::test]
+async fn all_mvp_resources_are_created_and_checkpointed_in_dependency_order() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/domain-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/postgres-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/redis-create.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("postgres"), "postgres-password-canary")
+        .expect("Postgres secret fixture is writable");
+    fs::write(secrets.join("redis"), "redis-password-canary")
+        .expect("Redis secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api: {}\n",
+            "    postgres:\n",
+            "      main:\n",
+            "        database: app\n",
+            "        username: app\n",
+            "        password:\n",
+            "          file: .secrets/postgres\n",
+            "    redis:\n",
+            "      cache:\n",
+            "        password:\n",
+            "          file: .secrets/redis\n",
+            "    domains:\n",
+            "      public:\n",
+            "        host: api.example.test\n",
+            "        application: application.api\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("the complete MVP create graph applies");
+
+    assert_eq!(summary.applied(), 6);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    for (address, remote_id) in [
+        ("project.platform", "project-1"),
+        ("environment.production", "environment-1"),
+        ("application.api", "application-1"),
+        ("postgres.main", "postgres-1"),
+        ("redis.cache", "redis-1"),
+        ("domain.public", "domain-1"),
+    ] {
+        let address: ResourceAddress = address.parse().expect("address is valid");
+        assert_eq!(
+            state
+                .resource(&address)
+                .expect("resource is checkpointed")
+                .remote_id()
+                .as_str(),
+            remote_id
+        );
+    }
+    assert_eq!(state.serial(), 6);
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(requests[2].starts_with("POST /api/application.create HTTP/1.1\r\n"));
+    assert!(requests[3].starts_with("POST /api/domain.create HTTP/1.1\r\n"));
+    assert!(requests[3].contains(r#""applicationId":"application-1""#));
+    assert!(requests[4].starts_with("POST /api/postgres.create HTTP/1.1\r\n"));
+    assert!(requests[4].contains(r#""databasePassword":"postgres-password-canary""#));
+    assert!(requests[5].starts_with("POST /api/redis.create HTTP/1.1\r\n"));
+    assert!(requests[5].contains(r#""databasePassword":"redis-password-canary""#));
+}
+
+#[tokio::test]
+async fn database_create_without_required_inputs_is_blocked_before_mutation() {
+    let server = TestServer::respond_in_sequence(vec![("200 OK", "[]")]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    postgres:\n",
+            "      main: {}\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace(&server.client(), &config)
+        .await
+        .expect_err("an incomplete database create must be rejected");
+
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::PlanBlocked
+    ));
+    let requests = server.finish();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("GET /api/project.all HTTP/1.1\r\n"));
+}

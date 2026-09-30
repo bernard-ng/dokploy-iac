@@ -2,18 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dokploy_api::{
-    APPLICATION_ONE, APPLICATION_SEARCH, ApplicationOneRequest, ApplicationOneRequestQuery,
-    ApplicationSearchRequest, ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID, DOMAIN_ONE,
-    DokployApiClient, DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery,
+    APPLICATION_CREATE, APPLICATION_ONE, APPLICATION_SEARCH, ApplicationCreateRequest,
+    ApplicationCreateRequestBody, ApplicationOneRequest, ApplicationOneRequestQuery,
+    ApplicationSearchRequest, ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID,
+    DOMAIN_CREATE, DOMAIN_ONE, DokployApiClient, DomainByApplicationIdRequest,
+    DomainByApplicationIdRequestQuery, DomainCreateRequest, DomainCreateRequestBody,
     DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE,
     ENVIRONMENT_ONE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
     EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
-    EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL,
-    PROJECT_CREATE, PROJECT_ONE, PostgresOneRequest, PostgresOneRequestQuery,
-    PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
-    ProjectCreateRequestBody, ProjectOneRequest, ProjectOneRequestQuery, REDIS_ONE, REDIS_SEARCH,
-    RedisOneRequest, RedisOneRequestQuery, RedisSearchRequest, RedisSearchRequestQuery,
-    endpoint_by_operation, validate_request,
+    EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
+    POSTGRES_SEARCH, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PostgresOneRequest,
+    PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest,
+    ProjectCreateRequest, ProjectCreateRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
+    REDIS_CREATE, REDIS_ONE, REDIS_SEARCH, RedisOneRequest, RedisOneRequestQuery,
+    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -27,13 +29,18 @@ use crate::imperative::{
     Imperative, ImperativeBody, ImperativeMethod, ImperativeRequest, MultipartField,
 };
 use crate::models::{
-    ApplicationCollection, ApplicationDetails, ApplicationSearchPage, DomainCollection,
-    DomainDetails, EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
-    PostgresCollection, PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails,
-    ProjectTopology, RedisCollection, RedisDetails, RedisSearchPage,
+    ApplicationCollection, ApplicationCreateResponse, ApplicationDetails, ApplicationSearchPage,
+    DomainCollection, DomainCreateResponse, DomainDetails, EnvironmentCollection,
+    EnvironmentCreateResponse, EnvironmentDetails, PostgresCollection, PostgresCreateResponse,
+    PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology,
+    RedisCollection, RedisCreateResponse, RedisDetails, RedisSearchPage,
 };
 use crate::services::{Applications, Domains, Environments, Postgres, Projects, Redis};
-use crate::{CreateEnvironment, CreateProject, CreatedEnvironment, CreatedProject};
+use crate::{
+    CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres, CreateProject, CreateRedis,
+    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedPostgres, CreatedProject,
+    CreatedRedis,
+};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -164,6 +171,28 @@ impl Dokploy {
         self.read_query_json(APPLICATION_ONE, &request.query).await
     }
 
+    pub(crate) async fn application_create(
+        &self,
+        input: CreateApplication,
+    ) -> Result<CreatedApplication, Error> {
+        let request = ApplicationCreateRequest {
+            body: ApplicationCreateRequestBody {
+                name: input.name,
+                app_name: None,
+                description: None,
+                environment_id: input.environment_id.as_str().to_owned(),
+                server_id: None,
+                source_type: None,
+            },
+        };
+        validate_generated_request(APPLICATION_CREATE, &request)?;
+        let response: ApplicationCreateResponse = self
+            .mutate_body_json(APPLICATION_CREATE, &request.body)
+            .await?;
+
+        Ok(CreatedApplication::from_response(response))
+    }
+
     pub(crate) async fn applications_by_environment(
         &self,
         environment_id: &str,
@@ -279,6 +308,22 @@ impl Dokploy {
         self.read_query_json(POSTGRES_ONE, &request.query).await
     }
 
+    pub(crate) async fn postgres_create(
+        &self,
+        input: CreatePostgres,
+    ) -> Result<CreatedPostgres, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                POSTGRES_CREATE.operation(),
+                "Postgres create fields cannot be empty",
+            ));
+        }
+        let response: PostgresCreateResponse =
+            self.mutate_body_json(POSTGRES_CREATE, &input).await?;
+
+        Ok(CreatedPostgres::from_response(response))
+    }
+
     pub(crate) async fn postgres_by_environment(
         &self,
         environment_id: &str,
@@ -346,6 +391,18 @@ impl Dokploy {
         self.read_query_json(REDIS_ONE, &request.query).await
     }
 
+    pub(crate) async fn redis_create(&self, input: CreateRedis) -> Result<CreatedRedis, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                REDIS_CREATE.operation(),
+                "Redis create fields cannot be empty",
+            ));
+        }
+        let response: RedisCreateResponse = self.mutate_body_json(REDIS_CREATE, &input).await?;
+
+        Ok(CreatedRedis::from_response(response))
+    }
+
     pub(crate) async fn redis_by_environment(
         &self,
         environment_id: &str,
@@ -409,6 +466,22 @@ impl Dokploy {
         validate_generated_request(DOMAIN_ONE, &request)?;
 
         self.read_query_json(DOMAIN_ONE, &request.query).await
+    }
+
+    pub(crate) async fn domain_create(&self, input: CreateDomain) -> Result<CreatedDomain, Error> {
+        let request = DomainCreateRequest {
+            body: DomainCreateRequestBody {
+                host: input.host,
+                application_id: Some(input.application_id.as_str().to_owned()),
+                domain_type: Some("application".to_owned()),
+                ..DomainCreateRequestBody::default()
+            },
+        };
+        validate_generated_request(DOMAIN_CREATE, &request)?;
+        let response: DomainCreateResponse =
+            self.mutate_body_json(DOMAIN_CREATE, &request.body).await?;
+
+        Ok(CreatedDomain::from_response(response))
     }
 
     pub(crate) async fn domains_by_application(

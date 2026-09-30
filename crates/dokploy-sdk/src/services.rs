@@ -4,7 +4,11 @@ use crate::{
     PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
     RedisCollection, RedisDetails, RedisId,
 };
-use crate::{CreateEnvironment, CreateProject, CreatedEnvironment, CreatedProject};
+use crate::{
+    CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres, CreateProject, CreateRedis,
+    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedPostgres, CreatedProject,
+    CreatedRedis,
+};
 
 /// Read operations for Dokploy projects.
 pub struct Projects<'a> {
@@ -55,6 +59,11 @@ impl<'a> Applications<'a> {
         self.client
             .applications_by_environment(environment_id.as_str())
             .await
+    }
+
+    /// Creates a minimal application record for later explicit configuration.
+    pub async fn create(&self, input: CreateApplication) -> Result<CreatedApplication, Error> {
+        self.client.application_create(input).await
     }
 }
 
@@ -110,6 +119,11 @@ impl<'a> Postgres<'a> {
             .postgres_by_environment(environment_id.as_str())
             .await
     }
+
+    /// Creates a Postgres database with write-only credentials.
+    pub async fn create(&self, input: CreatePostgres) -> Result<CreatedPostgres, Error> {
+        self.client.postgres_create(input).await
+    }
 }
 
 /// Read operations for Dokploy Redis databases.
@@ -136,6 +150,11 @@ impl<'a> Redis<'a> {
             .redis_by_environment(environment_id.as_str())
             .await
     }
+
+    /// Creates a Redis database with a write-only password.
+    pub async fn create(&self, input: CreateRedis) -> Result<CreatedRedis, Error> {
+        self.client.redis_create(input).await
+    }
 }
 
 /// Read operations for Dokploy application domains.
@@ -161,5 +180,10 @@ impl<'a> Domains<'a> {
         self.client
             .domains_by_application(application_id.as_str())
             .await
+    }
+
+    /// Attaches a domain to an application.
+    pub async fn create(&self, input: CreateDomain) -> Result<CreatedDomain, Error> {
+        self.client.domain_create(input).await
     }
 }

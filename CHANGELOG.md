@@ -31,6 +31,9 @@ All notable changes to this project will be documented in this file.
 - Add typed environment creation and executor handling for both explicit
   environment mutations and safe adoption of Dokploy's project-created default
   environment without a duplicate create.
+- Add typed application, Postgres, Redis, and Domain creation with redacted
+  secret-bearing inputs, required-create contracts, dependency-ordered
+  execution, and a durable checkpoint after every successful resource.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

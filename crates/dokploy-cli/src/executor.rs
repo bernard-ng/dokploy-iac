@@ -5,9 +5,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use dokploy_core::{
-    ChangeKind, CheckpointMaterializationError, CheckpointValueRef, ConfigDigest, Plan, StoredState,
+    ChangeKind, CheckpointMaterializationError, CheckpointValueRef, ConfigDigest, Plan,
+    PropertyPath, StoredState,
 };
-use dokploy_sdk::{CreateEnvironment, CreateProject, Dokploy, Error as SdkError, ProjectId};
+use dokploy_sdk::{
+    ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
+    CreateProject, CreateRedis, Dokploy, EnvironmentId, Error as SdkError, ProjectId,
+};
 use dokploy_state::{
     ExpectedState, FailureCode, InstanceIdentity, JournalAction, JournalError, OperationJournal,
     PlanDigest, RemoteId, ResourceAddress, ResourceKind, StateError, StateFile, StateStore,
@@ -15,6 +19,7 @@ use dokploy_state::{
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::desired::{CompileDesiredError, compile_desired_for_instance};
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
@@ -45,7 +50,7 @@ pub async fn apply_workspace(
     let loaded = dokploy_config::load_with_digest(config_file)?;
     let source_digest = ConfigDigest::parse(hex_digest(loaded.source_sha256))
         .expect("a SHA-256 digest is canonical lowercase hexadecimal");
-    let compiled =
+    let mut compiled =
         compile_desired_for_instance(&loaded.config, source_digest, instance.clone(), &workspace)?;
     let durable = store.inspect()?;
     let mut state = durable.clone().unwrap_or_else(|| {
@@ -147,10 +152,98 @@ pub async fn apply_workspace(
                         .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
                 }
             }
-            ResourceKind::Application
-            | ResourceKind::Postgres
-            | ResourceKind::Redis
-            | ResourceKind::Domain => return Err(ApplyWorkspaceError::UnsupportedChange),
+            ResourceKind::Application => {
+                let parent = checkpoint
+                    .containment()
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+                let parent_id = state
+                    .resource(parent)
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                    .remote_id();
+                let input = CreateApplication::new(
+                    change.address().name().as_str(),
+                    EnvironmentId::new(parent_id.as_str()),
+                );
+                let created = match client.applications().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        journal.fail(token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.application_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
+            ResourceKind::Postgres => {
+                let environment_id = checkpoint_environment_id(checkpoint, &state)?;
+                let database = required_string(checkpoint, &PropertyPath::Database)?;
+                let username = required_string(checkpoint, &PropertyPath::Username)?;
+                let password = take_sensitive_string(
+                    &mut compiled,
+                    change.address(),
+                    &PropertyPath::Password,
+                )?;
+                let input = CreatePostgres::new(
+                    change.address().name().as_str(),
+                    environment_id,
+                    database,
+                    username,
+                    password,
+                );
+                let created = match client.postgres().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        journal.fail(token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.postgres_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
+            ResourceKind::Redis => {
+                let environment_id = checkpoint_environment_id(checkpoint, &state)?;
+                let password = take_sensitive_string(
+                    &mut compiled,
+                    change.address(),
+                    &PropertyPath::Password,
+                )?;
+                let input =
+                    CreateRedis::new(change.address().name().as_str(), environment_id, password);
+                let created = match client.redis().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        journal.fail(token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.redis_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
+            ResourceKind::Domain => {
+                let application = compiled
+                    .bindings()
+                    .domain_application(change.address())
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+                let application_id = state
+                    .resource(application)
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                    .remote_id();
+                let host = required_string(checkpoint, &PropertyPath::Host)?;
+                let input = CreateDomain::new(host, ApplicationId::new(application_id.as_str()));
+                let created = match client.domains().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        journal.fail(token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.domain_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
         };
         let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
         state.upsert_resource(change.address().clone(), resource)?;
@@ -168,12 +261,71 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
         change.kind() == ChangeKind::Create
             && matches!(
                 change.address().kind(),
-                ResourceKind::Project | ResourceKind::Environment
+                ResourceKind::Project
+                    | ResourceKind::Environment
+                    | ResourceKind::Application
+                    | ResourceKind::Postgres
+                    | ResourceKind::Redis
+                    | ResourceKind::Domain
             )
     }) {
         Ok(())
     } else {
         Err(ApplyWorkspaceError::UnsupportedChange)
+    }
+}
+
+fn checkpoint_environment_id(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+) -> Result<EnvironmentId, ApplyWorkspaceError> {
+    let parent = checkpoint
+        .containment()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let parent_id = state
+        .resource(parent)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .remote_id();
+
+    Ok(EnvironmentId::new(parent_id.as_str()))
+}
+
+fn required_string(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    path: &PropertyPath,
+) -> Result<String, ApplyWorkspaceError> {
+    match checkpoint.property(path) {
+        Some(CheckpointValueRef::NonSensitive(value)) => value
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint),
+        None
+        | Some(
+            CheckpointValueRef::Null
+            | CheckpointValueRef::EmptyCollection
+            | CheckpointValueRef::Sensitive,
+        ) => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
+}
+
+fn take_sensitive_string(
+    compiled: &mut crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    path: &PropertyPath,
+) -> Result<Zeroizing<String>, ApplyWorkspaceError> {
+    let (mut value, _) = compiled
+        .take_sensitive(address, path)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .into_parts();
+    let bytes = std::mem::take(&mut *value);
+
+    match String::from_utf8(bytes) {
+        Ok(value) => Ok(Zeroizing::new(value)),
+        Err(error) => {
+            let mut bytes = error.into_bytes();
+            bytes.zeroize();
+            Err(ApplyWorkspaceError::InvalidCheckpoint)
+        }
     }
 }
 

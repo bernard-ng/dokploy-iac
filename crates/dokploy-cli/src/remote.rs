@@ -307,11 +307,15 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 .with_containment(MutationMode::InPlace)
         }
         ResourceKind::Postgres => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Database)
+            .requiring(PropertyPath::Username)
+            .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::Password, set_only)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::Domain => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)

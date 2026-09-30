@@ -182,7 +182,7 @@ const ENVIRONMENT: &str =
     r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
 
 #[tokio::test]
-async fn compiler_discovery_and_planner_create_an_absent_redis_database() {
+async fn planner_blocks_an_absent_redis_database_with_missing_create_inputs() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", PROJECT),
         ("200 OK", ENVIRONMENTS),
@@ -205,10 +205,18 @@ async fn compiler_discovery_and_planner_create_an_absent_redis_database() {
         &StoredState::try_from_state(&state).unwrap(),
         &remote,
     );
-    assert!(plan.diagnostics().is_empty());
-    assert!(plan.changes().iter().any(|change| {
-        change.kind() == ChangeKind::Create && change.address().to_string() == "redis.cache"
-    }));
+    assert!(plan.complete());
+    assert!(!plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert_eq!(plan.diagnostics().len(), 1);
+    assert_eq!(
+        plan.diagnostics()[0].code(),
+        PlanDiagnosticCode::MissingCreateProperty
+    );
+    assert_eq!(
+        plan.diagnostics()[0].property(),
+        Some(&PropertyPath::Password)
+    );
     assert!(server.finish()[3].starts_with("GET /api/redis.search?"));
 }
 

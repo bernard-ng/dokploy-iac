@@ -1,6 +1,7 @@
 use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use std::fmt;
+use zeroize::Zeroizing;
 
 macro_rules! identifier {
     ($name:ident) => {
@@ -163,6 +164,264 @@ impl CreatedEnvironment {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EnvironmentCreateResponse {
     environment_id: EnvironmentId,
+}
+
+/// Inputs required to create one Dokploy application record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreateApplication {
+    pub(crate) name: String,
+    pub(crate) environment_id: EnvironmentId,
+}
+
+impl CreateApplication {
+    /// Creates minimal application input for later explicit configuration.
+    #[must_use]
+    pub fn new(name: impl Into<String>, environment_id: EnvironmentId) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+        }
+    }
+}
+
+/// Physical identity returned by Dokploy when an application is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedApplication {
+    application_id: ApplicationId,
+}
+
+impl CreatedApplication {
+    pub(crate) fn from_response(response: ApplicationCreateResponse) -> Self {
+        Self {
+            application_id: response.application_id,
+        }
+    }
+
+    /// Returns the new application identity.
+    #[must_use]
+    pub const fn application_id(&self) -> &ApplicationId {
+        &self.application_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApplicationCreateResponse {
+    application_id: ApplicationId,
+}
+
+/// Inputs required to create one Dokploy Postgres database.
+pub struct CreatePostgres {
+    name: String,
+    environment_id: EnvironmentId,
+    database_name: String,
+    database_user: String,
+    database_password: Zeroizing<String>,
+}
+
+impl CreatePostgres {
+    /// Creates Postgres input while retaining the password in zeroizing memory.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        environment_id: EnvironmentId,
+        database_name: impl Into<String>,
+        database_user: impl Into<String>,
+        database_password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+            database_name: database_name.into(),
+            database_user: database_user.into(),
+            database_password,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.database_name.is_empty()
+            && !self.database_user.is_empty()
+            && !self.database_password.is_empty()
+    }
+}
+
+impl fmt::Debug for CreatePostgres {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreatePostgres")
+            .field("name", &self.name)
+            .field("environment_id", &self.environment_id)
+            .field("database_name", &self.database_name)
+            .field("database_user", &self.database_user)
+            .field("database_password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for CreatePostgres {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreatePostgres", 5)?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("databaseName", &self.database_name)?;
+        body.serialize_field("databaseUser", &self.database_user)?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when Postgres is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedPostgres {
+    postgres_id: PostgresId,
+}
+
+impl CreatedPostgres {
+    pub(crate) fn from_response(response: PostgresCreateResponse) -> Self {
+        Self {
+            postgres_id: response.postgres_id,
+        }
+    }
+
+    /// Returns the new Postgres identity.
+    #[must_use]
+    pub const fn postgres_id(&self) -> &PostgresId {
+        &self.postgres_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PostgresCreateResponse {
+    postgres_id: PostgresId,
+}
+
+/// Inputs required to create one Dokploy Redis database.
+pub struct CreateRedis {
+    name: String,
+    environment_id: EnvironmentId,
+    database_password: Zeroizing<String>,
+}
+
+impl CreateRedis {
+    /// Creates Redis input while retaining the password in zeroizing memory.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        environment_id: EnvironmentId,
+        database_password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+            database_password,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.database_password.is_empty()
+    }
+}
+
+impl fmt::Debug for CreateRedis {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateRedis")
+            .field("name", &self.name)
+            .field("environment_id", &self.environment_id)
+            .field("database_password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for CreateRedis {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreateRedis", 3)?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when Redis is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedRedis {
+    redis_id: RedisId,
+}
+
+impl CreatedRedis {
+    pub(crate) fn from_response(response: RedisCreateResponse) -> Self {
+        Self {
+            redis_id: response.redis_id,
+        }
+    }
+
+    /// Returns the new Redis identity.
+    #[must_use]
+    pub const fn redis_id(&self) -> &RedisId {
+        &self.redis_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RedisCreateResponse {
+    redis_id: RedisId,
+}
+
+/// Inputs required to attach one domain to a Dokploy application.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreateDomain {
+    pub(crate) host: String,
+    pub(crate) application_id: ApplicationId,
+}
+
+impl CreateDomain {
+    /// Creates an application domain with Dokploy's transport defaults.
+    #[must_use]
+    pub fn new(host: impl Into<String>, application_id: ApplicationId) -> Self {
+        Self {
+            host: host.into(),
+            application_id,
+        }
+    }
+}
+
+/// Physical identity returned by Dokploy when a domain is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedDomain {
+    domain_id: DomainId,
+}
+
+impl CreatedDomain {
+    pub(crate) fn from_response(response: DomainCreateResponse) -> Self {
+        Self {
+            domain_id: response.domain_id,
+        }
+    }
+
+    /// Returns the new domain identity.
+    #[must_use]
+    pub const fn domain_id(&self) -> &DomainId {
+        &self.domain_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DomainCreateResponse {
+    domain_id: DomainId,
 }
 
 /// Presence-aware value returned by a tolerant Dokploy response model.
