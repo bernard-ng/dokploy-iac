@@ -58,6 +58,7 @@ def normalized_scalar:
     or .key == "previewBuildArgs"
     or .key == "buildSecrets"
     or .key == "previewBuildSecrets"
+    or .key == "content"
   then
     if .value == null or .value == "" then . else .value = "<redacted>" end
   elif (.key | test("(?i)(password|secret|token|privatekey|accesskey)")) then
@@ -73,6 +74,12 @@ walk(
         .appName = "application-contract-test"
       elif has("postgresId") and has("appName") then
         .appName = "postgres-contract-test"
+      elif has("mountId") then
+        if .application != null and (.application | has("appName")) then
+          .application.appName = "application-contract-test"
+        else
+          .
+        end
       elif has("composeId") then
         (if has("appName") then .appName = "compose-contract-test" else . end)
         | (if has("name") and (.name | startswith("Compose Contract")) then
@@ -153,6 +160,10 @@ walk(
         and (.name | startswith("compose-sdk-contract-"))
       then
         .name = "Compose SDK Contract Test"
+      elif has("projectId") and has("name")
+        and (.name | startswith("mount-sdk-contract-"))
+      then
+        .name = "Mount SDK Contract Test"
       else
         .
       end

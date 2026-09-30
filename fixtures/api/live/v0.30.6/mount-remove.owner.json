@@ -1,0 +1,18 @@
+{
+  "applicationId": "application-1",
+  "composeId": null,
+  "content": null,
+  "filePath": null,
+  "hostPath": null,
+  "libsqlId": null,
+  "mariadbId": null,
+  "mongoId": null,
+  "mountId": "mount-1",
+  "mountPath": "/updated",
+  "mysqlId": null,
+  "postgresId": null,
+  "redisId": null,
+  "serviceType": "application",
+  "type": "volume",
+  "volumeName": "volume-1"
+}

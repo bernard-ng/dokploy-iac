@@ -201,6 +201,39 @@ and absence from `project.one`; the disposable project is then removed. An
 interruption trap recovers only a unique name match in the dedicated
 environment and refuses ambiguous deletion.
 
+## Disposable Mount contract capture
+
+Capture the typed Mount adapter contract against the pinned local instance
+with:
+
+```bash
+scripts/integration/capture-mount-contract.sh
+```
+
+The command creates a disposable project and application, then exercises the
+exact `mounts.create`, `mounts.one`, `mounts.listByServiceId`, `mounts.update`,
+and `mounts.remove` transport using a volume Mount. The application remains
+idle and undeployed. Cleanup is proven through the Mount 404, an empty target
+list, an application with no Mounts or deployments, and a project 404 after
+the disposable hierarchy is removed.
+
+An interruption trap recovers only one volume matching the run-specific name,
+typed application target, and known Mount paths. Ambiguous candidates are
+never removed. Opaque file content is covered by SDK transport tests instead
+of tracked live fixtures; the shared sanitizer and fixture checker treat every
+non-empty `content` field as secret-bearing data.
+
+Exercise the public SDK adapter itself through the same lifecycle with:
+
+```bash
+scripts/integration/test-mount-sdk.sh
+```
+
+This wrapper owns a separate disposable project and application. Its cleanup
+trap removes that hierarchy after interruption and verifies authoritative
+project absence. A successful run additionally requires the application to
+remain idle, undeployed, and free of Mounts before it removes the project.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

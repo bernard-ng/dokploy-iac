@@ -40,6 +40,7 @@ identifier!(EnvironmentId);
 identifier!(LibSqlId);
 identifier!(MariaDbId);
 identifier!(MongoId);
+identifier!(MountId);
 identifier!(MySqlId);
 identifier!(PostgresId);
 identifier!(ProjectId);
@@ -337,6 +338,380 @@ impl Serialize for UpdateCompose {
         }
         if let Some(compose_file) = &self.compose_file {
             body.serialize_field("composeFile", compose_file.as_str())?;
+        }
+        body.end()
+    }
+}
+
+/// The storage mechanism used by a Dokploy mount.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MountType {
+    /// Bind a host path into the target service.
+    Bind,
+    /// Attach a named Docker volume to the target service.
+    Volume,
+    /// Materialize an opaque file and mount it into the target service.
+    File,
+}
+
+impl MountType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Bind => "bind",
+            Self::Volume => "volume",
+            Self::File => "file",
+        }
+    }
+}
+
+/// The exact Dokploy service that owns a mount.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServiceTarget {
+    /// An application target.
+    Application(ApplicationId),
+    /// A raw Compose target.
+    Compose(ComposeId),
+    /// A LibSQL target.
+    LibSql(LibSqlId),
+    /// A MariaDB target.
+    MariaDb(MariaDbId),
+    /// A MongoDB target.
+    Mongo(MongoId),
+    /// A MySQL target.
+    MySql(MySqlId),
+    /// A PostgreSQL target.
+    Postgres(PostgresId),
+    /// A Redis target.
+    Redis(RedisId),
+}
+
+impl ServiceTarget {
+    /// Returns the target kind accepted by Dokploy's Mount operations.
+    #[must_use]
+    pub const fn service_type(&self) -> &'static str {
+        match self {
+            Self::Application(_) => "application",
+            Self::Compose(_) => "compose",
+            Self::LibSql(_) => "libsql",
+            Self::MariaDb(_) => "mariadb",
+            Self::Mongo(_) => "mongo",
+            Self::MySql(_) => "mysql",
+            Self::Postgres(_) => "postgres",
+            Self::Redis(_) => "redis",
+        }
+    }
+
+    /// Returns the opaque physical identity of the target.
+    #[must_use]
+    pub fn service_id(&self) -> &str {
+        match self {
+            Self::Application(id) => id.as_str(),
+            Self::Compose(id) => id.as_str(),
+            Self::LibSql(id) => id.as_str(),
+            Self::MariaDb(id) => id.as_str(),
+            Self::Mongo(id) => id.as_str(),
+            Self::MySql(id) => id.as_str(),
+            Self::Postgres(id) => id.as_str(),
+            Self::Redis(id) => id.as_str(),
+        }
+    }
+}
+
+enum MountSource {
+    Bind {
+        host_path: String,
+    },
+    Volume {
+        volume_name: String,
+    },
+    File {
+        file_path: String,
+        content: Zeroizing<String>,
+    },
+}
+
+impl MountSource {
+    const fn mount_type(&self) -> MountType {
+        match self {
+            Self::Bind { .. } => MountType::Bind,
+            Self::Volume { .. } => MountType::Volume,
+            Self::File { .. } => MountType::File,
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        match self {
+            Self::Bind { host_path } => !host_path.is_empty(),
+            Self::Volume { volume_name } => !volume_name.is_empty(),
+            Self::File { file_path, .. } => !file_path.is_empty(),
+        }
+    }
+
+    fn matches(&self, details: &MountDetails) -> bool {
+        match self {
+            Self::Bind { host_path } => {
+                details.host_path == ResponseField::Value(host_path.clone())
+                    && !matches!(details.volume_name, ResponseField::Value(_))
+                    && !matches!(details.file_path, ResponseField::Value(_))
+            }
+            Self::Volume { volume_name } => {
+                details.volume_name == ResponseField::Value(volume_name.clone())
+                    && !matches!(details.host_path, ResponseField::Value(_))
+                    && !matches!(details.file_path, ResponseField::Value(_))
+            }
+            Self::File { file_path, .. } => {
+                details.file_path == ResponseField::Value(file_path.clone())
+                    && !matches!(details.host_path, ResponseField::Value(_))
+                    && !matches!(details.volume_name, ResponseField::Value(_))
+            }
+        }
+    }
+}
+
+impl fmt::Debug for MountSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Bind { host_path } => formatter
+                .debug_struct("Bind")
+                .field("host_path", host_path)
+                .finish(),
+            Self::Volume { volume_name } => formatter
+                .debug_struct("Volume")
+                .field("volume_name", volume_name)
+                .finish(),
+            Self::File { file_path, .. } => formatter
+                .debug_struct("File")
+                .field("file_path", file_path)
+                .field("content", &"[REDACTED]")
+                .finish(),
+        }
+    }
+}
+
+/// Inputs required to create one typed Dokploy mount.
+///
+/// File content can contain credentials. It is retained in zeroizing memory
+/// and is always omitted from debug output.
+#[derive(Debug)]
+pub struct CreateMount {
+    target: ServiceTarget,
+    mount_path: String,
+    source: MountSource,
+}
+
+impl CreateMount {
+    /// Creates a host bind mount.
+    #[must_use]
+    pub fn bind(
+        target: ServiceTarget,
+        host_path: impl Into<String>,
+        mount_path: impl Into<String>,
+    ) -> Self {
+        Self {
+            target,
+            mount_path: mount_path.into(),
+            source: MountSource::Bind {
+                host_path: host_path.into(),
+            },
+        }
+    }
+
+    /// Creates a named Docker volume mount.
+    #[must_use]
+    pub fn volume(
+        target: ServiceTarget,
+        volume_name: impl Into<String>,
+        mount_path: impl Into<String>,
+    ) -> Self {
+        Self {
+            target,
+            mount_path: mount_path.into(),
+            source: MountSource::Volume {
+                volume_name: volume_name.into(),
+            },
+        }
+    }
+
+    /// Creates an opaque file mount.
+    #[must_use]
+    pub fn file(
+        target: ServiceTarget,
+        file_path: impl Into<String>,
+        mount_path: impl Into<String>,
+        content: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            target,
+            mount_path: mount_path.into(),
+            source: MountSource::File {
+                file_path: file_path.into(),
+                content,
+            },
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.target.service_id().is_empty()
+            && !self.mount_path.is_empty()
+            && self.source.is_valid()
+    }
+
+    pub(crate) fn matches(&self, details: &MountDetails) -> bool {
+        !details.mount_id.as_str().is_empty()
+            && details.target == self.target
+            && details.mount_type == self.source.mount_type()
+            && details.mount_path == self.mount_path
+            && self.source.matches(details)
+    }
+}
+
+impl Serialize for CreateMount {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreateMount", 6)?;
+        body.serialize_field("type", self.source.mount_type().as_str())?;
+        match &self.source {
+            MountSource::Bind { host_path } => body.serialize_field("hostPath", host_path)?,
+            MountSource::Volume { volume_name } => {
+                body.serialize_field("volumeName", volume_name)?;
+            }
+            MountSource::File { file_path, content } => {
+                body.serialize_field("filePath", file_path)?;
+                body.serialize_field("content", content.as_str())?;
+            }
+        }
+        body.serialize_field("mountPath", &self.mount_path)?;
+        body.serialize_field("serviceType", self.target.service_type())?;
+        body.serialize_field("serviceId", self.target.service_id())?;
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when a mount is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedMount {
+    mount_id: MountId,
+}
+
+impl CreatedMount {
+    pub(crate) fn new(mount_id: MountId) -> Self {
+        Self { mount_id }
+    }
+
+    /// Returns the new Mount identity.
+    #[must_use]
+    pub const fn mount_id(&self) -> &MountId {
+        &self.mount_id
+    }
+}
+
+/// An explicit subset of owned Mount fields to update.
+pub struct UpdateMount {
+    mount_id: MountId,
+    mount_path: Option<String>,
+    source: Option<MountSource>,
+}
+
+impl UpdateMount {
+    /// Starts a Mount update with no fields selected.
+    #[must_use]
+    pub fn new(mount_id: MountId) -> Self {
+        Self {
+            mount_id,
+            mount_path: None,
+            source: None,
+        }
+    }
+
+    /// Replaces the target path inside the service.
+    #[must_use]
+    pub fn with_mount_path(mut self, mount_path: impl Into<String>) -> Self {
+        self.mount_path = Some(mount_path.into());
+        self
+    }
+
+    /// Replaces the storage mechanism with a host bind source.
+    #[must_use]
+    pub fn with_bind(mut self, host_path: impl Into<String>) -> Self {
+        self.source = Some(MountSource::Bind {
+            host_path: host_path.into(),
+        });
+        self
+    }
+
+    /// Replaces the storage mechanism with a named Docker volume source.
+    #[must_use]
+    pub fn with_volume(mut self, volume_name: impl Into<String>) -> Self {
+        self.source = Some(MountSource::Volume {
+            volume_name: volume_name.into(),
+        });
+        self
+    }
+
+    /// Replaces the storage mechanism with an opaque file source.
+    #[must_use]
+    pub fn with_file(mut self, file_path: impl Into<String>, content: Zeroizing<String>) -> Self {
+        self.source = Some(MountSource::File {
+            file_path: file_path.into(),
+            content,
+        });
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mount_id.as_str().is_empty()
+            && (self
+                .mount_path
+                .as_ref()
+                .is_some_and(|mount_path| !mount_path.is_empty())
+                || self.source.as_ref().is_some_and(MountSource::is_valid))
+    }
+}
+
+impl fmt::Debug for UpdateMount {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateMount")
+            .field("mount_id", &self.mount_id)
+            .field("mount_path", &self.mount_path)
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateMount {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let source_fields = match &self.source {
+            Some(MountSource::File { .. }) => 3,
+            Some(MountSource::Bind { .. } | MountSource::Volume { .. }) => 2,
+            None => 0,
+        };
+        let mut body = serializer.serialize_struct(
+            "UpdateMount",
+            1 + usize::from(self.mount_path.is_some()) + source_fields,
+        )?;
+        body.serialize_field("mountId", self.mount_id.as_str())?;
+        if let Some(mount_path) = &self.mount_path {
+            body.serialize_field("mountPath", mount_path)?;
+        }
+        if let Some(source) = &self.source {
+            body.serialize_field("type", source.mount_type().as_str())?;
+            match source {
+                MountSource::Bind { host_path } => body.serialize_field("hostPath", host_path)?,
+                MountSource::Volume { volume_name } => {
+                    body.serialize_field("volumeName", volume_name)?;
+                }
+                MountSource::File { file_path, content } => {
+                    body.serialize_field("filePath", file_path)?;
+                    body.serialize_field("content", content.as_str())?;
+                }
+            }
         }
         body.end()
     }
@@ -2382,6 +2757,123 @@ impl ComposeCollection {
 pub(crate) struct ComposeSearchPage {
     pub(crate) items: Vec<ComposeSearchItem>,
     pub(crate) total: u64,
+}
+
+/// A safe subset of the response returned by Mount read operations.
+///
+/// Opaque file content and nested target records are deliberately absent.
+/// Unknown fields are ignored because Dokploy's pinned success schemas are
+/// empty even though the runtime returns complete Mount records.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MountDetails {
+    pub mount_id: MountId,
+    pub mount_type: MountType,
+    pub mount_path: String,
+    pub target: ServiceTarget,
+    pub host_path: ResponseField<String>,
+    pub volume_name: ResponseField<String>,
+    pub file_path: ResponseField<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MountResponse {
+    mount_id: MountId,
+    #[serde(rename = "type")]
+    mount_type: MountType,
+    mount_path: String,
+    service_type: String,
+    #[serde(default)]
+    host_path: ResponseField<String>,
+    #[serde(default)]
+    volume_name: ResponseField<String>,
+    #[serde(default)]
+    file_path: ResponseField<String>,
+    #[serde(default)]
+    application_id: ResponseField<ApplicationId>,
+    #[serde(default)]
+    compose_id: ResponseField<ComposeId>,
+    #[serde(default)]
+    libsql_id: ResponseField<LibSqlId>,
+    #[serde(default)]
+    mariadb_id: ResponseField<MariaDbId>,
+    #[serde(default)]
+    mongo_id: ResponseField<MongoId>,
+    #[serde(default)]
+    mysql_id: ResponseField<MySqlId>,
+    #[serde(default)]
+    postgres_id: ResponseField<PostgresId>,
+    #[serde(default)]
+    redis_id: ResponseField<RedisId>,
+}
+
+impl<'de> Deserialize<'de> for MountDetails {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let response = MountResponse::deserialize(deserializer)?;
+        let mut targets = Vec::new();
+        if let ResponseField::Value(id) = response.application_id {
+            targets.push(ServiceTarget::Application(id));
+        }
+        if let ResponseField::Value(id) = response.compose_id {
+            targets.push(ServiceTarget::Compose(id));
+        }
+        if let ResponseField::Value(id) = response.libsql_id {
+            targets.push(ServiceTarget::LibSql(id));
+        }
+        if let ResponseField::Value(id) = response.mariadb_id {
+            targets.push(ServiceTarget::MariaDb(id));
+        }
+        if let ResponseField::Value(id) = response.mongo_id {
+            targets.push(ServiceTarget::Mongo(id));
+        }
+        if let ResponseField::Value(id) = response.mysql_id {
+            targets.push(ServiceTarget::MySql(id));
+        }
+        if let ResponseField::Value(id) = response.postgres_id {
+            targets.push(ServiceTarget::Postgres(id));
+        }
+        if let ResponseField::Value(id) = response.redis_id {
+            targets.push(ServiceTarget::Redis(id));
+        }
+        if targets.len() != 1 {
+            return Err(de::Error::custom(
+                "a Mount response must contain exactly one target identity",
+            ));
+        }
+        let target = targets.pop().expect("one Mount target was validated");
+        if target.service_id().is_empty() || target.service_type() != response.service_type {
+            return Err(de::Error::custom(
+                "a Mount response target must match its service type",
+            ));
+        }
+
+        Ok(Self {
+            mount_id: response.mount_id,
+            mount_type: response.mount_type,
+            mount_path: response.mount_path,
+            target,
+            host_path: response.host_path,
+            volume_name: response.volume_name,
+            file_path: response.file_path,
+        })
+    }
+}
+
+/// The complete, bounded Mount collection for one exact target.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MountCollection {
+    pub(crate) mounts: Vec<MountDetails>,
+}
+
+impl MountCollection {
+    /// Returns every Mount discovered on the requested service target.
+    #[must_use]
+    pub fn mounts(&self) -> &[MountDetails] {
+        &self.mounts
+    }
 }
 
 /// A safe subset of the response returned by `postgres.one`.

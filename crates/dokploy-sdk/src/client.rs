@@ -21,11 +21,14 @@ use dokploy_api::{
     LIBSQL_UPDATE, LibsqlIdRequestBody, LibsqlOneRequest, LibsqlOneRequestQuery,
     LibsqlRemoveRequest, MARIADB_CHANGE_PASSWORD, MARIADB_CREATE, MARIADB_ONE, MARIADB_REMOVE,
     MARIADB_SEARCH, MARIADB_UPDATE, MONGO_CHANGE_PASSWORD, MONGO_CREATE, MONGO_ONE, MONGO_REMOVE,
-    MONGO_SEARCH, MONGO_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
+    MONGO_SEARCH, MONGO_UPDATE, MOUNTS_CREATE, MOUNTS_LIST_BY_SERVICE_ID, MOUNTS_ONE,
+    MOUNTS_REMOVE, MOUNTS_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
     MYSQL_SEARCH, MYSQL_UPDATE, MariadbIdRequestBody, MariadbOneRequest, MariadbOneRequestQuery,
     MariadbRemoveRequest, MariadbSearchRequest, MariadbSearchRequestQuery, MongoIdRequestBody,
     MongoOneRequest, MongoOneRequestQuery, MongoRemoveRequest, MongoSearchRequest,
-    MongoSearchRequestQuery, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
+    MongoSearchRequestQuery, MountIdRequestBody, MountsListByServiceIdRequest,
+    MountsListByServiceIdRequestQuery, MountsOneRequest, MountsOneRequestQuery,
+    MountsRemoveRequest, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
     MysqlRemoveRequest, MysqlSearchRequest, MysqlSearchRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
     POSTGRES_REMOVE, POSTGRES_SEARCH, POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE,
     PROJECT_REMOVE, PROJECT_UPDATE, PostgresIdRequestBody, PostgresOneRequest,
@@ -54,25 +57,25 @@ use crate::models::{
     DomainCreateResponse, DomainDetails, EnvironmentCollection, EnvironmentCreateResponse,
     EnvironmentDetails, LibSqlCollection, LibSqlDetails, MariaDbCollection, MariaDbCreateResponse,
     MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
-    MongoSearchPage, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
-    PostgresCollection, PostgresCreateResponse, PostgresDetails, PostgresSearchPage,
-    ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection, RedisCreateResponse,
-    RedisDetails, RedisSearchPage,
+    MongoSearchPage, MountCollection, MountDetails, MySqlCollection, MySqlCreateResponse,
+    MySqlDetails, MySqlSearchPage, PostgresCollection, PostgresCreateResponse, PostgresDetails,
+    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
+    RedisCreateResponse, RedisDetails, RedisSearchPage,
 };
 use crate::services::{
-    Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, MySql, Postgres,
+    Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Postgres,
     Projects, Redis,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
     ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
-    CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMySql,
-    CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedCompose, CreatedDomain,
-    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres,
-    CreatedProject, CreatedRedis, DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MySqlId,
-    PostgresId, ProjectId, RedisId, UpdateApplication, UpdateCompose, UpdateDomain,
-    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePostgres,
-    UpdateProject, UpdateRedis,
+    CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount,
+    CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedCompose,
+    CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount,
+    CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, DomainId, EnvironmentId, LibSqlId,
+    MariaDbId, MongoId, MountId, MySqlId, PostgresId, ProjectId, RedisId, ServiceTarget,
+    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
+    UpdateMongo, UpdateMount, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -87,6 +90,7 @@ const MARIADB_SEARCH_PAGE_SIZE: usize = 100;
 const MARIADB_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MONGO_SEARCH_PAGE_SIZE: usize = 100;
 const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
+const MOUNT_LIST_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -161,6 +165,12 @@ impl Dokploy {
     #[must_use]
     pub fn mongo(&self) -> Mongo<'_> {
         Mongo::new(self)
+    }
+
+    /// Returns access to Mount read and mutation operations.
+    #[must_use]
+    pub fn mounts(&self) -> Mounts<'_> {
+        Mounts::new(self)
     }
 
     /// Returns access to MySQL read and mutation operations.
@@ -522,6 +532,92 @@ impl Dokploy {
                 return Ok(ComposeCollection { composes });
             }
         }
+    }
+
+    pub(crate) async fn mount_get(&self, mount_id: &str) -> Result<MountDetails, Error> {
+        let request = MountsOneRequest {
+            query: MountsOneRequestQuery {
+                mount_id: mount_id.to_owned(),
+            },
+        };
+        validate_generated_request(MOUNTS_ONE, &request)?;
+
+        self.read_query_json(MOUNTS_ONE, &request.query).await
+    }
+
+    pub(crate) async fn mounts_by_target(
+        &self,
+        target: &ServiceTarget,
+    ) -> Result<MountCollection, Error> {
+        if target.service_id().is_empty() {
+            return Err(invalid_request(
+                MOUNTS_LIST_BY_SERVICE_ID.operation(),
+                "Mount target identity cannot be empty",
+            ));
+        }
+        let request = MountsListByServiceIdRequest {
+            query: MountsListByServiceIdRequestQuery {
+                service_type: target.service_type().to_owned(),
+                service_id: target.service_id().to_owned(),
+            },
+        };
+        validate_generated_request(MOUNTS_LIST_BY_SERVICE_ID, &request)?;
+        let mounts: Vec<MountDetails> = self
+            .read_query_json(MOUNTS_LIST_BY_SERVICE_ID, &request.query)
+            .await?;
+        let mut seen_ids = HashSet::new();
+        let contradictory = mounts.len() > MOUNT_LIST_ITEM_LIMIT
+            || mounts.iter().any(|mount| {
+                mount.target != *target
+                    || mount.mount_id.as_str().is_empty()
+                    || !seen_ids.insert(mount.mount_id.as_str().to_owned())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: MOUNTS_LIST_BY_SERVICE_ID.operation(),
+            });
+        }
+
+        Ok(MountCollection { mounts })
+    }
+
+    pub(crate) async fn mount_create(&self, input: CreateMount) -> Result<CreatedMount, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MOUNTS_CREATE.operation(),
+                "Mount create fields are invalid",
+            ));
+        }
+        let response: MountDetails = self.mutate_body_json(MOUNTS_CREATE, &input).await?;
+        if !input.matches(&response) {
+            return Err(Error::UnexpectedResponse {
+                operation: MOUNTS_CREATE.operation(),
+            });
+        }
+
+        Ok(CreatedMount::new(response.mount_id))
+    }
+
+    pub(crate) async fn mount_update(&self, input: UpdateMount) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MOUNTS_UPDATE.operation(),
+                "Mount update requires an identity and at least one valid field",
+            ));
+        }
+
+        self.mutate_body_ok(MOUNTS_UPDATE, &input).await
+    }
+
+    pub(crate) async fn mount_delete(&self, mount_id: MountId) -> Result<(), Error> {
+        let request = MountsRemoveRequest {
+            body: MountIdRequestBody {
+                mount_id: mount_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(MOUNTS_REMOVE, &request)?;
+
+        self.mutate_body_ok(MOUNTS_REMOVE, &request.body).await
     }
 
     pub(crate) async fn environment_get(

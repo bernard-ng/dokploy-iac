@@ -110,6 +110,20 @@ required_compose_fixtures=(
     "compose-contract.metadata.json"
 )
 
+required_mount_fixtures=(
+    "mount-create.owner.json"
+    "mount-one.created.owner.json"
+    "mount-list.created.owner.json"
+    "mount-update.owner.json"
+    "mount-one.updated.owner.json"
+    "mount-remove.owner.json"
+    "mount-one.removed.owner.json"
+    "mount-list.removed.owner.json"
+    "application-one.mount-removed.owner.json"
+    "project-one.mount-removed.owner.json"
+    "mount-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -155,6 +169,13 @@ done
 for fixture_name in "${required_compose_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Compose contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_mount_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Mount contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -897,6 +918,95 @@ if grep -R -E -q 'compose-sdk-contract-[0-9]' "$fixture_directory"; then
     exit 1
 fi
 
+if ! jq --exit-status '
+    .mountId == "mount-1"
+    and .type == "volume"
+    and .volumeName == "volume-1"
+    and .mountPath == "/data"
+    and .serviceType == "application"
+    and .applicationId == "application-1"
+    and .content == null
+    and .application.appName == "application-contract-test"
+' "$versioned_fixture_directory/mount-one.created.owner.json" >/dev/null; then
+    echo "Mount detail fixture does not preserve the sanitized typed target contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    length == 1
+    and .[0].mountId == "mount-1"
+    and .[0].serviceType == "application"
+    and .[0].applicationId == "application-1"
+' "$versioned_fixture_directory/mount-list.created.owner.json" >/dev/null; then
+    echo "Mount target list fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .mountId == "mount-1"
+    and .mountPath == "/updated"
+' "$versioned_fixture_directory/mount-one.updated.owner.json" >/dev/null; then
+    echo "Mount updated detail fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "mounts.one"
+' "$versioned_fixture_directory/mount-one.removed.owner.json" >/dev/null; then
+    echo "Mount cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '. == []' \
+    "$versioned_fixture_directory/mount-list.removed.owner.json" >/dev/null
+then
+    echo "Mount cleanup target list is not empty." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.mounts | length) == 0
+' "$versioned_fixture_directory/application-one.mount-removed.owner.json" >/dev/null; then
+    echo "Mount cleanup application fixture retained runtime effects." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "project.one"
+' "$versioned_fixture_directory/project-one.mount-removed.owner.json" >/dev/null; then
+    echo "Mount disposable project cleanup is not proven." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .mountType == "volume"
+    and .createIdentity.direct == true
+    and .createIdentity.targetVerified == true
+    and .update.mountPathPersisted == true
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.listEmpty == true
+    and .cleanupEvidence.applicationMountsEmpty == true
+    and .cleanupEvidence.projectOneStatus == 404
+' "$versioned_fixture_directory/mount-contract.metadata.json" >/dev/null; then
+    echo "Mount metadata does not prove identity, non-deployment, update, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'mount-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Mount project name." >&2
+    exit 1
+fi
+
 unsafe_values="$(
     find "$fixture_directory" -type f -name '*.json' -print0 \
     | xargs -0 jq -r '
@@ -911,6 +1021,7 @@ unsafe_values="$(
             or $key == "previewBuildArgs"
             or $key == "buildSecrets"
             or $key == "previewBuildSecrets"
+            or $key == "content"
             or ($key | test("(?i)(password|secret|token|privatekey|accesskey)"))
         )
         | select($value != null and $value != "" and $value != "<redacted>")

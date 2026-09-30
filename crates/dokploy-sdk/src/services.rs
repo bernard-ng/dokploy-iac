@@ -3,18 +3,20 @@ use crate::{
     ComposeCollection, ComposeDetails, ComposeId, ComposeVolumePolicy, Dokploy, DomainCollection,
     DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
     LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection, MariaDbDetails, MariaDbId,
-    MongoCollection, MongoDetails, MongoId, MySqlCollection, MySqlDetails, MySqlId,
-    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
-    RedisCollection, RedisDetails, RedisId,
+    MongoCollection, MongoDetails, MongoId, MountCollection, MountDetails, MountId,
+    MySqlCollection, MySqlDetails, MySqlId, PostgresCollection, PostgresDetails, PostgresId,
+    ProjectDetails, ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
+    ServiceTarget,
 };
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
-    CreateMongo, CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication,
-    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
-    CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, UpdateApplication, UpdateCompose,
-    UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql,
-    UpdatePostgres, UpdateProject, UpdateRedis,
+    CreateMongo, CreateMount, CreateMySql, CreatePostgres, CreateProject, CreateRedis,
+    CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
+    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPostgres, CreatedProject,
+    CreatedRedis, UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql,
+    UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePostgres, UpdateProject,
+    UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -187,6 +189,42 @@ impl<'a> Composes<'a> {
         volume_policy: ComposeVolumePolicy,
     ) -> Result<(), Error> {
         self.client.compose_delete(compose_id, volume_policy).await
+    }
+}
+
+/// Read and mutation operations for Dokploy mounts.
+pub struct Mounts<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Mounts<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Mount from fresh remote state.
+    pub async fn get(&self, mount_id: MountId) -> Result<MountDetails, Error> {
+        self.client.mount_get(mount_id.as_str()).await
+    }
+
+    /// Reads the complete bounded Mount collection for one exact target.
+    pub async fn by_target(&self, target: ServiceTarget) -> Result<MountCollection, Error> {
+        self.client.mounts_by_target(&target).await
+    }
+
+    /// Creates a Mount and validates the complete identity returned by Dokploy.
+    pub async fn create(&self, input: CreateMount) -> Result<CreatedMount, Error> {
+        self.client.mount_create(input).await
+    }
+
+    /// Writes an explicit subset of owned Mount fields.
+    pub async fn update(&self, input: UpdateMount) -> Result<(), Error> {
+        self.client.mount_update(input).await
+    }
+
+    /// Permanently removes one Mount by physical identity.
+    pub async fn delete(&self, mount_id: MountId) -> Result<(), Error> {
+        self.client.mount_delete(mount_id).await
     }
 }
 
