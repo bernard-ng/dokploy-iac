@@ -13,6 +13,9 @@ All notable changes to this project will be documented in this file.
 
 - Add owned, read-only Domain SDK operations with strong identifiers and
   fixture-backed models that expose only host and application linkage.
+- Add application-scoped Domain discovery with managed-ID matching, exact-host
+  collision probes, explicit collection authority, and fail-closed duplicate
+  and endpoint-consistency checks.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

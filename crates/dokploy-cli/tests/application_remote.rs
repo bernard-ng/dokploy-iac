@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority,
+    ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority, DomainTopologyAuthority,
     EnvironmentTopologyAuthority, PostgresTopologyAuthority, ProjectTopologyAuthority,
     RedisTopologyAuthority, discover_remote,
 };
@@ -100,6 +100,7 @@ fn authority(applications: ApplicationTopologyAuthority) -> DiscoveryAuthority {
         applications,
         postgres: PostgresTopologyAuthority::Authoritative,
         redis: RedisTopologyAuthority::Authoritative,
+        domains: DomainTopologyAuthority::Authoritative,
     }
 }
 
@@ -216,6 +217,77 @@ async fn compiler_discovery_and_planner_create_an_absent_application() {
     assert_eq!(requests.len(), 4);
     assert!(requests[3].starts_with("GET /api/application.search?"));
     assert!(requests[3].contains("environmentId=environment-1"));
+}
+
+#[tokio::test]
+async fn combined_discovery_plans_an_absent_domain_under_a_managed_application() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", PROJECT),
+        ("200 OK", ENVIRONMENTS),
+        ("200 OK", ENVIRONMENT),
+        (
+            "200 OK",
+            r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#,
+        ),
+        ("200 OK", "[]"),
+    ]);
+    let client = server.client();
+    let mut state = base_state(&server);
+    insert(
+        &mut state,
+        "application.api",
+        ResourceKind::Application,
+        "application-1",
+        serde_json::json!({}),
+        &["environment.production"],
+    );
+    let desired = compile(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api: {}
+    domains:
+      public:
+        host: api.example.test
+        application: application.api
+"#,
+    );
+
+    let remote = discover_remote(
+        &client,
+        &desired,
+        &state,
+        authority(ApplicationTopologyAuthority::Authoritative),
+    )
+    .await
+    .expect("domain state is projected");
+
+    assert!(matches!(
+        remote.observation(&"domain.public".parse().unwrap()),
+        Some(RemoteObservation::Missing)
+    ));
+    let stored = StoredState::try_from_state(&state).expect("state projects");
+    let plan = plan(desired.desired_state(), &stored, &remote);
+    assert!(plan.diagnostics().is_empty());
+    assert!(plan.changes().iter().any(|change| {
+        change.kind() == ChangeKind::Create && change.address().to_string() == "domain.public"
+    }));
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(
+        requests[5].starts_with(
+            "GET /api/domain.byApplicationId?applicationId=application-1 HTTP/1.1\r\n"
+        )
+    );
 }
 
 #[tokio::test]

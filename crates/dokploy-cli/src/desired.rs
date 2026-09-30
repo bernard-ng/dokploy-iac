@@ -72,6 +72,7 @@ impl fmt::Debug for CompiledDesired {
 pub struct ExecutionBindings {
     parents: BTreeMap<ResourceAddress, ResourceAddress>,
     domain_applications: BTreeMap<ResourceAddress, ResourceAddress>,
+    domain_hosts: BTreeMap<ResourceAddress, String>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
 }
 
@@ -86,6 +87,12 @@ impl ExecutionBindings {
     #[must_use]
     pub fn domain_application(&self, address: &ResourceAddress) -> Option<&ResourceAddress> {
         self.domain_applications.get(address)
+    }
+
+    /// Returns the exact configured host used for domain identity discovery.
+    #[must_use]
+    pub fn domain_host(&self, address: &ResourceAddress) -> Option<&str> {
+        self.domain_hosts.get(address).map(String::as_str)
     }
 }
 
@@ -332,6 +339,9 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
     for (address, resource) in config.resources() {
         match resource {
             ResourceConfig::Domain(domain) => {
+                if let Some(host) = domain.host().as_set() {
+                    bindings.domain_hosts.insert(address.clone(), host.clone());
+                }
                 if let Some(application) = domain.application().as_set() {
                     bindings
                         .domain_applications

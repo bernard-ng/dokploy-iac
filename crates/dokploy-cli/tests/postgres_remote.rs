@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority,
+    ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority, DomainTopologyAuthority,
     EnvironmentTopologyAuthority, PostgresTopologyAuthority, ProjectTopologyAuthority,
     RedisTopologyAuthority, discover_remote,
 };
@@ -100,6 +100,7 @@ fn authoritative() -> DiscoveryAuthority {
         applications: ApplicationTopologyAuthority::Authoritative,
         postgres: PostgresTopologyAuthority::Authoritative,
         redis: RedisTopologyAuthority::Authoritative,
+        domains: DomainTopologyAuthority::Authoritative,
     }
 }
 

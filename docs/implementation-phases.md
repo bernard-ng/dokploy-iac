@@ -96,6 +96,9 @@ durable state semantics.
   exhaustive parent-scoped search, managed physical IDs, current-containment
   validation, write-only password observations, and fail-closed physical
   reparenting.
+- Project fresh Domain state into the combined snapshot, using managed
+  physical IDs, application-scoped exact-host probes, explicit collection
+  authority, and logical application references.
 - Separate direct containment from general dependencies across desired,
   stored, checkpoint, ordering, and remote-discovery seams. Reject older state
   rather than infer parents from dependencies.

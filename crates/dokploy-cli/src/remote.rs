@@ -57,6 +57,15 @@ pub enum RedisTopologyAuthority {
     Partial,
 }
 
+/// Whether an application-scoped domain collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DomainTopologyAuthority {
+    /// Absence from the application collection proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -70,6 +79,8 @@ pub struct DiscoveryAuthority {
     pub postgres: PostgresTopologyAuthority,
     /// Completeness of each fully paginated `redis.search` collection.
     pub redis: RedisTopologyAuthority,
+    /// Completeness of each `domain.byApplicationId` collection.
+    pub domains: DomainTopologyAuthority,
 }
 
 /// A redaction-safe combined discovery failure.
@@ -144,6 +155,21 @@ pub enum DiscoverRemoteError {
     /// Direct and collection Redis reads contradict each other.
     #[error("DOKREM027: Redis read endpoints returned conflicting topology")]
     RedisTopologyConflict,
+    /// A domain has no valid configured application binding.
+    #[error("DOKREM028: domain application binding is unavailable")]
+    DomainApplication,
+    /// A domain physical identity does not satisfy the state contract.
+    #[error("DOKREM029: domain topology contains an invalid remote identity")]
+    InvalidDomainId,
+    /// More than one domain has the same host within one application.
+    #[error("DOKREM030: domain topology contains a duplicate application-scoped host")]
+    DuplicateDomainHost,
+    /// More than one logical address resolves to the same domain identity.
+    #[error("DOKREM031: domain topology contains a duplicate remote identity")]
+    DuplicateDomainId,
+    /// Direct and collection Domain reads contradict each other.
+    #[error("DOKREM032: Domain read endpoints returned conflicting topology")]
+    DomainTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -228,9 +254,341 @@ pub async fn discover_remote(
         discover_redis_observations(client, compiled, state, &observations, authority.redis)
             .await?;
     observations.extend(redis);
+    let domains =
+        discover_domain_observations(client, compiled, state, &observations, authority.domains)
+            .await?;
+    observations.extend(domains);
 
     RemoteState::try_new(state.instance().clone(), observations)
         .map_err(DiscoverRemoteError::InvalidRemoteState)
+}
+
+async fn discover_domain_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: DomainTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::Domain)
+        .cloned()
+        .collect();
+    let mut application_bindings = BTreeMap::new();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let application = domain_application(address, compiled, state)?;
+        let application_id = trusted_application_id(&application, compiled, state, topology);
+        if let Some(application_id) = application_id.as_ref()
+            && !collections.contains_key(application_id)
+        {
+            let collection = client
+                .domains()
+                .by_application(dokploy_sdk::ApplicationId::new(application_id))
+                .await;
+            collections.insert(application_id.clone(), collection);
+        }
+        application_bindings.insert(address.clone(), (application, application_id));
+    }
+    validate_domain_collections(&collections)?;
+
+    let mut seen_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let (application, application_id) = application_bindings
+            .get(&address)
+            .expect("every domain receives an application binding");
+        let observation = if let Some(stored) = state.resource(&address) {
+            match client
+                .domains()
+                .get(dokploy_sdk::DomainId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(domain) => {
+                    let remote_id = RemoteId::new(domain.domain_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidDomainId)?;
+                    if remote_id != *stored.remote_id()
+                        || domain
+                            .application_id
+                            .as_ref()
+                            .map(dokploy_sdk::ApplicationId::as_str)
+                            != application_id.as_deref()
+                    {
+                        return Err(DiscoverRemoteError::DomainTopologyConflict);
+                    }
+                    validate_direct_domain_against_collection(
+                        &domain,
+                        application_id.as_deref(),
+                        &collections,
+                        authority,
+                    )?;
+                    if !seen_ids.insert(remote_id.clone()) {
+                        return Err(DiscoverRemoteError::DuplicateDomainId);
+                    }
+                    RemoteObservation::Present(RemoteResource::new(
+                        remote_id,
+                        domain_properties(&address, compiled, &domain, application),
+                    ))
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    observe_domain_under_application(
+                        &address,
+                        application,
+                        application_id.as_deref(),
+                        compiled,
+                        topology,
+                        &collections,
+                        authority,
+                    )?
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            observe_domain_under_application(
+                &address,
+                application,
+                application_id.as_deref(),
+                compiled,
+                topology,
+                &collections,
+                authority,
+            )?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+fn validate_domain_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::DomainCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (application_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_hosts = BTreeSet::new();
+        for domain in collection.domains() {
+            let remote_id = RemoteId::new(domain.domain_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidDomainId)?;
+            if domain
+                .application_id
+                .as_ref()
+                .map(dokploy_sdk::ApplicationId::as_str)
+                != Some(application_id.as_str())
+            {
+                return Err(DiscoverRemoteError::DomainApplication);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateDomainId);
+            }
+            if !scoped_hosts.insert(domain.host.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateDomainHost);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_direct_domain_against_collection(
+    domain: &dokploy_sdk::DomainDetails,
+    application_id: Option<&str>,
+    collections: &BTreeMap<String, Result<dokploy_sdk::DomainCollection, dokploy_sdk::Error>>,
+    authority: DomainTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    let Some(application_id) = application_id else {
+        return Err(DiscoverRemoteError::DomainApplication);
+    };
+    let Some(collection) = collections.get(application_id) else {
+        return Err(DiscoverRemoteError::DomainApplication);
+    };
+    match collection {
+        Ok(collection) => {
+            let matching = collection
+                .domains()
+                .iter()
+                .find(|item| item.domain_id == domain.domain_id);
+            if let Some(matching) = matching {
+                if matching.host != domain.host {
+                    return Err(DiscoverRemoteError::DomainTopologyConflict);
+                }
+                Ok(())
+            } else if authority == DomainTopologyAuthority::Authoritative {
+                Err(DiscoverRemoteError::DomainTopologyConflict)
+            } else {
+                Ok(())
+            }
+        }
+        Err(_) => Ok(()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn observe_domain_under_application(
+    address: &ResourceAddress,
+    application: &ResourceAddress,
+    application_id: Option<&str>,
+    compiled: &CompiledDesired,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::DomainCollection, dokploy_sdk::Error>>,
+    authority: DomainTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match observation(topology, application) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(application_id) = application_id else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(application_id) {
+        Some(Ok(collection)) => {
+            let Some(host) = desired_domain_host(address, compiled) else {
+                return Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ));
+            };
+            let matches = collection
+                .domains()
+                .iter()
+                .filter(|domain| domain.host == host)
+                .collect::<Vec<_>>();
+            if matches.len() > 1 {
+                return Err(DiscoverRemoteError::DuplicateDomainHost);
+            }
+            if let Some(domain) = matches.first() {
+                let remote_id = RemoteId::new(domain.domain_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidDomainId)?;
+                return Ok(RemoteObservation::Present(RemoteResource::new(
+                    remote_id,
+                    domain_properties(address, compiled, domain, application),
+                )));
+            }
+            if authority == DomainTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn domain_application(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(application) = compiled.bindings().domain_application(address) {
+        return Ok(application.clone());
+    }
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::DomainApplication)?;
+    let application = resource
+        .last_applied()
+        .as_json()
+        .get("application")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(DiscoverRemoteError::DomainApplication)?;
+    let application: ResourceAddress = application
+        .parse()
+        .map_err(|_| DiscoverRemoteError::DomainApplication)?;
+    if application.kind() != ResourceKind::Application {
+        return Err(DiscoverRemoteError::DomainApplication);
+    }
+
+    Ok(application)
+}
+
+fn trusted_application_id(
+    application: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Option<String> {
+    let effective = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == application)
+        .map_or(application, |directive| {
+            if state.resource(application).is_some() {
+                application
+            } else {
+                directive.from()
+            }
+        });
+    let stored = state.resource(effective)?;
+    match observation(topology, effective) {
+        Some(RemoteObservation::Present(remote)) if stored.remote_id() == remote.remote_id() => {
+            Some(remote.remote_id().as_str().to_owned())
+        }
+        _ => None,
+    }
+}
+
+fn desired_domain_host(address: &ResourceAddress, compiled: &CompiledDesired) -> Option<String> {
+    compiled.bindings().domain_host(address).map(str::to_owned)
+}
+
+fn domain_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    domain: &dokploy_sdk::DomainDetails,
+    application: &ResourceAddress,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let value = match path {
+            PropertyPath::Host => serde_json::json!(domain.host),
+            PropertyPath::Application => serde_json::json!(application.to_string()),
+            _ => continue,
+        };
+        properties.insert(
+            path.clone(),
+            PropertyObservation::Known(
+                ComparableValue::try_from_json(value).expect("domain values are non-null"),
+            ),
+        );
+    }
+
+    properties
 }
 
 async fn discover_postgres_observations(
