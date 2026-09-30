@@ -8,8 +8,8 @@ use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DokployConfig, Field, Lifecycle, PropertyPath, ResourceConfig, SecretSource,
-    SourceConfig,
+    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, PropertyPath, ResourceConfig,
+    SecretSource, SourceConfig,
 };
 
 /// A typed, nested document for constructing imported configuration safely.
@@ -170,6 +170,44 @@ impl ConfigDocument {
                         },
                     );
                 }
+                ResourceConfig::MariaDb(config) => {
+                    environment.mariadb.insert(
+                        address.name().clone(),
+                        MariaDbDocument {
+                            database: config.database.clone(),
+                            username: config.username.clone(),
+                            password: config.password.clone(),
+                            root_password: config.root_password.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
+                ResourceConfig::Mongo(config) => {
+                    environment.mongo.insert(
+                        address.name().clone(),
+                        MongoDocument {
+                            username: config.username.clone(),
+                            password: config.password.clone(),
+                            replica_sets: config.replica_sets.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
+                ResourceConfig::LibSql(config) => {
+                    environment.libsql.insert(
+                        address.name().clone(),
+                        LibSqlDocument {
+                            description: config.description.clone(),
+                            username: config.username.clone(),
+                            password: config.password.clone(),
+                            node: config.node.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
                 ResourceConfig::Redis(config) => {
                     environment.redis.insert(
                         address.name().clone(),
@@ -258,6 +296,9 @@ pub struct EnvironmentDocument {
     applications: BTreeMap<ResourceName, ApplicationDocument>,
     postgres: BTreeMap<ResourceName, PostgresDocument>,
     mysql: BTreeMap<ResourceName, MySqlDocument>,
+    mariadb: BTreeMap<ResourceName, MariaDbDocument>,
+    mongo: BTreeMap<ResourceName, MongoDocument>,
+    libsql: BTreeMap<ResourceName, LibSqlDocument>,
     redis: BTreeMap<ResourceName, RedisDocument>,
     domains: BTreeMap<ResourceName, DomainDocument>,
 }
@@ -300,6 +341,30 @@ impl EnvironmentDocument {
         insert_resource(&mut self.redis, name, redis, ResourceKind::Redis)
     }
 
+    pub fn add_mariadb(
+        &mut self,
+        name: ResourceName,
+        mariadb: MariaDbDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.mariadb, name, mariadb, ResourceKind::MariaDb)
+    }
+
+    pub fn add_mongo(
+        &mut self,
+        name: ResourceName,
+        mongo: MongoDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.mongo, name, mongo, ResourceKind::Mongo)
+    }
+
+    pub fn add_libsql(
+        &mut self,
+        name: ResourceName,
+        libsql: LibSqlDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.libsql, name, libsql, ResourceKind::LibSql)
+    }
+
     pub fn add_domain(
         &mut self,
         name: ResourceName,
@@ -337,6 +402,38 @@ pub struct MySqlDocument {
     pub username: Field<String>,
     pub password: Field<SecretSource>,
     pub root_password: Field<SecretSource>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// MariaDB properties accepted by an imported document.
+#[derive(Clone, Default)]
+pub struct MariaDbDocument {
+    pub database: Field<String>,
+    pub username: Field<String>,
+    pub password: Field<SecretSource>,
+    pub root_password: Field<SecretSource>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// MongoDB properties accepted by an imported document.
+#[derive(Clone, Default)]
+pub struct MongoDocument {
+    pub username: Field<String>,
+    pub password: Field<SecretSource>,
+    pub replica_sets: Field<bool>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// LibSQL properties accepted by an imported document.
+#[derive(Clone, Default)]
+pub struct LibSqlDocument {
+    pub description: Field<String>,
+    pub username: Field<String>,
+    pub password: Field<SecretSource>,
+    pub node: Field<LibSqlNodeConfig>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -493,6 +590,24 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
         );
         render_document_children(
             &mut output,
+            "mariadb",
+            &environment.mariadb,
+            render_mariadb_document,
+        );
+        render_document_children(
+            &mut output,
+            "mongo",
+            &environment.mongo,
+            render_mongo_document,
+        );
+        render_document_children(
+            &mut output,
+            "libsql",
+            &environment.libsql,
+            render_libsql_document,
+        );
+        render_document_children(
+            &mut output,
             "redis",
             &environment.redis,
             render_redis_document,
@@ -574,6 +689,29 @@ fn render_mysql_document(output: &mut String, indent: usize, config: &MySqlDocum
 
 fn render_redis_document(output: &mut String, indent: usize, config: &RedisDocument) {
     secret_field(output, indent, "password", &config.password);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+fn render_mariadb_document(output: &mut String, indent: usize, config: &MariaDbDocument) {
+    string_field(output, indent, "database", &config.database);
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    secret_field(output, indent, "root_password", &config.root_password);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+fn render_mongo_document(output: &mut String, indent: usize, config: &MongoDocument) {
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    bool_field(output, indent, "replica_sets", &config.replica_sets);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+fn render_libsql_document(output: &mut String, indent: usize, config: &LibSqlDocument) {
+    string_field(output, indent, "description", &config.description);
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    libsql_node_field(output, indent, &config.node);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -693,6 +831,30 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             ResourceKind::MySql,
             "mysql",
             render_mysql,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::MariaDb,
+            "mariadb",
+            render_mariadb,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::Mongo,
+            "mongo",
+            render_mongo,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::LibSql,
+            "libsql",
+            render_libsql,
         )?;
         render_children(
             &mut output,
@@ -857,6 +1019,59 @@ fn render_redis(
     Ok(())
 }
 
+fn render_mariadb(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::MariaDb(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    string_field(output, indent, "database", &config.database);
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    secret_field(output, indent, "root_password", &config.root_password);
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_mongo(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Mongo(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    bool_field(output, indent, "replica_sets", &config.replica_sets);
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_libsql(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::LibSql(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    string_field(output, indent, "description", &config.description);
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    libsql_node_field(output, indent, &config.node);
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
 fn render_domain(
     output: &mut String,
     indent: usize,
@@ -980,6 +1195,22 @@ fn bool_field(output: &mut String, indent: usize, name: &str, field: &Field<bool
         Field::Unmanaged => {}
         Field::Clear => line(output, indent, name, "null"),
         Field::Set(value) => line(output, indent, name, if *value { "true" } else { "false" }),
+    }
+}
+
+fn libsql_node_field(output: &mut String, indent: usize, field: &Field<LibSqlNodeConfig>) {
+    match field {
+        Field::Unmanaged => {}
+        Field::Clear => line(output, indent, "node", "null"),
+        Field::Set(LibSqlNodeConfig::Primary) => {
+            mapping_header(output, indent, "node");
+            line(output, indent + 2, "type", &quoted("primary"));
+        }
+        Field::Set(LibSqlNodeConfig::Replica { primary_url }) => {
+            mapping_header(output, indent, "node");
+            line(output, indent + 2, "type", &quoted("replica"));
+            line(output, indent + 2, "primary_url", &quoted(primary_url));
+        }
     }
 }
 

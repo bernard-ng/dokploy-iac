@@ -79,6 +79,106 @@ environments:
 }
 
 #[test]
+fn remaining_database_secrets_are_fingerprinted_and_bound_once() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    mariadb:
+      main:
+        password:
+          env: MARIADB_PASSWORD
+        root_password:
+          env: MARIADB_ROOT_PASSWORD
+    mongo:
+      documents:
+        password:
+          env: MONGO_PASSWORD
+    libsql:
+      edge:
+        password:
+          env: LIBSQL_PASSWORD
+"#,
+    )
+    .unwrap();
+    let resolver = RecordingSourceResolver {
+        environment: BTreeMap::from([
+            ("MARIADB_PASSWORD".to_owned(), Ok(b"mariadb-user".to_vec())),
+            (
+                "MARIADB_ROOT_PASSWORD".to_owned(),
+                Ok(b"mariadb-root".to_vec()),
+            ),
+            ("MONGO_PASSWORD".to_owned(), Ok(b"mongo-password".to_vec())),
+            (
+                "LIBSQL_PASSWORD".to_owned(),
+                Ok(b"libsql-password".to_vec()),
+            ),
+        ]),
+        ..RecordingSourceResolver::default()
+    };
+    let loader = existing_fingerprinter_loader();
+    let workspace = tempfile::tempdir().unwrap();
+    let mut compiled = compile_for_instance_with(
+        &config,
+        digest('a'),
+        instance(),
+        workspace.path(),
+        &loader,
+        &resolver,
+    )
+    .unwrap();
+
+    for (address, path, expected) in [
+        (
+            "mariadb.main",
+            PropertyPath::Password,
+            b"mariadb-user".as_slice(),
+        ),
+        (
+            "mariadb.main",
+            PropertyPath::RootPassword,
+            b"mariadb-root".as_slice(),
+        ),
+        (
+            "mongo.documents",
+            PropertyPath::Password,
+            b"mongo-password".as_slice(),
+        ),
+        (
+            "libsql.edge",
+            PropertyPath::Password,
+            b"libsql-password".as_slice(),
+        ),
+    ] {
+        let address: ResourceAddress = address.parse().unwrap();
+        assert!(matches!(
+            compiled.desired_state().resources()[&address]
+                .properties()
+                .get(&path),
+            Some(OwnedValue::Sensitive(_))
+        ));
+        let value = compiled
+            .take_sensitive(&address, &path)
+            .expect("configured secret has one execution binding");
+        assert_eq!(value.into_parts().0.as_slice(), expected);
+        assert!(compiled.take_sensitive(&address, &path).is_none());
+    }
+
+    let debug = format!("{compiled:?}");
+    for canary in [
+        "mariadb-user",
+        "mariadb-root",
+        "mongo-password",
+        "libsql-password",
+    ] {
+        assert!(!debug.contains(canary));
+    }
+}
+
+#[test]
 fn literal_environment_and_file_sources_resolve_once_with_exact_untrimmed_bytes() {
     let config = DokployConfig::parse(
         r#"

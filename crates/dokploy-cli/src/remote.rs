@@ -356,6 +356,9 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
             .with_containment(MutationMode::StateOnly),
+        ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql => {
+            MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+        }
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
@@ -1799,6 +1802,8 @@ fn application_properties(
             | PropertyPath::Username
             | PropertyPath::Password
             | PropertyPath::RootPassword
+            | PropertyPath::ReplicaSets
+            | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::DeploymentStatus => continue,
@@ -1837,6 +1842,8 @@ fn postgres_properties(
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
             | PropertyPath::RootPassword
+            | PropertyPath::ReplicaSets
+            | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::DeploymentStatus => continue,
@@ -2091,6 +2098,8 @@ fn mysql_properties(
             | PropertyPath::SourceBranch
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::ReplicaSets
+            | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::DeploymentStatus => continue,

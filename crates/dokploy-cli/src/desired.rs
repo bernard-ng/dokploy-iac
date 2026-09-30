@@ -12,7 +12,9 @@ use std::{
     path::Path,
 };
 
-use dokploy_config::{ConfigValue, DokployConfig, Field, ResourceConfig, SourceConfig};
+use dokploy_config::{
+    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, ResourceConfig, SourceConfig,
+};
 use dokploy_core::{
     ConfigDigest, DesiredResource, DesiredState, DesiredStateError, MoveDirective, OwnedValue,
     PropertyPath, ProtectionIntent, RemovalDirective, SensitiveIntent,
@@ -280,6 +282,55 @@ fn compile_desired_with_fingerprints(
                     fingerprints,
                 )?;
             }
+            ResourceConfig::MariaDb(mariadb) => {
+                compile_string_field(&mut properties, PropertyPath::Database, mariadb.database());
+                compile_string_field(&mut properties, PropertyPath::Username, mariadb.username());
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Password,
+                    mariadb.password(),
+                    fingerprints,
+                )?;
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::RootPassword,
+                    mariadb.root_password(),
+                    fingerprints,
+                )?;
+            }
+            ResourceConfig::Mongo(mongo) => {
+                compile_string_field(&mut properties, PropertyPath::Username, mongo.username());
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Password,
+                    mongo.password(),
+                    fingerprints,
+                )?;
+                compile_bool_field(
+                    &mut properties,
+                    PropertyPath::ReplicaSets,
+                    mongo.replica_sets(),
+                );
+            }
+            ResourceConfig::LibSql(libsql) => {
+                compile_string_field(
+                    &mut properties,
+                    PropertyPath::Description,
+                    libsql.description(),
+                );
+                compile_string_field(&mut properties, PropertyPath::Username, libsql.username());
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Password,
+                    libsql.password(),
+                    fingerprints,
+                )?;
+                compile_libsql_node(&mut properties, libsql.node());
+            }
             ResourceConfig::Redis(redis) => compile_sensitive_field(
                 &mut properties,
                 address,
@@ -392,6 +443,9 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
             | ResourceConfig::Application(_)
             | ResourceConfig::Postgres(_)
             | ResourceConfig::MySql(_)
+            | ResourceConfig::MariaDb(_)
+            | ResourceConfig::Mongo(_)
+            | ResourceConfig::LibSql(_)
             | ResourceConfig::Redis(_) => {}
         }
     }
@@ -432,6 +486,35 @@ fn compile_string_field(
         Field::Set(value) => comparable(serde_json::json!(value)),
     };
     properties.insert(path, value);
+}
+
+fn compile_bool_field(
+    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+    path: PropertyPath,
+    field: &Field<bool>,
+) {
+    let value = match field {
+        Field::Unmanaged => return,
+        Field::Clear => OwnedValue::Null,
+        Field::Set(value) => comparable(serde_json::json!(value)),
+    };
+    properties.insert(path, value);
+}
+
+fn compile_libsql_node(
+    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+    field: &Field<LibSqlNodeConfig>,
+) {
+    let value = match field {
+        Field::Unmanaged => return,
+        Field::Clear => OwnedValue::Null,
+        Field::Set(LibSqlNodeConfig::Primary) => comparable(serde_json::json!({"type": "primary"})),
+        Field::Set(LibSqlNodeConfig::Replica { primary_url }) => comparable(serde_json::json!({
+            "type": "replica",
+            "primary_url": primary_url,
+        })),
+    };
+    properties.insert(PropertyPath::Node, value);
 }
 
 fn compile_u32_field(

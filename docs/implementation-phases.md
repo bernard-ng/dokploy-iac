@@ -142,6 +142,11 @@ durable state semantics.
   recovery, protected import, and live apply-then-plan convergence. Database
   and username changes update in place; post-create credential changes remain
   blocked until Dokploy can persist them safely without requiring deployment.
+- MariaDB, MongoDB, and LibSQL now share the central declarative vocabulary:
+  environment containment, strict canonical configuration, descriptor-only
+  secret fingerprints, and kind-scoped desired properties. LibSQL records the
+  primary-or-replica node choice as one atomic property. Planning, apply,
+  recovery, and import remain unavailable until each remote adapter is proven.
 - Mounts, ports, redirects, security entries, backups, and schedules use the
   shared typed-target and external-selector model in ADR 0026.
 - Completion still requires declarative reconciliation plus unit, sanitized

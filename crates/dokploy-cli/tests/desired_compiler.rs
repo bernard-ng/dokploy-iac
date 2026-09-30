@@ -123,6 +123,25 @@ environments:
         password: null
         root_password: null
       unmanaged: {}
+    mariadb:
+      reporting:
+        database: reports
+        username: reporter
+        password: null
+        root_password: null
+    mongo:
+      documents:
+        username: app
+        password: null
+        replica_sets: true
+    libsql:
+      edge:
+        description: Edge
+        username: app
+        password: null
+        node:
+          type: replica
+          primary_url: https://primary.example.test
     redis:
       cache:
         password: null
@@ -138,7 +157,7 @@ environments:
     let compiled = compile_desired(&config, digest()).expect("configuration compiles");
     let resources = compiled.desired_state().resources();
 
-    assert_eq!(resources.len(), 12);
+    assert_eq!(resources.len(), 15);
     assert_eq!(
         resources[&"environment.production".parse().unwrap()]
             .properties()
@@ -229,6 +248,48 @@ environments:
         !resources[&"mysql.unmanaged".parse().unwrap()]
             .properties()
             .contains_key(&PropertyPath::RootPassword)
+    );
+    let mariadb = &resources[&"mariadb.reporting".parse().unwrap()];
+    assert_eq!(
+        mariadb.properties().get(&PropertyPath::Database),
+        Some(&value(serde_json::json!("reports")))
+    );
+    assert_eq!(
+        mariadb.properties().get(&PropertyPath::Username),
+        Some(&value(serde_json::json!("reporter")))
+    );
+    assert_eq!(
+        mariadb.properties().get(&PropertyPath::Password),
+        Some(&OwnedValue::Null)
+    );
+    assert_eq!(
+        mariadb.properties().get(&PropertyPath::RootPassword),
+        Some(&OwnedValue::Null)
+    );
+    let mongo = &resources[&"mongo.documents".parse().unwrap()];
+    assert_eq!(
+        mongo.properties().get(&PropertyPath::Username),
+        Some(&value(serde_json::json!("app")))
+    );
+    assert_eq!(
+        mongo.properties().get(&PropertyPath::Password),
+        Some(&OwnedValue::Null)
+    );
+    assert_eq!(
+        mongo.properties().get(&PropertyPath::ReplicaSets),
+        Some(&value(serde_json::json!(true)))
+    );
+    let libsql = &resources[&"libsql.edge".parse().unwrap()];
+    assert_eq!(
+        libsql.properties().get(&PropertyPath::Description),
+        Some(&value(serde_json::json!("Edge")))
+    );
+    assert_eq!(
+        libsql.properties().get(&PropertyPath::Node),
+        Some(&value(serde_json::json!({
+            "type": "replica",
+            "primary_url": "https://primary.example.test"
+        })))
     );
     assert_eq!(
         resources[&"redis.cache".parse().unwrap()]

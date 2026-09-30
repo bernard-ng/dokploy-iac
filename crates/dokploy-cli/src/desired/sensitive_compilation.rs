@@ -207,6 +207,36 @@ fn preflight_sensitive_inputs(
                     );
                 }
             }
+            ResourceConfig::MariaDb(mariadb) => {
+                if let Field::Set(source) = mariadb.password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Password),
+                        pending_secret_source(source),
+                    );
+                }
+                if let Field::Set(source) = mariadb.root_password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::RootPassword),
+                        pending_secret_source(source),
+                    );
+                }
+            }
+            ResourceConfig::Mongo(mongo) => {
+                if let Field::Set(source) = mongo.password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Password),
+                        pending_secret_source(source),
+                    );
+                }
+            }
+            ResourceConfig::LibSql(libsql) => {
+                if let Field::Set(source) = libsql.password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Password),
+                        pending_secret_source(source),
+                    );
+                }
+            }
             ResourceConfig::Redis(redis) => {
                 if let Field::Set(source) = redis.password() {
                     inputs.insert(

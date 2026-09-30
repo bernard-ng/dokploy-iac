@@ -740,6 +740,89 @@ fn desired_state_rejects_wrong_kind_and_invalid_dependencies() {
 }
 
 #[test]
+fn remaining_database_property_paths_are_kind_scoped() {
+    for (address, properties) in [
+        (
+            address("mariadb.main"),
+            BTreeMap::from([
+                (
+                    PropertyPath::Database,
+                    OwnedValue::Value(value(json!("app"))),
+                ),
+                (
+                    PropertyPath::Username,
+                    OwnedValue::Value(value(json!("app"))),
+                ),
+                (PropertyPath::Password, sensitive_intent(0xa1)),
+                (PropertyPath::RootPassword, sensitive_intent(0xa2)),
+            ]),
+        ),
+        (
+            address("mongo.documents"),
+            BTreeMap::from([
+                (
+                    PropertyPath::Username,
+                    OwnedValue::Value(value(json!("app"))),
+                ),
+                (PropertyPath::Password, sensitive_intent(0xa3)),
+                (
+                    PropertyPath::ReplicaSets,
+                    OwnedValue::Value(value(json!(true))),
+                ),
+            ]),
+        ),
+        (
+            address("libsql.edge"),
+            BTreeMap::from([
+                (
+                    PropertyPath::Description,
+                    OwnedValue::Value(value(json!("Edge database"))),
+                ),
+                (
+                    PropertyPath::Username,
+                    OwnedValue::Value(value(json!("app"))),
+                ),
+                (PropertyPath::Password, sensitive_intent(0xa4)),
+                (
+                    PropertyPath::Node,
+                    OwnedValue::Value(value(json!({
+                        "type": "replica",
+                        "primary_url": "https://primary.example.test"
+                    }))),
+                ),
+            ]),
+        ),
+    ] {
+        desired_state(&address, DesiredResource::new(properties));
+    }
+
+    for (address, invalid_path) in [
+        (address("mariadb.main"), PropertyPath::ReplicaSets),
+        (address("mongo.documents"), PropertyPath::Database),
+        (address("libsql.edge"), PropertyPath::RootPassword),
+    ] {
+        let resource = DesiredResource::new(BTreeMap::from([(
+            invalid_path,
+            OwnedValue::Value(value(json!("unsupported"))),
+        )]))
+        .with_containment(containment_for(&address, &[]));
+        let error = DesiredState::try_new(digest(), BTreeMap::from([(address.clone(), resource)]))
+            .expect_err("a database property from another kind must fail closed");
+
+        assert!(matches!(
+            error,
+            DesiredStateError::InvalidPropertyPath { .. }
+        ));
+    }
+
+    assert_eq!(
+        "replica_sets".parse::<PropertyPath>().unwrap(),
+        PropertyPath::ReplicaSets
+    );
+    assert_eq!("node".parse::<PropertyPath>().unwrap(), PropertyPath::Node);
+}
+
+#[test]
 fn desired_state_requires_explicit_kind_correct_containment() {
     let project = address("project.platform");
     let environment = address("environment.production");

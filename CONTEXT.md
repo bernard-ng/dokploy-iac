@@ -27,3 +27,8 @@ _Avoid_: Recreate
 The proven preconditions, remote effects, failure outcomes, and recovery rules
 for changing a resource.
 _Avoid_: Endpoint support
+
+**Atomic Property**:
+A structured owned value that is validated, planned, and checkpointed as one
+indivisible property because its fields are not independently meaningful.
+_Avoid_: Property group

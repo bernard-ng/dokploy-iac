@@ -28,9 +28,9 @@ pub use file::{
     load_with_digest,
 };
 pub use model::{
-    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, MySqlConfig, PostgresConfig,
-    ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
-    ValidationIssue,
+    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
+    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PostgresConfig, ProjectConfig,
+    RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic, ValidationIssue,
 };
 pub use types::{
     ConfigValue, DomainConfig, GitHubSource, Lifecycle, MoveDeclaration, PropertyPath,
@@ -38,6 +38,6 @@ pub use types::{
 };
 pub use writer::{
     ApplicationDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError, DomainDocument,
-    EnvironmentDocument, LifecycleDocument, MySqlDocument, PostgresDocument, ProjectDocument,
-    RedisDocument, SourceDocument, render, write,
+    EnvironmentDocument, LibSqlDocument, LifecycleDocument, MariaDbDocument, MongoDocument,
+    MySqlDocument, PostgresDocument, ProjectDocument, RedisDocument, SourceDocument, render, write,
 };

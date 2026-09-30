@@ -71,6 +71,10 @@ pub enum PropertyPath {
     Password,
     /// Write-only database root password.
     RootPassword,
+    /// Whether MongoDB replica sets are enabled.
+    ReplicaSets,
+    /// Atomic LibSQL primary-or-replica node selection.
+    Node,
     /// Domain host name.
     Host,
     /// Domain application reference.
@@ -135,6 +139,17 @@ impl PropertyPath {
                 self,
                 Self::Database | Self::Username | Self::Password | Self::RootPassword
             ),
+            ResourceKind::MariaDb => matches!(
+                self,
+                Self::Database | Self::Username | Self::Password | Self::RootPassword
+            ),
+            ResourceKind::Mongo => {
+                matches!(self, Self::Username | Self::Password | Self::ReplicaSets)
+            }
+            ResourceKind::LibSql => matches!(
+                self,
+                Self::Description | Self::Username | Self::Password | Self::Node
+            ),
             ResourceKind::Redis => matches!(self, Self::Password),
             ResourceKind::Domain => matches!(self, Self::Host | Self::Application),
         }
@@ -157,6 +172,8 @@ impl fmt::Display for PropertyPath {
             Self::Username => formatter.write_str("username"),
             Self::Password => formatter.write_str("password"),
             Self::RootPassword => formatter.write_str("root_password"),
+            Self::ReplicaSets => formatter.write_str("replica_sets"),
+            Self::Node => formatter.write_str("node"),
             Self::Host => formatter.write_str("host"),
             Self::Application => formatter.write_str("application"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
@@ -179,6 +196,8 @@ impl FromStr for PropertyPath {
             "username" => Ok(Self::Username),
             "password" => Ok(Self::Password),
             "root_password" => Ok(Self::RootPassword),
+            "replica_sets" => Ok(Self::ReplicaSets),
+            "node" => Ok(Self::Node),
             "host" => Ok(Self::Host),
             "application" => Ok(Self::Application),
             "deployment.status" => Ok(Self::DeploymentStatus),

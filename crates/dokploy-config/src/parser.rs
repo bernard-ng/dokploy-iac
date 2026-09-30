@@ -6,9 +6,9 @@ use serde::Deserialize;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 
 use crate::model::{
-    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, MySqlConfig, PostgresConfig,
-    ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
-    ValidationIssue, address,
+    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
+    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PostgresConfig, ProjectConfig,
+    RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
 };
 use crate::{
     ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, RemovedDeclaration, SecretSource,
@@ -71,6 +71,15 @@ struct RawEnvironment {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawMySql>")]
     mysql: BTreeMap<String, Spanned<RawMySql>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawMariaDb>")]
+    mariadb: BTreeMap<String, Spanned<RawMariaDb>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawMongo>")]
+    mongo: BTreeMap<String, Spanned<RawMongo>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawLibSql>")]
+    libsql: BTreeMap<String, Spanned<RawLibSql>>,
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawRedis>")]
     redis: BTreeMap<String, Spanned<RawRedis>>,
@@ -136,6 +145,74 @@ struct RawMySql {
 struct RawRedis {
     #[serde(default)]
     password: Field<SecretSource>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawMariaDb {
+    #[serde(default)]
+    database: Field<String>,
+    #[serde(default)]
+    username: Field<String>,
+    #[serde(default)]
+    password: Field<SecretSource>,
+    #[serde(default)]
+    root_password: Field<SecretSource>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawMongo {
+    #[serde(default)]
+    username: Field<String>,
+    #[serde(default)]
+    password: Field<SecretSource>,
+    #[serde(default)]
+    replica_sets: Field<bool>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum RawLibSqlNode {
+    Primary {},
+    Replica { primary_url: String },
+}
+
+impl From<RawLibSqlNode> for LibSqlNodeConfig {
+    fn from(value: RawLibSqlNode) -> Self {
+        match value {
+            RawLibSqlNode::Primary {} => Self::Primary,
+            RawLibSqlNode::Replica { primary_url } => Self::Replica { primary_url },
+        }
+    }
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawLibSql {
+    #[serde(default)]
+    description: Field<String>,
+    #[serde(default)]
+    username: Field<String>,
+    #[serde(default)]
+    password: Field<SecretSource>,
+    #[serde(default)]
+    node: Field<RawLibSqlNode>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -320,6 +397,74 @@ impl DokployConfig {
                         username: raw_config.username,
                         password: raw_config.password,
                         root_password: raw_config.root_password,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
+
+            for (name, raw_config) in environment.mariadb {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address =
+                    address(ResourceKind::MariaDb, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::MariaDb(MariaDbConfig {
+                        database: raw_config.database,
+                        username: raw_config.username,
+                        password: raw_config.password,
+                        root_password: raw_config.root_password,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
+
+            for (name, raw_config) in environment.mongo {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address = address(ResourceKind::Mongo, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::Mongo(MongoConfig {
+                        username: raw_config.username,
+                        password: raw_config.password,
+                        replica_sets: raw_config.replica_sets,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
+
+            for (name, raw_config) in environment.libsql {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address = address(ResourceKind::LibSql, name, location, &mut diagnostics);
+                let node = match raw_config.node {
+                    Field::Unmanaged => Field::Unmanaged,
+                    Field::Clear => Field::Clear,
+                    Field::Set(node) => Field::Set(node.into()),
+                };
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::LibSql(LibSqlConfig {
+                        description: raw_config.description,
+                        username: raw_config.username,
+                        password: raw_config.password,
+                        node,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -634,13 +779,22 @@ fn detect_duplicates<T>(
 fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bool {
     let value = property.to_string();
     match kind {
-        ResourceKind::Postgres | ResourceKind::MySql => matches!(
+        ResourceKind::Postgres | ResourceKind::MySql | ResourceKind::MariaDb => matches!(
             value.as_str(),
             "connection_url" | "host" | "port" | "database" | "username"
         ),
+        ResourceKind::Mongo => {
+            matches!(
+                value.as_str(),
+                "connection_url" | "host" | "port" | "username"
+            )
+        }
         ResourceKind::Redis => matches!(value.as_str(), "connection_url" | "host" | "port"),
         ResourceKind::Application => matches!(value.as_str(), "url"),
-        ResourceKind::Project | ResourceKind::Environment | ResourceKind::Domain => false,
+        ResourceKind::Project
+        | ResourceKind::Environment
+        | ResourceKind::LibSql
+        | ResourceKind::Domain => false,
     }
 }
 
@@ -656,9 +810,11 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
                 | "source.branch"
                 | "deployment.status"
         ),
-        ResourceKind::Postgres | ResourceKind::MySql => {
+        ResourceKind::Postgres | ResourceKind::MySql | ResourceKind::MariaDb => {
             matches!(value.as_str(), "database" | "username")
         }
+        ResourceKind::Mongo => matches!(value.as_str(), "username" | "replica_sets"),
+        ResourceKind::LibSql => matches!(value.as_str(), "description" | "username"),
         ResourceKind::Redis => false,
         ResourceKind::Domain => matches!(value.as_str(), "host" | "application"),
     }

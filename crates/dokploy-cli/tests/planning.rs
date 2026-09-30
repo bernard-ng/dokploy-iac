@@ -6,6 +6,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 
 use dokploy_cli::planning::plan_workspace;
+use dokploy_core::PlanDiagnosticCode;
 use dokploy_sdk::Dokploy;
 
 struct TestServer {
@@ -104,6 +105,42 @@ async fn absent_workspace_plan_is_deterministic_and_read_only() {
             .iter()
             .all(|request| { request.starts_with("GET /api/project.all HTTP/1.1\r\n") })
     );
+}
+
+#[tokio::test]
+async fn remaining_databases_stay_fail_closed_until_remote_adapters_exist() {
+    let server = TestServer::empty_project_topology(1);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        r#"version: 1
+project: { name: platform }
+environments:
+  production:
+    mariadb: { main: {} }
+    mongo: { documents: {} }
+    libsql: { edge: {} }
+"#,
+    )
+    .expect("configuration fixture is writable");
+
+    let plan = plan_workspace(&server.client(), &config)
+        .await
+        .expect("unsupported adapters produce a safe incomplete plan");
+
+    assert!(!plan.complete());
+    assert!(!plan.applyable());
+    for address in ["mariadb.main", "mongo.documents", "libsql.edge"] {
+        assert!(plan.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code() == PlanDiagnosticCode::MissingObservation
+                && diagnostic
+                    .address()
+                    .is_some_and(|candidate| candidate.to_string() == address)
+        }));
+    }
+    assert!(!directory.path().join(".dokploy").exists());
+    assert_eq!(server.finish().len(), 1);
 }
 
 #[test]

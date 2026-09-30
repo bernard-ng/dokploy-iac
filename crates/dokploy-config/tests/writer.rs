@@ -31,6 +31,26 @@ environments:
           env: MYSQL_PASSWORD
         root_password:
           file: .secrets/mysql-root-password
+    mariadb:
+      reporting:
+        database: reports
+        username: reporter
+        password:
+          env: MARIADB_PASSWORD
+    mongo:
+      documents:
+        username: app
+        password:
+          file: .secrets/mongo-password
+        replica_sets: true
+    libsql:
+      edge:
+        description: "Edge: primary"
+        username: app
+        password:
+          env: LIBSQL_PASSWORD
+        node:
+          type: primary
     redis:
       cache:
         password:
@@ -82,6 +102,11 @@ fn renders_the_complete_mvp_model_as_deterministic_nested_yaml() {
     assert!(first.contains("\n    applications:\n      api:\n"));
     assert!(first.contains("\n    mysql:\n      analytics:\n"));
     assert!(first.contains("        root_password:\n"));
+    assert!(first.contains("\n    mariadb:\n      reporting:\n"));
+    assert!(first.contains("\n    mongo:\n      documents:\n"));
+    assert!(first.contains("        replica_sets: true\n"));
+    assert!(first.contains("\n    libsql:\n      edge:\n"));
+    assert!(first.contains("        node:\n          type: \"primary\"\n"));
     assert!(!first.contains("resources:"));
 }
 

@@ -13,6 +13,11 @@ pub enum ResourceKind {
     Postgres,
     #[serde(rename = "mysql")]
     MySql,
+    #[serde(rename = "mariadb")]
+    MariaDb,
+    Mongo,
+    #[serde(rename = "libsql")]
+    LibSql,
     Redis,
     Domain,
 }
@@ -27,6 +32,9 @@ impl ResourceKind {
             Self::Application => "application",
             Self::Postgres => "postgres",
             Self::MySql => "mysql",
+            Self::MariaDb => "mariadb",
+            Self::Mongo => "mongo",
+            Self::LibSql => "libsql",
             Self::Redis => "redis",
             Self::Domain => "domain",
         }
@@ -38,9 +46,14 @@ impl ResourceKind {
         match self {
             Self::Project => None,
             Self::Environment => Some(Self::Project),
-            Self::Application | Self::Postgres | Self::MySql | Self::Redis | Self::Domain => {
-                Some(Self::Environment)
-            }
+            Self::Application
+            | Self::Postgres
+            | Self::MySql
+            | Self::MariaDb
+            | Self::Mongo
+            | Self::LibSql
+            | Self::Redis
+            | Self::Domain => Some(Self::Environment),
         }
     }
 }
@@ -73,6 +86,9 @@ impl FromStr for ResourceKind {
             "application" => Ok(Self::Application),
             "postgres" => Ok(Self::Postgres),
             "mysql" => Ok(Self::MySql),
+            "mariadb" => Ok(Self::MariaDb),
+            "mongo" => Ok(Self::Mongo),
+            "libsql" => Ok(Self::LibSql),
             "redis" => Ok(Self::Redis),
             "domain" => Ok(Self::Domain),
             _ => Err(ResourceKindParseError {

@@ -564,6 +564,9 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.mysql_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
+            ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql => {
+                return Err(ApplyWorkspaceError::UnsupportedChange);
+            }
             ResourceKind::Redis => {
                 let environment_id = checkpoint_environment_id(checkpoint, &state)?;
                 let password = take_sensitive_string(
@@ -843,6 +846,9 @@ async fn prepare_move_mutation(
             }
             Ok(ExistingMutation::MySql(input))
         }
+        ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql => {
+            Err(ApplyWorkspaceError::UnsupportedChange)
+        }
         ResourceKind::Redis => {
             if selected_paths != [PropertyPath::Password] {
                 return Err(ApplyWorkspaceError::InvalidCheckpoint);
@@ -876,6 +882,14 @@ async fn execute_removal_change(
         .resource(change.address())
         .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
         .clone();
+    if change.kind() == ChangeKind::Delete
+        && matches!(
+            before.kind(),
+            ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql
+        )
+    {
+        return Err(ApplyWorkspaceError::UnsupportedChange);
+    }
     let action = match change.kind() {
         ChangeKind::Delete => JournalAction::Delete,
         ChangeKind::Forget => JournalAction::Forget,
@@ -943,6 +957,7 @@ async fn delete_remote_resource(
                 .delete(MySqlId::new(remote_id.as_str()))
                 .await,
         ),
+        ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql => None,
         ResourceKind::Redis => Some(
             client
                 .redis()
@@ -1718,6 +1733,9 @@ async fn execute_existing_change(
                 }
             }
             ExistingMutation::MySql(input)
+        }
+        ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql => {
+            return Err(ApplyWorkspaceError::UnsupportedChange);
         }
         ResourceKind::Redis => {
             if selected_paths.as_slice() != [PropertyPath::Password] {

@@ -1,5 +1,6 @@
 use dokploy_config::{
-    ConfigError, ConfigValue, DokployConfig, Field, SecretSourceKind, ValidationIssue,
+    ConfigError, ConfigValue, DokployConfig, Field, LibSqlNodeConfig, SecretSourceKind,
+    ValidationIssue,
 };
 use dokploy_state::ResourceAddress;
 
@@ -119,6 +120,112 @@ environments:
         unknown,
         Err(ConfigError::Parse { .. } | ConfigError::ParseWithoutLocation)
     ));
+}
+
+#[test]
+fn parses_remaining_databases_with_environment_containment_and_atomic_libsql_node() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    mariadb:
+      main:
+        database: app
+        username: app
+        password:
+          env: MARIADB_PASSWORD
+        root_password:
+          file: .secrets/mariadb-root
+    mongo:
+      documents:
+        username: app
+        password:
+          file: .secrets/mongo-password
+        replica_sets: true
+    libsql:
+      edge:
+        description: Edge database
+        username: app
+        password:
+          env: LIBSQL_PASSWORD
+        node:
+          type: replica
+          primary_url: https://primary.example.test
+"#,
+    )
+    .expect("remaining database configuration is valid");
+
+    let mariadb = config
+        .resource(&"mariadb.main".parse().unwrap())
+        .unwrap()
+        .as_mariadb()
+        .unwrap();
+    assert_eq!(mariadb.database(), &Field::Set("app".to_owned()));
+    assert_eq!(mariadb.username(), &Field::Set("app".to_owned()));
+    assert!(
+        matches!(mariadb.password(), Field::Set(source) if source.env_name() == Some("MARIADB_PASSWORD"))
+    );
+    assert!(
+        matches!(mariadb.root_password(), Field::Set(source) if source.file_path() == Some(".secrets/mariadb-root"))
+    );
+
+    let mongo = config
+        .resource(&"mongo.documents".parse().unwrap())
+        .unwrap()
+        .as_mongo()
+        .unwrap();
+    assert_eq!(mongo.username(), &Field::Set("app".to_owned()));
+    assert_eq!(mongo.replica_sets(), &Field::Set(true));
+
+    let libsql = config
+        .resource(&"libsql.edge".parse().unwrap())
+        .unwrap()
+        .as_libsql()
+        .unwrap();
+    assert_eq!(
+        libsql.description(),
+        &Field::Set("Edge database".to_owned())
+    );
+    assert!(matches!(
+        libsql.node(),
+        Field::Set(LibSqlNodeConfig::Replica { primary_url })
+            if primary_url == "https://primary.example.test"
+    ));
+
+    for address in ["mariadb.main", "mongo.documents", "libsql.edge"] {
+        assert_eq!(
+            config
+                .parent_of(&address.parse().unwrap())
+                .unwrap()
+                .to_string(),
+            "environment.production"
+        );
+    }
+}
+
+#[test]
+fn remaining_database_shapes_reject_explicitly_unsupported_fields() {
+    for body in [
+        "mariadb:\n      main:\n        description: unsupported",
+        "mongo:\n      main:\n        root_password: null",
+        "libsql:\n      main:\n        enable_namespaces: true",
+        "libsql:\n      main:\n        node:\n          type: primary\n          primary_url: unsupported",
+    ] {
+        let source = format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {body}\n"
+        );
+        let result = DokployConfig::parse(&source);
+        assert!(
+            matches!(
+                result,
+                Err(ConfigError::Parse { .. } | ConfigError::ParseWithoutLocation)
+            ),
+            "unsupported field case parsed unexpectedly: {body}"
+        );
+    }
 }
 
 #[test]

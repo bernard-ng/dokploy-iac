@@ -103,6 +103,9 @@ pub enum ResourceConfig {
     Application(ApplicationConfig),
     Postgres(PostgresConfig),
     MySql(MySqlConfig),
+    MariaDb(MariaDbConfig),
+    Mongo(MongoConfig),
+    LibSql(LibSqlConfig),
     Redis(RedisConfig),
     Domain(DomainConfig),
 }
@@ -116,6 +119,9 @@ impl ResourceConfig {
             Self::Application(_) => ResourceKind::Application,
             Self::Postgres(_) => ResourceKind::Postgres,
             Self::MySql(_) => ResourceKind::MySql,
+            Self::MariaDb(_) => ResourceKind::MariaDb,
+            Self::Mongo(_) => ResourceKind::Mongo,
+            Self::LibSql(_) => ResourceKind::LibSql,
             Self::Redis(_) => ResourceKind::Redis,
             Self::Domain(_) => ResourceKind::Domain,
         }
@@ -170,6 +176,30 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_mariadb(&self) -> Option<&MariaDbConfig> {
+        match self {
+            Self::MariaDb(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_mongo(&self) -> Option<&MongoConfig> {
+        match self {
+            Self::Mongo(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_libsql(&self) -> Option<&LibSqlConfig> {
+        match self {
+            Self::LibSql(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_domain(&self) -> Option<&DomainConfig> {
         match self {
             Self::Domain(config) => Some(config),
@@ -185,6 +215,9 @@ impl ResourceConfig {
             Self::Application(config) => &config.depends_on,
             Self::Postgres(config) => &config.depends_on,
             Self::MySql(config) => &config.depends_on,
+            Self::MariaDb(config) => &config.depends_on,
+            Self::Mongo(config) => &config.depends_on,
+            Self::LibSql(config) => &config.depends_on,
             Self::Redis(config) => &config.depends_on,
             Self::Domain(config) => &config.depends_on,
         }
@@ -198,6 +231,9 @@ impl ResourceConfig {
             Self::Application(config) => &config.lifecycle,
             Self::Postgres(config) => &config.lifecycle,
             Self::MySql(config) => &config.lifecycle,
+            Self::MariaDb(config) => &config.lifecycle,
+            Self::Mongo(config) => &config.lifecycle,
+            Self::LibSql(config) => &config.lifecycle,
             Self::Redis(config) => &config.lifecycle,
             Self::Domain(config) => &config.lifecycle,
         }
@@ -210,6 +246,9 @@ impl ResourceConfig {
             Self::Application(config) => &mut config.lifecycle,
             Self::Postgres(config) => &mut config.lifecycle,
             Self::MySql(config) => &mut config.lifecycle,
+            Self::MariaDb(config) => &mut config.lifecycle,
+            Self::Mongo(config) => &mut config.lifecycle,
+            Self::LibSql(config) => &mut config.lifecycle,
             Self::Redis(config) => &mut config.lifecycle,
             Self::Domain(config) => &mut config.lifecycle,
         }
@@ -222,6 +261,9 @@ impl ResourceConfig {
             Self::Application(config) => &mut config.depends_on,
             Self::Postgres(config) => &mut config.depends_on,
             Self::MySql(config) => &mut config.depends_on,
+            Self::MariaDb(config) => &mut config.depends_on,
+            Self::Mongo(config) => &mut config.depends_on,
+            Self::LibSql(config) => &mut config.depends_on,
             Self::Redis(config) => &mut config.depends_on,
             Self::Domain(config) => &mut config.depends_on,
         }
@@ -268,6 +310,24 @@ impl ResourceConfig {
                     secrets.push(secret);
                 }
                 if let Field::Set(secret) = &config.root_password {
+                    secrets.push(secret);
+                }
+            }
+            Self::MariaDb(config) => {
+                if let Field::Set(secret) = &config.password {
+                    secrets.push(secret);
+                }
+                if let Field::Set(secret) = &config.root_password {
+                    secrets.push(secret);
+                }
+            }
+            Self::Mongo(config) => {
+                if let Field::Set(secret) = &config.password {
+                    secrets.push(secret);
+                }
+            }
+            Self::LibSql(config) => {
+                if let Field::Set(secret) = &config.password {
                     secrets.push(secret);
                 }
             }
@@ -469,6 +529,122 @@ impl MySqlConfig {
 }
 
 redacted_debug!(MySqlConfig, "MySqlConfig");
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MariaDbConfig {
+    pub(crate) database: Field<String>,
+    pub(crate) username: Field<String>,
+    pub(crate) password: Field<SecretSource>,
+    pub(crate) root_password: Field<SecretSource>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl MariaDbConfig {
+    #[must_use]
+    pub const fn database(&self) -> &Field<String> {
+        &self.database
+    }
+
+    #[must_use]
+    pub const fn username(&self) -> &Field<String> {
+        &self.username
+    }
+
+    #[must_use]
+    pub const fn password(&self) -> &Field<SecretSource> {
+        &self.password
+    }
+
+    #[must_use]
+    pub const fn root_password(&self) -> &Field<SecretSource> {
+        &self.root_password
+    }
+}
+
+redacted_debug!(MariaDbConfig, "MariaDbConfig");
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MongoConfig {
+    pub(crate) username: Field<String>,
+    pub(crate) password: Field<SecretSource>,
+    pub(crate) replica_sets: Field<bool>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl MongoConfig {
+    #[must_use]
+    pub const fn username(&self) -> &Field<String> {
+        &self.username
+    }
+
+    #[must_use]
+    pub const fn password(&self) -> &Field<SecretSource> {
+        &self.password
+    }
+
+    #[must_use]
+    pub const fn replica_sets(&self) -> &Field<bool> {
+        &self.replica_sets
+    }
+}
+
+redacted_debug!(MongoConfig, "MongoConfig");
+
+/// One complete LibSQL primary-or-replica selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibSqlNodeConfig {
+    /// A writable primary node.
+    Primary,
+    /// A replica connected to one primary URL.
+    Replica { primary_url: String },
+}
+
+impl LibSqlNodeConfig {
+    /// Returns the primary URL only for a replica node.
+    #[must_use]
+    pub fn primary_url(&self) -> Option<&str> {
+        match self {
+            Self::Primary => None,
+            Self::Replica { primary_url } => Some(primary_url),
+        }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct LibSqlConfig {
+    pub(crate) description: Field<String>,
+    pub(crate) username: Field<String>,
+    pub(crate) password: Field<SecretSource>,
+    pub(crate) node: Field<LibSqlNodeConfig>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl LibSqlConfig {
+    #[must_use]
+    pub const fn description(&self) -> &Field<String> {
+        &self.description
+    }
+
+    #[must_use]
+    pub const fn username(&self) -> &Field<String> {
+        &self.username
+    }
+
+    #[must_use]
+    pub const fn password(&self) -> &Field<SecretSource> {
+        &self.password
+    }
+
+    #[must_use]
+    pub const fn node(&self) -> &Field<LibSqlNodeConfig> {
+        &self.node
+    }
+}
+
+redacted_debug!(LibSqlConfig, "LibSqlConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct RedisConfig {

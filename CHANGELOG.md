@@ -20,6 +20,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add the shared declarative vocabulary for environment-contained MariaDB,
+  MongoDB, and LibSQL resources, including strict canonical configuration,
+  descriptor-only secret fingerprints, kind-scoped properties, and an atomic
+  LibSQL node selection. Remote reconciliation and import remain fail-closed
+  until their adapter checkpoints are complete.
 - Define typed containment, polymorphic-target, external-selector, sensitive
   input, collision, and create-identity boundaries for the remaining Phase 8
   leaf resource adapters.

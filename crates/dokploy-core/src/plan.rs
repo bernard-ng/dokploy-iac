@@ -478,6 +478,8 @@ impl ResourceCheckpoint {
                 | PropertyPath::Replicas
                 | PropertyPath::Database
                 | PropertyPath::Username
+                | PropertyPath::ReplicaSets
+                | PropertyPath::Node
                 | PropertyPath::Host
                 | PropertyPath::Application => {
                     managed.insert(path.to_string(), materialize_value(value)?);

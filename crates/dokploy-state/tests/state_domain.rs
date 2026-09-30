@@ -76,6 +76,58 @@ fn resource_addresses_have_one_canonical_text_form() {
         ResourceAddress::from_str("mysql.primary").expect("a MySQL logical address must parse");
     assert_eq!(mysql.kind(), ResourceKind::MySql);
     assert_eq!(mysql.to_string(), "mysql.primary");
+
+    for (value, kind) in [
+        ("mariadb.primary", ResourceKind::MariaDb),
+        ("mongo.documents", ResourceKind::Mongo),
+        ("libsql.edge", ResourceKind::LibSql),
+    ] {
+        let address = ResourceAddress::from_str(value).expect("database address must parse");
+        assert_eq!(address.kind(), kind);
+        assert_eq!(address.to_string(), value);
+        assert_eq!(
+            kind.containment_parent_kind(),
+            Some(ResourceKind::Environment)
+        );
+    }
+}
+
+#[test]
+fn remaining_database_state_requires_environment_containment() {
+    let environment: ResourceAddress = "environment.production"
+        .parse()
+        .expect("environment address must parse");
+
+    for kind in [
+        ResourceKind::MariaDb,
+        ResourceKind::Mongo,
+        ResourceKind::LibSql,
+    ] {
+        assert!(
+            ResourceState::try_new(
+                kind,
+                RemoteId::new(format!("{}-1", kind.as_str())).expect("remote ID must be valid"),
+                false,
+                ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+                SensitiveInputs::default(),
+                Some(environment.clone()),
+                Vec::new(),
+            )
+            .is_ok()
+        );
+        assert!(
+            ResourceState::try_new(
+                kind,
+                RemoteId::new(format!("{}-2", kind.as_str())).expect("remote ID must be valid"),
+                false,
+                ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+                SensitiveInputs::default(),
+                None,
+                Vec::new(),
+            )
+            .is_err()
+        );
+    }
 }
 
 #[test]
