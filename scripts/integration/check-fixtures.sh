@@ -152,6 +152,19 @@ required_redirect_fixtures=(
     "redirect-contract.metadata.json"
 )
 
+required_security_fixtures=(
+    "security-create.owner.json"
+    "application-one.security-created.owner.json"
+    "security-one.created.owner.json"
+    "security-one.updated.owner.json"
+    "application-one.security-updated.owner.json"
+    "security-delete.owner.json"
+    "security-one.deleted.owner.json"
+    "application-one.security-deleted.owner.json"
+    "project-one.security-deleted.owner.json"
+    "security-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -218,6 +231,13 @@ done
 for fixture_name in "${required_redirect_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redirect contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_security_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Security contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1244,6 +1264,107 @@ fi
 
 if grep -R -E -q 'redirect-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Redirect project name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '. == true' \
+    "$versioned_fixture_directory/security-create.owner.json" >/dev/null
+then
+    echo "Security create fixture does not preserve boolean acceptance." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationId == "application-1"
+    and (.security | length) == 1
+    and .security[0].securityId == "security-1"
+    and .security[0].applicationId == "application-1"
+    and .security[0].username == "owner"
+    and .security[0].password == "<redacted>"
+' "$versioned_fixture_directory/application-one.security-created.owner.json" >/dev/null; then
+    echo "Security parent fixture does not prove one exact created identity." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .securityId == "security-1"
+    and .applicationId == "application-1"
+    and .username == "owner"
+    and .password == "<redacted>"
+' "$versioned_fixture_directory/security-one.created.owner.json" >/dev/null; then
+    echo "Security detail fixture does not agree with its created parent entry." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .securityId == "security-1"
+    and .applicationId == "application-1"
+    and .username == "operator"
+    and .password == "<redacted>"
+' "$versioned_fixture_directory/security-one.updated.owner.json" >/dev/null; then
+    echo "Security updated detail fixture does not preserve complete credentials." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    (.security | length) == 1
+    and .security[0].securityId == "security-1"
+    and .security[0].applicationId == "application-1"
+    and .security[0].username == "operator"
+    and .security[0].password == "<redacted>"
+' "$versioned_fixture_directory/application-one.security-updated.owner.json" >/dev/null; then
+    echo "Security updated parent fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "security.one"
+' "$versioned_fixture_directory/security-one.deleted.owner.json" >/dev/null; then
+    echo "Security cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.security | length) == 0
+' "$versioned_fixture_directory/application-one.security-deleted.owner.json" >/dev/null; then
+    echo "Security cleanup parent fixture retained runtime effects." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "project.one"
+' "$versioned_fixture_directory/project-one.security-deleted.owner.json" >/dev/null; then
+    echo "Security disposable project cleanup is not proven." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .collisionKey == "application+username"
+    and .credentialsVerifiedPrivately == true
+    and .createIdentity.setDifference == true
+    and .createIdentity.parentVerified == true
+    and .update.completeFieldsPersisted == true
+    and .update.parentVerified == true
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.applicationSecurityEmpty == true
+    and .cleanupEvidence.projectOneStatus == 404
+' "$versioned_fixture_directory/security-contract.metadata.json" >/dev/null; then
+    echo "Security metadata does not prove credentials, identity, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'security-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Security project name." >&2
     exit 1
 fi
 

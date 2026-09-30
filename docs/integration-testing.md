@@ -298,6 +298,37 @@ The wrapper supplies the owner-only local credential only to the test process.
 It verifies create discovery, direct/parent agreement, all-field update,
 authoritative deletion, and complete project cleanup.
 
+## Disposable Security contract capture
+
+Capture the application basic-auth contract against the pinned local instance
+with:
+
+```bash
+scripts/integration/capture-security-contract.sh
+```
+
+The command creates a disposable project and undeployed application. It proves
+the boolean response from `security.create`, discovers exactly one new identity
+through the before/after `application.one.security` set difference, and
+requires `security.one` to agree with that authoritative parent entry. The raw
+capture privately verifies the created password and the complete username and
+password update. The sanitizer publishes only `<redacted>` password values.
+
+Cleanup requires a 404 from `security.one`, an empty parent collection, an idle
+application with no deployments, and a 404 after removing the disposable
+project. The cleanup trap recovers only the run's uniquely named project after
+an interruption.
+
+Exercise the public SDK adapter through the same undeployed lifecycle with:
+
+```bash
+scripts/integration/test-security-sdk.sh
+```
+
+The wrapper supplies the owner-only local credential only to the test process.
+It verifies create discovery, secret-safe direct and parent reads, complete
+credential update, authoritative deletion, and project cleanup.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

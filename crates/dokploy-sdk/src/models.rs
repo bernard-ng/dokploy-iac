@@ -2,7 +2,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use std::fmt;
 use std::num::NonZeroU16;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 /// A mutation value that distinguishes omission from an explicit JSON null.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -49,6 +49,7 @@ identifier!(ProjectId);
 identifier!(RedirectId);
 identifier!(RedisId);
 identifier!(DomainId);
+identifier!(SecurityId);
 identifier!(ServerId);
 
 const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32";
@@ -562,6 +563,145 @@ impl UpdateRedirect {
         !self.redirect_id.as_str().is_empty()
             && !self.regex.is_empty()
             && !self.replacement.is_empty()
+    }
+}
+
+/// Complete inputs required to create one application basic-auth entry.
+pub struct CreateSecurity {
+    application_id: ApplicationId,
+    username: String,
+    password: Zeroizing<String>,
+}
+
+impl CreateSecurity {
+    /// Creates one basic-auth entry attached to an application.
+    #[must_use]
+    pub fn new(
+        application_id: ApplicationId,
+        username: impl Into<String>,
+        password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            application_id,
+            username: username.into(),
+            password,
+        }
+    }
+
+    pub(crate) fn application_id(&self) -> &ApplicationId {
+        &self.application_id
+    }
+
+    pub(crate) fn username(&self) -> &str {
+        &self.username
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.application_id.as_str().is_empty()
+            && !self.username.is_empty()
+            && !self.password.is_empty()
+    }
+
+    pub(crate) fn matches(&self, details: &SecurityDetails) -> bool {
+        !details.security_id.as_str().is_empty()
+            && details.application_id == self.application_id
+            && details.username == self.username
+            && details.password_present
+    }
+}
+
+impl fmt::Debug for CreateSecurity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateSecurity")
+            .field("application_id", &self.application_id)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for CreateSecurity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreateSecurity", 3)?;
+        body.serialize_field("applicationId", self.application_id.as_str())?;
+        body.serialize_field("username", &self.username)?;
+        body.serialize_field("password", self.password.as_str())?;
+        body.end()
+    }
+}
+
+/// Physical identity discovered after Dokploy creates a basic-auth entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedSecurity {
+    security_id: SecurityId,
+}
+
+impl CreatedSecurity {
+    pub(crate) fn new(security_id: SecurityId) -> Self {
+        Self { security_id }
+    }
+
+    /// Returns the new Security identity.
+    #[must_use]
+    pub const fn security_id(&self) -> &SecurityId {
+        &self.security_id
+    }
+}
+
+/// Complete username and password required by Dokploy's Security update.
+pub struct UpdateSecurity {
+    security_id: SecurityId,
+    username: String,
+    password: Zeroizing<String>,
+}
+
+impl UpdateSecurity {
+    /// Replaces the username and password without changing the application.
+    #[must_use]
+    pub fn new(
+        security_id: SecurityId,
+        username: impl Into<String>,
+        password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            security_id,
+            username: username.into(),
+            password,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.security_id.as_str().is_empty()
+            && !self.username.is_empty()
+            && !self.password.is_empty()
+    }
+}
+
+impl fmt::Debug for UpdateSecurity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateSecurity")
+            .field("security_id", &self.security_id)
+            .field("username", &self.username)
+            .field("password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for UpdateSecurity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("UpdateSecurity", 3)?;
+        body.serialize_field("securityId", self.security_id.as_str())?;
+        body.serialize_field("username", &self.username)?;
+        body.serialize_field("password", self.password.as_str())?;
+        body.end()
     }
 }
 
@@ -3097,6 +3237,113 @@ pub(crate) struct ApplicationRedirectCollectionResponse {
     pub(crate) application_id: ApplicationId,
     #[serde(default)]
     pub(crate) redirects: Vec<RedirectDetails>,
+}
+
+/// A safe basic-auth record returned by Dokploy's Security operations.
+///
+/// Plaintext password bytes are consumed during decoding and immediately
+/// discarded. The model exposes only whether a non-empty password was present.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityDetails {
+    pub security_id: SecurityId,
+    pub application_id: ApplicationId,
+    pub username: String,
+    #[serde(rename = "password", deserialize_with = "deserialize_secret_presence")]
+    pub password_present: bool,
+}
+
+impl SecurityDetails {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.security_id.as_str().is_empty()
+            && !self.application_id.as_str().is_empty()
+            && !self.username.is_empty()
+    }
+}
+
+/// The complete bounded Security collection for one exact application.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SecurityCollection {
+    application_id: ApplicationId,
+    entries: Vec<SecurityDetails>,
+}
+
+impl SecurityCollection {
+    pub(crate) fn new(application_id: ApplicationId, entries: Vec<SecurityDetails>) -> Self {
+        Self {
+            application_id,
+            entries,
+        }
+    }
+
+    /// Returns the application whose Security collection was read.
+    #[must_use]
+    pub const fn application_id(&self) -> &ApplicationId {
+        &self.application_id
+    }
+
+    /// Returns every basic-auth entry authoritatively reported by the application.
+    #[must_use]
+    pub fn entries(&self) -> &[SecurityDetails] {
+        &self.entries
+    }
+}
+
+/// Minimal parent response used to reconcile Security through `application.one`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApplicationSecurityCollectionResponse {
+    pub(crate) application_id: ApplicationId,
+    #[serde(default, rename = "security")]
+    pub(crate) entries: Vec<SecurityDetails>,
+}
+
+fn deserialize_secret_presence<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct SecretPresenceVisitor;
+
+    impl Visitor<'_> for SecretPresenceVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a plaintext password string or null")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(!value.is_empty())
+        }
+
+        fn visit_string<E>(self, mut value: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let present = !value.is_empty();
+            value.zeroize();
+
+            Ok(present)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(false)
+        }
+    }
+
+    deserializer.deserialize_any(SecretPresenceVisitor)
 }
 
 /// A safe subset of the response returned by Mount read operations.

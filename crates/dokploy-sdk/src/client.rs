@@ -40,7 +40,9 @@ use dokploy_api::{
     REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedirectIdRequestBody,
     RedirectsDeleteRequest, RedirectsOneRequest, RedirectsOneRequestQuery, RedisIdRequestBody,
     RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
-    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    RedisSearchRequestQuery, SECURITY_CREATE, SECURITY_DELETE, SECURITY_ONE, SECURITY_UPDATE,
+    SecurityDeleteRequest, SecurityIdRequestBody, SecurityOneRequest, SecurityOneRequestQuery,
+    endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -57,32 +59,33 @@ use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse,
     ApplicationPortCollectionResponse, ApplicationRedirectCollectionResponse,
-    ApplicationSearchPage, ComposeCollection, ComposeCreateResponse, ComposeDetails,
-    ComposeSearchPage, DomainCollection, DomainCreateResponse, DomainDetails,
-    EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails, LibSqlCollection,
-    LibSqlDetails, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails, MariaDbSearchPage,
-    MongoCollection, MongoCreateResponse, MongoDetails, MongoSearchPage, MountCollection,
-    MountDetails, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
-    PortCollection, PortDetails, PostgresCollection, PostgresCreateResponse, PostgresDetails,
-    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedirectCollection,
-    RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails, RedisSearchPage,
+    ApplicationSearchPage, ApplicationSecurityCollectionResponse, ComposeCollection,
+    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DomainCollection,
+    DomainCreateResponse, DomainDetails, EnvironmentCollection, EnvironmentCreateResponse,
+    EnvironmentDetails, LibSqlCollection, LibSqlDetails, MariaDbCollection, MariaDbCreateResponse,
+    MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
+    MongoSearchPage, MountCollection, MountDetails, MySqlCollection, MySqlCreateResponse,
+    MySqlDetails, MySqlSearchPage, PortCollection, PortDetails, PostgresCollection,
+    PostgresCreateResponse, PostgresDetails, PostgresSearchPage, ProjectCreateResponse,
+    ProjectDetails, ProjectTopology, RedirectCollection, RedirectDetails, RedisCollection,
+    RedisCreateResponse, RedisDetails, RedisSearchPage, SecurityCollection, SecurityDetails,
 };
 use crate::services::{
     Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Ports,
-    Postgres, Projects, Redirects, Redis,
+    Postgres, Projects, Redirects, Redis, Security,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
     ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
     CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount,
     CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
-    CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
-    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres,
-    CreatedProject, CreatedRedirect, CreatedRedis, DomainId, EnvironmentId, LibSqlId, MariaDbId,
-    MongoId, MountId, MySqlId, PortId, PostgresId, ProjectId, RedirectId, RedisId, ServiceTarget,
-    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
-    UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject,
-    UpdateRedirect, UpdateRedis,
+    CreateSecurity, CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment,
+    CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort,
+    CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSecurity, DomainId,
+    EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId, PortId, PostgresId, ProjectId,
+    RedirectId, RedisId, SecurityId, ServiceTarget, UpdateApplication, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
+    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSecurity,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -100,6 +103,7 @@ const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MOUNT_LIST_ITEM_LIMIT: usize = 10_000;
 const PORT_LIST_ITEM_LIMIT: usize = 10_000;
 const REDIRECT_LIST_ITEM_LIMIT: usize = 10_000;
+const SECURITY_LIST_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -192,6 +196,12 @@ impl Dokploy {
     #[must_use]
     pub fn redirects(&self) -> Redirects<'_> {
         Redirects::new(self)
+    }
+
+    /// Returns access to application Security read and mutation operations.
+    #[must_use]
+    pub fn security(&self) -> Security<'_> {
+        Security::new(self)
     }
 
     /// Returns access to MySQL read and mutation operations.
@@ -869,6 +879,148 @@ impl Dokploy {
         validate_generated_request(REDIRECTS_DELETE, &request)?;
 
         self.mutate_body_ok(REDIRECTS_DELETE, &request.body).await
+    }
+
+    pub(crate) async fn security_get(&self, security_id: &str) -> Result<SecurityDetails, Error> {
+        let request = SecurityOneRequest {
+            query: SecurityOneRequestQuery {
+                security_id: security_id.to_owned(),
+            },
+        };
+        validate_generated_request(SECURITY_ONE, &request)?;
+        let details: SecurityDetails = self.read_query_json(SECURITY_ONE, &request.query).await?;
+        if !details.is_valid() || details.security_id.as_str() != security_id {
+            return Err(Error::UnexpectedResponse {
+                operation: SECURITY_ONE.operation(),
+            });
+        }
+        let collection = self
+            .security_by_application(&details.application_id)
+            .await?;
+        let matching = collection
+            .entries()
+            .iter()
+            .find(|entry| entry.security_id.as_str() == security_id);
+        if matching != Some(&details) {
+            return Err(Error::UnexpectedResponse {
+                operation: SECURITY_ONE.operation(),
+            });
+        }
+
+        Ok(details)
+    }
+
+    pub(crate) async fn security_by_application(
+        &self,
+        application_id: &ApplicationId,
+    ) -> Result<SecurityCollection, Error> {
+        let request = ApplicationOneRequest {
+            query: ApplicationOneRequestQuery {
+                application_id: application_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(APPLICATION_ONE, &request)?;
+        let response: ApplicationSecurityCollectionResponse = self
+            .read_query_json(APPLICATION_ONE, &request.query)
+            .await?;
+        let mut seen_ids = HashSet::new();
+        let mut seen_usernames = HashSet::new();
+        let contradictory = response.application_id != *application_id
+            || response.entries.len() > SECURITY_LIST_ITEM_LIMIT
+            || response.entries.iter().any(|entry| {
+                !entry.is_valid()
+                    || entry.application_id != *application_id
+                    || !seen_ids.insert(entry.security_id.as_str().to_owned())
+                    || !seen_usernames.insert(entry.username.clone())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: APPLICATION_ONE.operation(),
+            });
+        }
+
+        Ok(SecurityCollection::new(
+            response.application_id,
+            response.entries,
+        ))
+    }
+
+    pub(crate) async fn security_create(
+        &self,
+        input: CreateSecurity,
+    ) -> Result<CreatedSecurity, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                SECURITY_CREATE.operation(),
+                "Security create fields are invalid",
+            ));
+        }
+        let before = self.security_by_application(input.application_id()).await?;
+        if before
+            .entries()
+            .iter()
+            .any(|entry| entry.username == input.username())
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: SECURITY_CREATE.operation(),
+            });
+        }
+        let before_ids = before
+            .entries()
+            .iter()
+            .map(|entry| entry.security_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+
+        let accepted: bool = self.mutate_body_json(SECURITY_CREATE, &input).await?;
+        if !accepted {
+            return Err(Error::UnexpectedResponse {
+                operation: SECURITY_CREATE.operation(),
+            });
+        }
+
+        let after = self.security_by_application(input.application_id()).await?;
+        let after_ids = after
+            .entries()
+            .iter()
+            .map(|entry| entry.security_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let new = after
+            .entries()
+            .iter()
+            .filter(|entry| !before_ids.contains(entry.security_id.as_str()))
+            .collect::<Vec<_>>();
+        if before_ids.is_subset(&after_ids)
+            && let [created] = new.as_slice()
+            && input.matches(created)
+        {
+            return Ok(CreatedSecurity::new(created.security_id.clone()));
+        }
+
+        Err(Error::UnexpectedResponse {
+            operation: SECURITY_CREATE.operation(),
+        })
+    }
+
+    pub(crate) async fn security_update(&self, input: UpdateSecurity) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                SECURITY_UPDATE.operation(),
+                "Security update fields are invalid",
+            ));
+        }
+
+        self.mutate_body_ok(SECURITY_UPDATE, &input).await
+    }
+
+    pub(crate) async fn security_delete(&self, security_id: SecurityId) -> Result<(), Error> {
+        let request = SecurityDeleteRequest {
+            body: SecurityIdRequestBody {
+                security_id: security_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(SECURITY_DELETE, &request)?;
+
+        self.mutate_body_ok(SECURITY_DELETE, &request.body).await
     }
 
     pub(crate) async fn environment_get(

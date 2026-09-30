@@ -7,18 +7,18 @@ use crate::{
     MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
     PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
     RedirectCollection, RedirectDetails, RedirectId, RedisCollection, RedisDetails, RedisId,
-    ServiceTarget,
+    SecurityCollection, SecurityDetails, SecurityId, ServiceTarget,
 };
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
     CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject,
-    CreateRedirect, CreateRedis, CreatedApplication, CreatedCompose, CreatedDomain,
+    CreateRedirect, CreateRedis, CreateSecurity, CreatedApplication, CreatedCompose, CreatedDomain,
     CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql,
-    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, UpdateApplication,
-    UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo,
-    UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect,
-    UpdateRedis,
+    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSecurity,
+    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
+    UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject,
+    UpdateRedirect, UpdateRedis, UpdateSecurity,
 };
 
 /// Read operations for Dokploy projects.
@@ -305,6 +305,45 @@ impl<'a> Redirects<'a> {
     /// Permanently removes one Redirect by physical identity.
     pub async fn delete(&self, redirect_id: RedirectId) -> Result<(), Error> {
         self.client.redirect_delete(redirect_id).await
+    }
+}
+
+/// Read and mutation operations for application basic-auth Security entries.
+pub struct Security<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Security<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Security entry and requires agreement with its application collection.
+    pub async fn get(&self, security_id: SecurityId) -> Result<SecurityDetails, Error> {
+        self.client.security_get(security_id.as_str()).await
+    }
+
+    /// Reads the authoritative bounded Security collection for one application.
+    pub async fn by_application(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<SecurityCollection, Error> {
+        self.client.security_by_application(&application_id).await
+    }
+
+    /// Creates a Security entry and discovers exactly one new matching identity.
+    pub async fn create(&self, input: CreateSecurity) -> Result<CreatedSecurity, Error> {
+        self.client.security_create(input).await
+    }
+
+    /// Replaces the complete username and password without changing the parent.
+    pub async fn update(&self, input: UpdateSecurity) -> Result<(), Error> {
+        self.client.security_update(input).await
+    }
+
+    /// Permanently removes one Security entry by physical identity.
+    pub async fn delete(&self, security_id: SecurityId) -> Result<(), Error> {
+        self.client.security_delete(security_id).await
     }
 }
 

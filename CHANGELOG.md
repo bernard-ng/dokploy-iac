@@ -39,6 +39,9 @@ All notable changes to this project will be documented in this file.
 - Add a typed application Redirect SDK contract with collision preflight,
   authoritative set-difference identity discovery, direct-parent agreement,
   sanitized live fixtures, and an undeployed all-field lifecycle proof.
+- Add a typed application Security SDK contract with zeroizing credential
+  inputs, password-presence-only response models, authoritative identity
+  discovery, sanitized fixtures, and an undeployed credential lifecycle proof.
 - Add read-only interactive and non-interactive resource import with canonical
   configuration generation, durable identity adoption, unmanaged secrets,
   protected databases, and immediate plan convergence.
