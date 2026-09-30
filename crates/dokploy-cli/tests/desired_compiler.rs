@@ -271,6 +271,19 @@ environments:
         addresses(&["application.api", "environment.production"])
     );
     assert_eq!(
+        resources[&"postgres.main".parse().unwrap()].containment(),
+        Some(&"environment.production".parse().unwrap())
+    );
+    assert!(
+        resources[&"postgres.main".parse().unwrap()]
+            .dependencies()
+            .is_empty()
+    );
+    assert_eq!(
+        resources[&"environment.production".parse().unwrap()].containment(),
+        Some(&"project.platform".parse().unwrap())
+    );
+    assert_eq!(
         compiled
             .bindings()
             .parent_of(&"environment.production".parse().unwrap())

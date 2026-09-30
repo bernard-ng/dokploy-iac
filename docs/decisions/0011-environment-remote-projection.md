@@ -73,9 +73,8 @@ is handled as missing physical identity, subject to the replacement probe.
   environments.
 - Environment display-name drift remains unmanaged because the current planner
   vocabulary uses names for lookup identity, not as an owned property.
-- Stored containment temporarily relies on the canonical project dependency in
-  state. A future multi-project state format should persist containment as a
-  dedicated field.
+- Stored containment is read from the dedicated state format version 3 field;
+  general dependencies remain ordering relationships only.
 - Dokploy `v0.30.6` does not prove that `environment.update` accepts a null
   description, so execution-time description clearing remains fail-closed work
   for Phase 6.

@@ -36,7 +36,9 @@ reason. Only the sensitive unknown reason is conclusive for write-only planning;
 omission and invalid-response reasons remain blocking. Desired, stored, and
 remote constructors validate paths against the resource kind. Desired
 construction also rejects self-dependencies and dependencies absent from the
-desired snapshot.
+desired snapshot. Containment is a distinct typed relationship: projects have
+none, environments belong to projects, and all other MVP resources belong to
+environments.
 
 Planning is a pure three-way comparison. Missing observations and unknown
 non-sensitive observations for desired properties make the plan incomplete.
@@ -48,8 +50,8 @@ diagnostics. Omitting a previously owned property creates a state-only
 checkpoint and neither mutates nor reports drift for that property.
 
 Every planned change carries an immutable checkpoint target computed during
-planning. A present target contains effective protection, canonical
-dependencies, exact non-sensitive owned properties, and opaque receipt identity
+planning. A present target contains effective protection, direct containment,
+canonical dependencies, exact non-sensitive owned properties, and opaque receipt identity
 for sensitive properties. Delete and forget changes target absence. Targets
 are available through a sensitivity-aware accessor but are excluded from plan
 JSON and redacted from debug output; a future executor must not reconstruct
@@ -113,7 +115,7 @@ exist, replacement cannot degrade into create, update, or move.
 
 The CLI crate is the composition seam from validated `dokploy.yaml` models to
 core desired state. One compiler maps all MVP resource variants, lifecycle
-metadata, containment and reference dependencies, moves, and removals without
+metadata, direct containment, reference and explicit dependencies, moves, and removals without
 performing I/O. Its configuration digest is supplied by the caller; digest
 derivation is a separate checkpoint.
 
@@ -131,8 +133,10 @@ and every set Postgres or Redis password with `DOKCMP004`. Explicit clear and
 unmanaged sensitive fields remain supported. ADR 0013 later adds a separate
 instance-bound compiler seam while preserving this offline behavior.
 
-Durable state format version 2 completes the persisted part of that convergence
-contract. A non-null sensitive input is stored only as a version-one
+Durable state format version 3 completes the persisted part of that convergence
+contract. It retains the version 2 sensitive-receipt rules and adds explicit
+containment independent from general dependencies. A non-null sensitive input
+is stored only as a version-one
 HMAC-SHA-256 receipt containing a
 canonical, non-nil UUID key identifier and a 32-byte MAC encoded as exactly 64
 lowercase hexadecimal characters. The receipt serializes as `version`,
@@ -152,16 +156,17 @@ it only as `OwnedValue::Sensitive`; it still rejects a sensitive path on the
 wrong resource kind. The wrapper supports equality without exposing a MAC or
 key identifier.
 
-State format version 2 is a deliberate pre-release incompatibility. Version 1
-state is rejected rather than migrated or interpreted without sensitive-input
-invariants. No released state compatibility promise exists yet, and failing
-closed avoids silently adopting a raw secret-bearing legacy shape.
+State format version 3 is a deliberate pre-release incompatibility. Versions 1
+and 2 are rejected rather than migrated or interpreted by inferring
+containment from dependencies. No released state compatibility promise exists
+yet, and failing closed avoids silently adopting an ambiguous legacy shape.
 
-Dependency ordering uses `petgraph` behind the planner seam. Desired-resource
-edges order create, recreate, update, and no-op checkpoint actions
-dependency-first. Stored dependencies among resources leaving desired state
-order delete and forget actions dependent-first. Independent ready resources
-use lexical address order.
+Dependency ordering uses `petgraph` behind the planner seam. Each graph unions
+direct containment edges with general dependency edges. Desired-resource edges
+order create, recreate, update, and no-op checkpoint actions dependency-first.
+Stored edges among resources leaving desired state order delete and forget
+actions dependent-first. Independent ready resources use lexical address
+order.
 
 Mixed plans use two stable phases: every desired-resource action completes in
 dependency order before removal actions begin in reverse stored-dependency
@@ -178,8 +183,8 @@ misleading partial execution sequence.
 - Durable managed-input keys outside the finite MVP vocabulary fail closed
   through a redaction-safe projection error; this avoids guessing how legacy
   or future state should be interpreted.
-- State-only protection, dependency, and ownership changes are represented as
-  no-op remote actions that a later executor must checkpoint.
+- State-only protection, containment, dependency, and ownership changes are
+  represented as no-op remote actions that a later executor must checkpoint.
 - Ignored paths are explicit write exclusions on existing-resource actions;
   checkpoint data is not permission to send a whole-object update.
 - Executing a move requires future atomic `StateFile` and journal support for
@@ -198,5 +203,5 @@ misleading partial execution sequence.
   explicit null remains a distinct clear, and omission relinquishes ownership
   without a remote write. Concrete sensitive configuration inputs still fail
   closed until composition can compute receipts safely.
-- State format version 1 cannot be opened by this pre-release implementation;
-  callers must intentionally recreate state in version 2.
+- State format versions 1 and 2 cannot be opened by this pre-release
+  implementation; callers must intentionally recreate state in version 3.

@@ -145,6 +145,7 @@ environments:
                 RemoteId::new("project-1").unwrap(),
                 false,
                 ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                None,
                 vec![],
             ),
         )
@@ -157,7 +158,8 @@ environments:
                 RemoteId::new("environment-1").unwrap(),
                 false,
                 ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
-                vec![project.clone()],
+                Some(project.clone()),
+                vec![],
             ),
         )
         .unwrap();
@@ -174,7 +176,8 @@ environments:
                     receipt,
                 )])
                 .unwrap(),
-                vec![environment.clone()],
+                Some(environment.clone()),
+                vec![],
             )
             .unwrap(),
         )
@@ -297,13 +300,13 @@ environments:
         .1;
     let mut state = StateFile::new(Version::new(0, 1, 0), instance());
 
-    for (address, kind, remote_id, dependencies) in [
-        (project.clone(), ResourceKind::Project, "project-1", vec![]),
+    for (address, kind, remote_id, containment) in [
+        (project.clone(), ResourceKind::Project, "project-1", None),
         (
             environment.clone(),
             ResourceKind::Environment,
             "environment-1",
-            vec![project.clone()],
+            Some(project.clone()),
         ),
     ] {
         state
@@ -314,7 +317,8 @@ environments:
                     RemoteId::new(remote_id).unwrap(),
                     false,
                     ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
-                    dependencies,
+                    containment,
+                    Vec::new(),
                 ),
             )
             .unwrap();
@@ -332,7 +336,8 @@ environments:
                     receipt,
                 )])
                 .unwrap(),
-                vec![environment.clone()],
+                Some(environment.clone()),
+                vec![],
             )
             .unwrap(),
         )

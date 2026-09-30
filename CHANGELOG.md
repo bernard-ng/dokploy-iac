@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add first-class containment across desired, stored, checkpoint, ordering, and
+  remote-discovery seams. State format version 3 rejects missing or invalid
+  containment and older formats instead of inferring parents from general
+  dependencies.
+
 - Add the pinned Dokploy OpenAPI 3.1 contract and a reproducible contract audit.
 - Add a disposable local Dokploy integration environment.
 - Add Phase 0 architecture notes, fixture requirements, and tolerant SDK model prototypes.

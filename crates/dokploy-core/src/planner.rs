@@ -919,6 +919,9 @@ fn metadata_changes(
     {
         metadata.push(MetadataChangeKind::Protection);
     }
+    if desired.containment != stored.containment {
+        metadata.push(MetadataChangeKind::Containment);
+    }
     if desired.dependencies != stored.dependencies {
         metadata.push(MetadataChangeKind::Dependencies);
     }
@@ -930,6 +933,9 @@ fn desired_metadata_for_create(desired: &DesiredResource) -> Vec<MetadataChangeK
     let mut metadata = Vec::new();
     if matches!(desired.protection, ProtectionIntent::Set(_)) {
         metadata.push(MetadataChangeKind::Protection);
+    }
+    if desired.containment.is_some() {
+        metadata.push(MetadataChangeKind::Containment);
     }
     if !desired.dependencies.is_empty() {
         metadata.push(MetadataChangeKind::Dependencies);
@@ -1001,6 +1007,7 @@ fn resource_checkpoint_for_properties(
     };
     ResourceCheckpoint {
         protected,
+        containment: desired.containment.clone(),
         dependencies: desired.dependencies.clone(),
         properties,
     }

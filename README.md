@@ -31,6 +31,8 @@ about ownership, drift, secrets, remote identity, and recovery.
   applications, PostgreSQL, Redis, and domains.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
+- Dedicated containment separate from general dependency ordering, persisted
+  in strict state format version 3.
 - A three-way planner that compares desired configuration, durable state, and
   fresh remote observations.
 - Deterministic dependency ordering, drift attribution, protected deletion,

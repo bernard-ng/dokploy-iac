@@ -103,7 +103,13 @@ impl DependencyOrdering {
 fn desired_graph(desired: &DesiredState) -> DiGraph<ResourceAddress, ()> {
     let addresses = desired.resources.keys().cloned().collect::<BTreeSet<_>>();
     build_graph(addresses, |address| {
-        desired.resources[address].dependencies.clone()
+        let resource = &desired.resources[address];
+        resource
+            .containment
+            .iter()
+            .cloned()
+            .chain(resource.dependencies.iter().cloned())
+            .collect()
     })
 }
 
@@ -122,7 +128,13 @@ fn removal_graph(desired: &DesiredState, stored: &StoredState) -> DiGraph<Resour
         .cloned()
         .collect::<BTreeSet<_>>();
     build_graph(addresses, |address| {
-        stored.resources[address].dependencies.clone()
+        let resource = &stored.resources[address];
+        resource
+            .containment
+            .iter()
+            .cloned()
+            .chain(resource.dependencies.iter().cloned())
+            .collect()
     })
 }
 
@@ -136,7 +148,7 @@ fn build_graph(
         .map(|address| (address.clone(), graph.add_node(address.clone())))
         .collect::<BTreeMap<_, _>>();
     for dependent in &addresses {
-        for dependency in dependencies(dependent) {
+        for dependency in dependencies(dependent).into_iter().collect::<BTreeSet<_>>() {
             let Some(dependency_index) = indices.get(&dependency) else {
                 continue;
             };

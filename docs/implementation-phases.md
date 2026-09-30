@@ -75,7 +75,7 @@ durable state semantics.
   authoritative absence, physical-ID matching for managed projects, exact-name
   collision probes, and fail-closed transport and topology diagnostics.
 - Persist non-null sensitive intent only as strict, versioned HMAC-SHA-256
-  receipts in state format version 2. Compare those receipts opaquely in the
+  receipts and direct containment in state format version 3. Compare receipts opaquely in the
   pure planner, treating write-only remote observations as conclusive for
   presence but never as comparable secret values.
 - Store one random fingerprint key per normalized Dokploy instance in the OS
@@ -96,6 +96,9 @@ durable state semantics.
   exhaustive parent-scoped search, managed physical IDs, current-containment
   validation, write-only password observations, and fail-closed physical
   reparenting.
+- Separate direct containment from general dependencies across desired,
+  stored, checkpoint, ordering, and remote-discovery seams. Reject older state
+  rather than infer parents from dependencies.
 - Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.

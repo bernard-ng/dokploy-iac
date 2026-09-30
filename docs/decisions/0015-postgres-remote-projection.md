@@ -56,7 +56,7 @@ claiming knowledge of the remote password.
 A logical Postgres move is safe when both addresses resolve to the same
 physical environment. A simultaneous logical environment move is also safe
 because the target resolves through the stored source identity. Any desired
-Postgres dependency change that resolves to another physical environment is
+Postgres containment change that resolves to another physical environment is
 rejected with a dedicated discovery error before a Postgres request. It remains
 unsupported until the planner and executor have an explicit, recoverable
 Postgres reparent action.

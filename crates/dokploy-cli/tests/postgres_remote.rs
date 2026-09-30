@@ -16,7 +16,8 @@ use dokploy_core::{
 };
 use dokploy_sdk::Dokploy;
 use dokploy_state::{
-    InstanceIdentity, ManagedInputs, RemoteId, ResourceKind, ResourceState, StateFile,
+    InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind, ResourceState,
+    StateFile,
 };
 
 struct TestServer {
@@ -110,6 +111,19 @@ fn insert(
     inputs: serde_json::Value,
     dependencies: &[&str],
 ) {
+    let mut dependencies = dependencies
+        .iter()
+        .map(|dependency| dependency.parse().expect("dependency is valid"))
+        .collect::<Vec<ResourceAddress>>();
+    let containment = kind.containment_parent_kind().and_then(|required| {
+        dependencies
+            .iter()
+            .find(|dependency| dependency.kind() == required)
+            .cloned()
+    });
+    if let Some(parent) = containment.as_ref() {
+        dependencies.retain(|dependency| dependency != parent);
+    }
     state
         .upsert_resource(
             address.parse().expect("address is valid"),
@@ -118,10 +132,8 @@ fn insert(
                 RemoteId::new(remote_id).expect("remote ID is valid"),
                 false,
                 ManagedInputs::try_from_json(inputs).expect("managed inputs are valid"),
-                dependencies
-                    .iter()
-                    .map(|dependency| dependency.parse().expect("dependency is valid"))
-                    .collect(),
+                containment,
+                dependencies,
             ),
         )
         .expect("state accepts resource");

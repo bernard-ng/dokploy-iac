@@ -36,7 +36,7 @@ duplicate exact names inside one environment, cross-environment search items,
 invalid IDs, and direct containment mismatches.
 
 Managed applications bind only to the stored physical ID and validate the
-environment recorded in durable dependencies. This remains the current
+environment recorded as dedicated durable containment. This remains the
 containment contract during same-address reparenting and simultaneous logical
 moves. A desired reparent target is separately probed when it resolves to a
 different trusted physical environment; an exact-name collision is projected

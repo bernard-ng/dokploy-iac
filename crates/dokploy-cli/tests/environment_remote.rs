@@ -121,6 +121,7 @@ fn insert_project(state: &mut StateFile, address: &str, remote_id: &str) {
                 false,
                 ManagedInputs::try_from_json(serde_json::json!({}))
                     .expect("managed inputs are valid"),
+                None,
                 Vec::new(),
             ),
         )
@@ -143,7 +144,8 @@ fn insert_environment(
                 false,
                 ManagedInputs::try_from_json(serde_json::json!({"description": description}))
                     .expect("managed inputs are valid"),
-                vec![parent.parse().expect("parent address is valid")],
+                Some(parent.parse().expect("parent address is valid")),
+                Vec::new(),
             ),
         )
         .expect("state accepts environment");

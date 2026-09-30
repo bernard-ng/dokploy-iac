@@ -10,7 +10,7 @@ use crate::sensitive::valid_environment_name;
 use crate::strict_json::reject_duplicate_keys;
 use crate::{ResourceAddress, ResourceKind, SensitiveInputs, SensitivePropertyPath};
 
-const CURRENT_FORMAT_VERSION: u32 = 2;
+const CURRENT_FORMAT_VERSION: u32 = 3;
 
 const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "password",
@@ -338,6 +338,7 @@ pub struct ResourceState {
     protected: bool,
     last_applied: ManagedInputs,
     sensitive_inputs: SensitiveInputs,
+    containment: Option<ResourceAddress>,
     dependencies: Vec<ResourceAddress>,
 }
 
@@ -353,6 +354,7 @@ impl fmt::Debug for ResourceState {
                 "sensitive_input_count",
                 &self.sensitive_inputs.paths().count(),
             )
+            .field("containment", &self.containment)
             .field("dependency_count", &self.dependencies.len())
             .finish()
     }
@@ -366,6 +368,7 @@ impl ResourceState {
         remote_id: RemoteId,
         protected: bool,
         last_applied: ManagedInputs,
+        containment: Option<ResourceAddress>,
         dependencies: Vec<ResourceAddress>,
     ) -> Self {
         Self::try_new(
@@ -374,9 +377,10 @@ impl ResourceState {
             protected,
             last_applied,
             SensitiveInputs::default(),
+            containment,
             dependencies,
         )
-        .expect("empty sensitive inputs cannot overlap managed inputs")
+        .expect("resource state containment must match its kind")
     }
 
     /// Creates resource state with opaque sensitive intent receipts.
@@ -386,9 +390,11 @@ impl ResourceState {
         protected: bool,
         last_applied: ManagedInputs,
         sensitive_inputs: SensitiveInputs,
+        containment: Option<ResourceAddress>,
         mut dependencies: Vec<ResourceAddress>,
     ) -> Result<Self, ResourceStateError> {
         ensure_disjoint_inputs(&last_applied, &sensitive_inputs)?;
+        validate_containment(kind, containment.as_ref())?;
         dependencies.sort();
         dependencies.dedup();
 
@@ -398,8 +404,19 @@ impl ResourceState {
             protected,
             last_applied,
             sensitive_inputs,
+            containment,
             dependencies,
         })
+    }
+
+    /// Replaces the direct logical containment parent after validating its kind.
+    pub fn with_containment(
+        mut self,
+        containment: Option<ResourceAddress>,
+    ) -> Result<Self, ResourceStateError> {
+        validate_containment(self.kind, containment.as_ref())?;
+        self.containment = containment;
+        Ok(self)
     }
 
     /// Returns the remote resource kind.
@@ -432,10 +449,27 @@ impl ResourceState {
         &self.sensitive_inputs
     }
 
+    /// Returns the direct logical containment parent.
+    #[must_use]
+    pub const fn containment(&self) -> Option<&ResourceAddress> {
+        self.containment.as_ref()
+    }
+
     /// Returns the canonical dependency list.
     #[must_use]
     pub fn dependencies(&self) -> &[ResourceAddress] {
         &self.dependencies
+    }
+}
+
+struct RequiredContainment(Option<ResourceAddress>);
+
+impl<'de> Deserialize<'de> for RequiredContainment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<ResourceAddress>::deserialize(deserializer).map(Self)
     }
 }
 
@@ -453,6 +487,7 @@ impl<'de> Deserialize<'de> for ResourceState {
             protected: bool,
             last_applied: ManagedInputs,
             sensitive_inputs: SensitiveInputs,
+            containment: RequiredContainment,
             dependencies: Vec<ResourceAddress>,
         }
 
@@ -464,6 +499,7 @@ impl<'de> Deserialize<'de> for ResourceState {
             state.protected,
             state.last_applied,
             state.sensitive_inputs,
+            state.containment.0,
             state.dependencies,
         )
         .map_err(de::Error::custom)
@@ -475,6 +511,36 @@ impl<'de> Deserialize<'de> for ResourceState {
 pub enum ResourceStateError {
     #[error("managed and sensitive inputs overlap at `{path}`")]
     OverlappingInput { path: SensitivePropertyPath },
+    #[error("resource kind `{kind}` requires containment by `{required}`")]
+    MissingContainment {
+        kind: ResourceKind,
+        required: ResourceKind,
+    },
+    #[error("resource kind `{kind}` cannot have a containment parent")]
+    UnexpectedContainment { kind: ResourceKind },
+    #[error("resource kind `{kind}` requires containment by `{required}`, found `{found}`")]
+    InvalidContainmentKind {
+        kind: ResourceKind,
+        required: ResourceKind,
+        found: ResourceKind,
+    },
+}
+
+fn validate_containment(
+    kind: ResourceKind,
+    containment: Option<&ResourceAddress>,
+) -> Result<(), ResourceStateError> {
+    match (kind.containment_parent_kind(), containment) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => Err(ResourceStateError::UnexpectedContainment { kind }),
+        (Some(required), None) => Err(ResourceStateError::MissingContainment { kind, required }),
+        (Some(required), Some(parent)) if parent.kind() == required => Ok(()),
+        (Some(required), Some(parent)) => Err(ResourceStateError::InvalidContainmentKind {
+            kind,
+            required,
+            found: parent.kind(),
+        }),
+    }
 }
 
 fn ensure_disjoint_inputs(

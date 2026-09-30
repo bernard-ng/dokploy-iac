@@ -260,7 +260,8 @@ fn compile_desired_with_fingerprints(
             Field::Clear => return Err(CompileDesiredError::ProtectionCannotBeCleared),
         };
 
-        let dependencies = compile_dependencies(address, resource, config.parents());
+        let containment = config.parent_of(address).cloned();
+        let dependencies = compile_dependencies(resource);
         let ignored_changes = resource
             .lifecycle()
             .ignore_changes()
@@ -276,6 +277,7 @@ fn compile_desired_with_fingerprints(
             address.clone(),
             DesiredResource::new(properties)
                 .with_protection(protection)
+                .with_containment(containment)
                 .with_dependencies(dependencies)
                 .with_ignored_changes(ignored_changes),
         );
@@ -347,16 +349,8 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
     bindings
 }
 
-fn compile_dependencies(
-    address: &ResourceAddress,
-    resource: &ResourceConfig,
-    parents: &BTreeMap<ResourceAddress, ResourceAddress>,
-) -> Vec<ResourceAddress> {
+fn compile_dependencies(resource: &ResourceConfig) -> Vec<ResourceAddress> {
     let mut dependencies: BTreeSet<_> = resource.depends_on().iter().cloned().collect();
-
-    if let Some(parent) = parents.get(address) {
-        dependencies.insert(parent.clone());
-    }
 
     if let ResourceConfig::Application(application) = resource
         && let Field::Set(environment) = application.environment()

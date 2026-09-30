@@ -105,6 +105,8 @@ impl FieldChange {
 pub enum MetadataChangeKind {
     /// Durable protection changed.
     Protection,
+    /// The direct logical containment parent changed.
+    Containment,
     /// Canonical resource dependencies changed.
     Dependencies,
 }
@@ -340,6 +342,7 @@ impl fmt::Debug for CheckpointTarget {
 #[derive(Clone, Eq, PartialEq)]
 pub struct ResourceCheckpoint {
     pub(crate) protected: bool,
+    pub(crate) containment: Option<ResourceAddress>,
     pub(crate) dependencies: Vec<ResourceAddress>,
     pub(crate) properties: BTreeMap<PropertyPath, OwnedValue>,
 }
@@ -349,6 +352,12 @@ impl ResourceCheckpoint {
     #[must_use]
     pub const fn protected(&self) -> bool {
         self.protected
+    }
+
+    /// Returns the direct logical containment parent.
+    #[must_use]
+    pub const fn containment(&self) -> Option<&ResourceAddress> {
+        self.containment.as_ref()
     }
 
     /// Returns canonical dependencies.
@@ -380,6 +389,7 @@ impl fmt::Debug for ResourceCheckpoint {
         formatter
             .debug_struct("ResourceCheckpoint")
             .field("protected", &self.protected)
+            .field("containment", &self.containment)
             .field("dependency_count", &self.dependencies.len())
             .field("property_count", &self.properties.len())
             .finish()

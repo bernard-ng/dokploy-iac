@@ -28,6 +28,18 @@ impl ResourceKind {
             Self::Domain => "domain",
         }
     }
+
+    /// Returns the required containment parent kind, if the resource is nested.
+    #[must_use]
+    pub const fn containment_parent_kind(self) -> Option<Self> {
+        match self {
+            Self::Project => None,
+            Self::Environment => Some(Self::Project),
+            Self::Application | Self::Postgres | Self::Redis | Self::Domain => {
+                Some(Self::Environment)
+            }
+        }
+    }
 }
 
 impl fmt::Display for ResourceKind {

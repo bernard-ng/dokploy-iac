@@ -584,6 +584,11 @@ fn add_application(state: &mut StateFile, name: &str) {
                 false,
                 ManagedInputs::try_from_json(json!({ "description": name }))
                     .expect("inputs must be safe"),
+                Some(
+                    "environment.production"
+                        .parse()
+                        .expect("containment must parse"),
+                ),
                 Vec::new(),
             ),
         )

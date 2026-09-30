@@ -24,6 +24,14 @@ unsupported formats, nil lineages, invalid addresses, and resource-kind
 mismatches. `StateFile::from_json_slice` is the supported decoding seam;
 `StateFile` does not implement general-purpose deserialization.
 
+State format version 3 stores each resource's direct containment separately
+from its general dependency list. Projects require explicit null containment;
+environments require a project address; applications, Postgres databases,
+Redis databases, and domains require an environment address. Missing fields,
+missing required containment, unexpected containment, and parent-kind
+mismatches are rejected. Versions 1 and 2 are not migrated or interpreted by
+inferring parents from dependencies.
+
 For an existing state, persistence atomically replaces the backup with the
 current primary bytes before atomically replacing the primary with the proposed
 snapshot. Each replacement uses a temporary file in `.dokploy/`, writes a
@@ -40,6 +48,8 @@ durability outcome with the affected artifact and revision.
 ## Consequences
 
 - Callers cannot omit instance, lineage, or serial checks from a durable write.
+- Durable containment is explicit and cannot be reconstructed from execution
+  ordering metadata.
 - A stale or oversized proposal fails before changing the primary or backup.
 - The backup and primary are separately atomic; their ordered replacement is
   not one cross-file transaction.

@@ -114,7 +114,8 @@ fn omitted_property_relinquishes_ownership_without_remote_update_or_drift() {
                 PropertyPath::Replicas,
                 OwnedValue::Value(value(json!(1))),
             )]))
-            .with_protection(ProtectionIntent::Unmanaged),
+            .with_protection(ProtectionIntent::Unmanaged)
+            .with_containment(containment_for(&address, &[])),
         )]),
     )
     .expect("desired state must be valid");
@@ -277,7 +278,8 @@ fn collection_root_intents_are_explicit_and_cannot_conflict_with_children() {
             DesiredResource::new(BTreeMap::from([
                 (PropertyPath::Source, OwnedValue::Null),
                 (PropertyPath::Environment, OwnedValue::EmptyCollection),
-            ])),
+            ]))
+            .with_containment(containment_for(&address, &[])),
         )]),
     )
     .expect("explicit source clear and owned-empty environment are valid");
@@ -370,7 +372,8 @@ fn desired_source_branch_requires_a_non_null_repository() {
                         OwnedValue::Value(value(json!("acme/api"))),
                     ),
                     (PropertyPath::SourceBranch, branch),
-                ])),
+                ]))
+                .with_containment(containment_for(&application, &[])),
             )]),
         )
         .expect("a non-null repository may have a null or non-null branch");
@@ -702,6 +705,44 @@ fn desired_state_rejects_wrong_kind_and_invalid_dependencies() {
         missing_dependency,
         DesiredStateError::MissingDependency { .. }
     ));
+}
+
+#[test]
+fn desired_state_requires_explicit_kind_correct_containment() {
+    let project = address("project.platform");
+    let environment = address("environment.production");
+    let application = address("application.api");
+
+    let missing = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(application.clone(), DesiredResource::new(BTreeMap::new()))]),
+    )
+    .expect_err("nested desired resources require containment");
+    assert!(matches!(
+        missing,
+        DesiredStateError::MissingContainment { .. }
+    ));
+
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (project.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                environment.clone(),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(project.clone())),
+            ),
+            (
+                application.clone(),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(environment.clone())),
+            ),
+        ]),
+    )
+    .expect("the containment hierarchy is valid");
+
+    assert_eq!(
+        desired.resources()[&application].containment(),
+        Some(&environment)
+    );
 }
 
 #[test]
@@ -1240,11 +1281,13 @@ fn dependency_change_is_a_state_only_checkpoint() {
                     PropertyPath::Replicas,
                     OwnedValue::Value(value(json!(1))),
                 )]))
+                .with_containment(containment_for(&resource_address, &[]))
                 .with_dependencies(vec![new_dependency.clone()]),
             ),
             (
                 new_dependency.clone(),
-                DesiredResource::new(BTreeMap::new()),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&new_dependency, &[])),
             ),
         ]),
     )
@@ -1290,6 +1333,86 @@ fn dependency_change_is_a_state_only_checkpoint() {
 }
 
 #[test]
+fn containment_change_is_a_distinct_state_only_checkpoint() {
+    let project = address("project.platform");
+    let old_environment = address("environment.old");
+    let new_environment = address("environment.production");
+    let application = address("application.api");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    state
+        .upsert_resource(
+            application.clone(),
+            ResourceState::new(
+                ResourceKind::Application,
+                remote_id(),
+                false,
+                ManagedInputs::try_from_json(json!({ "replicas": 1 }))
+                    .expect("managed inputs must be valid"),
+                Some(old_environment),
+                Vec::new(),
+            ),
+        )
+        .expect("state insert must succeed");
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([
+            (project.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                new_environment.clone(),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(project.clone())),
+            ),
+            (
+                application.clone(),
+                DesiredResource::new(BTreeMap::from([(
+                    PropertyPath::Replicas,
+                    OwnedValue::Value(value(json!(1))),
+                )]))
+                .with_containment(Some(new_environment.clone())),
+            ),
+        ]),
+    )
+    .expect("desired containment must be valid");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (project, RemoteObservation::Missing),
+            (new_environment, RemoteObservation::Missing),
+            (
+                application.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([(
+                        PropertyPath::Replicas,
+                        PropertyObservation::Known(value(json!(1))),
+                    )]),
+                )),
+            ),
+        ],
+    )
+    .expect("remote observations must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+    let change = plan
+        .changes()
+        .iter()
+        .find(|change| change.address() == &application)
+        .expect("application containment must checkpoint");
+
+    assert_eq!(change.kind(), ChangeKind::NoOp);
+    assert_eq!(change.metadata(), &[MetadataChangeKind::Containment]);
+    assert_eq!(
+        change
+            .checkpoint()
+            .present()
+            .expect("application remains managed")
+            .containment(),
+        Some(&address("environment.production"))
+    );
+}
+
+#[test]
 fn create_changes_are_ordered_dependency_first() {
     let project = address("project.platform");
     let environment = address("environment.production");
@@ -1303,11 +1426,11 @@ fn create_changes_are_ordered_dependency_first() {
         BTreeMap::from([
             (
                 application.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![environment.clone()]),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(environment.clone())),
             ),
             (
                 environment.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![project.clone()]),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(project.clone())),
             ),
             (project.clone(), DesiredResource::new(BTreeMap::new())),
         ]),
@@ -1348,15 +1471,21 @@ fn diamond_dependencies_use_lexical_ties_and_stable_json() {
         let mut entries = vec![
             (
                 leaf.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(leaf_dependencies),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&leaf, &[]))
+                    .with_dependencies(leaf_dependencies),
             ),
             (
                 postgres.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![root.clone()]),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&postgres, &[]))
+                    .with_dependencies(vec![root.clone()]),
             ),
             (
                 redis.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![root.clone()]),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&redis, &[]))
+                    .with_dependencies(vec![root.clone()]),
             ),
             (root.clone(), DesiredResource::new(BTreeMap::new())),
         ];
@@ -1418,9 +1547,21 @@ fn independent_changes_use_lexical_address_order() {
     let desired = DesiredState::try_new(
         digest(),
         BTreeMap::from([
-            (redis.clone(), DesiredResource::new(BTreeMap::new())),
-            (application.clone(), DesiredResource::new(BTreeMap::new())),
-            (postgres.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                redis.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&redis, &[])),
+            ),
+            (
+                application.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&application, &[])),
+            ),
+            (
+                postgres.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&postgres, &[])),
+            ),
         ]),
     )
     .expect("desired state must be valid");
@@ -1458,11 +1599,15 @@ fn desired_dependency_cycle_blocks_without_an_execution_order() {
         BTreeMap::from([
             (
                 application.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![postgres.clone()]),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&application, &[]))
+                    .with_dependencies(vec![postgres.clone()]),
             ),
             (
                 postgres.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![application.clone()]),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&postgres, &[]))
+                    .with_dependencies(vec![application.clone()]),
             ),
         ]),
     )
@@ -1708,6 +1853,7 @@ fn mixed_plans_finish_dependency_first_changes_before_removals() {
                 false,
                 ManagedInputs::try_from_json(json!({ "description": "old" }))
                     .expect("managed inputs must be valid"),
+                Some(environment.clone()),
                 Vec::new(),
             ),
         )
@@ -1728,7 +1874,7 @@ fn mixed_plans_finish_dependency_first_changes_before_removals() {
             ),
             (
                 environment.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![project.clone()]),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(project.clone())),
             ),
             (
                 updated.clone(),
@@ -1736,7 +1882,7 @@ fn mixed_plans_finish_dependency_first_changes_before_removals() {
                     PropertyPath::Description,
                     OwnedValue::Value(value(json!("new"))),
                 )]))
-                .with_dependencies(vec![environment.clone()]),
+                .with_containment(Some(environment.clone())),
             ),
         ]),
     )
@@ -1809,7 +1955,9 @@ fn unchanged_dependencies_do_not_create_state_only_changes() {
             (project.clone(), DesiredResource::new(BTreeMap::new())),
             (
                 application.clone(),
-                DesiredResource::new(BTreeMap::new()).with_dependencies(vec![project.clone()]),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&application, &[]))
+                    .with_dependencies(vec![project.clone()]),
             ),
         ]),
     )
@@ -1921,6 +2069,61 @@ fn move_preserves_identity_and_emits_one_target_addressed_change() {
 }
 
 #[test]
+fn logical_address_and_parent_move_checkpoints_containment_without_remote_work() {
+    let source = address("application.backend");
+    let target = address("application.api");
+    let old_parent = address("environment.legacy");
+    let new_parent = address("environment.production");
+    let instance = instance();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    state
+        .upsert_resource(
+            source.clone(),
+            ResourceState::new(
+                ResourceKind::Application,
+                remote_id(),
+                false,
+                ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+                Some(old_parent),
+                Vec::new(),
+            ),
+        )
+        .expect("state insert must succeed");
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &target,
+        DesiredResource::new(BTreeMap::new()).with_containment(Some(new_parent.clone())),
+    )
+    .with_moves(vec![MoveDirective::new(source.clone(), target.clone())]);
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                source.clone(),
+                RemoteObservation::Present(RemoteResource::new(remote_id(), BTreeMap::new())),
+            ),
+            (target, RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote observations must be valid");
+
+    let plan = plan(&desired, &stored, &remote);
+    let change = &plan.changes()[0];
+
+    assert_eq!(change.kind(), ChangeKind::Move);
+    assert_eq!(change.move_action(), Some(MoveAction::StateOnly));
+    assert_eq!(change.metadata(), &[MetadataChangeKind::Containment]);
+    assert_eq!(
+        change
+            .checkpoint()
+            .move_target()
+            .expect("move checkpoint must exist")
+            .containment(),
+        Some(&new_parent)
+    );
+}
+
+#[test]
 fn move_directive_and_observation_order_do_not_change_plan_json() {
     let source_a = address("application.old-a");
     let source_b = address("application.old-b");
@@ -1932,8 +2135,14 @@ fn move_directive_and_observation_order_do_not_change_plan_json() {
     insert_state_resource(&mut state, source_a.clone(), "remote-a", Vec::new());
     let stored = StoredState::try_from_state(&state).expect("state must project");
     let resources = BTreeMap::from([
-        (target_b.clone(), DesiredResource::new(BTreeMap::new())),
-        (target_a.clone(), DesiredResource::new(BTreeMap::new())),
+        (
+            target_b.clone(),
+            DesiredResource::new(BTreeMap::new()).with_containment(containment_for(&target_b, &[])),
+        ),
+        (
+            target_a.clone(),
+            DesiredResource::new(BTreeMap::new()).with_containment(containment_for(&target_a, &[])),
+        ),
     ]);
     let desired_a = DesiredState::try_new(digest(), resources)
         .expect("desired state must be valid")
@@ -1944,8 +2153,16 @@ fn move_directive_and_observation_order_do_not_change_plan_json() {
     let desired_b = DesiredState::try_new(
         digest(),
         BTreeMap::from([
-            (target_a.clone(), DesiredResource::new(BTreeMap::new())),
-            (target_b.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                target_a.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&target_a, &[])),
+            ),
+            (
+                target_b.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&target_b, &[])),
+            ),
         ]),
     )
     .expect("desired state must be valid")
@@ -2236,7 +2453,10 @@ fn invalid_move_and_removal_declarations_block_the_whole_plan() {
 
     let duplicate = DesiredState::try_new(
         digest(),
-        BTreeMap::from([(target.clone(), target_resource)]),
+        BTreeMap::from([(
+            target.clone(),
+            target_resource.with_containment(containment_for(&target, &[])),
+        )]),
     )
     .expect("desired state must be valid")
     .with_moves(vec![
@@ -2260,8 +2480,16 @@ fn invalid_move_and_removal_declarations_block_the_whole_plan() {
     let chain = DesiredState::try_new(
         digest(),
         BTreeMap::from([
-            (target.clone(), DesiredResource::new(BTreeMap::new())),
-            (chain_target.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                target.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&target, &[])),
+            ),
+            (
+                chain_target.clone(),
+                DesiredResource::new(BTreeMap::new())
+                    .with_containment(containment_for(&chain_target, &[])),
+            ),
         ]),
     )
     .expect("desired state must be valid")
@@ -2283,7 +2511,10 @@ fn invalid_move_and_removal_declarations_block_the_whole_plan() {
 
     let conflict = DesiredState::try_new(
         digest(),
-        BTreeMap::from([(target.clone(), DesiredResource::new(BTreeMap::new()))]),
+        BTreeMap::from([(
+            target.clone(),
+            DesiredResource::new(BTreeMap::new()).with_containment(containment_for(&target, &[])),
+        )]),
     )
     .expect("desired state must be valid")
     .with_moves(vec![MoveDirective::new(source.clone(), target.clone())])
@@ -3249,6 +3480,11 @@ fn stored_state_rejects_duplicate_same_kind_identity_but_allows_same_raw_id_acro
                     false,
                     ManagedInputs::try_from_json(json!({ "replicas": 1 }))
                         .expect("inputs must be valid"),
+                    Some(
+                        "environment.production"
+                            .parse()
+                            .expect("containment must parse"),
+                    ),
                     Vec::new(),
                 ),
             )
@@ -3274,6 +3510,7 @@ fn stored_state_rejects_duplicate_same_kind_identity_but_allows_same_raw_id_acro
                 false,
                 ManagedInputs::try_from_json(json!({ "replicas": 1 }))
                     .expect("inputs must be valid"),
+                Some(address("environment.production")),
                 Vec::new(),
             ),
         )
@@ -3287,6 +3524,7 @@ fn stored_state_rejects_duplicate_same_kind_identity_but_allows_same_raw_id_acro
                 false,
                 ManagedInputs::try_from_json(json!({ "database": "app" }))
                     .expect("inputs must be valid"),
+                Some(address("environment.production")),
                 Vec::new(),
             ),
         )
@@ -3789,6 +4027,11 @@ fn sensitive_intent_with_key(key_id: &str, mac_byte: u8) -> OwnedValue {
 }
 
 fn desired_state(address: &ResourceAddress, resource: DesiredResource) -> DesiredState {
+    let containment = resource
+        .containment()
+        .cloned()
+        .or_else(|| containment_for(address, &[]));
+    let resource = resource.with_containment(containment);
     DesiredState::try_new(digest(), BTreeMap::from([(address.clone(), resource)]))
         .expect("desired state must be valid")
 }
@@ -3901,6 +4144,7 @@ fn state_with_sensitive_resource_details<const N: usize>(
                 protected,
                 ManagedInputs::try_from_json(previous).expect("managed inputs must be valid"),
                 sensitive_inputs,
+                containment_for(address, &[]),
                 Vec::new(),
             )
             .expect("managed and sensitive inputs must be disjoint"),
@@ -3927,6 +4171,7 @@ fn state_with_resource_details(
                 RemoteId::new(remote_id).expect("remote id must be valid"),
                 protected,
                 ManagedInputs::try_from_json(previous).expect("managed inputs must be valid"),
+                containment_for(address, &dependencies),
                 dependencies,
             ),
         )
@@ -3948,8 +4193,29 @@ fn insert_state_resource(
                 RemoteId::new(remote_id).expect("remote id must be valid"),
                 false,
                 ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+                containment_for(&address, &dependencies),
                 dependencies,
             ),
         )
         .expect("state insert must succeed");
+}
+
+fn containment_for(
+    address: &ResourceAddress,
+    dependencies: &[ResourceAddress],
+) -> Option<ResourceAddress> {
+    let required = address.kind().containment_parent_kind()?;
+    dependencies
+        .iter()
+        .find(|dependency| dependency.kind() == required)
+        .cloned()
+        .or_else(|| match required {
+            ResourceKind::Project => Some("project.main".parse().expect("containment must parse")),
+            ResourceKind::Environment => Some(
+                "environment.production"
+                    .parse()
+                    .expect("containment must parse"),
+            ),
+            _ => unreachable!("the current model has only two containment parent kinds"),
+        })
 }

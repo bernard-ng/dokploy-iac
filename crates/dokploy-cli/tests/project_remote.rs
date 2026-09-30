@@ -139,6 +139,7 @@ fn insert_project(
                 RemoteId::new(remote_id).expect("remote ID is valid"),
                 false,
                 ManagedInputs::try_from_json(last_applied).expect("managed inputs are valid"),
+                None,
                 Vec::new(),
             ),
         )

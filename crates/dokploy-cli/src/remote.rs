@@ -1055,14 +1055,10 @@ fn application_parent_from_state(
     let resource = state
         .resource(address)
         .ok_or(DiscoverRemoteError::ApplicationContainment)?;
-    let mut parents = resource
-        .dependencies()
-        .iter()
-        .filter(|dependency| dependency.kind() == ResourceKind::Environment);
-    let parent = parents
-        .next()
+    let parent = resource
+        .containment()
         .ok_or(DiscoverRemoteError::ApplicationContainment)?;
-    if parents.next().is_some() {
+    if parent.kind() != ResourceKind::Environment {
         return Err(DiscoverRemoteError::ApplicationContainment);
     }
 
@@ -1416,14 +1412,10 @@ fn postgres_parent_from_state(
     let resource = state
         .resource(address)
         .ok_or(DiscoverRemoteError::PostgresContainment)?;
-    let mut parents = resource
-        .dependencies()
-        .iter()
-        .filter(|dependency| dependency.kind() == ResourceKind::Environment);
-    let parent = parents
-        .next()
+    let parent = resource
+        .containment()
         .ok_or(DiscoverRemoteError::PostgresContainment)?;
-    if parents.next().is_some() {
+    if parent.kind() != ResourceKind::Environment {
         return Err(DiscoverRemoteError::PostgresContainment);
     }
 
@@ -1658,14 +1650,10 @@ fn redis_parent_from_state(
     let resource = state
         .resource(address)
         .ok_or(DiscoverRemoteError::RedisContainment)?;
-    let mut parents = resource
-        .dependencies()
-        .iter()
-        .filter(|dependency| dependency.kind() == ResourceKind::Environment);
-    let parent = parents
-        .next()
+    let parent = resource
+        .containment()
         .ok_or(DiscoverRemoteError::RedisContainment)?;
-    if parents.next().is_some() {
+    if parent.kind() != ResourceKind::Environment {
         return Err(DiscoverRemoteError::RedisContainment);
     }
 
@@ -1947,14 +1935,10 @@ fn environment_parent(
     let Some(resource) = state.resource(address) else {
         return Err(DiscoverRemoteError::EnvironmentContainment);
     };
-    let mut parents = resource
-        .dependencies()
-        .iter()
-        .filter(|dependency| dependency.kind() == ResourceKind::Project);
-    let parent = parents
-        .next()
+    let parent = resource
+        .containment()
         .ok_or(DiscoverRemoteError::EnvironmentContainment)?;
-    if parents.next().is_some() {
+    if parent.kind() != ResourceKind::Project {
         return Err(DiscoverRemoteError::EnvironmentContainment);
     }
 

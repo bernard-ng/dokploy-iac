@@ -61,6 +61,7 @@ pub enum ProtectionIntent {
 pub struct DesiredResource {
     pub(crate) properties: BTreeMap<PropertyPath, OwnedValue>,
     pub(crate) protection: ProtectionIntent,
+    pub(crate) containment: Option<ResourceAddress>,
     pub(crate) dependencies: Vec<ResourceAddress>,
     pub(crate) ignore_changes: Vec<PropertyPath>,
     pub(crate) replace_on_changes: Vec<PropertyPath>,
@@ -73,6 +74,7 @@ impl DesiredResource {
         Self {
             properties,
             protection: ProtectionIntent::Unmanaged,
+            containment: None,
             dependencies: Vec::new(),
             ignore_changes: Vec::new(),
             replace_on_changes: Vec::new(),
@@ -83,6 +85,13 @@ impl DesiredResource {
     #[must_use]
     pub fn with_protection(mut self, protection: ProtectionIntent) -> Self {
         self.protection = protection;
+        self
+    }
+
+    /// Sets the direct logical containment parent.
+    #[must_use]
+    pub fn with_containment(mut self, containment: Option<ResourceAddress>) -> Self {
+        self.containment = containment;
         self
     }
 
@@ -125,6 +134,12 @@ impl DesiredResource {
         self.protection
     }
 
+    /// Returns the direct logical containment parent.
+    #[must_use]
+    pub const fn containment(&self) -> Option<&ResourceAddress> {
+        self.containment.as_ref()
+    }
+
     /// Returns canonical desired dependencies.
     #[must_use]
     pub fn dependencies(&self) -> &[ResourceAddress] {
@@ -144,6 +159,7 @@ impl fmt::Debug for DesiredResource {
             .debug_struct("DesiredResource")
             .field("property_count", &self.properties.len())
             .field("protection", &self.protection)
+            .field("containment", &self.containment)
             .field("dependency_count", &self.dependencies.len())
             .field("ignored_property_count", &self.ignore_changes.len())
             .field("replacement_property_count", &self.replace_on_changes.len())
@@ -234,6 +250,7 @@ impl DesiredState {
                     });
                 }
             }
+            validate_desired_containment(address, resource)?;
         }
 
         Ok(Self {
@@ -312,6 +329,43 @@ pub enum DesiredStateError {
         address: ResourceAddress,
         dependency: ResourceAddress,
     },
+    /// A nested resource has no direct containment parent.
+    #[error("desired resource `{address}` is missing its containment parent")]
+    MissingContainment { address: ResourceAddress },
+    /// A top-level resource cannot have a containment parent.
+    #[error("desired resource `{address}` cannot have a containment parent")]
+    UnexpectedContainment { address: ResourceAddress },
+    /// A containment parent has the wrong resource kind.
+    #[error("desired resource `{address}` has an invalid containment parent `{parent}`")]
+    InvalidContainmentKind {
+        address: ResourceAddress,
+        parent: ResourceAddress,
+    },
+}
+
+fn validate_desired_containment(
+    address: &ResourceAddress,
+    resource: &DesiredResource,
+) -> Result<(), DesiredStateError> {
+    match (
+        address.kind().containment_parent_kind(),
+        resource.containment.as_ref(),
+    ) {
+        (None, None) => Ok(()),
+        (None, Some(_)) => Err(DesiredStateError::UnexpectedContainment {
+            address: address.clone(),
+        }),
+        (Some(_), None) => Err(DesiredStateError::MissingContainment {
+            address: address.clone(),
+        }),
+        (Some(required), Some(parent)) if parent.kind() != required => {
+            Err(DesiredStateError::InvalidContainmentKind {
+                address: address.clone(),
+                parent: parent.clone(),
+            })
+        }
+        (Some(_), Some(_)) => Ok(()),
+    }
 }
 
 fn validate_desired_resource(
@@ -445,6 +499,7 @@ pub(crate) struct StoredResource {
     pub(crate) remote_id: RemoteId,
     pub(crate) protected: bool,
     pub(crate) properties: BTreeMap<PropertyPath, OwnedValue>,
+    pub(crate) containment: Option<ResourceAddress>,
     pub(crate) dependencies: Vec<ResourceAddress>,
 }
 
@@ -511,6 +566,7 @@ impl StoredState {
                     remote_id: resource.remote_id().clone(),
                     protected: resource.is_protected(),
                     properties,
+                    containment: resource.containment().cloned(),
                     dependencies: resource.dependencies().to_vec(),
                 },
             );

@@ -53,7 +53,7 @@ remain the comparison input.
 Logical Redis moves are safe when source and target resolve to the same
 physical environment. Simultaneous environment moves are safe because the
 target resolves through the stored source identity. Any desired Redis
-dependency change that resolves to another physical environment fails before
+containment change that resolves to another physical environment fails before
 Redis transport until an explicit mutation contract, journal sequence, and
 recovery test exist.
 

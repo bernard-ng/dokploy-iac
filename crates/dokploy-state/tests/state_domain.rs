@@ -200,6 +200,11 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
             false,
             ManagedInputs::try_from_json(managed).expect("clear must be valid"),
             sensitive.clone(),
+            Some(
+                "environment.production"
+                    .parse()
+                    .expect("address must parse"),
+            ),
             Vec::new(),
         )
         .expect_err("managed and fingerprinted ownership must not overlap");
@@ -217,6 +222,11 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
             fingerprint(0x6b),
         )])
         .expect("sensitive input must be valid"),
+        Some(
+            "environment.production"
+                .parse()
+                .expect("address must parse"),
+        ),
         Vec::new(),
     )
     .expect("different environment paths may own clear and receipt intents");
@@ -236,6 +246,11 @@ fn sensitive_receipts_and_state_debug_output_are_redacted() {
         false,
         ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
         inputs.clone(),
+        Some(
+            "environment.production"
+                .parse()
+                .expect("address must parse"),
+        ),
         Vec::new(),
     )
     .expect("disjoint inputs must be valid");
@@ -291,7 +306,7 @@ fn state_mutations_advance_one_lineage_serial() {
     let address: ResourceAddress = "application.api".parse().expect("address must parse");
     let resource = resource_state(ResourceKind::Application, "application-1");
 
-    assert_eq!(state.format_version(), 2);
+    assert_eq!(state.format_version(), 3);
     assert_eq!(state.serial(), 0);
     assert_eq!(state.revision().serial(), 0);
     assert_eq!(state.revision().lineage(), lineage);
@@ -391,12 +406,12 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
     );
 
     let mut unsupported = serde_json::to_value(&state).expect("state must serialize");
-    unsupported["formatVersion"] = json!(3);
+    unsupported["formatVersion"] = json!(4);
     let unsupported = serde_json::to_vec(&unsupported).expect("state JSON must serialize");
     assert!(StateFile::from_json_slice(&unsupported).is_err());
 
     let mut obsolete = serde_json::to_value(&state).expect("state must serialize");
-    obsolete["formatVersion"] = json!(1);
+    obsolete["formatVersion"] = json!(2);
     let obsolete = serde_json::to_vec(&obsolete).expect("state JSON must serialize");
     assert!(StateFile::from_json_slice(&obsolete).is_err());
 }
@@ -429,6 +444,11 @@ fn state_deserialization_rejects_raw_sensitive_canaries() {
                 RemoteId::new("postgres-1").expect("remote ID must be valid"),
                 false,
                 ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+                Some(
+                    "environment.production"
+                        .parse()
+                        .expect("address must parse"),
+                ),
                 Vec::new(),
             ),
         )
@@ -454,6 +474,27 @@ fn resource_state_deserialization_rejects_unknown_fields() {
 }
 
 #[test]
+fn resource_state_deserialization_requires_explicit_containment() {
+    let resource = resource_state(ResourceKind::Application, "application-1");
+    let mut encoded = serde_json::to_value(resource).expect("resource state must serialize");
+    encoded
+        .as_object_mut()
+        .expect("resource state must be an object")
+        .remove("containment");
+
+    assert!(serde_json::from_value::<ResourceState>(encoded).is_err());
+
+    let project = resource_state(ResourceKind::Project, "project-1");
+    let encoded = serde_json::to_value(&project).expect("project state must serialize");
+    assert_eq!(encoded["containment"], serde_json::Value::Null);
+    assert_eq!(
+        serde_json::from_value::<ResourceState>(encoded)
+            .expect("explicit null project containment must deserialize"),
+        project
+    );
+}
+
+#[test]
 fn resource_state_canonicalizes_dependencies() {
     let first: ResourceAddress = "environment.production"
         .parse()
@@ -464,11 +505,45 @@ fn resource_state_canonicalizes_dependencies() {
         RemoteId::new("application-1").expect("remote ID must be valid"),
         true,
         ManagedInputs::try_from_json(json!({})).expect("inputs must be safe"),
+        Some(first.clone()),
         vec![second.clone(), first.clone(), second.clone()],
     );
 
     assert!(resource.is_protected());
     assert_eq!(resource.dependencies(), &[first, second]);
+}
+
+#[test]
+fn resource_state_requires_kind_correct_containment() {
+    let environment: ResourceAddress = "environment.production"
+        .parse()
+        .expect("address must parse");
+    let project: ResourceAddress = "project.main".parse().expect("address must parse");
+
+    let application = ResourceState::try_new(
+        ResourceKind::Application,
+        RemoteId::new("application-1").expect("remote ID must be valid"),
+        false,
+        ManagedInputs::try_from_json(json!({})).expect("inputs must be safe"),
+        SensitiveInputs::default(),
+        Some(environment.clone()),
+        Vec::new(),
+    )
+    .expect("an application belongs to an environment");
+
+    assert_eq!(application.containment(), Some(&environment));
+    assert!(
+        ResourceState::try_new(
+            ResourceKind::Application,
+            RemoteId::new("application-2").expect("remote ID must be valid"),
+            false,
+            ManagedInputs::try_from_json(json!({})).expect("inputs must be safe"),
+            SensitiveInputs::default(),
+            Some(project),
+            Vec::new(),
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -482,6 +557,11 @@ fn state_debug_output_does_not_expose_managed_values_or_remote_ids() {
         RemoteId::new("remote-id-canary").expect("remote ID must be valid"),
         false,
         inputs.clone(),
+        Some(
+            "environment.production"
+                .parse()
+                .expect("address must parse"),
+        ),
         Vec::new(),
     );
     let mut state = StateFile::new(Version::new(0, 1, 0), instance());
@@ -507,12 +587,25 @@ fn instance() -> InstanceIdentity {
 }
 
 fn resource_state(kind: ResourceKind, remote_id: &str) -> ResourceState {
+    let containment = match kind.containment_parent_kind() {
+        None => None,
+        Some(ResourceKind::Project) => {
+            Some("project.main".parse().expect("containment must parse"))
+        }
+        Some(ResourceKind::Environment) => Some(
+            "environment.production"
+                .parse()
+                .expect("containment must parse"),
+        ),
+        Some(_) => unreachable!("the current model has only two containment parent kinds"),
+    };
     ResourceState::new(
         kind,
         RemoteId::new(remote_id).expect("remote ID must be valid"),
         false,
         ManagedInputs::try_from_json(json!({ "description": "managed" }))
             .expect("inputs must be safe"),
+        containment,
         Vec::new(),
     )
 }
