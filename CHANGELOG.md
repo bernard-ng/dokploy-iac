@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add `dokploy recover` with durable checkpoint reconstruction, fresh remote
+  verification, exact approval, safe create adoption, and fail-closed handling
+  for unreadable or ambiguous interrupted outcomes.
+- Add atomic state address moves, idempotent protection toggles, and guarded
+  state-only forgetting with dependent-reference validation.
 - Add `dokploy apply --auto-approve` for explicitly non-interactive execution
   while preserving fresh plan rendering and validation.
 - Add offline shell completion generation for Bash, Zsh, Fish, PowerShell, and

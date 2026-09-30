@@ -41,5 +41,7 @@ are the source of truth for the recovery workflow delivered in Phase 7.
 - A failure stops later scheduling while allowing in-flight calls to settle.
 - Recovery scanning distinguishes open, failed, checkpointed, and committed
   outcomes even when step completion order differs from start order.
-- Apply can converge all MVP resources, while destructive changes, replacements,
-  moves, and explicit recovery remain unavailable until their later phases.
+- Apply can converge all MVP resources and execute explicit delete or retain
+  removals. Explicit recovery verifies interrupted outcomes before changing
+  state. Workspace-wide destroy, replacement execution, and move execution
+  remain later checkpoints.

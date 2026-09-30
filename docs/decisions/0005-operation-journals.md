@@ -42,19 +42,29 @@ refuses both states.
 
 A trailing non-empty fragment without a newline is treated as a recoverable
 crash tail only when all preceding complete records form a valid non-terminal
-history. The fragment is never interpreted or truncated automatically. A
-complete malformed line, a fragment after `Commit`, or a fragment after a
-complete `StepFailed` is corruption.
+history. Recovery first copies that fragment into an owner-only archive and
+then trims it durably. A complete malformed line, a fragment after `Commit`, or
+a fragment after a complete `StepFailed` is corruption.
+
+Format version 2 records the exact expected checkpoint before every mutation.
+`dokploy recover` holds the ordinary workspace writer lock, performs fresh
+resource-specific reads, and classifies the unresolved step without retrying
+it. A uniquely matching uncertain create may be adopted; a confirmed missing
+delete may be checkpointed; and a resource still carrying its prior identity
+can confirm that deletion made no change. Updates and deployments are
+checkpointed only when every owned readable value matches. Write-only or
+ambiguous outcomes fail closed for manual review.
 
 ## Consequences
 
 - An uncertain remote mutation is preserved for fresh inspection instead of
   being retried automatically.
 - The same write session cannot bypass an incomplete or poisoned journal.
-- Journal files contain addresses, actions, revisions, IDs, digests, and
-  constrained failure codes, but no managed inputs or arbitrary error text.
-- Detection is implemented; an interactive `recover` command remains a later
-  phase because it requires resource-specific fresh-remote reconciliation.
+- Journal files contain addresses, actions, revisions, IDs, digests, exact
+  expected checkpoints, and constrained failure codes. Sensitive values remain
+  opaque receipts, and arbitrary remote error text is never persisted.
+- Explicit recovery is available through a preview and exact approval; CI may
+  opt into the same verified action with `--auto-approve`.
 - Crash and power-loss behavior is covered through durable-state fixtures and
-  injected failure stages. Subprocess power-loss simulation and broader
-  non-Unix durability coverage remain future hardening work.
+  injected failure stages. Broader non-Unix durability coverage remains future
+  hardening work.

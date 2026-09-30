@@ -11,7 +11,8 @@ about ownership, drift, secrets, remote identity, and recovery.
 > [!IMPORTANT]
 > This project is pre-release. The imperative CLI and offline configuration
 > commands are usable today. Declarative `plan` and confirmed `apply` cover the
-> six MVP resource types; recovery and destructive workflows remain later work.
+> six MVP resource types. Explicit interrupted-operation recovery is available;
+> the workspace-wide destroy workflow remains later work.
 
 ## What it offers
 
@@ -148,6 +149,19 @@ Redis mutations may overlap; hierarchy-dependent and multi-step operations stay
 ordered. Each successful remote step is checkpointed before dependent work
 continues. A failed operation is never rolled back automatically, and already
 running successful siblings are still checkpointed before apply returns.
+
+If an apply stops with an unresolved journal, inspect and complete its verified
+recovery plan explicitly:
+
+```bash
+dokploy recover
+dokploy recover --auto-approve
+```
+
+Recovery never retries an uncertain create. It adopts only a uniquely observed
+resource whose readable owned values match the durable checkpoint. Uncertain
+updates involving write-only values or ambiguous observations stop for manual
+review.
 
 For delivery detail, see the [implementation phases](docs/implementation-phases.md).
 

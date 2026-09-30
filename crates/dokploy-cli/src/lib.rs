@@ -10,6 +10,7 @@ mod imperative;
 mod imperative_generated;
 mod plan_output;
 pub mod planning;
+pub mod recovery;
 mod redaction;
 pub mod remote;
 mod state_command;
@@ -34,7 +35,7 @@ use config::ConfigRepository;
 use credentials::{ApiKey, CredentialStore};
 use dokploy_sdk::Dokploy;
 use miette::{IntoDiagnostic, Result};
-use settings::{ConnectionOptions, ProcessEnvironment, resolve_connection};
+use settings::{ConnectionOptions, ProcessEnvironment, resolve_connection, resolve_instance_url};
 
 pub use declarative::execute as execute_offline;
 
@@ -89,17 +90,9 @@ pub async fn execute_with_input(
         }
         Command::State { file, command } => {
             let configuration = config.load()?;
-            let settings = resolve_connection(
-                ConnectionOptions {
-                    url,
-                    api_key: api_key.map(ApiKey::new),
-                },
-                &ProcessEnvironment,
-                &configuration,
-                credentials,
-            )?;
-            let instance = dokploy_state::InstanceIdentity::parse(settings.url().as_str())
-                .into_diagnostic()?;
+            let url = resolve_instance_url(url, &ProcessEnvironment, &configuration)?;
+            let instance =
+                dokploy_state::InstanceIdentity::parse(url.as_str()).into_diagnostic()?;
             state_command::execute(&file, instance, command, output).into_diagnostic()?;
 
             Ok(CommandStatus::Success)
@@ -191,6 +184,60 @@ pub async fn execute_with_input(
                 }
                 Err(executor::ApplyWorkspaceError::Declined) => {
                     writeln!(output, "Apply cancelled.").into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                Err(error) => Err(error).into_diagnostic(),
+            }
+        }
+        Command::Recover { file, auto_approve } => {
+            let configuration = config.load()?;
+            let settings = resolve_connection(
+                ConnectionOptions {
+                    url,
+                    api_key: api_key.map(ApiKey::new),
+                },
+                &ProcessEnvironment,
+                &configuration,
+                credentials,
+            )?;
+            let client = Dokploy::builder()
+                .url(settings.url().as_str())
+                .api_key(settings.api_key().expose())
+                .build()
+                .into_diagnostic()?;
+            let result = recovery::recover_workspace_with_approval(&client, &file, |preview| {
+                match preview.address() {
+                    Some(address) => writeln!(
+                        output,
+                        "Recovery action for {address}: {:?}",
+                        preview.action()
+                    )?,
+                    None => writeln!(output, "Recovery action: {:?}", preview.action())?,
+                }
+                if auto_approve {
+                    return Ok(true);
+                }
+
+                write!(output, "Complete this recovery? Type 'yes' to continue: ")?;
+                output.flush()?;
+                let mut answer = String::new();
+                input.read_line(&mut answer)?;
+
+                Ok(answer.trim() == "yes")
+            })
+            .await;
+            match result {
+                Ok(result) => {
+                    writeln!(
+                        output,
+                        "Recovery complete: {} interrupted step(s) resolved.",
+                        result.recovered_steps()
+                    )
+                    .into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                Err(recovery::RecoverWorkspaceError::Declined) => {
+                    writeln!(output, "Recovery cancelled.").into_diagnostic()?;
                     Ok(CommandStatus::Success)
                 }
                 Err(error) => Err(error).into_diagnostic(),

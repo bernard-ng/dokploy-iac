@@ -26,5 +26,5 @@ pub use snapshot::{
     ConfigDigest, ConfigDigestError, DesiredResource, DesiredState, DesiredStateError,
     MoveDirective, PropertyObservation, PropertyUnknownReason, ProtectionIntent, RemoteFailureKind,
     RemoteObservation, RemoteResource, RemoteState, RemoteStateError, RemovalDirective,
-    StoredState, StoredStateError,
+    ResourceObservationMatch, StoredState, StoredStateError, compare_resource_observation,
 };

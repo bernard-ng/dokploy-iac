@@ -909,6 +909,79 @@ pub enum RemoteObservation {
     Unavailable(RemoteFailureKind),
 }
 
+/// How a fresh remote observation compares with one exact durable checkpoint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResourceObservationMatch {
+    /// Identity and every owned property are readable and equal.
+    Exact,
+    /// Identity and every readable owned property are equal, but sensitive values are write-only.
+    ExactExceptSensitive,
+    /// The resource is absent, has a different identity, or has a different owned value.
+    Different,
+    /// A required non-sensitive observation is unavailable or incomplete.
+    Unavailable,
+}
+
+/// Compares one fresh observation with the exact resource recorded in durable state.
+///
+/// The result never exposes an owned value or sensitive receipt. Recovery uses
+/// this seam to distinguish a confirmed checkpoint from an outcome that still
+/// requires an operator decision.
+pub fn compare_resource_observation(
+    state: &StateFile,
+    address: &ResourceAddress,
+    observation: &RemoteObservation,
+) -> Result<ResourceObservationMatch, StoredStateError> {
+    let stored = StoredState::try_from_state(state)?;
+    let Some(expected) = stored.resources.get(address) else {
+        return Ok(ResourceObservationMatch::Different);
+    };
+    let RemoteObservation::Present(remote) = observation else {
+        return Ok(match observation {
+            RemoteObservation::Missing => ResourceObservationMatch::Different,
+            RemoteObservation::Unavailable(_) => ResourceObservationMatch::Unavailable,
+            RemoteObservation::Present(_) => unreachable!("present observation was matched"),
+        });
+    };
+    if expected.remote_id != *remote.remote_id() {
+        return Ok(ResourceObservationMatch::Different);
+    }
+
+    let mut sensitive_unverifiable = false;
+    for (path, expected_value) in &expected.properties {
+        let matches = match (expected_value, remote.property(path)) {
+            (
+                OwnedValue::Sensitive(_),
+                Some(PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)),
+            ) => {
+                sensitive_unverifiable = true;
+                true
+            }
+            (OwnedValue::Null, Some(PropertyObservation::KnownAbsent)) => true,
+            (OwnedValue::EmptyCollection, Some(PropertyObservation::Known(value))) => value
+                .as_json()
+                .as_object()
+                .is_some_and(serde_json::Map::is_empty),
+            (OwnedValue::Value(expected), Some(PropertyObservation::Known(actual))) => {
+                expected == actual
+            }
+            (_, Some(PropertyObservation::Unknown(_)) | None) => {
+                return Ok(ResourceObservationMatch::Unavailable);
+            }
+            _ => false,
+        };
+        if !matches {
+            return Ok(ResourceObservationMatch::Different);
+        }
+    }
+
+    Ok(if sensitive_unverifiable {
+        ResourceObservationMatch::ExactExceptSensitive
+    } else {
+        ResourceObservationMatch::Exact
+    })
+}
+
 /// A complete set of fresh observations for the requested reconciliation.
 pub struct RemoteState {
     pub(crate) instance: InstanceIdentity,

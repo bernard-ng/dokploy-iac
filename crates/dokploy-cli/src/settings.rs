@@ -69,17 +69,8 @@ pub fn resolve_connection(
     configuration: &ContextConfiguration,
     credentials: &dyn CredentialStore,
 ) -> Result<ConnectionSettings, SettingsError> {
+    let url = resolve_instance_url(options.url, environment, configuration)?;
     let selected_context = configuration.current_context();
-    let context = match selected_context {
-        Some(name) => Some(configuration.context(Some(name))?.1),
-        None => None,
-    };
-    let url = first_non_empty([
-        options.url,
-        environment.variable(DOKPLOY_URL),
-        context.map(|context| context.url().to_owned()),
-    ])
-    .ok_or(SettingsError::MissingUrl)?;
     let cli_api_key = options.api_key.filter(|api_key| !api_key.is_empty());
     let environment_api_key = environment
         .variable(DOKPLOY_API_KEY)
@@ -96,10 +87,27 @@ pub fn resolve_connection(
         .or(context_api_key)
         .ok_or(SettingsError::MissingApiKey)?;
 
-    Ok(ConnectionSettings {
-        url: parse_base_url(&url)?,
-        api_key,
-    })
+    Ok(ConnectionSettings { url, api_key })
+}
+
+/// Resolves only the instance URL for local commands that never contact Dokploy.
+pub fn resolve_instance_url(
+    option: Option<String>,
+    environment: &dyn Environment,
+    configuration: &ContextConfiguration,
+) -> Result<Url, SettingsError> {
+    let context = match configuration.current_context() {
+        Some(name) => Some(configuration.context(Some(name))?.1),
+        None => None,
+    };
+    let url = first_non_empty([
+        option,
+        environment.variable(DOKPLOY_URL),
+        context.map(|context| context.url().to_owned()),
+    ])
+    .ok_or(SettingsError::MissingUrl)?;
+
+    parse_base_url(&url)
 }
 
 fn first_non_empty<const N: usize>(values: [Option<String>; N]) -> Option<String> {

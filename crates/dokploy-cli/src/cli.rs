@@ -109,6 +109,21 @@ pub enum Command {
         auto_approve: bool,
     },
 
+    /// Reconcile an interrupted apply from durable journal evidence.
+    Recover {
+        /// Configuration file whose workspace contains the interrupted operation.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+
+        /// Complete a fully verified recovery without interactive confirmation.
+        #[arg(long)]
+        auto_approve: bool,
+    },
+
     /// Inspect resources tracked in the local workspace state.
     State {
         /// Configuration file whose directory owns the state.
@@ -160,6 +175,33 @@ pub enum StateCommand {
     /// Show one tracked resource without exposing managed values or receipts.
     Show {
         /// Logical resource address, such as `application.api`.
+        address: String,
+    },
+
+    /// Move one tracked logical address without changing Dokploy.
+    Mv {
+        /// Existing logical resource address.
+        source: String,
+
+        /// New logical resource address of the same kind.
+        target: String,
+    },
+
+    /// Stop tracking one resource without deleting it from Dokploy.
+    Rm {
+        /// Logical resource address to forget.
+        address: String,
+    },
+
+    /// Prevent declarative deletion of one tracked resource.
+    Protect {
+        /// Logical resource address to protect.
+        address: String,
+    },
+
+    /// Allow declarative deletion of one tracked resource.
+    Unprotect {
+        /// Logical resource address to unprotect.
         address: String,
     },
 }
@@ -264,6 +306,26 @@ mod tests {
                 file,
                 json: true,
                 detailed_exitcode: true,
+            } if file.as_path() == Path::new("stack.yaml")
+        ));
+    }
+
+    #[test]
+    fn recover_supports_non_interactive_approval() {
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "recover",
+            "--file",
+            "stack.yaml",
+            "--auto-approve",
+        ])
+        .expect("recovery command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Recover {
+                file,
+                auto_approve: true
             } if file.as_path() == Path::new("stack.yaml")
         ));
     }
