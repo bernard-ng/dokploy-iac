@@ -108,7 +108,7 @@ async fn absent_workspace_plan_is_deterministic_and_read_only() {
 }
 
 #[tokio::test]
-async fn unimplemented_database_adapters_stay_fail_closed_while_owned_databases_are_observed() {
+async fn declarative_databases_observe_absence_and_require_create_properties() {
     let server = TestServer::empty_project_topology(1);
     let directory = tempfile::tempdir().expect("temporary workspace is available");
     let config = directory.path().join("dokploy.yaml");
@@ -127,17 +127,11 @@ environments:
 
     let plan = plan_workspace(&server.client(), &config)
         .await
-        .expect("unsupported adapters produce a safe incomplete plan");
+        .expect("database adapters produce a safe blocked plan");
 
-    assert!(!plan.complete());
+    assert!(plan.complete());
     assert!(!plan.applyable());
-    assert!(plan.diagnostics().iter().any(|diagnostic| {
-        diagnostic.code() == PlanDiagnosticCode::MissingObservation
-            && diagnostic
-                .address()
-                .is_some_and(|candidate| candidate.to_string() == "libsql.edge")
-    }));
-    for address in ["mariadb.main", "mongo.documents"] {
+    for address in ["mariadb.main", "mongo.documents", "libsql.edge"] {
         assert!(plan.diagnostics().iter().any(|diagnostic| {
             diagnostic.code() == PlanDiagnosticCode::MissingCreateProperty
                 && diagnostic

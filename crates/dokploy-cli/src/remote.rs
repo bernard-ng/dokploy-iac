@@ -76,6 +76,15 @@ pub enum MongoTopologyAuthority {
     Partial,
 }
 
+/// Whether an exact `project.one` LibSQL collection is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LibSqlTopologyAuthority {
+    /// Absence below the exact project and environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Whether a fully paginated parent-scoped Redis search is complete.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RedisTopologyAuthority {
@@ -111,6 +120,8 @@ pub struct DiscoveryAuthority {
     pub mariadb: MariaDbTopologyAuthority,
     /// Completeness of each fully paginated `mongo.search` collection.
     pub mongo: MongoTopologyAuthority,
+    /// Completeness of each exact `project.one` LibSQL collection.
+    pub libsql: LibSqlTopologyAuthority,
     /// Completeness of each fully paginated `redis.search` collection.
     pub redis: RedisTopologyAuthority,
     /// Completeness of each `domain.byApplicationId` collection.
@@ -129,6 +140,7 @@ impl DiscoveryAuthority {
             mysql: MySqlTopologyAuthority::Authoritative,
             mariadb: MariaDbTopologyAuthority::Authoritative,
             mongo: MongoTopologyAuthority::Authoritative,
+            libsql: LibSqlTopologyAuthority::Authoritative,
             redis: RedisTopologyAuthority::Authoritative,
             domains: DomainTopologyAuthority::Authoritative,
         }
@@ -276,6 +288,24 @@ pub enum DiscoverRemoteError {
     /// Direct and collection MongoDB reads contradict each other.
     #[error("DOKREM050: MongoDB read endpoints returned conflicting topology")]
     MongoTopologyConflict,
+    /// A LibSQL database has no unambiguous containing environment and project.
+    #[error("DOKREM051: LibSQL containment is unavailable")]
+    LibSqlContainment,
+    /// A LibSQL physical identity does not satisfy the state contract.
+    #[error("DOKREM052: LibSQL topology contains an invalid remote identity")]
+    InvalidLibSqlId,
+    /// More than one LibSQL database has the same name within one environment.
+    #[error("DOKREM053: LibSQL topology contains a duplicate scoped name")]
+    DuplicateLibSqlName,
+    /// More than one LibSQL database has the same physical identity.
+    #[error("DOKREM054: LibSQL topology contains a duplicate remote identity")]
+    DuplicateLibSqlId,
+    /// A LibSQL containment change would require an unsupported remote reparent.
+    #[error("DOKREM055: LibSQL reparenting is not supported")]
+    LibSqlReparentUnsupported,
+    /// Direct and collection LibSQL reads contradict each other.
+    #[error("DOKREM056: LibSQL read endpoints returned conflicting topology")]
+    LibSqlTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -368,6 +398,10 @@ pub async fn discover_remote(
         discover_mongo_observations(client, compiled, state, &observations, authority.mongo)
             .await?;
     observations.extend(mongo);
+    let libsql =
+        discover_libsql_observations(client, compiled, state, &observations, authority.libsql)
+            .await?;
+    observations.extend(libsql);
     let redis =
         discover_redis_observations(client, compiled, state, &observations, authority.redis)
             .await?;
@@ -438,7 +472,18 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::ReplicaSets, set_only)
             .with_containment(MutationMode::StateOnly),
-        ResourceKind::LibSql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate),
+        ResourceKind::LibSql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Username)
+            .requiring(PropertyPath::Password)
+            .requiring(PropertyPath::Node)
+            .with_property(PropertyPath::Description, set_only)
+            .with_property(PropertyPath::Username, set_only)
+            .with_property(PropertyPath::Password, set_only)
+            .with_property(
+                PropertyPath::Node,
+                PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+            )
+            .with_containment(MutationMode::StateOnly),
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
@@ -1310,6 +1355,147 @@ async fn discover_mongo_observations(
         } else {
             let parent = mongo_parent_from_desired(&address, compiled, state)?;
             observe_mongo_under_parent(
+                client,
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )
+            .await?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+async fn discover_libsql_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: LibSqlTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::LibSql)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![libsql_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = libsql_parent_from_state(address, state)?;
+            validate_libsql_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some((project_id, environment_id)) =
+                trusted_libsql_scope(&parent, compiled, state, topology)?
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .libsql()
+                .by_environment(
+                    dokploy_sdk::ProjectId::new(&project_id),
+                    dokploy_sdk::EnvironmentId::new(&environment_id),
+                )
+                .await;
+            collections.insert(environment_id, (project_id, collection));
+        }
+    }
+    validate_libsql_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = libsql_parent_from_state(&address, state)?;
+            match client
+                .libsql()
+                .get(dokploy_sdk::LibSqlId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(libsql) => {
+                    let remote_id = RemoteId::new(libsql.libsql_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidLibSqlId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidLibSqlId);
+                    }
+                    let (_, expected_environment_id) =
+                        trusted_libsql_scope(&current_parent, compiled, state, topology)?
+                            .ok_or(DiscoverRemoteError::LibSqlContainment)?;
+                    if libsql.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::LibSqlContainment);
+                    }
+                    if let Some((_, Err(error))) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_libsql_against_collection(
+                            &libsql,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicateLibSqlId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            libsql_properties(&address, compiled, &libsql),
+                        ))
+                    }
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if libsql_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_libsql_under_parent(
+                            client,
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )
+                        .await?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = libsql_parent_from_desired(&address, compiled, state)?;
+            observe_libsql_under_parent(
                 client,
                 &address,
                 &parent,
@@ -3267,6 +3453,329 @@ fn mongo_parent_from_desired(
         return mongo_parent_from_state(source, state);
     }
     mongo_parent_from_state(address, state)
+}
+
+type LibSqlCollections = BTreeMap<
+    String,
+    (
+        String,
+        Result<dokploy_sdk::LibSqlCollection, dokploy_sdk::Error>,
+    ),
+>;
+
+fn libsql_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    libsql: &dokploy_sdk::LibSqlDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let observed = match path {
+            PropertyPath::Description => libsql.description.as_ref().map_or(
+                PropertyObservation::KnownAbsent,
+                |description| {
+                    PropertyObservation::Known(
+                        ComparableValue::try_from_json(serde_json::json!(description))
+                            .expect("a concrete description is comparable"),
+                    )
+                },
+            ),
+            PropertyPath::Username => observe_string_field(&libsql.database_user),
+            PropertyPath::Password => {
+                PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+            }
+            PropertyPath::Node => observe_libsql_node(libsql),
+            PropertyPath::Database
+            | PropertyPath::RootPassword
+            | PropertyPath::ReplicaSets
+            | PropertyPath::Replicas
+            | PropertyPath::Source
+            | PropertyPath::SourceRepository
+            | PropertyPath::SourceBranch
+            | PropertyPath::Environment
+            | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::Host
+            | PropertyPath::Application
+            | PropertyPath::DeploymentStatus => continue,
+        };
+        properties.insert(path.clone(), observed);
+    }
+
+    properties
+}
+
+fn observe_libsql_node(libsql: &dokploy_sdk::LibSqlDetails) -> PropertyObservation {
+    let value = match (&libsql.sqld_node, &libsql.sqld_primary_url) {
+        (ResponseField::Value(node), ResponseField::Null | ResponseField::NotReturned)
+            if node == "primary" =>
+        {
+            serde_json::json!({"type": "primary"})
+        }
+        (ResponseField::Value(node), ResponseField::Value(primary_url))
+            if node == "replica" && !primary_url.is_empty() =>
+        {
+            serde_json::json!({"type": "replica", "primary_url": primary_url})
+        }
+        (ResponseField::NotReturned, _) | (_, ResponseField::NotReturned) => {
+            return PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
+        }
+        _ => return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+    };
+    PropertyObservation::Known(
+        ComparableValue::try_from_json(value).expect("a valid LibSQL node is comparable"),
+    )
+}
+
+fn validate_libsql_collections(collections: &LibSqlCollections) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (_, collection) in collections.values() {
+        let Ok(collection) = collection else {
+            continue;
+        };
+        let mut scoped_names = BTreeSet::new();
+        for libsql in collection.libsql() {
+            let remote_id = RemoteId::new(libsql.libsql_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidLibSqlId)?;
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateLibSqlId);
+            }
+            if !scoped_names.insert(libsql.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateLibSqlName);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn observe_libsql_under_parent(
+    client: &Dokploy,
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &LibSqlCollections,
+    authority: LibSqlTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some((_, environment_id)) = trusted_libsql_scope(parent, compiled, state, topology)? else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some((_, Ok(collection))) => {
+            if let Some(libsql) = collection
+                .libsql()
+                .iter()
+                .find(|libsql| libsql.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(libsql.libsql_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidLibSqlId)?;
+                return match client.libsql().get(libsql.libsql_id.clone()).await {
+                    Ok(details) => {
+                        if details.libsql_id != libsql.libsql_id
+                            || details.environment_id.as_str() != environment_id
+                            || details.name != libsql.name
+                            || details.description != libsql.description
+                        {
+                            return Err(DiscoverRemoteError::LibSqlTopologyConflict);
+                        }
+                        validate_direct_libsql_against_collection(
+                            &details,
+                            &environment_id,
+                            collections,
+                            authority,
+                        )?;
+                        Ok(RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            libsql_properties(address, compiled, &details),
+                        )))
+                    }
+                    Err(SdkError::Api(error)) if error.status() == 404 => Ok(
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse),
+                    ),
+                    Err(error) => Ok(RemoteObservation::Unavailable(classify_sdk_error(&error))),
+                };
+            }
+            if authority == LibSqlTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some((_, Err(error))) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_libsql_against_collection(
+    libsql: &dokploy_sdk::LibSqlDetails,
+    environment_id: &str,
+    collections: &LibSqlCollections,
+    authority: LibSqlTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, (_, result))| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .libsql()
+                        .iter()
+                        .any(|item| item.libsql_id == libsql.libsql_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::LibSqlTopologyConflict);
+    }
+    let Some((_, collection)) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::LibSqlTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Err(DiscoverRemoteError::LibSqlTopologyConflict);
+    };
+    let matching = collection
+        .libsql()
+        .iter()
+        .find(|item| item.libsql_id == libsql.libsql_id);
+    match matching {
+        Some(item) if item.name == libsql.name && item.description == libsql.description => Ok(()),
+        Some(_) => Err(DiscoverRemoteError::LibSqlTopologyConflict),
+        None if authority == LibSqlTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::LibSqlTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn libsql_collections_contain_id(remote_id: &RemoteId, collections: &LibSqlCollections) -> bool {
+    collections.values().any(|(_, result)| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .libsql()
+                .iter()
+                .any(|libsql| libsql.libsql_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_libsql_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+    Err(DiscoverRemoteError::LibSqlReparentUnsupported)
+}
+
+fn libsql_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::LibSqlContainment)?;
+    let parent = resource
+        .containment()
+        .ok_or(DiscoverRemoteError::LibSqlContainment)?;
+    if parent.kind() != ResourceKind::Environment {
+        return Err(DiscoverRemoteError::LibSqlContainment);
+    }
+    Ok(parent.clone())
+}
+
+fn libsql_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::LibSqlContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::LibSqlContainment);
+        }
+        if state.resource(target).is_some() {
+            return libsql_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return libsql_parent_from_state(source, state);
+    }
+    libsql_parent_from_state(address, state)
+}
+
+fn trusted_libsql_scope(
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<Option<(String, String)>, DiscoverRemoteError> {
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(None);
+    };
+    let effective_environment = effective_environment_address(parent, compiled, state);
+    let project = environment_parent(effective_environment, compiled, state)?;
+    let Some(project_id) = observed_project_id(&project, compiled, state, topology) else {
+        return Ok(None);
+    };
+    Ok(Some((project_id, environment_id)))
 }
 
 fn redis_properties(

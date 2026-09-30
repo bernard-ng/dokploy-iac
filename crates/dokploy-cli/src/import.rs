@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 
 use dokploy_config::{
     ApplicationDocument, ConfigDocument, ConfigWriteError, DomainDocument, EnvironmentDocument,
-    Field, LifecycleDocument, MariaDbDocument, MongoDocument, MySqlDocument, PostgresDocument,
-    RedisDocument, SourceDocument,
+    Field, LibSqlDocument, LibSqlNodeConfig, LifecycleDocument, MariaDbDocument, MongoDocument,
+    MySqlDocument, PostgresDocument, RedisDocument, SourceDocument,
 };
 use dokploy_sdk::{
     ApplicationDetails, ApplicationId, Dokploy, DomainId, EnvironmentDetails, EnvironmentId,
-    Error as SdkError, MariaDbId, MongoId, MySqlId, PostgresId, ProjectDetails, ProjectId, RedisId,
-    ResponseField,
+    Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PostgresId, ProjectDetails,
+    ProjectId, RedisId, ResponseField,
 };
 use dokploy_state::{
     ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -148,6 +148,13 @@ pub async fn select_with_prompter(
                     &database.name,
                 ));
             }
+            for database in &environment.libsql {
+                choices.push(ImportChoice::new(
+                    ImportKind::LibSql,
+                    database.libsql_id.as_str(),
+                    &database.name,
+                ));
+            }
             for database in &environment.redis {
                 choices.push(ImportChoice::new(
                     ImportKind::Redis,
@@ -220,6 +227,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::MySql => "mysql",
         ImportKind::MariaDb => "mariadb",
         ImportKind::Mongo => "mongo",
+        ImportKind::LibSql => "libsql",
         ImportKind::Redis => "redis",
         ImportKind::Domain => "domain",
     }
@@ -377,6 +385,18 @@ async fn discover(
                 .get(environment.project_id.clone())
                 .await?;
             build_mongo(project, environment, database, target)
+        }
+        ImportKind::LibSql => {
+            let database = client.libsql().get(LibSqlId::new(remote_id)).await?;
+            let environment = client
+                .environments()
+                .get(database.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_libsql(project, environment, database, target)
         }
         ImportKind::Redis => {
             let database = client.redis().get(RedisId::new(remote_id)).await?;
@@ -727,6 +747,93 @@ fn build_mongo(
     Ok(imported)
 }
 
+fn build_libsql(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    database: dokploy_sdk::LibSqlDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    let node = imported_libsql_node(&database)?;
+    let description = match &database.description {
+        Some(description) => Field::Set(description.clone()),
+        None => Field::Clear,
+    };
+    let config = LibSqlDocument {
+        description,
+        username: response_field(&database.database_user),
+        node: Field::Set(node.clone()),
+        lifecycle: LifecycleDocument {
+            protect: Field::Set(true),
+            ..LifecycleDocument::default()
+        },
+        ..LibSqlDocument::default()
+    };
+    environment_config.add_libsql(target.name().clone(), config)?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    let mut inputs = serde_json::Map::new();
+    inputs.insert(
+        "description".to_owned(),
+        database
+            .description
+            .map_or(serde_json::Value::Null, serde_json::Value::String),
+    );
+    insert_response(&mut inputs, "username", &database.database_user);
+    inputs.insert(
+        "node".to_owned(),
+        match node {
+            LibSqlNodeConfig::Primary => serde_json::json!({"type":"primary"}),
+            LibSqlNodeConfig::Replica { primary_url } => {
+                serde_json::json!({"type":"replica","primary_url":primary_url})
+            }
+        },
+    );
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            database.libsql_id.as_str(),
+            true,
+            inputs,
+            Some(environment_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
+fn imported_libsql_node(
+    database: &dokploy_sdk::LibSqlDetails,
+) -> Result<LibSqlNodeConfig, ImportError> {
+    match (&database.sqld_node, &database.sqld_primary_url) {
+        (ResponseField::Value(node), ResponseField::NotReturned | ResponseField::Null)
+            if node == "primary" =>
+        {
+            Ok(LibSqlNodeConfig::Primary)
+        }
+        (ResponseField::Value(node), ResponseField::Value(primary_url))
+            if node == "replica" && !primary_url.is_empty() =>
+        {
+            Ok(LibSqlNodeConfig::Replica {
+                primary_url: primary_url.clone(),
+            })
+        }
+        _ => Err(ImportError::InvalidLibSqlNode),
+    }
+}
+
 fn build_domain(
     project: ProjectDetails,
     environment: EnvironmentDetails,
@@ -926,6 +1033,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::MySql => ResourceKind::MySql,
         ImportKind::MariaDb => ResourceKind::MariaDb,
         ImportKind::Mongo => ResourceKind::Mongo,
+        ImportKind::LibSql => ResourceKind::LibSql,
         ImportKind::Redis => ResourceKind::Redis,
         ImportKind::Domain => ResourceKind::Domain,
     }
@@ -952,6 +1060,8 @@ pub enum ImportError {
     WorkspaceChanged,
     #[error("the selected resource containment is unavailable")]
     MissingContainment,
+    #[error("the selected LibSQL node topology is invalid")]
+    InvalidLibSqlNode,
     #[error("no importable resources are visible")]
     NoVisibleResources,
     #[error("the interactive import selection is invalid")]

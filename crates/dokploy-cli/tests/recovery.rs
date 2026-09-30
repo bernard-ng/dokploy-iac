@@ -131,6 +131,36 @@ async fn uncertain_mongo_metadata_update_is_recovered_from_readable_fresh_state(
     .await;
 }
 
+#[tokio::test]
+async fn uncertain_libsql_metadata_update_is_recovered_when_password_is_unchanged() {
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::LibSql,
+        "libsql.main",
+        "libsql-1",
+        "libsql",
+        r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main","description":"next"}]}]}"#,
+        r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","description":"next","databaseUser":"next","sqldNode":"primary","sqldPrimaryUrl":null}"#,
+        1,
+        true,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn uncertain_libsql_password_rotation_requires_manual_intervention() {
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::LibSql,
+        "libsql.main",
+        "libsql-1",
+        "libsql",
+        r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main","description":"next"}]}]}"#,
+        r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","description":"next","databaseUser":"next","sqldNode":"primary","sqldPrimaryUrl":null}"#,
+        9,
+        false,
+    )
+    .await;
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn exercise_uncertain_database_update_recovery(
     kind: ResourceKind,
@@ -158,6 +188,20 @@ async fn exercise_uncertain_database_update_recovery(
                     .to_owned(),
                 serde_json::json!({"username":"old","replica_sets":false}),
                 serde_json::json!({"username":"next","replica_sets":true}),
+                mongo_sensitive_inputs(1),
+                mongo_sensitive_inputs(proposed_password_fingerprint),
+            )
+        } else if kind == ResourceKind::LibSql {
+            (
+                concat!(
+                    "        description: next\n",
+                    "        username: next\n",
+                    "        password: null\n",
+                    "        node: { type: primary }\n",
+                )
+                .to_owned(),
+                serde_json::json!({"description":"old","username":"old","node":{"type":"primary"}}),
+                serde_json::json!({"description":"next","username":"next","node":{"type":"primary"}}),
                 mongo_sensitive_inputs(1),
                 mongo_sensitive_inputs(proposed_password_fingerprint),
             )
@@ -350,6 +394,167 @@ async fn uncertain_mongo_create_adopts_one_matching_resource_without_retrying_se
     .await;
 }
 
+#[tokio::test]
+async fn uncertain_libsql_create_adopts_topology_identity_without_retrying_secrets() {
+    exercise_uncertain_database_create_recovery(
+        ResourceKind::LibSql,
+        "libsql.main",
+        "libsql-1",
+        "libsql",
+        r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main","description":"edge"}]}]}"#,
+        r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","description":"edge","databaseUser":"app","sqldNode":"primary","sqldPrimaryUrl":null,"databasePassword":"never-crosses-sdk"}"#,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn interrupted_libsql_create_with_authoritative_absence_confirms_no_change() {
+    let server = TestServer::respond_in_sequence(vec![
+        r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"libsql":[]}]}"#,
+    ]);
+    let workspace = tempfile::tempdir().unwrap();
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(
+        &config_file,
+        concat!(
+            "version: 1\n",
+            "project: { name: platform }\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql:\n",
+            "      main:\n",
+            "        description: edge\n",
+            "        username: app\n",
+            "        password: null\n",
+            "        node: { type: primary }\n",
+        ),
+    )
+    .unwrap();
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let store = StateStore::new(workspace.path(), instance.clone()).unwrap();
+    seed_parent_state(&store, instance);
+    let target = ResourceState::try_new(
+        ResourceKind::LibSql,
+        RemoteId::new("recovery-pending").unwrap(),
+        false,
+        ManagedInputs::try_from_json(serde_json::json!({
+            "description":"edge",
+            "username":"app",
+            "node":{"type":"primary"}
+        }))
+        .unwrap(),
+        mongo_sensitive_inputs(1),
+        Some(address("environment.production")),
+        Vec::new(),
+    )
+    .unwrap();
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("e".repeat(64)).unwrap()).unwrap();
+    journal
+        .start_recoverable_step(
+            address("libsql.main"),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(target).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(write);
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&address("libsql.main")));
+        assert_eq!(preview.action(), RecoveryAction::ConfirmNoChange);
+        Ok(true)
+    })
+    .await
+    .expect("authoritative absence closes the interrupted create without retrying");
+
+    assert_eq!(result.recovered_steps(), 1);
+    assert!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&address("libsql.main"))
+            .is_none()
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 4);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
+async fn replacement_crash_after_delete_checkpoint_resolves_without_remote_retry() {
+    let server = TestServer::respond_in_sequence(Vec::new());
+    let workspace = tempfile::tempdir().unwrap();
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(&config_file, "version: 1\nproject: { name: platform }\n").unwrap();
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let store = StateStore::new(workspace.path(), instance.clone()).unwrap();
+    let mut state = seed_parent_state(&store, instance);
+    let before_state = state.clone();
+    let database = ResourceState::try_new(
+        ResourceKind::LibSql,
+        RemoteId::new("libsql-1").unwrap(),
+        false,
+        ManagedInputs::try_from_json(serde_json::json!({
+            "username":"app",
+            "node":{"type":"primary"}
+        }))
+        .unwrap(),
+        mongo_sensitive_inputs(1),
+        Some(address("environment.production")),
+        Vec::new(),
+    )
+    .unwrap();
+    state
+        .upsert_resource(address("libsql.main"), database.clone())
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_state), &state)
+        .unwrap();
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("f".repeat(64)).unwrap()).unwrap();
+    let token = journal
+        .start_recoverable_step(
+            address("libsql.main"),
+            JournalAction::Delete,
+            ExpectedCheckpoint::remove(database),
+        )
+        .unwrap();
+    state.remove_resource(&address("libsql.main")).unwrap();
+    journal.succeed(token, None, &state).unwrap();
+    drop(journal);
+    drop(write);
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), None);
+        assert_eq!(preview.action(), RecoveryAction::ResolveOperation);
+        Ok(true)
+    })
+    .await
+    .expect("a crash between replacement steps resolves from the durable delete checkpoint");
+
+    assert_eq!(result.recovered_steps(), 0);
+    assert!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&address("libsql.main"))
+            .is_none()
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    assert!(server.finish().is_empty());
+}
+
 async fn exercise_uncertain_database_create_recovery(
     kind: ResourceKind,
     address_value: &str,
@@ -372,6 +577,18 @@ async fn exercise_uncertain_database_create_recovery(
             "        username: app\n        password: null\n        replica_sets: false\n"
                 .to_owned(),
             serde_json::json!({"username":"app","replica_sets":false}),
+            mongo_sensitive_inputs(1),
+        )
+    } else if kind == ResourceKind::LibSql {
+        (
+            concat!(
+                "        description: edge\n",
+                "        username: app\n",
+                "        password: null\n",
+                "        node: { type: primary }\n",
+            )
+            .to_owned(),
+            serde_json::json!({"description":"edge","username":"app","node":{"type":"primary"}}),
             mongo_sensitive_inputs(1),
         )
     } else {
@@ -850,6 +1067,46 @@ fn write_response(stream: &mut std::net::TcpStream, body: &str) {
 
 fn address(value: &str) -> ResourceAddress {
     value.parse().expect("address is valid")
+}
+
+fn seed_parent_state(store: &StateStore, instance: InstanceIdentity) -> StateFile {
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance);
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::absent(), &state)
+        .unwrap();
+    for (address_value, kind, remote_id, containment) in [
+        ("project.platform", ResourceKind::Project, "project-1", None),
+        (
+            "environment.production",
+            ResourceKind::Environment,
+            "environment-1",
+            Some("project.platform"),
+        ),
+    ] {
+        let before = state.clone();
+        state
+            .upsert_resource(
+                address(address_value),
+                ResourceState::new(
+                    kind,
+                    RemoteId::new(remote_id).unwrap(),
+                    false,
+                    ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                    containment.map(address),
+                    Vec::new(),
+                ),
+            )
+            .unwrap();
+        store
+            .begin_write()
+            .unwrap()
+            .checkpoint(ExpectedState::from_state(&before), &state)
+            .unwrap();
+    }
+
+    state
 }
 
 fn database_sensitive_inputs(password: u8, root_password: u8) -> SensitiveInputs {

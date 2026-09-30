@@ -6,9 +6,9 @@ use std::thread::{self, JoinHandle};
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
     ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority, DomainTopologyAuthority,
-    EnvironmentTopologyAuthority, MariaDbTopologyAuthority, MongoTopologyAuthority,
-    MySqlTopologyAuthority, PostgresTopologyAuthority, ProjectTopologyAuthority,
-    RedisTopologyAuthority, discover_remote,
+    EnvironmentTopologyAuthority, LibSqlTopologyAuthority, MariaDbTopologyAuthority,
+    MongoTopologyAuthority, MySqlTopologyAuthority, PostgresTopologyAuthority,
+    ProjectTopologyAuthority, RedisTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -103,6 +103,7 @@ fn authoritative() -> DiscoveryAuthority {
         mysql: MySqlTopologyAuthority::Authoritative,
         mariadb: MariaDbTopologyAuthority::Authoritative,
         mongo: MongoTopologyAuthority::Authoritative,
+        libsql: LibSqlTopologyAuthority::Authoritative,
         redis: RedisTopologyAuthority::Authoritative,
         domains: DomainTopologyAuthority::Authoritative,
     }

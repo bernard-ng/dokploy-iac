@@ -646,6 +646,357 @@ async fn mongo_unknown_create_outcome_keeps_the_journal_step_recoverable() {
 }
 
 #[tokio::test]
+async fn libsql_updates_secrets_separately_and_replaces_nodes_delete_before_create() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let empty = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[]}]}"#;
+    let primary_collection = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main","description":"old"}]}]}"#;
+    let updated_collection = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main","description":"next"}]}]}"#;
+    let replica_collection = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[{"libsqlId":"libsql-2","name":"main","appName":"main","description":"next"}]}]}"#;
+    let primary = r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","description":"old","databaseUser":"app","sqldNode":"primary","sqldPrimaryUrl":null}"#;
+    let updated = r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","description":"next","databaseUser":"next","sqldNode":"primary","sqldPrimaryUrl":null}"#;
+    let replica = r#"{"libsqlId":"libsql-2","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","description":"next","databaseUser":"next","sqldNode":"replica","sqldPrimaryUrl":"http://primary.internal"}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", empty),
+        ("200 OK", "true"),
+        ("200 OK", primary_collection),
+        ("200 OK", primary),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", primary_collection),
+        ("200 OK", primary),
+        ("200 OK", "true"),
+        ("200 OK", "true"),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", updated_collection),
+        ("200 OK", updated),
+        ("200 OK", "true"),
+        ("200 OK", empty),
+        ("200 OK", "true"),
+        ("200 OK", replica_collection),
+        ("200 OK", replica),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", replica_collection),
+        ("200 OK", replica),
+        ("200 OK", "true"),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    let password = secrets.join("libsql");
+    fs::write(&password, "libsql-old-password-canary").expect("LibSQL secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    let libsql_config = |description: &str, username: &str, node: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    libsql:\n",
+                "      main:\n",
+                "        description: {}\n",
+                "        username: {}\n",
+                "        password:\n",
+                "          file: .secrets/libsql\n",
+                "        node:\n",
+                "{}",
+            ),
+            description, username, node,
+        )
+    };
+    fs::write(
+        &config,
+        libsql_config("old", "app", "          type: primary\n"),
+    )
+    .expect("initial configuration fixture is writable");
+    let client = server.client();
+
+    let created = apply_workspace(&client, &config)
+        .await
+        .expect("initial LibSQL apply succeeds");
+    assert_eq!(created.applied(), 3);
+
+    fs::write(&password, "libsql-next-password-canary")
+        .expect("LibSQL password rotation is writable");
+    fs::write(
+        &config,
+        libsql_config("next", "next", "          type: primary\n"),
+    )
+    .expect("updated configuration fixture is writable");
+    let updated_summary = apply_workspace(&client, &config)
+        .await
+        .expect("LibSQL metadata and password update succeeds");
+    assert_eq!(updated_summary.applied(), 1);
+
+    fs::write(
+        &config,
+        libsql_config(
+            "next",
+            "next",
+            "          type: replica\n          primary_url: http://primary.internal\n",
+        ),
+    )
+    .expect("replacement configuration fixture is writable");
+    let replaced = apply_workspace(&client, &config)
+        .await
+        .expect("LibSQL node replacement succeeds");
+    assert_eq!(replaced.applied(), 1);
+
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql: {}\n",
+            "removed:\n",
+            "  - from: libsql.main\n",
+            "    destroy: true\n",
+        ),
+    )
+    .expect("removal configuration fixture is writable");
+    let deleted = apply_workspace(&client, &config)
+        .await
+        .expect("LibSQL delete succeeds");
+    assert_eq!(deleted.applied(), 1);
+
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store.inspect().unwrap().unwrap();
+    assert!(state.resource(&"libsql.main".parse().unwrap()).is_none());
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 29);
+    assert!(requests[3].starts_with("POST /api/libsql.create HTTP/1.1\r\n"));
+    assert!(requests[3].contains(r#""databasePassword":"libsql-old-password-canary""#));
+    assert!(requests[11].starts_with("POST /api/libsql.update HTTP/1.1\r\n"));
+    assert!(requests[11].contains(r#""description":"next""#));
+    assert!(requests[11].contains(r#""databaseUser":"next""#));
+    assert!(!requests[11].contains("databasePassword"));
+    assert!(requests[12].starts_with("POST /api/libsql.update HTTP/1.1\r\n"));
+    assert!(requests[12].contains(r#""databasePassword":"libsql-next-password-canary""#));
+    assert!(requests[18].starts_with("POST /api/libsql.remove HTTP/1.1\r\n"));
+    assert!(requests[20].starts_with("POST /api/libsql.create HTTP/1.1\r\n"));
+    assert!(requests[20].contains(r#""sqldNode":"replica""#));
+    assert!(requests[20].contains(r#""sqldPrimaryUrl":"http://primary.internal""#));
+    assert!(requests[28].starts_with("POST /api/libsql.remove HTTP/1.1\r\n"));
+
+    let state_json = fs::read_to_string(directory.path().join(".dokploy/state.json"))
+        .expect("state is readable as text");
+    let journal_json = fs::read_dir(directory.path().join(".dokploy/journal"))
+        .unwrap()
+        .filter_map(|entry| fs::read_to_string(entry.ok()?.path()).ok())
+        .collect::<String>();
+    let debug = format!("{created:?} {updated_summary:?} {replaced:?} {deleted:?}");
+    for secret in ["libsql-old-password-canary", "libsql-next-password-canary"] {
+        assert!(!state_json.contains(secret));
+        assert!(!journal_json.contains(secret));
+        assert!(!debug.contains(secret));
+    }
+}
+
+#[tokio::test]
+async fn libsql_replacement_unknown_delete_keeps_the_old_identity_recoverable() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let empty = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[]}]}"#;
+    let collection = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main"}]}]}"#;
+    let details = r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","databaseUser":"app","sqldNode":"primary","sqldPrimaryUrl":null}"#;
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", empty),
+        ("200 OK", "true"),
+        ("200 OK", collection),
+        ("200 OK", details),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", collection),
+        ("200 OK", details),
+    ]);
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("password"), "libsql-delete-canary").unwrap();
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project: { name: platform }\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql:\n",
+            "      main:\n",
+            "        username: app\n",
+            "        password: { file: password }\n",
+            "        node: { type: primary }\n",
+        ),
+    )
+    .unwrap();
+    let client = server.client();
+    apply_workspace(&client, &config).await.unwrap();
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project: { name: platform }\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql:\n",
+            "      main:\n",
+            "        username: app\n",
+            "        password: { file: password }\n",
+            "        node:\n",
+            "          type: replica\n",
+            "          primary_url: http://primary.internal\n",
+        ),
+    )
+    .unwrap();
+
+    assert_unknown_mutation(apply_workspace(&client, &config).await);
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    let state = StateStore::new(
+        directory.path(),
+        InstanceIdentity::parse(&server.url).unwrap(),
+    )
+    .unwrap()
+    .inspect()
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        state
+            .resource(&"libsql.main".parse().unwrap())
+            .unwrap()
+            .remote_id()
+            .as_str(),
+        "libsql-1"
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 12);
+    assert!(requests[11].starts_with("POST /api/libsql.remove "));
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/libsql.create "))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn libsql_replacement_checkpoints_delete_before_an_uncertain_create_preflight() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let empty = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[]}]}"#;
+    let collection = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main"}]}]}"#;
+    let details = r#"{"libsqlId":"libsql-1","environmentId":"environment-1","name":"main","appName":"main","dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32","databaseUser":"app","sqldNode":"primary","sqldPrimaryUrl":null}"#;
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", empty),
+        ("200 OK", "true"),
+        ("200 OK", collection),
+        ("200 OK", details),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", collection),
+        ("200 OK", details),
+        ("200 OK", "true"),
+        ("200 OK", empty),
+    ]);
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("password"), "libsql-create-canary").unwrap();
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project: { name: platform }\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql:\n",
+            "      main:\n",
+            "        username: app\n",
+            "        password: { file: password }\n",
+            "        node: { type: primary }\n",
+        ),
+    )
+    .unwrap();
+    let client = server.client();
+    apply_workspace(&client, &config).await.unwrap();
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project: { name: platform }\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql:\n",
+            "      main:\n",
+            "        username: app\n",
+            "        password: { file: password }\n",
+            "        node:\n",
+            "          type: replica\n",
+            "          primary_url: http://primary.internal\n",
+        ),
+    )
+    .unwrap();
+
+    assert_unknown_mutation(apply_workspace(&client, &config).await);
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    let state = StateStore::new(
+        directory.path(),
+        InstanceIdentity::parse(&server.url).unwrap(),
+    )
+    .unwrap()
+    .inspect()
+    .unwrap()
+    .unwrap();
+    assert!(state.resource(&"libsql.main".parse().unwrap()).is_none());
+    let requests = server.finish();
+    assert_eq!(requests.len(), 14);
+    assert!(requests[11].starts_with("POST /api/libsql.remove "));
+    assert!(requests[12].starts_with("GET /api/project.one?"));
+    assert!(requests[13].starts_with("POST /api/libsql.create "));
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/libsql.create "))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
     let server = TestServer::respond_then_drop(vec![
         ("200 OK", "[]"),
@@ -1143,13 +1494,18 @@ impl TestServer {
     }
 }
 
-fn assert_unknown_mutation<T>(result: Result<T, dokploy_cli::executor::ApplyWorkspaceError>) {
-    assert!(matches!(
-        result,
-        Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
-            code: dokploy_state::FailureCode::TransportOutcomeUnknown
-        })
-    ));
+fn assert_unknown_mutation<T: std::fmt::Debug>(
+    result: Result<T, dokploy_cli::executor::ApplyWorkspaceError>,
+) {
+    assert!(
+        matches!(
+            result,
+            Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+                code: dokploy_state::FailureCode::TransportOutcomeUnknown
+            })
+        ),
+        "unexpected mutation result: {result:?}"
+    );
 }
 
 fn assert_recovery_step_in_progress(workspace: &std::path::Path, server_url: &str) {

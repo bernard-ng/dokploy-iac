@@ -7,13 +7,14 @@ use std::path::{Path, PathBuf};
 
 use dokploy_core::{
     ChangeKind, CheckpointMaterializationError, CheckpointValueRef, ConfigDigest, MoveAction, Plan,
-    PropertyPath, StoredState,
+    PropertyPath, ReplacementOrder, StoredState,
 };
 use dokploy_sdk::{
-    ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreateMariaDb, CreateMongo,
-    CreateMySql, CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId,
-    Error as SdkError, MariaDbId, MongoId, MySqlId, Nullable, PostgresId, ProjectId, RedisId,
-    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb, UpdateMongo, UpdateMySql,
+    ApplicationId, ChangeLibSqlPassword, CreateApplication, CreateDomain, CreateEnvironment,
+    CreateLibSql, CreateMariaDb, CreateMongo, CreateMySql, CreatePostgres, CreateProject,
+    CreateRedis, Dokploy, DomainId, EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode,
+    MariaDbId, MongoId, MySqlId, Nullable, PostgresId, ProjectId, RedisId, UpdateApplication,
+    UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql,
     UpdatePostgres, UpdateProject, UpdateRedis,
 };
 use dokploy_state::{
@@ -271,6 +272,19 @@ async fn apply_workspace_with_expectation(
         }
 
         let change = &plan.changes()[change_index];
+        if change.kind() == ChangeKind::Replace {
+            execute_delete_before_create_replacement(
+                client,
+                &mut compiled,
+                change,
+                &mut state,
+                &mut journal,
+            )
+            .await?;
+            applied += 1;
+            change_index += 1;
+            continue;
+        }
         if matches!(change.kind(), ChangeKind::Delete | ChangeKind::Forget) {
             execute_removal_change(client, change, &mut state, &mut journal).await?;
             applied += 1;
@@ -698,6 +712,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::MySql
                     | ResourceKind::MariaDb
                     | ResourceKind::Mongo
+                    | ResourceKind::LibSql
                     | ResourceKind::Redis
                     | ResourceKind::Domain
             )
@@ -705,7 +720,10 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
         ChangeKind::NoOp | ChangeKind::Forget => true,
         ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => true,
         ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
-        ChangeKind::Replace => false,
+        ChangeKind::Replace => {
+            change.address().kind() == ResourceKind::LibSql
+                && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+        }
     }) {
         Ok(())
     } else {
@@ -982,9 +1000,6 @@ async fn execute_removal_change(
         .resource(change.address())
         .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
         .clone();
-    if change.kind() == ChangeKind::Delete && matches!(before.kind(), ResourceKind::LibSql) {
-        return Err(ApplyWorkspaceError::UnsupportedChange);
-    }
     let action = match change.kind() {
         ChangeKind::Delete => JournalAction::Delete,
         ChangeKind::Forget => JournalAction::Forget,
@@ -1064,7 +1079,12 @@ async fn delete_remote_resource(
                 .delete(MongoId::new(remote_id.as_str()))
                 .await,
         ),
-        ResourceKind::LibSql => None,
+        ResourceKind::LibSql => Some(
+            client
+                .libsql()
+                .delete(LibSqlId::new(remote_id.as_str()))
+                .await,
+        ),
         ResourceKind::Redis => Some(
             client
                 .redis()
@@ -1148,6 +1168,75 @@ fn optional_bool(
             Err(ApplyWorkspaceError::InvalidCheckpoint)
         }
     }
+}
+
+fn optional_string(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    path: &PropertyPath,
+) -> Result<Option<String>, ApplyWorkspaceError> {
+    match checkpoint.property(path) {
+        None | Some(CheckpointValueRef::Null) => Ok(None),
+        Some(CheckpointValueRef::NonSensitive(value)) => value
+            .as_str()
+            .map(|value| Some(value.to_owned()))
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint),
+        Some(CheckpointValueRef::EmptyCollection | CheckpointValueRef::Sensitive) => {
+            Err(ApplyWorkspaceError::InvalidCheckpoint)
+        }
+    }
+}
+
+fn required_libsql_node(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+) -> Result<LibSqlNode, ApplyWorkspaceError> {
+    let Some(CheckpointValueRef::NonSensitive(value)) = checkpoint.property(&PropertyPath::Node)
+    else {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    };
+    let node_type = value
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    match node_type {
+        "primary" if value.as_object().is_some_and(|node| node.len() == 1) => {
+            Ok(LibSqlNode::Primary)
+        }
+        "replica" if value.as_object().is_some_and(|node| node.len() == 2) => {
+            let primary_url = value
+                .get("primary_url")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+            Ok(LibSqlNode::Replica {
+                primary_url: primary_url.to_owned(),
+            })
+        }
+        _ => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
+}
+
+fn libsql_scope_ids(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+) -> Result<(ProjectId, EnvironmentId), ApplyWorkspaceError> {
+    let environment = checkpoint
+        .containment()
+        .filter(|address| address.kind() == ResourceKind::Environment)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let environment_state = state
+        .resource(environment)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let project = environment_state
+        .containment()
+        .filter(|address| address.kind() == ResourceKind::Project)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let project_state = state
+        .resource(project)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    Ok((
+        ProjectId::new(project_state.remote_id().as_str()),
+        EnvironmentId::new(environment_state.remote_id().as_str()),
+    ))
 }
 
 fn take_sensitive_string(
@@ -1435,12 +1524,15 @@ fn database_batch_len(changes: &[dokploy_core::PlannedChange], parallelism: usiz
         .take(parallelism)
         .take_while(|change| {
             matches!(change.kind(), ChangeKind::Create | ChangeKind::Update)
+                && (change.address().kind() != ResourceKind::LibSql
+                    || change.kind() == ChangeKind::Create)
                 && matches!(
                     change.address().kind(),
                     ResourceKind::Postgres
                         | ResourceKind::MySql
                         | ResourceKind::MariaDb
                         | ResourceKind::Mongo
+                        | ResourceKind::LibSql
                         | ResourceKind::Redis
                 )
         })
@@ -1592,6 +1684,33 @@ fn prepare_database_mutation(
             }
 
             (JournalAction::Create, DatabaseMutation::CreateMongo(input))
+        }
+        (ChangeKind::Create, ResourceKind::LibSql) => {
+            let (project_id, environment_id) = libsql_scope_ids(&checkpoint, state)?;
+            let username = required_string(&checkpoint, &PropertyPath::Username)?;
+            let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
+            let node = required_libsql_node(&checkpoint)?;
+            let mut input = CreateLibSql::new(
+                address.name().as_str(),
+                address.name().as_str(),
+                project_id,
+                environment_id.clone(),
+                username,
+                password,
+                node,
+            );
+            if let Some(description) = optional_string(&checkpoint, &PropertyPath::Description)? {
+                input = input.with_description(description);
+            }
+
+            (
+                JournalAction::Create,
+                DatabaseMutation::CreateLibSql {
+                    input,
+                    name: address.name().as_str().to_owned(),
+                    environment_id,
+                },
+            )
         }
         (ChangeKind::Create, ResourceKind::Redis) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
@@ -1774,6 +1893,11 @@ enum DatabaseMutation {
     CreateMySql(CreateMySql),
     CreateMariaDb(CreateMariaDb),
     CreateMongo(CreateMongo),
+    CreateLibSql {
+        input: CreateLibSql,
+        name: String,
+        environment_id: EnvironmentId,
+    },
     CreateRedis(CreateRedis),
     UpdatePostgres(UpdatePostgres, RemoteId),
     UpdateMySql(UpdateMySql, RemoteId),
@@ -1819,6 +1943,30 @@ impl DatabaseMutation {
                     .await
                     .map_err(DatabaseMutationFailure::Sdk)?;
                 RemoteId::new(created.mongo_id().as_str())
+                    .map_err(|_| DatabaseMutationFailure::InvalidIdentity)
+            }
+            Self::CreateLibSql {
+                input,
+                name,
+                environment_id,
+            } => {
+                let created = client
+                    .libsql()
+                    .create(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                let details = client
+                    .libsql()
+                    .get(created.libsql_id().clone())
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                if details.libsql_id != *created.libsql_id()
+                    || details.environment_id != environment_id
+                    || details.name != name
+                {
+                    return Err(DatabaseMutationFailure::Internal);
+                }
+                RemoteId::new(created.libsql_id().as_str())
                     .map_err(|_| DatabaseMutationFailure::InvalidIdentity)
             }
             Self::CreateRedis(input) => {
@@ -1893,6 +2041,197 @@ impl DatabaseMutationFailure {
     }
 }
 
+async fn execute_delete_before_create_replacement(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    if change.address().kind() != ResourceKind::LibSql
+        || change.replacement_order() != Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return Err(ApplyWorkspaceError::UnsupportedChange);
+    }
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let delete_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Delete,
+        ExpectedCheckpoint::remove(before.clone()),
+    )?;
+    if let Err(error) = client
+        .libsql()
+        .delete(LibSqlId::new(before.remote_id().as_str()))
+        .await
+        && !is_already_missing(&error)
+    {
+        let code = failure_code(&error);
+        fail_if_definitive(journal, delete_token, code)?;
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+    state.remove_resource(change.address())?;
+    journal.succeed(delete_token, None, state)?;
+
+    let placeholder = RemoteId::new("recovery-pending")
+        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+    let create_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Create,
+        ExpectedCheckpoint::create(checkpoint.materialize(change.address(), placeholder)?)?,
+    )?;
+    let (project_id, environment_id) = libsql_scope_ids(checkpoint, state)?;
+    let username = required_string(checkpoint, &PropertyPath::Username)?;
+    let password = take_sensitive_string(compiled, change.address(), &PropertyPath::Password)?;
+    let node = required_libsql_node(checkpoint)?;
+    let mut input = CreateLibSql::new(
+        change.address().name().as_str(),
+        change.address().name().as_str(),
+        project_id,
+        environment_id.clone(),
+        username,
+        password,
+        node,
+    );
+    if let Some(description) = optional_string(checkpoint, &PropertyPath::Description)? {
+        input = input.with_description(description);
+    }
+    let result = DatabaseMutation::CreateLibSql {
+        input,
+        name: change.address().name().as_str().to_owned(),
+        environment_id,
+    }
+    .execute(client)
+    .await;
+    let remote_id = match result {
+        Ok(remote_id) => remote_id,
+        Err(error) => {
+            let code = error.code();
+            if error.is_definitive() {
+                journal.fail(create_token, code)?;
+            }
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+    };
+    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+    state.upsert_resource(change.address().clone(), resource)?;
+    journal.succeed(create_token, Some(remote_id), state)?;
+
+    Ok(())
+}
+
+async fn execute_libsql_update(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let remote_id = before.remote_id().clone();
+    let final_resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+    let selected = change
+        .fields()
+        .iter()
+        .map(|field| field.key())
+        .collect::<Vec<_>>();
+    if selected.iter().any(|path| {
+        !matches!(
+            path,
+            PropertyPath::Description | PropertyPath::Username | PropertyPath::Password
+        )
+    }) {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+
+    let metadata = selected
+        .iter()
+        .any(|path| matches!(path, PropertyPath::Description | PropertyPath::Username));
+    if metadata {
+        let mut input = UpdateLibSql::new(LibSqlId::new(remote_id.as_str()));
+        if selected.contains(&&PropertyPath::Description) {
+            input =
+                input.with_description(required_string(checkpoint, &PropertyPath::Description)?);
+        }
+        if selected.contains(&&PropertyPath::Username) {
+            input = input.with_username(required_string(checkpoint, &PropertyPath::Username)?);
+        }
+        let interim = ResourceState::try_new(
+            ResourceKind::LibSql,
+            remote_id.clone(),
+            final_resource.is_protected(),
+            final_resource.last_applied().clone(),
+            before.sensitive_inputs().clone(),
+            final_resource.containment().cloned(),
+            final_resource.dependencies().to_vec(),
+        )
+        .map_err(|_| ApplyWorkspaceError::InvalidCheckpoint)?;
+        let token = journal.start_recoverable_step(
+            change.address().clone(),
+            JournalAction::Update,
+            ExpectedCheckpoint::update(before, interim.clone())?,
+        )?;
+        if let Err(error) = client.libsql().update(input).await {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+        state.upsert_resource(change.address().clone(), interim)?;
+        journal.succeed(token, Some(remote_id.clone()), state)?;
+    }
+
+    if selected.contains(&&PropertyPath::Password) {
+        let before_password = state
+            .resource(change.address())
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+            .clone();
+        let password = take_sensitive_string(compiled, change.address(), &PropertyPath::Password)?;
+        let token = journal.start_recoverable_step(
+            change.address().clone(),
+            JournalAction::Update,
+            ExpectedCheckpoint::update(before_password, final_resource.clone())?,
+        )?;
+        if let Err(error) = client
+            .libsql()
+            .change_password(ChangeLibSqlPassword::new(
+                LibSqlId::new(remote_id.as_str()),
+                password,
+            ))
+            .await
+        {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+        state.upsert_resource(change.address().clone(), final_resource)?;
+        journal.succeed(token, Some(remote_id), state)?;
+    } else if metadata {
+        let current = state
+            .resource(change.address())
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+        if current != &final_resource {
+            return Err(ApplyWorkspaceError::InvalidCheckpoint);
+        }
+    } else {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+
+    Ok(())
+}
+
 async fn execute_existing_change(
     client: &Dokploy,
     compiled: &mut crate::desired::CompiledDesired,
@@ -1920,6 +2259,10 @@ async fn execute_existing_change(
         state.upsert_resource(change.address().clone(), resource)?;
         journal.succeed(token, Some(remote_id), state)?;
         return Ok(());
+    }
+
+    if change.address().kind() == ResourceKind::LibSql && change.kind() == ChangeKind::Update {
+        return execute_libsql_update(client, compiled, change, state, journal).await;
     }
 
     if !matches!(change.kind(), ChangeKind::Update | ChangeKind::Reparent) {

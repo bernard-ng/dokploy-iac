@@ -207,6 +207,8 @@ pub enum ImportKind {
     MariaDb,
     #[value(name = "mongo")]
     Mongo,
+    #[value(name = "libsql")]
+    LibSql,
     Redis,
     Domain,
 }
@@ -352,6 +354,25 @@ mod tests {
                 address: Some(ref address),
                 ..
             } if id == "mongo-1" && address == "mongo.main"
+        ));
+
+        let libsql = Cli::try_parse_from([
+            "dokploy",
+            "import",
+            "libsql",
+            "libsql-1",
+            "--as",
+            "libsql.main",
+        ])
+        .expect("LibSQL import is valid");
+        assert!(matches!(
+            libsql.command,
+            Command::Import {
+                kind: Some(ImportKind::LibSql),
+                remote_id: Some(ref id),
+                address: Some(ref address),
+                ..
+            } if id == "libsql-1" && address == "libsql.main"
         ));
 
         let interactive =
