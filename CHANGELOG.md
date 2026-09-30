@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Record the completed Phase 7, 9, and 10 acceptance work and the remaining
+  adapter-by-adapter Phase 8 scope in the implementation roadmap.
 - Separate command results on standard output from plans, prompts, warnings,
   and diagnostics on standard error, and reject non-interactive apply,
   recovery, and destroy approval unless `--auto-approve` is explicit.

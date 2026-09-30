@@ -123,9 +123,45 @@ durable state semantics.
 - Verify all six resource types and apply-then-plan convergence against the
   digest-pinned local Dokploy `v0.30.6` environment.
 
-## Later phases
+## Phase 7: recovery and destructive operations — complete
 
-- Phase 7: recovery, destroy, and state commands.
-- Phase 8: additional Dokploy resource adapters.
-- Phase 9: import, moves, removals, and refactoring workflows.
-- Phase 10: saved plans, CI-oriented output, completions, and release tooling.
+- Recover interrupted journaled mutations from durable evidence and fresh
+  remote observations without blindly retrying uncertain creates.
+- Destroy every tracked resource in dependent-first order while honoring
+  durable protection.
+- Inspect, move, forget, protect, and unprotect state through explicit commands.
+- Exercise crash, partial-failure, recovery, and destructive-operation safety
+  in the automated test suite.
+
+## Phase 8: resource breadth — in progress
+
+- Typed SDK contracts and live create-update-delete evidence cover MySQL,
+  MariaDB, MongoDB, LibSQL, and Compose.
+- MySQL has entered the declarative configuration, state, planner, and fresh
+  discovery layers; its executor and convergence validation are in progress.
+- Mounts, ports, redirects, security entries, backups, and schedules use the
+  shared typed-target and external-selector model in ADR 0026.
+- Completion still requires declarative reconciliation plus unit, sanitized
+  fixture, and live create-update-delete evidence for every listed adapter and
+  server or registry association.
+
+## Phase 9: import and refactoring workflows — complete
+
+- Import existing MVP resources through non-interactive IDs or terminal-only
+  discovery without reading remote secrets into configuration or state.
+- Persist identity-preserving moves, state address moves, removals, and
+  protection changes with collision and dependency checks.
+- Keep import atomic and no-clobber, generate canonical configuration, and
+  require the first fresh plan to converge.
+
+## Phase 10: mature CI/CD workflow — complete
+
+- Save strict owner-only plan envelopes and revalidate instance, state,
+  configuration, full plan, and keyed fresh-remote evidence before apply.
+- Provide canonical JSON, detailed plan exit status, explicit non-interactive
+  approval, and independent result and diagnostic streams.
+- Generate deterministic Bash, Zsh, Fish, PowerShell, and Elvish completions.
+- Validate generated API code, dependencies, release workflow drift,
+  cargo-dist plans, and disposable live apply convergence in CI.
+- Ship reviewed-plan and protected-apply GitHub Actions examples that pin apply
+  to the exact source revision used for planning.
