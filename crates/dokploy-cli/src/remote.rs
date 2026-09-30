@@ -927,6 +927,7 @@ async fn discover_mysql_observations(
                         RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
                     } else {
                         let observed = observe_mysql_under_parent(
+                            client,
                             &address,
                             &current_parent,
                             compiled,
@@ -934,7 +935,8 @@ async fn discover_mysql_observations(
                             topology,
                             &collections,
                             authority,
-                        )?;
+                        )
+                        .await?;
                         normalize_missing_identity(observed, stored.remote_id())
                     }
                 }
@@ -943,6 +945,7 @@ async fn discover_mysql_observations(
         } else {
             let parent = mysql_parent_from_desired(&address, compiled, state)?;
             observe_mysql_under_parent(
+                client,
                 &address,
                 &parent,
                 compiled,
@@ -950,7 +953,8 @@ async fn discover_mysql_observations(
                 topology,
                 &collections,
                 authority,
-            )?
+            )
+            .await?
         };
         observations.push((address, observation));
     }
@@ -2125,7 +2129,8 @@ fn validate_mysql_collections(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn observe_mysql_under_parent(
+async fn observe_mysql_under_parent(
+    client: &Dokploy,
     address: &ResourceAddress,
     parent: &ResourceAddress,
     compiled: &CompiledDesired,
@@ -2160,10 +2165,30 @@ fn observe_mysql_under_parent(
             {
                 let remote_id = RemoteId::new(mysql.mysql_id.as_str())
                     .map_err(|_| DiscoverRemoteError::InvalidMySqlId)?;
-                return Ok(RemoteObservation::Present(RemoteResource::new(
-                    remote_id,
-                    BTreeMap::new(),
-                )));
+                return match client.mysql().get(mysql.mysql_id.clone()).await {
+                    Ok(details) => {
+                        if details.mysql_id != mysql.mysql_id
+                            || details.environment_id.as_str() != environment_id
+                            || details.name != mysql.name
+                        {
+                            return Err(DiscoverRemoteError::MySqlTopologyConflict);
+                        }
+                        validate_direct_mysql_against_collection(
+                            &details,
+                            &environment_id,
+                            collections,
+                            authority,
+                        )?;
+                        Ok(RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            mysql_properties(address, compiled, &details),
+                        )))
+                    }
+                    Err(SdkError::Api(error)) if error.status() == 404 => Ok(
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse),
+                    ),
+                    Err(error) => Ok(RemoteObservation::Unavailable(classify_sdk_error(&error))),
+                };
             }
             if authority == MySqlTopologyAuthority::Authoritative {
                 Ok(RemoteObservation::Missing)

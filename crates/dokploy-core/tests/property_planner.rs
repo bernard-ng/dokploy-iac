@@ -2959,6 +2959,36 @@ fn adapter_mutation_contract_controls_replacement_and_create_requirements() {
 }
 
 #[test]
+fn required_create_property_can_remain_unsupported_after_creation() {
+    let address = address("application.api");
+    let instance = instance();
+    let empty =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Description,
+            OwnedValue::Value(value(json!("required-on-create"))),
+        )])),
+    );
+    let contract = MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+        .requiring(PropertyPath::Description);
+    let remote = RemoteState::try_new_with_contracts(
+        instance,
+        [(address.clone(), RemoteObservation::Missing)],
+        [(address, contract)],
+    )
+    .expect("contract coverage must be exact");
+
+    let create = plan(&desired, &empty, &remote);
+
+    assert!(create.applyable());
+    assert_eq!(create.changes()[0].kind(), ChangeKind::Create);
+    assert!(create.diagnostics().is_empty());
+}
+
+#[test]
 fn ignored_existing_property_preserves_stored_baseline_during_an_unrelated_update() {
     let address = address("application.api");
     let instance = instance();

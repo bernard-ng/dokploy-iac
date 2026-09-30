@@ -121,6 +121,10 @@ impl MutationContract {
             .find(|path| !properties.contains_key(*path))
     }
 
+    pub(crate) fn accepts_required_set_on_create(&self, path: &PropertyPath) -> bool {
+        self.required_on_create.contains(path)
+    }
+
     pub(crate) fn property_mode(&self, path: &PropertyPath, clear: bool) -> MutationMode {
         self.properties
             .get(path)

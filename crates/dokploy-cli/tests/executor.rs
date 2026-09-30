@@ -172,6 +172,124 @@ async fn postgres_owned_fields_update_in_place() {
 }
 
 #[tokio::test]
+async fn mysql_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let search = r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#;
+    let old = r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"app","databaseUser":"app"}"#;
+    let updated = r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"app_next","databaseUser":"app_next"}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", r#"{"mysqlId":"mysql-1"}"#),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", old),
+        ("200 OK", "true"),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", updated),
+        ("200 OK", "true"),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("mysql-user"), "mysql-user-password-canary")
+        .expect("MySQL user secret fixture is writable");
+    fs::write(secrets.join("mysql-root"), "mysql-root-password-canary")
+        .expect("MySQL root secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    let mysql_config = |database: &str, username: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    mysql:\n",
+                "      main:\n",
+                "        database: {}\n",
+                "        username: {}\n",
+                "        password:\n",
+                "          file: .secrets/mysql-user\n",
+                "        root_password:\n",
+                "          file: .secrets/mysql-root\n",
+            ),
+            database, username,
+        )
+    };
+    fs::write(&config, mysql_config("app", "app"))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+
+    let created = apply_workspace(&client, &config)
+        .await
+        .expect("initial MySQL apply succeeds");
+    assert_eq!(created.applied(), 3);
+    fs::write(&config, mysql_config("app_next", "app_next"))
+        .expect("updated configuration fixture is writable");
+    let updated = apply_workspace(&client, &config)
+        .await
+        .expect("MySQL metadata update succeeds");
+    assert_eq!(updated.applied(), 1);
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mysql: {}\n",
+            "removed:\n",
+            "  - from: mysql.main\n",
+            "    destroy: true\n",
+        ),
+    )
+    .expect("removal configuration fixture is writable");
+    let deleted = apply_workspace(&client, &config)
+        .await
+        .expect("MySQL delete succeeds");
+    assert_eq!(deleted.applied(), 1);
+
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert!(state.resource(&"mysql.main".parse().unwrap()).is_none());
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 15);
+    assert!(requests[2].starts_with("POST /api/mysql.create HTTP/1.1\r\n"));
+    assert!(requests[2].contains(r#""databasePassword":"mysql-user-password-canary""#));
+    assert!(requests[2].contains(r#""databaseRootPassword":"mysql-root-password-canary""#));
+    assert!(requests[8].starts_with("POST /api/mysql.update HTTP/1.1\r\n"));
+    assert!(requests[8].contains(r#""databaseName":"app_next""#));
+    assert!(requests[8].contains(r#""databaseUser":"app_next""#));
+    assert!(!requests[8].contains("databasePassword"));
+    assert!(!requests[8].contains("databaseRootPassword"));
+    assert!(requests[14].starts_with("POST /api/mysql.remove HTTP/1.1\r\n"));
+
+    let state_json = fs::read_to_string(directory.path().join(".dokploy/state.json"))
+        .expect("state is readable as text");
+    assert!(!state_json.contains("mysql-user-password-canary"));
+    assert!(!state_json.contains("mysql-root-password-canary"));
+    assert!(!format!("{created:?} {updated:?} {deleted:?}").contains("password-canary"));
+}
+
+#[tokio::test]
 async fn redis_password_rotation_uses_the_new_one_shot_secret_value() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", "[]"),

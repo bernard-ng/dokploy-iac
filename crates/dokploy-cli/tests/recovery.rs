@@ -9,9 +9,10 @@ use std::time::Duration;
 use dokploy_cli::recovery::{RecoveryAction, recover_workspace_with_approval};
 use dokploy_sdk::Dokploy;
 use dokploy_state::{
-    ExpectedCheckpoint, ExpectedState, InstanceIdentity, JournalAction, ManagedInputs,
-    OperationJournal, PlanDigest, RecoveryStatus, RemoteId, ResourceAddress, ResourceKind,
-    ResourceState, StateFile, StateStore,
+    ExpectedCheckpoint, ExpectedState, FingerprintKeyId, InstanceIdentity, JournalAction,
+    ManagedInputs, OperationJournal, PlanDigest, RecoveryStatus, RemoteId, ResourceAddress,
+    ResourceKind, ResourceState, SensitiveFingerprint, SensitiveInputs, SensitivePropertyPath,
+    StateFile, StateStore,
 };
 use semver::Version;
 
@@ -31,30 +32,21 @@ struct CrashServer {
 
 impl TestServer {
     fn project_topology(body: &'static str) -> Self {
+        Self::respond_in_sequence(vec![body])
+    }
+
+    fn respond_in_sequence(bodies: Vec<&'static str>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
         let address = listener.local_addr().expect("test server has an address");
         let (sender, requests) = mpsc::channel();
         let thread = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("test server accepts a request");
-            let mut bytes = Vec::new();
-            let mut buffer = [0_u8; 1024];
-            loop {
-                let count = stream.read(&mut buffer).expect("request is readable");
-                bytes.extend_from_slice(&buffer[..count]);
-                if count == 0 || bytes.windows(4).any(|window| window == b"\r\n\r\n") {
-                    break;
-                }
+            let mut captured = Vec::new();
+            for body in bodies {
+                let (mut stream, _) = listener.accept().expect("test server accepts a request");
+                captured.push(read_request(&mut stream));
+                write_response(&mut stream, body);
             }
-            sender
-                .send(vec![String::from_utf8(bytes).expect("request is UTF-8")])
-                .expect("test receives request");
-            write!(
-                stream,
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            )
-            .expect("response is writable");
+            sender.send(captured).expect("test receives requests");
         });
 
         Self {
@@ -77,6 +69,271 @@ impl TestServer {
         self.thread.join().expect("test server exits cleanly");
         requests
     }
+}
+
+#[tokio::test]
+async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state() {
+    let server = TestServer::respond_in_sequence(vec![
+        r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"next","databaseUser":"next"}"#,
+    ]);
+    let workspace = tempfile::tempdir().expect("temporary workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(
+        &config_file,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mysql:\n",
+            "      main:\n",
+            "        database: next\n",
+            "        username: next\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+    let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
+    let store = StateStore::new(workspace.path(), instance.clone()).expect("state store is valid");
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance);
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::absent(), &state)
+        .unwrap();
+    let before_project = state.clone();
+    state
+        .upsert_resource(
+            address("project.platform"),
+            ResourceState::new(
+                ResourceKind::Project,
+                RemoteId::new("project-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                None,
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_project), &state)
+        .unwrap();
+    let before_environment = state.clone();
+    state
+        .upsert_resource(
+            address("environment.production"),
+            ResourceState::new(
+                ResourceKind::Environment,
+                RemoteId::new("environment-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                Some(address("project.platform")),
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_environment), &state)
+        .unwrap();
+    let before_mysql = state.clone();
+    state
+        .upsert_resource(
+            address("mysql.main"),
+            ResourceState::new(
+                ResourceKind::MySql,
+                RemoteId::new("mysql-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(
+                    serde_json::json!({"database":"old","username":"old"}),
+                )
+                .unwrap(),
+                Some(address("environment.production")),
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_mysql), &state)
+        .unwrap();
+    let before = state.resource(&address("mysql.main")).unwrap().clone();
+    let after = ResourceState::new(
+        ResourceKind::MySql,
+        RemoteId::new("mysql-1").unwrap(),
+        false,
+        ManagedInputs::try_from_json(serde_json::json!({"database":"next","username":"next"}))
+            .unwrap(),
+        Some(address("environment.production")),
+        Vec::new(),
+    );
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("c".repeat(64)).unwrap()).unwrap();
+    journal
+        .start_recoverable_step(
+            address("mysql.main"),
+            JournalAction::Update,
+            ExpectedCheckpoint::update(before, after).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(write);
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&address("mysql.main")));
+        assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
+        Ok(true)
+    })
+    .await
+    .expect("readable MySQL update recovery succeeds");
+
+    assert_eq!(result.recovered_steps(), 1);
+    let recovered = store.inspect().unwrap().unwrap();
+    assert_eq!(
+        recovered
+            .resource(&address("mysql.main"))
+            .unwrap()
+            .last_applied()
+            .as_json(),
+        &serde_json::json!({"database":"next","username":"next"})
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    assert_eq!(server.finish().len(), 5);
+}
+
+#[tokio::test]
+async fn uncertain_mysql_create_adopts_one_matching_resource_without_retrying_secrets() {
+    let server = TestServer::respond_in_sequence(vec![
+        r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"app","databaseUser":"app","databasePassword":"never-crosses-sdk","databaseRootPassword":"never-crosses-sdk"}"#,
+    ]);
+    let workspace = tempfile::tempdir().expect("temporary workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(
+        &config_file,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mysql:\n",
+            "      main:\n",
+            "        database: app\n",
+            "        username: app\n",
+            "        password: null\n",
+            "        root_password: null\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+    let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
+    let store = StateStore::new(workspace.path(), instance.clone()).expect("state store is valid");
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance);
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::absent(), &state)
+        .unwrap();
+    for (address_value, kind, remote_id, containment) in [
+        ("project.platform", ResourceKind::Project, "project-1", None),
+        (
+            "environment.production",
+            ResourceKind::Environment,
+            "environment-1",
+            Some("project.platform"),
+        ),
+    ] {
+        let before = state.clone();
+        state
+            .upsert_resource(
+                address(address_value),
+                ResourceState::new(
+                    kind,
+                    RemoteId::new(remote_id).unwrap(),
+                    false,
+                    ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                    containment.map(address),
+                    Vec::new(),
+                ),
+            )
+            .unwrap();
+        store
+            .begin_write()
+            .unwrap()
+            .checkpoint(ExpectedState::from_state(&before), &state)
+            .unwrap();
+    }
+    let key_id = FingerprintKeyId::new(
+        uuid::Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").unwrap(),
+    )
+    .unwrap();
+    let sensitive = SensitiveInputs::try_from_entries([
+        (
+            SensitivePropertyPath::parse("password").unwrap(),
+            SensitiveFingerprint::new_v1(key_id.clone(), [1; 32]),
+        ),
+        (
+            SensitivePropertyPath::parse("root_password").unwrap(),
+            SensitiveFingerprint::new_v1(key_id, [2; 32]),
+        ),
+    ])
+    .unwrap();
+    let target = ResourceState::try_new(
+        ResourceKind::MySql,
+        RemoteId::new("recovery-pending").unwrap(),
+        false,
+        ManagedInputs::try_from_json(serde_json::json!({"database":"app","username":"app"}))
+            .unwrap(),
+        sensitive,
+        Some(address("environment.production")),
+        Vec::new(),
+    )
+    .unwrap();
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("d".repeat(64)).unwrap()).unwrap();
+    journal
+        .start_recoverable_step(
+            address("mysql.main"),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(target).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(write);
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&address("mysql.main")));
+        assert_eq!(preview.action(), RecoveryAction::AdoptCreatedResource);
+        Ok(true)
+    })
+    .await
+    .expect("matching MySQL create recovery succeeds");
+
+    assert_eq!(result.recovered_steps(), 1);
+    let recovered = store.inspect().unwrap().unwrap();
+    assert_eq!(
+        recovered
+            .resource(&address("mysql.main"))
+            .unwrap()
+            .remote_id()
+            .as_str(),
+        "mysql-1"
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 5);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
 }
 
 impl CrashServer {
