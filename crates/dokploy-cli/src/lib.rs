@@ -12,6 +12,7 @@ mod plan_output;
 pub mod planning;
 mod redaction;
 pub mod remote;
+mod state_command;
 // This foundation becomes reachable when the desired compiler accepts sensitive inputs.
 #[allow(dead_code)]
 mod sensitive;
@@ -81,6 +82,23 @@ pub async fn execute_with_input(
                     show_context(config, credentials, name.as_deref(), output)?
                 }
             }
+            Ok(CommandStatus::Success)
+        }
+        Command::State { file, command } => {
+            let configuration = config.load()?;
+            let settings = resolve_connection(
+                ConnectionOptions {
+                    url,
+                    api_key: api_key.map(ApiKey::new),
+                },
+                &ProcessEnvironment,
+                &configuration,
+                credentials,
+            )?;
+            let instance = dokploy_state::InstanceIdentity::parse(settings.url().as_str())
+                .into_diagnostic()?;
+            state_command::execute(&file, instance, command, output).into_diagnostic()?;
+
             Ok(CommandStatus::Success)
         }
         Command::Plan {

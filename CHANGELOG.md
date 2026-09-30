@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add read-only `dokploy state list` and `dokploy state show` commands with
+  workspace-instance validation and value-free managed-field rendering.
 - Add owned, read-only Domain SDK operations with strong identifiers and
   fixture-backed models that expose only host and application linkage.
 - Add application-scoped Domain discovery with managed-ID matching, exact-host

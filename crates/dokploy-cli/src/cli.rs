@@ -95,6 +95,20 @@ pub enum Command {
         parallelism: u8,
     },
 
+    /// Inspect resources tracked in the local workspace state.
+    State {
+        /// Configuration file whose directory owns the state.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+
+        #[command(subcommand)]
+        command: StateCommand,
+    },
+
     /// Inspect or select local connection contexts.
     Context {
         #[command(subcommand)]
@@ -124,13 +138,25 @@ pub enum ContextCommand {
     },
 }
 
+#[derive(Subcommand)]
+pub enum StateCommand {
+    /// List tracked logical resource addresses.
+    List,
+
+    /// Show one tracked resource without exposing managed values or receipts.
+    Show {
+        /// Logical resource address, such as `application.api`.
+        address: String,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use clap::Parser;
 
-    use super::{Cli, Command, ContextCommand};
+    use super::{Cli, Command, ContextCommand, StateCommand};
 
     #[test]
     fn parses_context_use() {
@@ -240,6 +266,29 @@ mod tests {
         ));
         assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "0"]).is_err());
         assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "65"]).is_err());
+    }
+
+    #[test]
+    fn state_list_and_show_use_the_selected_workspace() {
+        let list = Cli::try_parse_from(["dokploy", "state", "--file", "stack.yaml", "list"])
+            .expect("state list command line is valid");
+        assert!(matches!(
+            list.command,
+            Command::State {
+                file,
+                command: StateCommand::List,
+            } if file.as_path() == Path::new("stack.yaml")
+        ));
+
+        let show = Cli::try_parse_from(["dokploy", "state", "show", "application.api"])
+            .expect("state show command line is valid");
+        assert!(matches!(
+            show.command,
+            Command::State {
+                command: StateCommand::Show { address },
+                ..
+            } if address == "application.api"
+        ));
     }
 
     #[test]
