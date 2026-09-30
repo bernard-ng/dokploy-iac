@@ -12,12 +12,15 @@
 //! responsible for config-directory resolution, regular-file checks, symlink
 //! policy, and secret-byte handling. Source locations are retained separately
 //! for safe diagnostics and do not affect normalized configuration equality.
+//! Canonical writing rebuilds the nested YAML shape from that normalized model,
+//! so source comments are intentionally not retained.
 
 mod field;
 mod file;
 mod model;
 mod parser;
 mod types;
+mod writer;
 
 pub use field::Field;
 pub use file::{
@@ -32,4 +35,9 @@ pub use model::{
 pub use types::{
     ConfigValue, DomainConfig, GitHubSource, Lifecycle, MoveDeclaration, PropertyPath,
     RemovedDeclaration, ResourceReference, SecretSource, SecretSourceKind, SourceConfig,
+};
+pub use writer::{
+    ApplicationDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError, DomainDocument,
+    EnvironmentDocument, LifecycleDocument, PostgresDocument, ProjectDocument, RedisDocument,
+    SourceDocument, render, write,
 };
