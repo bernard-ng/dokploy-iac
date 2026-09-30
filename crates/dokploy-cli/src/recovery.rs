@@ -185,7 +185,7 @@ async fn decision_for_step(
     if step.outcome() != &RecoveryStepOutcome::InProgress {
         return Err(RecoverWorkspaceError::UnsafeEvidence);
     }
-    if step.action() == JournalAction::Forget {
+    if matches!(step.action(), JournalAction::Forget | JournalAction::Move) {
         return Ok(RecoveryDecision::CheckpointUncertain {
             sequence: step.sequence(),
             remote_id: None,
@@ -282,7 +282,9 @@ async fn decision_for_step(
                 }
             }
         }
-        JournalAction::Forget => unreachable!("state-only forget returned before discovery"),
+        JournalAction::Forget | JournalAction::Move => {
+            unreachable!("state-only action returned before discovery")
+        }
     }
 }
 

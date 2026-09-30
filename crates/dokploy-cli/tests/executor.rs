@@ -1171,6 +1171,161 @@ async fn project_update_checkpoints_and_the_next_plan_converges() {
 }
 
 #[tokio::test]
+async fn state_only_project_move_preserves_identity_and_protection_without_remote_mutation() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[]}]"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "  lifecycle:\n    protect: true\n",
+            "environments: {}\n",
+        ),
+    )
+    .unwrap();
+    let client = server.client();
+    apply_workspace(&client, &config).await.unwrap();
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: renamed\n",
+            "  lifecycle:\n    protect: true\n",
+            "environments: {}\n",
+            "moves:\n",
+            "  - from: project.platform\n",
+            "    to: project.renamed\n",
+        ),
+    )
+    .unwrap();
+
+    let summary = apply_workspace(&client, &config).await.unwrap();
+    let converged = plan_workspace(&client, &config).await.unwrap();
+
+    assert_eq!(summary.applied(), 1);
+    assert!(converged.changes().is_empty());
+    let state = StateStore::new(
+        directory.path(),
+        InstanceIdentity::parse(&server.url).unwrap(),
+    )
+    .unwrap()
+    .inspect()
+    .unwrap()
+    .unwrap();
+    assert!(
+        state
+            .resource(&"project.platform".parse().unwrap())
+            .is_none()
+    );
+    let moved = state.resource(&"project.renamed".parse().unwrap()).unwrap();
+    assert_eq!(moved.remote_id().as_str(), "project-1");
+    assert!(moved.is_protected());
+    let requests = server.finish();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/project.create "))
+            .count(),
+        1
+    );
+    assert!(requests.iter().all(|request| {
+        !request.starts_with("POST /api/project.remove ")
+            && !request.starts_with("POST /api/project.update ")
+    }));
+}
+
+#[tokio::test]
+async fn project_move_with_remote_update_updates_once_then_converges() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","description":"Old","environments":[]}]"#,
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","description":"New","environments":[]}]"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        "version: 1\nproject:\n  name: platform\n  description: Old\nenvironments: {}\n",
+    )
+    .unwrap();
+    let client = server.client();
+    apply_workspace(&client, &config).await.unwrap();
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: renamed\n  description: New\n",
+            "environments: {}\n",
+            "moves:\n",
+            "  - from: project.platform\n",
+            "    to: project.renamed\n",
+        ),
+    )
+    .unwrap();
+
+    let summary = apply_workspace(&client, &config).await.unwrap();
+    let converged = plan_workspace(&client, &config).await.unwrap();
+
+    assert_eq!(summary.applied(), 1);
+    assert!(converged.changes().is_empty());
+    let state = StateStore::new(
+        directory.path(),
+        InstanceIdentity::parse(&server.url).unwrap(),
+    )
+    .unwrap()
+    .inspect()
+    .unwrap()
+    .unwrap();
+    let moved = state.resource(&"project.renamed".parse().unwrap()).unwrap();
+    assert_eq!(moved.remote_id().as_str(), "project-1");
+    assert_eq!(moved.last_applied().as_json()["description"], "New");
+    let requests = server.finish();
+    assert_eq!(requests.len(), 5);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/project.update "))
+            .count(),
+        1
+    );
+    assert!(requests[3].contains(r#""projectId":"project-1""#));
+    assert!(requests[3].contains(r#""description":"New""#));
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.starts_with("POST /api/project.remove "))
+    );
+}
+
+#[tokio::test]
 async fn domain_host_update_uses_the_typed_in_place_mutation() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", "[]"),

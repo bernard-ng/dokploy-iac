@@ -221,6 +221,116 @@ async fn uncertain_create_adopts_one_exact_fresh_resource_without_retrying() {
     assert!(!requests[0].contains("project.create"));
 }
 
+#[tokio::test]
+async fn interrupted_move_recovers_atomically_without_remote_requests() {
+    let workspace = tempfile::tempdir().expect("temporary workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(
+        &config_file,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: renamed\n",
+            "environments: {}\n",
+            "moves:\n",
+            "  - from: project.platform\n",
+            "    to: project.renamed\n",
+        ),
+    )
+    .unwrap();
+    let client = Dokploy::builder()
+        .url("http://127.0.0.1:9")
+        .api_key("test-api-key")
+        .build()
+        .unwrap();
+    let instance = InstanceIdentity::parse(client.base_url().as_str()).unwrap();
+    let store = StateStore::new(workspace.path(), instance.clone()).unwrap();
+    let empty = StateFile::new(Version::new(0, 1, 0), instance);
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::absent(), &empty)
+        .unwrap();
+    let source = address("project.platform");
+    let target = address("project.renamed");
+    let child = address("environment.production");
+    let mut current = empty.clone();
+    current
+        .upsert_resource(
+            source.clone(),
+            ResourceState::new(
+                ResourceKind::Project,
+                RemoteId::new("project-1").unwrap(),
+                true,
+                ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                None,
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&empty), &current)
+        .unwrap();
+    let with_project = current.clone();
+    current
+        .upsert_resource(
+            child.clone(),
+            ResourceState::new(
+                ResourceKind::Environment,
+                RemoteId::new("environment-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                Some(source.clone()),
+                vec![source.clone()],
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&with_project), &current)
+        .unwrap();
+    let before = current.resource(&source).unwrap().clone();
+    let mut expected = current.clone();
+    expected.move_resource(&source, target.clone()).unwrap();
+    let after = expected.resource(&target).unwrap().clone();
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("b".repeat(64)).unwrap()).unwrap();
+    journal
+        .start_recoverable_step(
+            target.clone(),
+            JournalAction::Move,
+            ExpectedCheckpoint::move_resource(source.clone(), before, after).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(write);
+
+    let result = recover_workspace_with_approval(&client, &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&target));
+        assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
+        Ok(true)
+    })
+    .await
+    .expect("state-only move recovery succeeds without discovery");
+
+    assert_eq!(result.recovered_steps(), 1);
+    let recovered = store.inspect().unwrap().unwrap();
+    assert_eq!(recovered.resource(&source), None);
+    assert!(recovered.resource(&target).unwrap().is_protected());
+    assert_eq!(
+        recovered.resource(&child).unwrap().containment(),
+        Some(&target)
+    );
+    assert_eq!(
+        recovered.resource(&child).unwrap().dependencies(),
+        std::slice::from_ref(&target)
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+}
+
 #[test]
 fn killed_apply_is_recovered_from_fresh_remote_evidence_without_duplicate_create() {
     let server = CrashServer::start();

@@ -285,6 +285,84 @@ fn interrupted_forget_is_recovered_as_state_only_removal() {
 }
 
 #[test]
+fn interrupted_state_only_move_reconstructs_the_atomic_checkpoint() {
+    let (_workspace, store, initial) = initialized_store();
+    let source: ResourceAddress = "project.legacy".parse().unwrap();
+    let target: ResourceAddress = "project.platform".parse().unwrap();
+    let child: ResourceAddress = "environment.production".parse().unwrap();
+    let mut current = initial.clone();
+    current
+        .upsert_resource(
+            source.clone(),
+            ResourceState::new(
+                ResourceKind::Project,
+                remote_id("project-remote"),
+                true,
+                ManagedInputs::try_from_json(json!({ "description": "managed" })).unwrap(),
+                None,
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&initial), &current)
+        .unwrap();
+    let with_project = current.clone();
+    current
+        .upsert_resource(
+            child.clone(),
+            ResourceState::new(
+                ResourceKind::Environment,
+                remote_id("environment-remote"),
+                false,
+                ManagedInputs::try_from_json(json!({})).unwrap(),
+                Some(source.clone()),
+                vec![source.clone()],
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&with_project), &current)
+        .unwrap();
+    let before = current.resource(&source).unwrap().clone();
+    let mut expected = current.clone();
+    expected.move_resource(&source, target.clone()).unwrap();
+    let after = expected.resource(&target).unwrap().clone();
+    let mut session = store.begin_write().unwrap();
+    let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
+    journal
+        .start_recoverable_step(
+            target.clone(),
+            JournalAction::Move,
+            ExpectedCheckpoint::move_resource(source.clone(), before, after).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(session);
+
+    let mut recovery = store.begin_recovery().unwrap();
+    let proposed = recovery.expected_proposed_state(1, None).unwrap();
+    assert_eq!(proposed, expected);
+    recovery
+        .checkpoint_uncertain_success(1, None, &proposed)
+        .unwrap();
+    recovery.resolve().unwrap();
+
+    let moved = store.inspect().unwrap().unwrap();
+    assert_eq!(moved.resource(&source), None);
+    assert!(moved.resource(&target).unwrap().is_protected());
+    assert_eq!(moved.resource(&child).unwrap().containment(), Some(&target));
+    assert_eq!(
+        moved.resource(&child).unwrap().dependencies(),
+        std::slice::from_ref(&target)
+    );
+}
+
+#[test]
 fn legacy_uncertain_evidence_fails_closed_but_safe_terminal_cases_resolve() {
     let (workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().unwrap();

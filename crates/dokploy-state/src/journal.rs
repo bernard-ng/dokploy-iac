@@ -34,6 +34,8 @@ pub enum JournalAction {
     Delete,
     /// Remove ownership from state without making a remote request.
     Forget,
+    /// Move one logical address without creating or deleting a remote resource.
+    Move,
     Deploy,
 }
 
@@ -95,6 +97,8 @@ impl fmt::Debug for ExpectedResource {
 pub struct ExpectedCheckpoint {
     before: Option<ResourceState>,
     after: Option<ExpectedResource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    move_from: Option<ResourceAddress>,
 }
 
 impl ExpectedCheckpoint {
@@ -103,6 +107,7 @@ impl ExpectedCheckpoint {
         Ok(Self {
             before: None,
             after: Some(ExpectedResource::from_resource(&target)),
+            move_from: None,
         })
     }
 
@@ -118,6 +123,7 @@ impl ExpectedCheckpoint {
         Ok(Self {
             before: Some(before),
             after: Some(ExpectedResource::from_resource(&after)),
+            move_from: None,
         })
     }
 
@@ -127,13 +133,35 @@ impl ExpectedCheckpoint {
         Self {
             before: Some(before),
             after: None,
+            move_from: None,
         }
+    }
+
+    /// Describes an identity-preserving atomic logical-address move.
+    pub fn move_resource(
+        from: ResourceAddress,
+        before: ResourceState,
+        after: ResourceState,
+    ) -> Result<Self, ExpectedCheckpointError> {
+        if from.kind() != before.kind()
+            || before.kind() != after.kind()
+            || before.remote_id() != after.remote_id()
+        {
+            return Err(ExpectedCheckpointError);
+        }
+
+        Ok(Self {
+            before: Some(before),
+            after: Some(ExpectedResource::from_resource(&after)),
+            move_from: Some(from),
+        })
     }
 
     fn is_well_formed_for(&self, address: &ResourceAddress, action: JournalAction) -> bool {
         match action {
             JournalAction::Create => {
                 self.before.is_none()
+                    && self.move_from.is_none()
                     && self.after.as_ref().is_some_and(|after| {
                         after.kind == address.kind()
                             && after
@@ -145,20 +173,35 @@ impl ExpectedCheckpoint {
                     })
             }
             JournalAction::Update | JournalAction::Deploy => {
-                self.before.as_ref().is_some_and(|before| {
-                    before.kind() == address.kind()
-                        && self.after.as_ref().is_some_and(|after| {
-                            after.kind == before.kind()
-                                && after.materialize(before.remote_id().clone()).is_ok()
-                        })
-                })
+                self.move_from.is_none()
+                    && self.before.as_ref().is_some_and(|before| {
+                        before.kind() == address.kind()
+                            && self.after.as_ref().is_some_and(|after| {
+                                after.kind == before.kind()
+                                    && after.materialize(before.remote_id().clone()).is_ok()
+                            })
+                    })
             }
             JournalAction::Delete | JournalAction::Forget => {
                 self.before
                     .as_ref()
                     .is_some_and(|before| before.kind() == address.kind())
                     && self.after.is_none()
+                    && self.move_from.is_none()
             }
+            JournalAction::Move => self.move_from.as_ref().is_some_and(|from| {
+                from != address
+                    && from.kind() == address.kind()
+                    && self.before.as_ref().is_some_and(|before| {
+                        before.kind() == address.kind()
+                            && self.after.as_ref().is_some_and(|after| {
+                                after.kind == before.kind()
+                                    && after
+                                        .materialize(before.remote_id().clone())
+                                        .is_ok_and(|after| after.remote_id() == before.remote_id())
+                            })
+                    })
+            }),
         }
     }
 
@@ -194,6 +237,9 @@ impl ExpectedCheckpoint {
             JournalAction::Delete | JournalAction::Forget => {
                 stored == self.before.as_ref() && self.after.is_none()
             }
+            JournalAction::Move => self.move_from.as_ref().is_some_and(|from| {
+                current.resource(from) == self.before.as_ref() && stored.is_none()
+            }),
         };
         if valid {
             Ok(())
@@ -224,6 +270,15 @@ impl ExpectedCheckpoint {
                 })
             }
             JournalAction::Delete | JournalAction::Forget => proposed.resource(address).is_none(),
+            JournalAction::Move => self.move_from.as_ref().is_some_and(|from| {
+                proposed.resource(from).is_none()
+                    && self.before.as_ref().is_some_and(|before| {
+                        self.after.as_ref().is_some_and(|after| {
+                            after.materialize(before.remote_id().clone()).ok().as_ref()
+                                == proposed.resource(address)
+                        })
+                    })
+            }),
         }
     }
 }
@@ -234,6 +289,7 @@ impl fmt::Debug for ExpectedCheckpoint {
             .debug_struct("ExpectedCheckpoint")
             .field("before", &self.before.as_ref().map(|_| "[REDACTED]"))
             .field("after", &self.after)
+            .field("move_from", &self.move_from)
             .finish()
     }
 }
@@ -606,7 +662,7 @@ fn validate_success_remote_id(
 ) -> Result<(), JournalError> {
     match (action, remote_id) {
         (JournalAction::Create, None) => Err(JournalError::CreateRequiresRemoteId),
-        (JournalAction::Delete | JournalAction::Forget, Some(_)) => {
+        (JournalAction::Delete | JournalAction::Forget | JournalAction::Move, Some(_)) => {
             Err(JournalError::DeleteForbidsRemoteId)
         }
         _ => Ok(()),
@@ -635,6 +691,14 @@ fn validate_state_transition(
                 && current.resources().len() == proposed.resources().len().saturating_add(1)
                 && unchanged_resources(current, proposed, &token.address)
         }
+        JournalAction::Move => token
+            .expected_checkpoint
+            .as_ref()
+            .and_then(|expected| expected.move_from.as_ref())
+            .is_some_and(|from| {
+                let mut expected = current.clone();
+                expected.move_resource(from, token.address.clone()).is_ok() && &expected == proposed
+            }),
         JournalAction::Update | JournalAction::Deploy => {
             current_resource.is_some_and(|current_resource| {
                 proposed_resource.is_some_and(|proposed_resource| {
@@ -1098,6 +1162,18 @@ impl RecoverySession<'_> {
                             .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?,
                     )
                     .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?;
+            }
+            (Some(_), JournalAction::Move) => {
+                let from = expected
+                    .move_from
+                    .as_ref()
+                    .ok_or(RecoveryError::InvalidExpectedCheckpoint)?;
+                proposed
+                    .move_resource(from, step.address.clone())
+                    .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?;
+                if !expected.matches_proposed(&step.address, step.action, &proposed, None) {
+                    return Err(RecoveryError::InvalidExpectedCheckpoint);
+                }
             }
             (None, JournalAction::Delete | JournalAction::Forget) => {
                 proposed
@@ -1907,7 +1983,7 @@ fn validate_scanned_remote_id(
 ) -> Result<(), RecoveryScanError> {
     match (action, remote_id) {
         (JournalAction::Create, None)
-        | (JournalAction::Delete | JournalAction::Forget, Some(_)) => {
+        | (JournalAction::Delete | JournalAction::Forget | JournalAction::Move, Some(_)) => {
             Err(RecoveryScanError::Corrupt)
         }
         _ => Ok(()),
