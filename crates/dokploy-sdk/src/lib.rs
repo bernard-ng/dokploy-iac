@@ -14,5 +14,5 @@ pub use models::{
     ApplicationSearchItem, ApplicationSummary, EnvironmentCollection, EnvironmentDetails,
     EnvironmentId, EnvironmentSummary, EnvironmentTopology, PostgresCollection, PostgresDetails,
     PostgresId, PostgresSearchItem, PostgresSummary, ProjectDetails, ProjectId, ProjectTopology,
-    ResponseField, ServerId,
+    RedisCollection, RedisDetails, RedisId, RedisSearchItem, RedisSummary, ResponseField, ServerId,
 };

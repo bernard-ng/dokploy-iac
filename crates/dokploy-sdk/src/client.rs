@@ -8,8 +8,9 @@ use dokploy_api::{
     EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentOneRequest,
     EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL, PROJECT_ONE,
     PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery,
-    ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery, endpoint_by_operation,
-    validate_request,
+    ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery, REDIS_ONE, REDIS_SEARCH,
+    RedisOneRequest, RedisOneRequestQuery, RedisSearchRequest, RedisSearchRequestQuery,
+    endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -25,9 +26,9 @@ use crate::imperative::{
 use crate::models::{
     ApplicationCollection, ApplicationDetails, ApplicationSearchPage, EnvironmentCollection,
     EnvironmentDetails, PostgresCollection, PostgresDetails, PostgresSearchPage, ProjectDetails,
-    ProjectTopology,
+    ProjectTopology, RedisCollection, RedisDetails, RedisSearchPage,
 };
-use crate::services::{Applications, Environments, Postgres, Projects};
+use crate::services::{Applications, Environments, Postgres, Projects, Redis};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -36,6 +37,8 @@ const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
 const POSTGRES_SEARCH_ITEM_LIMIT: usize = 10_000;
+const REDIS_SEARCH_PAGE_SIZE: usize = 100;
+const REDIS_SEARCH_ITEM_LIMIT: usize = 10_000;
 
 /// A configured client for the Dokploy API.
 #[derive(Clone)]
@@ -86,6 +89,12 @@ impl Dokploy {
     #[must_use]
     pub fn postgres(&self) -> Postgres<'_> {
         Postgres::new(self)
+    }
+
+    /// Returns access to Redis read operations.
+    #[must_use]
+    pub fn redis(&self) -> Redis<'_> {
+        Redis::new(self)
     }
 
     /// Returns broad raw access to operations from the pinned OpenAPI contract.
@@ -274,6 +283,71 @@ impl Dokploy {
             postgres.extend(page.items);
             if postgres.len() == expected {
                 return Ok(PostgresCollection { postgres });
+            }
+        }
+    }
+
+    pub(crate) async fn redis_get(&self, redis_id: &str) -> Result<RedisDetails, Error> {
+        let request = RedisOneRequest {
+            query: RedisOneRequestQuery {
+                redis_id: redis_id.to_owned(),
+            },
+        };
+        validate_generated_request(REDIS_ONE, &request)?;
+
+        self.read_query_json(REDIS_ONE, &request.query).await
+    }
+
+    pub(crate) async fn redis_by_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<RedisCollection, Error> {
+        if environment_id.is_empty() {
+            return Err(invalid_request(
+                REDIS_SEARCH.operation(),
+                "environment ID cannot be empty",
+            ));
+        }
+        let mut redis = Vec::new();
+        let mut expected_total = None;
+
+        loop {
+            let request = RedisSearchRequest {
+                query: RedisSearchRequestQuery {
+                    environment_id: Some(environment_id.to_owned()),
+                    limit: Some(REDIS_SEARCH_PAGE_SIZE as f64),
+                    offset: Some(redis.len() as f64),
+                    ..RedisSearchRequestQuery::default()
+                },
+            };
+            validate_generated_request(REDIS_SEARCH, &request)?;
+            let page: RedisSearchPage = self.read_query_json(REDIS_SEARCH, &request.query).await?;
+
+            let expected = *expected_total.get_or_insert(page.total);
+            if page.total != expected
+                || expected > REDIS_SEARCH_ITEM_LIMIT as u64
+                || page.items.len() > REDIS_SEARCH_PAGE_SIZE
+            {
+                return Err(Error::UnexpectedResponse {
+                    operation: REDIS_SEARCH.operation(),
+                });
+            }
+            let expected = usize::try_from(expected).map_err(|_| Error::UnexpectedResponse {
+                operation: REDIS_SEARCH.operation(),
+            })?;
+            let page_would_exceed_total = redis
+                .len()
+                .checked_add(page.items.len())
+                .is_none_or(|count| count > expected);
+            if page_would_exceed_total || (page.items.is_empty() && redis.len() < expected) {
+                return Err(Error::UnexpectedResponse {
+                    operation: REDIS_SEARCH.operation(),
+                });
+            }
+
+            redis.extend(page.items);
+            if redis.len() == expected {
+                return Ok(RedisCollection { redis });
             }
         }
     }

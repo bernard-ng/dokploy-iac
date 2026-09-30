@@ -212,6 +212,34 @@ async fn postgres_reads_the_selected_live_database_and_parent_collection() {
 
 #[tokio::test]
 #[ignore = "requires an explicit local Dokploy integration run"]
+async fn redis_reads_the_live_empty_parent_collection() {
+    let client = live_client();
+    let topology = client
+        .projects()
+        .all()
+        .await
+        .expect("the live project topology must be readable");
+    let environment = topology
+        .projects()
+        .iter()
+        .flat_map(|project| &project.environments)
+        .find(|environment| environment.name == "production")
+        .expect("the live fixture must contain its production environment");
+
+    let collection = client
+        .redis()
+        .by_environment(EnvironmentId::new(environment.environment_id.as_str()))
+        .await
+        .expect("the live parent-scoped Redis collection must be readable");
+
+    assert!(
+        collection.redis().is_empty(),
+        "the disposable Redis contract record must have been removed"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires an explicit local Dokploy integration run"]
 async fn invalid_authentication_returns_a_structured_unauthorized_error() {
     assert_eq!(
         env::var(LIVE_TEST_FLAG).as_deref(),

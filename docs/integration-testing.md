@@ -102,8 +102,8 @@ then supplies the ignored local API key only to the test process. The tests are
 ignored during ordinary `cargo test` runs and perform no remote mutations.
 They cover fresh project topology reads, project, environment, application,
 and Postgres lookup, parent-scoped environment collections, fully collected
-parent-scoped application and Postgres search, and normalization of Dokploy's
-sparse authentication error response.
+parent-scoped application, Postgres, and empty Redis search, and normalization
+of Dokploy's sparse authentication error response.
 
 ## Live CLI redaction test
 

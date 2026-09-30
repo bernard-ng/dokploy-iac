@@ -7,7 +7,7 @@ use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
     ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority,
     EnvironmentTopologyAuthority, PostgresTopologyAuthority, ProjectTopologyAuthority,
-    discover_remote,
+    RedisTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -98,6 +98,7 @@ fn authority(applications: ApplicationTopologyAuthority) -> DiscoveryAuthority {
         environments: EnvironmentTopologyAuthority::Authoritative,
         applications,
         postgres: PostgresTopologyAuthority::Authoritative,
+        redis: RedisTopologyAuthority::Authoritative,
     }
 }
 

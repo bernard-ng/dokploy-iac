@@ -48,6 +48,15 @@ pub enum PostgresTopologyAuthority {
     Partial,
 }
 
+/// Whether a fully paginated parent-scoped Redis search is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RedisTopologyAuthority {
+    /// Exhaustive absence below a proven environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -59,6 +68,8 @@ pub struct DiscoveryAuthority {
     pub applications: ApplicationTopologyAuthority,
     /// Completeness of each fully paginated `postgres.search` collection.
     pub postgres: PostgresTopologyAuthority,
+    /// Completeness of each fully paginated `redis.search` collection.
+    pub redis: RedisTopologyAuthority,
 }
 
 /// A redaction-safe combined discovery failure.
@@ -115,6 +126,24 @@ pub enum DiscoverRemoteError {
     /// Direct and collection Postgres reads contradict each other.
     #[error("DOKREM021: Postgres read endpoints returned conflicting topology")]
     PostgresTopologyConflict,
+    /// A Redis database has no unambiguous containing environment.
+    #[error("DOKREM022: Redis containment is unavailable")]
+    RedisContainment,
+    /// A Redis physical identity does not satisfy the state contract.
+    #[error("DOKREM023: Redis topology contains an invalid remote identity")]
+    InvalidRedisId,
+    /// More than one Redis database has the same name within one environment.
+    #[error("DOKREM024: Redis topology contains a duplicate scoped name")]
+    DuplicateRedisName,
+    /// More than one Redis database has the same physical identity.
+    #[error("DOKREM025: Redis topology contains a duplicate remote identity")]
+    DuplicateRedisId,
+    /// A Redis dependency change would require an unsupported remote reparent.
+    #[error("DOKREM026: Redis reparenting is not supported")]
+    RedisReparentUnsupported,
+    /// Direct and collection Redis reads contradict each other.
+    #[error("DOKREM027: Redis read endpoints returned conflicting topology")]
+    RedisTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -157,7 +186,7 @@ pub async fn discover_projects(
         .map_err(DiscoverProjectsError::InvalidRemoteState)
 }
 
-/// Reads fresh project, environment, application, and Postgres state into one planner snapshot.
+/// Reads fresh project, environment, application, Postgres, and Redis state into one snapshot.
 ///
 /// This is the public discovery seam for the current remote-projection
 /// checkpoint. Every invocation performs fresh reads and retains no cache.
@@ -195,6 +224,10 @@ pub async fn discover_remote(
         discover_postgres_observations(client, compiled, state, &observations, authority.postgres)
             .await?;
     observations.extend(postgres);
+    let redis =
+        discover_redis_observations(client, compiled, state, &observations, authority.redis)
+            .await?;
+    observations.extend(redis);
 
     RemoteState::try_new(state.instance().clone(), observations)
         .map_err(DiscoverRemoteError::InvalidRemoteState)
@@ -314,6 +347,135 @@ async fn discover_postgres_observations(
         } else {
             let parent = postgres_parent_from_desired(&address, compiled, state)?;
             observe_postgres_under_parent(
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+async fn discover_redis_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: RedisTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::Redis)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![redis_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = redis_parent_from_state(address, state)?;
+            validate_redis_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(environment_id) = trusted_environment_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .redis()
+                .by_environment(dokploy_sdk::EnvironmentId::new(&environment_id))
+                .await;
+            collections.insert(environment_id, collection);
+        }
+    }
+    validate_redis_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = redis_parent_from_state(&address, state)?;
+            match client
+                .redis()
+                .get(dokploy_sdk::RedisId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(redis) => {
+                    let remote_id = RemoteId::new(redis.redis_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidRedisId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidRedisId);
+                    }
+                    let expected_environment_id =
+                        trusted_environment_id(&current_parent, compiled, state, topology)
+                            .ok_or(DiscoverRemoteError::RedisContainment)?;
+                    if redis.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::RedisContainment);
+                    }
+                    validate_direct_redis_against_collection(
+                        &redis,
+                        &expected_environment_id,
+                        &collections,
+                        authority,
+                    )?;
+                    if !seen_direct_ids.insert(remote_id.clone()) {
+                        return Err(DiscoverRemoteError::DuplicateRedisId);
+                    }
+                    RemoteObservation::Present(RemoteResource::new(
+                        remote_id,
+                        redis_properties(&address, compiled),
+                    ))
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if redis_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_redis_under_parent(
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = redis_parent_from_desired(&address, compiled, state)?;
+            observe_redis_under_parent(
                 &address,
                 &parent,
                 compiled,
@@ -1306,6 +1468,248 @@ fn postgres_parent_from_desired(
         return postgres_parent_from_state(source, state);
     }
     postgres_parent_from_state(address, state)
+}
+
+fn redis_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    if desired.properties().contains_key(&PropertyPath::Password)
+        && !desired.ignored_changes().contains(&PropertyPath::Password)
+    {
+        properties.insert(
+            PropertyPath::Password,
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        );
+    }
+
+    properties
+}
+
+fn validate_redis_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::RedisCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (environment_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_names = BTreeSet::new();
+        for redis in collection.redis() {
+            let remote_id = RemoteId::new(redis.redis_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidRedisId)?;
+            if redis.environment_id.as_str() != environment_id {
+                return Err(DiscoverRemoteError::RedisContainment);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateRedisId);
+            }
+            if !scoped_names.insert(redis.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateRedisName);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn observe_redis_under_parent(
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::RedisCollection, dokploy_sdk::Error>>,
+    authority: RedisTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some(Ok(collection)) => {
+            if let Some(redis) = collection
+                .redis()
+                .iter()
+                .find(|redis| redis.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(redis.redis_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidRedisId)?;
+                return Ok(RemoteObservation::Present(RemoteResource::new(
+                    remote_id,
+                    BTreeMap::new(),
+                )));
+            }
+            if authority == RedisTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_redis_against_collection(
+    redis: &dokploy_sdk::RedisDetails,
+    environment_id: &str,
+    collections: &BTreeMap<String, Result<dokploy_sdk::RedisCollection, dokploy_sdk::Error>>,
+    authority: RedisTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, result)| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .redis()
+                        .iter()
+                        .any(|item| item.redis_id == redis.redis_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::RedisTopologyConflict);
+    }
+    let Some(collection) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::RedisTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Ok(());
+    };
+    let matching = collection
+        .redis()
+        .iter()
+        .find(|item| item.redis_id == redis.redis_id);
+    match matching {
+        Some(item) if item.name == redis.name => Ok(()),
+        Some(_) => Err(DiscoverRemoteError::RedisTopologyConflict),
+        None if authority == RedisTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::RedisTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn redis_collections_contain_id(
+    remote_id: &RemoteId,
+    collections: &BTreeMap<String, Result<dokploy_sdk::RedisCollection, dokploy_sdk::Error>>,
+) -> bool {
+    collections.values().any(|result| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .redis()
+                .iter()
+                .any(|redis| redis.redis_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_redis_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+
+    Err(DiscoverRemoteError::RedisReparentUnsupported)
+}
+
+fn redis_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::RedisContainment)?;
+    let mut parents = resource
+        .dependencies()
+        .iter()
+        .filter(|dependency| dependency.kind() == ResourceKind::Environment);
+    let parent = parents
+        .next()
+        .ok_or(DiscoverRemoteError::RedisContainment)?;
+    if parents.next().is_some() {
+        return Err(DiscoverRemoteError::RedisContainment);
+    }
+
+    Ok(parent.clone())
+}
+
+fn redis_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::RedisContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::RedisContainment);
+        }
+        if state.resource(target).is_some() {
+            return redis_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return redis_parent_from_state(source, state);
+    }
+    redis_parent_from_state(address, state)
 }
 
 fn desired_resource_for_observation<'a>(

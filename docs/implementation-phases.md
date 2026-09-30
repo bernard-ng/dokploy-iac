@@ -92,6 +92,10 @@ durable state semantics.
   exhaustive parent-scoped search, managed physical IDs, current-containment
   validation, presence-aware database fields, write-only password
   observations, and fail-closed physical reparenting.
+- Project fresh Redis state into the combined snapshot, using bounded
+  exhaustive parent-scoped search, managed physical IDs, current-containment
+  validation, write-only password observations, and fail-closed physical
+  reparenting.
 - Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.

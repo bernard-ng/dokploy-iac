@@ -1,7 +1,7 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationId, Dokploy, EnvironmentCollection,
     EnvironmentDetails, EnvironmentId, Error, PostgresCollection, PostgresDetails, PostgresId,
-    ProjectDetails, ProjectId, ProjectTopology,
+    ProjectDetails, ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
 };
 
 /// Read operations for Dokploy projects.
@@ -96,6 +96,32 @@ impl<'a> Postgres<'a> {
     ) -> Result<PostgresCollection, Error> {
         self.client
             .postgres_by_environment(environment_id.as_str())
+            .await
+    }
+}
+
+/// Read operations for Dokploy Redis databases.
+pub struct Redis<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Redis<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Redis database from fresh remote state.
+    pub async fn get(&self, redis_id: RedisId) -> Result<RedisDetails, Error> {
+        self.client.redis_get(redis_id.as_str()).await
+    }
+
+    /// Reads every Redis database in one environment from fresh paginated state.
+    pub async fn by_environment(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<RedisCollection, Error> {
+        self.client
+            .redis_by_environment(environment_id.as_str())
             .await
     }
 }

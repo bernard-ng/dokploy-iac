@@ -27,6 +27,7 @@ identifier!(ApplicationId);
 identifier!(EnvironmentId);
 identifier!(PostgresId);
 identifier!(ProjectId);
+identifier!(RedisId);
 identifier!(ServerId);
 
 /// Presence-aware value returned by a tolerant Dokploy response model.
@@ -222,6 +223,59 @@ pub(crate) struct PostgresSearchPage {
     pub(crate) total: u64,
 }
 
+/// A safe subset of the response returned by `redis.one`.
+///
+/// Passwords, environment variables, and nested runtime data are deliberately
+/// absent so secret bytes cannot cross the SDK read seam.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisDetails {
+    pub redis_id: RedisId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    pub app_name: String,
+    pub docker_image: String,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub external_port: Option<u16>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+/// One safe Redis entry returned by `redis.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisSearchItem {
+    pub redis_id: RedisId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+}
+
+/// The fully collected Redis search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RedisCollection {
+    pub(crate) redis: Vec<RedisSearchItem>,
+}
+
+impl RedisCollection {
+    /// Returns all Redis databases discovered in the parent environment.
+    #[must_use]
+    pub fn redis(&self) -> &[RedisSearchItem] {
+        &self.redis
+    }
+}
+
+/// One page returned by the runtime `redis.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RedisSearchPage {
+    pub(crate) items: Vec<RedisSearchItem>,
+    pub(crate) total: u64,
+}
+
 /// The project collection returned by `project.all`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(transparent)]
@@ -259,6 +313,8 @@ pub struct EnvironmentTopology {
     pub applications: Vec<ApplicationSummary>,
     #[serde(default)]
     pub postgres: Vec<PostgresSummary>,
+    #[serde(default)]
+    pub redis: Vec<RedisSummary>,
 }
 
 /// A safe subset of the response returned by `environment.one`.
@@ -314,6 +370,17 @@ pub struct ApplicationSummary {
 #[serde(rename_all = "camelCase")]
 pub struct PostgresSummary {
     pub postgres_id: PostgresId,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub application_status: Option<String>,
+}
+
+/// The role-dependent Redis projection embedded in `project.all`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisSummary {
+    pub redis_id: RedisId,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
