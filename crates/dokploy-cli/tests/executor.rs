@@ -1253,3 +1253,156 @@ async fn protection_change_is_a_state_only_checkpoint_without_remote_mutation() 
             .all(|request| !request.contains("project.update"))
     );
 }
+
+#[tokio::test]
+async fn removed_domain_is_deleted_and_forgotten_durably() {
+    let server = TestServer::respond_in_sequence(domain_removal_responses(true));
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, domain_configuration(None))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial domain apply succeeds");
+    fs::write(&config, domain_configuration(Some(true)))
+        .expect("removal configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("domain deletion succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state remains initialized");
+    let domain: ResourceAddress = "domain.public".parse().expect("address is valid");
+    assert!(state.resource(&domain).is_none());
+    assert_eq!(
+        store.recovery_status().expect("journal scan succeeds"),
+        RecoveryStatus::Clean
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 12);
+    assert!(requests[11].starts_with("POST /api/domain.delete HTTP/1.1\r\n"));
+    assert!(requests[11].contains(r#""domainId":"domain-1""#));
+}
+
+#[tokio::test]
+async fn retained_domain_is_forgotten_without_a_remote_mutation() {
+    let server = TestServer::respond_in_sequence(domain_removal_responses(false));
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, domain_configuration(None))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial domain apply succeeds");
+    fs::write(&config, domain_configuration(Some(false)))
+        .expect("retain configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("state-only forget succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state remains initialized");
+    let domain: ResourceAddress = "domain.public".parse().expect("address is valid");
+    assert!(state.resource(&domain).is_none());
+    assert_eq!(
+        store.recovery_status().expect("journal scan succeeds"),
+        RecoveryStatus::Clean
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 11);
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("domain.delete"))
+    );
+}
+
+fn domain_removal_responses(delete: bool) -> Vec<(&'static str, &'static str)> {
+    let mut responses = vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/domain-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}]}]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"domainId":"domain-1","host":"api.example.test","applicationId":"application-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"domainId":"domain-1","host":"api.example.test","applicationId":"application-1"}"#,
+        ),
+    ];
+    if delete {
+        responses.push(("200 OK", r#"{"ok":true}"#));
+    }
+
+    responses
+}
+
+fn domain_configuration(destroy: Option<bool>) -> String {
+    let mut configuration = concat!(
+        "version: 1\n",
+        "project:\n  name: platform\n",
+        "environments:\n",
+        "  production:\n",
+        "    applications:\n",
+        "      api: {}\n",
+    )
+    .to_owned();
+    match destroy {
+        None => configuration.push_str(concat!(
+            "    domains:\n",
+            "      public:\n",
+            "        host: api.example.test\n",
+            "        application: application.api\n",
+        )),
+        Some(destroy) => configuration.push_str(&format!(
+            "    domains: {{}}\nremoved:\n  - from: domain.public\n    destroy: {destroy}\n"
+        )),
+    }
+
+    configuration
+}

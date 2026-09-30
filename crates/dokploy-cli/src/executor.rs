@@ -16,9 +16,10 @@ use dokploy_sdk::{
     UpdatePostgres, UpdateProject, UpdateRedis,
 };
 use dokploy_state::{
-    ExpectedState, FailureCode, InstanceIdentity, JournalAction, JournalError, ManagedInputs,
-    OperationJournal, PlanDigest, RemoteId, ResourceAddress, ResourceKind, ResourceState,
-    StateError, StateFile, StateStore, StateStoreError,
+    ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
+    JournalAction, JournalError, ManagedInputs, OperationJournal, PlanDigest, RemoteId,
+    ResourceAddress, ResourceKind, ResourceState, StateError, StateFile, StateStore,
+    StateStoreError,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -132,7 +133,7 @@ pub async fn apply_workspace_with_approval(
     let digest = plan_digest(&plan);
     let mut journal = OperationJournal::begin(&mut session, digest)?;
     let mut applied = 0;
-    let mut default_environments = BTreeMap::new();
+    let mut default_environments = BTreeMap::<ResourceAddress, DefaultEnvironment>::new();
 
     let mut change_index = 0;
     while change_index < plan.changes().len() {
@@ -157,6 +158,12 @@ pub async fn apply_workspace_with_approval(
         }
 
         let change = &plan.changes()[change_index];
+        if matches!(change.kind(), ChangeKind::Delete | ChangeKind::Forget) {
+            execute_removal_change(client, change, &mut state, &mut journal).await?;
+            applied += 1;
+            change_index += 1;
+            continue;
+        }
         if change.kind() != ChangeKind::Create {
             execute_existing_change(client, &mut compiled, change, &mut state, &mut journal)
                 .await?;
@@ -165,11 +172,38 @@ pub async fn apply_workspace_with_approval(
             continue;
         }
 
-        let token = journal.start_step(change.address().clone(), JournalAction::Create)?;
         let checkpoint = change
             .checkpoint()
             .present()
             .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+        let placeholder = RemoteId::new("recovery-pending")
+            .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+        let recovery_target = match change.address().kind() {
+            ResourceKind::Environment => {
+                let parent = checkpoint
+                    .containment()
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+                if default_environments
+                    .get(parent)
+                    .is_some_and(|default| default.name == change.address().name().as_str())
+                    && checkpoint.property(&PropertyPath::Description).is_some()
+                {
+                    minimal_resource_state(ResourceKind::Environment, checkpoint, placeholder)?
+                } else {
+                    checkpoint.materialize(change.address(), placeholder)?
+                }
+            }
+            ResourceKind::Application if !checkpoint.property_paths().is_empty() => {
+                minimal_resource_state(ResourceKind::Application, checkpoint, placeholder)?
+            }
+            _ => checkpoint.materialize(change.address(), placeholder)?,
+        };
+        let expected_checkpoint = ExpectedCheckpoint::create(recovery_target)?;
+        let token = journal.start_recoverable_step(
+            change.address().clone(),
+            JournalAction::Create,
+            expected_checkpoint,
+        )?;
         let remote_id = match change.address().kind() {
             ResourceKind::Project => {
                 let input = project_create_input(change.address(), checkpoint)?;
@@ -215,19 +249,26 @@ pub async fn apply_workspace_with_approval(
                         state.upsert_resource(change.address().clone(), interim)?;
                         journal.succeed(token, Some(remote_id.clone()), &state)?;
 
-                        let update_token =
-                            journal.start_step(change.address().clone(), JournalAction::Update)?;
                         let input = UpdateEnvironment::new(
                             EnvironmentId::new(remote_id.as_str()),
                             nullable_string(description)?,
                         );
+                        let before = state
+                            .resource(change.address())
+                            .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                            .clone();
+                        let resource =
+                            checkpoint.materialize(change.address(), remote_id.clone())?;
+                        let update_token = journal.start_recoverable_step(
+                            change.address().clone(),
+                            JournalAction::Update,
+                            ExpectedCheckpoint::update(before, resource.clone())?,
+                        )?;
                         if let Err(error) = client.environments().update(input).await {
                             let code = failure_code(&error);
                             journal.fail(update_token, code)?;
                             return Err(ApplyWorkspaceError::RemoteMutation { code });
                         }
-                        let resource =
-                            checkpoint.materialize(change.address(), remote_id.clone())?;
                         state.upsert_resource(change.address().clone(), resource)?;
                         journal.succeed(update_token, Some(remote_id), &state)?;
                         applied += 1;
@@ -303,20 +344,30 @@ pub async fn apply_workspace_with_approval(
                         &property_paths,
                         None,
                     )?;
-                    let update_token =
-                        journal.start_step(change.address().clone(), JournalAction::Update)?;
+                    let before = state
+                        .resource(change.address())
+                        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                        .clone();
+                    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+                    let update_token = journal.start_recoverable_step(
+                        change.address().clone(),
+                        JournalAction::Update,
+                        ExpectedCheckpoint::update(before, resource.clone())?,
+                    )?;
                     if let Err(error) = client.applications().update(update).await {
                         let code = failure_code(&error);
                         journal.fail(update_token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
-                    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
                     state.upsert_resource(change.address().clone(), resource.clone())?;
                     journal.succeed(update_token, Some(remote_id.clone()), &state)?;
 
                     if application_requires_deploy(property_paths.iter()) {
-                        let deploy_token =
-                            journal.start_step(change.address().clone(), JournalAction::Deploy)?;
+                        let deploy_token = journal.start_recoverable_step(
+                            change.address().clone(),
+                            JournalAction::Deploy,
+                            ExpectedCheckpoint::update(resource.clone(), resource.clone())?,
+                        )?;
                         if let Err(error) = client
                             .applications()
                             .deploy(created.application_id().clone())
@@ -432,12 +483,101 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
         }
         ChangeKind::Update => true,
         ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
-        ChangeKind::Replace | ChangeKind::Delete | ChangeKind::Move | ChangeKind::Forget => false,
+        ChangeKind::Delete | ChangeKind::Forget => true,
+        ChangeKind::Replace | ChangeKind::Move => false,
     }) {
         Ok(())
     } else {
         Err(ApplyWorkspaceError::UnsupportedChange)
     }
+}
+
+async fn execute_removal_change(
+    client: &Dokploy,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    if !change.checkpoint().is_absent() {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let action = match change.kind() {
+        ChangeKind::Delete => JournalAction::Delete,
+        ChangeKind::Forget => JournalAction::Forget,
+        _ => return Err(ApplyWorkspaceError::UnsupportedChange),
+    };
+    let token = journal.start_recoverable_step(
+        change.address().clone(),
+        action,
+        ExpectedCheckpoint::remove(before.clone()),
+    )?;
+
+    if change.kind() == ChangeKind::Delete
+        && let Err(error) = delete_remote_resource(client, before.kind(), before.remote_id()).await
+        && !is_already_missing(&error)
+    {
+        let code = failure_code(&error);
+        journal.fail(token, code)?;
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+
+    state.remove_resource(change.address())?;
+    journal.succeed(token, None, state)?;
+
+    Ok(())
+}
+
+async fn delete_remote_resource(
+    client: &Dokploy,
+    kind: ResourceKind,
+    remote_id: &RemoteId,
+) -> Result<(), SdkError> {
+    match kind {
+        ResourceKind::Project => {
+            client
+                .projects()
+                .delete(ProjectId::new(remote_id.as_str()))
+                .await
+        }
+        ResourceKind::Environment => {
+            client
+                .environments()
+                .delete(EnvironmentId::new(remote_id.as_str()))
+                .await
+        }
+        ResourceKind::Application => {
+            client
+                .applications()
+                .delete(ApplicationId::new(remote_id.as_str()))
+                .await
+        }
+        ResourceKind::Postgres => {
+            client
+                .postgres()
+                .delete(PostgresId::new(remote_id.as_str()))
+                .await
+        }
+        ResourceKind::Redis => {
+            client
+                .redis()
+                .delete(RedisId::new(remote_id.as_str()))
+                .await
+        }
+        ResourceKind::Domain => {
+            client
+                .domains()
+                .delete(DomainId::new(remote_id.as_str()))
+                .await
+        }
+    }
+}
+
+fn is_already_missing(error: &SdkError) -> bool {
+    matches!(error, SdkError::Api(error) if error.status() == 404)
 }
 
 fn checkpoint_environment_id(
@@ -763,7 +903,11 @@ async fn execute_database_batch(
 
     let mut in_flight = Vec::with_capacity(prepared.len());
     for prepared in prepared {
-        let token = journal.start_step(prepared.address.clone(), prepared.action)?;
+        let token = journal.start_recoverable_step(
+            prepared.address.clone(),
+            prepared.action,
+            prepared.expected_checkpoint,
+        )?;
         let task_client = client.clone();
         let handle = tokio::spawn(async move { prepared.mutation.execute(&task_client).await });
         in_flight.push((token, prepared.address, prepared.checkpoint, handle));
@@ -889,11 +1033,30 @@ fn prepare_database_mutation(
         }
         _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
     };
+    let expected_checkpoint = match action {
+        JournalAction::Create => {
+            let placeholder = RemoteId::new("recovery-pending")
+                .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+            ExpectedCheckpoint::create(checkpoint.materialize(&address, placeholder)?)?
+        }
+        JournalAction::Update => {
+            let before = state
+                .resource(&address)
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                .clone();
+            let target = checkpoint.materialize(&address, before.remote_id().clone())?;
+            ExpectedCheckpoint::update(before, target)?
+        }
+        JournalAction::Delete | JournalAction::Forget | JournalAction::Deploy => {
+            return Err(ApplyWorkspaceError::InvalidCheckpoint);
+        }
+    };
 
     Ok(PreparedDatabaseMutation {
         address,
         checkpoint,
         action,
+        expected_checkpoint,
         mutation,
     })
 }
@@ -902,6 +1065,7 @@ struct PreparedDatabaseMutation {
     address: ResourceAddress,
     checkpoint: dokploy_core::ResourceCheckpoint,
     action: JournalAction,
+    expected_checkpoint: ExpectedCheckpoint,
     mutation: DatabaseMutation,
 }
 
@@ -979,15 +1143,19 @@ async fn execute_existing_change(
         .checkpoint()
         .present()
         .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
-    let remote_id = state
+    let before = state
         .resource(change.address())
         .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
-        .remote_id()
         .clone();
+    let remote_id = before.remote_id().clone();
+    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
 
     if change.kind() == ChangeKind::NoOp {
-        let token = journal.start_step(change.address().clone(), JournalAction::Update)?;
-        let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+        let token = journal.start_recoverable_step(
+            change.address().clone(),
+            JournalAction::Update,
+            ExpectedCheckpoint::update(before, resource.clone())?,
+        )?;
         state.upsert_resource(change.address().clone(), resource)?;
         journal.succeed(token, Some(remote_id), state)?;
         return Ok(());
@@ -1092,20 +1260,27 @@ async fn execute_existing_change(
         }
     };
 
-    let token = journal.start_step(change.address().clone(), JournalAction::Update)?;
+    let token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Update,
+        ExpectedCheckpoint::update(before, resource.clone())?,
+    )?;
     if let Err(error) = mutation.execute(client).await {
         let code = failure_code(&error);
         journal.fail(token, code)?;
         return Err(ApplyWorkspaceError::RemoteMutation { code });
     }
-    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
     state.upsert_resource(change.address().clone(), resource.clone())?;
     journal.succeed(token, Some(remote_id.clone()), state)?;
 
     if change.address().kind() == ResourceKind::Application
         && application_requires_deploy(selected_paths.iter())
     {
-        let token = journal.start_step(change.address().clone(), JournalAction::Deploy)?;
+        let token = journal.start_recoverable_step(
+            change.address().clone(),
+            JournalAction::Deploy,
+            ExpectedCheckpoint::update(resource.clone(), resource.clone())?,
+        )?;
         if let Err(error) = client
             .applications()
             .deploy(ApplicationId::new(remote_id.as_str()))
@@ -1273,6 +1448,8 @@ pub enum ApplyWorkspaceError {
     RemotePreparation { code: FailureCode },
     #[error("the operation journal failed")]
     Journal(#[from] JournalError),
+    #[error("the journal recovery checkpoint is inconsistent with the planned change")]
+    ExpectedCheckpoint(#[from] ExpectedCheckpointError),
     #[error("the planned checkpoint cannot become durable state")]
     Checkpoint(#[from] CheckpointMaterializationError),
     #[error("the next durable state is invalid")]
