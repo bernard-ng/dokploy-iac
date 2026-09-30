@@ -15,18 +15,21 @@ use dokploy_api::{
     EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
     EnvironmentIdRequestBody, EnvironmentOneRequest, EnvironmentOneRequestQuery,
     EnvironmentRemoveRequest, MARIADB_CHANGE_PASSWORD, MARIADB_CREATE, MARIADB_ONE, MARIADB_REMOVE,
-    MARIADB_SEARCH, MARIADB_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
+    MARIADB_SEARCH, MARIADB_UPDATE, MONGO_CHANGE_PASSWORD, MONGO_CREATE, MONGO_ONE, MONGO_REMOVE,
+    MONGO_SEARCH, MONGO_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
     MYSQL_SEARCH, MYSQL_UPDATE, MariadbIdRequestBody, MariadbOneRequest, MariadbOneRequestQuery,
-    MariadbRemoveRequest, MariadbSearchRequest, MariadbSearchRequestQuery, MysqlIdRequestBody,
-    MysqlOneRequest, MysqlOneRequestQuery, MysqlRemoveRequest, MysqlSearchRequest,
-    MysqlSearchRequestQuery, POSTGRES_CREATE, POSTGRES_ONE, POSTGRES_REMOVE, POSTGRES_SEARCH,
-    POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PROJECT_REMOVE, PROJECT_UPDATE,
-    PostgresIdRequestBody, PostgresOneRequest, PostgresOneRequestQuery, PostgresRemoveRequest,
-    PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
-    ProjectCreateRequestBody, ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
-    ProjectRemoveRequest, REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE,
-    RedisIdRequestBody, RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest,
-    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    MariadbRemoveRequest, MariadbSearchRequest, MariadbSearchRequestQuery, MongoIdRequestBody,
+    MongoOneRequest, MongoOneRequestQuery, MongoRemoveRequest, MongoSearchRequest,
+    MongoSearchRequestQuery, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
+    MysqlRemoveRequest, MysqlSearchRequest, MysqlSearchRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
+    POSTGRES_REMOVE, POSTGRES_SEARCH, POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE,
+    PROJECT_REMOVE, PROJECT_UPDATE, PostgresIdRequestBody, PostgresOneRequest,
+    PostgresOneRequestQuery, PostgresRemoveRequest, PostgresSearchRequest,
+    PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest, ProjectCreateRequestBody,
+    ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery, ProjectRemoveRequest,
+    REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedisIdRequestBody,
+    RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
+    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -44,21 +47,23 @@ use crate::models::{
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse, ApplicationSearchPage,
     DomainCollection, DomainCreateResponse, DomainDetails, EnvironmentCollection,
     EnvironmentCreateResponse, EnvironmentDetails, MariaDbCollection, MariaDbCreateResponse,
-    MariaDbDetails, MariaDbSearchPage, MySqlCollection, MySqlCreateResponse, MySqlDetails,
-    MySqlSearchPage, PostgresCollection, PostgresCreateResponse, PostgresDetails,
-    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
-    RedisCreateResponse, RedisDetails, RedisSearchPage,
+    MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
+    MongoSearchPage, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
+    PostgresCollection, PostgresCreateResponse, PostgresDetails, PostgresSearchPage,
+    ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection, RedisCreateResponse,
+    RedisDetails, RedisSearchPage,
 };
 use crate::services::{
-    Applications, Domains, Environments, MariaDb, MySql, Postgres, Projects, Redis,
+    Applications, Domains, Environments, MariaDb, Mongo, MySql, Postgres, Projects, Redis,
 };
 use crate::{
-    ApplicationId, ChangeMariaDbPassword, ChangeMySqlPassword, CreateApplication, CreateDomain,
-    CreateEnvironment, CreateMariaDb, CreateMySql, CreatePostgres, CreateProject, CreateRedis,
-    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedMariaDb, CreatedMySql,
-    CreatedPostgres, CreatedProject, CreatedRedis, DomainId, EnvironmentId, MariaDbId, MySqlId,
-    PostgresId, ProjectId, RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment,
-    UpdateMariaDb, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
+    ApplicationId, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
+    CreateApplication, CreateDomain, CreateEnvironment, CreateMariaDb, CreateMongo, CreateMySql,
+    CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
+    CreatedEnvironment, CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres,
+    CreatedProject, CreatedRedis, DomainId, EnvironmentId, MariaDbId, MongoId, MySqlId, PostgresId,
+    ProjectId, RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb,
+    UpdateMongo, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -68,6 +73,8 @@ const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MARIADB_SEARCH_PAGE_SIZE: usize = 100;
 const MARIADB_SEARCH_ITEM_LIMIT: usize = 10_000;
+const MONGO_SEARCH_PAGE_SIZE: usize = 100;
+const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -124,6 +131,12 @@ impl Dokploy {
     #[must_use]
     pub fn mariadb(&self) -> MariaDb<'_> {
         MariaDb::new(self)
+    }
+
+    /// Returns access to MongoDB read and mutation operations.
+    #[must_use]
+    pub fn mongo(&self) -> Mongo<'_> {
+        Mongo::new(self)
     }
 
     /// Returns access to MySQL read and mutation operations.
@@ -451,6 +464,119 @@ impl Dokploy {
         validate_generated_request(MARIADB_ONE, &request)?;
 
         self.read_query_json(MARIADB_ONE, &request.query).await
+    }
+
+    pub(crate) async fn mongo_get(&self, mongo_id: &str) -> Result<MongoDetails, Error> {
+        let request = MongoOneRequest {
+            query: MongoOneRequestQuery {
+                mongo_id: mongo_id.to_owned(),
+            },
+        };
+        validate_generated_request(MONGO_ONE, &request)?;
+
+        self.read_query_json(MONGO_ONE, &request.query).await
+    }
+
+    pub(crate) async fn mongo_create(&self, input: CreateMongo) -> Result<CreatedMongo, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MONGO_CREATE.operation(),
+                "MongoDB create fields are invalid",
+            ));
+        }
+        let response: MongoCreateResponse = self.mutate_body_json(MONGO_CREATE, &input).await?;
+
+        Ok(CreatedMongo::from_response(response))
+    }
+
+    pub(crate) async fn mongo_update(&self, input: UpdateMongo) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MONGO_UPDATE.operation(),
+                "MongoDB update requires an identity and at least one non-empty field",
+            ));
+        }
+
+        self.mutate_body_ok(MONGO_UPDATE, &input).await
+    }
+
+    pub(crate) async fn mongo_change_password(
+        &self,
+        input: ChangeMongoPassword,
+    ) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MONGO_CHANGE_PASSWORD.operation(),
+                "MongoDB password change fields are invalid",
+            ));
+        }
+
+        self.mutate_body_ok(MONGO_CHANGE_PASSWORD, &input).await
+    }
+
+    pub(crate) async fn mongo_delete(&self, mongo_id: MongoId) -> Result<(), Error> {
+        let request = MongoRemoveRequest {
+            body: MongoIdRequestBody {
+                mongo_id: mongo_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(MONGO_REMOVE, &request)?;
+
+        self.mutate_body_ok(MONGO_REMOVE, &request.body).await
+    }
+
+    pub(crate) async fn mongo_by_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<MongoCollection, Error> {
+        if environment_id.is_empty() {
+            return Err(invalid_request(
+                MONGO_SEARCH.operation(),
+                "environment ID cannot be empty",
+            ));
+        }
+        let mut mongo = Vec::new();
+        let mut expected_total = None;
+
+        loop {
+            let request = MongoSearchRequest {
+                query: MongoSearchRequestQuery {
+                    environment_id: Some(environment_id.to_owned()),
+                    limit: Some(MONGO_SEARCH_PAGE_SIZE as f64),
+                    offset: Some(mongo.len() as f64),
+                    ..MongoSearchRequestQuery::default()
+                },
+            };
+            validate_generated_request(MONGO_SEARCH, &request)?;
+            let page: MongoSearchPage = self.read_query_json(MONGO_SEARCH, &request.query).await?;
+
+            let expected = *expected_total.get_or_insert(page.total);
+            if page.total != expected
+                || expected > MONGO_SEARCH_ITEM_LIMIT as u64
+                || page.items.len() > MONGO_SEARCH_PAGE_SIZE
+            {
+                return Err(Error::UnexpectedResponse {
+                    operation: MONGO_SEARCH.operation(),
+                });
+            }
+            let expected = usize::try_from(expected).map_err(|_| Error::UnexpectedResponse {
+                operation: MONGO_SEARCH.operation(),
+            })?;
+            let page_would_exceed_total = mongo
+                .len()
+                .checked_add(page.items.len())
+                .is_none_or(|count| count > expected);
+            if page_would_exceed_total || (page.items.is_empty() && mongo.len() < expected) {
+                return Err(Error::UnexpectedResponse {
+                    operation: MONGO_SEARCH.operation(),
+                });
+            }
+
+            mongo.extend(page.items);
+            if mongo.len() == expected {
+                return Ok(MongoCollection { mongo });
+            }
+        }
     }
 
     pub(crate) async fn mariadb_create(

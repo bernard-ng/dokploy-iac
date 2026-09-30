@@ -69,6 +69,20 @@ required_mariadb_fixtures=(
     "mariadb-contract.metadata.json"
 )
 
+required_mongo_fixtures=(
+    "mongo-create.owner.json"
+    "mongo-one.created.owner.json"
+    "mongo-search.created.owner.json"
+    "mongo-update.owner.json"
+    "mongo-change-password.idle.owner.json"
+    "mongo-one.updated.owner.json"
+    "mongo-remove.owner.json"
+    "mongo-one.removed.owner.json"
+    "mongo-search.removed.owner.json"
+    "project-one.mongo-removed.owner.json"
+    "mongo-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -93,6 +107,13 @@ done
 for fixture_name in "${required_mariadb_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing MariaDB contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_mongo_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing MongoDB contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -554,6 +575,106 @@ if grep -R -E 'No running container found for mariadb-' "$fixture_directory" \
     | grep -F -v -q 'mariadb-contract-test'
 then
     echo "Live fixtures contain an unsanitized generated MariaDB application name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .mongoId == "mongo-1"
+    and .environmentId == "environment-1"
+    and .name == "MongoDB Contract Test"
+    and .appName == "mongodb-contract-test"
+    and .dockerImage == "mongo:8"
+    and .databaseUser == "contract"
+    and .databasePassword == "<redacted>"
+    and .replicaSets == false
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+    and (.mounts | length) == 1
+    and .mounts[0].mongoId == "mongo-1"
+    and .mounts[0].mountId == "mount-1"
+    and .mounts[0].volumeName == "volume-1"
+' "$versioned_fixture_directory/mongo-one.created.owner.json" >/dev/null; then
+    echo "MongoDB detail fixture does not preserve the sanitized live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .total == 1
+    and (.items | length) == 1
+    and .items[0].mongoId == "mongo-1"
+    and .items[0].environmentId == "environment-1"
+' "$versioned_fixture_directory/mongo-search.created.owner.json" >/dev/null; then
+    echo "MongoDB populated search fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .databaseUser == "contract_next"
+    and .databasePassword == "<redacted>"
+    and .replicaSets == true
+    and .applicationStatus == "idle"
+' "$versioned_fixture_directory/mongo-one.updated.owner.json" >/dev/null; then
+    echo "MongoDB updated detail fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "BAD_REQUEST"
+    and .data.httpStatus == 400
+    and .data.path == "mongo.changePassword"
+    and .message == "No running container found for mongodb-contract-test"
+' "$versioned_fixture_directory/mongo-change-password.idle.owner.json" >/dev/null; then
+    echo "Idle MongoDB password-change fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "mongo.one"
+' "$versioned_fixture_directory/mongo-one.removed.owner.json" >/dev/null; then
+    echo "MongoDB cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '.items == [] and .total == 0' \
+    "$versioned_fixture_directory/mongo-search.removed.owner.json" >/dev/null
+then
+    echo "MongoDB cleanup search fixture is not empty." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '[.environments[]?.mongo[]?] | length == 0' \
+    "$versioned_fixture_directory/project-one.mongo-removed.owner.json" >/dev/null
+then
+    echo "MongoDB cleanup project fixture still contains a MongoDB record." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .idleCredentialChangeStatus == 400
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.searchEmpty == true
+    and .cleanupEvidence.projectOneAbsent == true
+' "$versioned_fixture_directory/mongo-contract.metadata.json" >/dev/null; then
+    echo "MongoDB contract metadata does not prove capture, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'mongodb-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable MongoDB project name." >&2
+    exit 1
+fi
+
+if grep -R -E 'No running container found for mongo-' "$fixture_directory" \
+    | grep -F -v -q 'mongodb-contract-test'
+then
+    echo "Live fixtures contain an unsanitized generated MongoDB application name." >&2
     exit 1
 fi
 

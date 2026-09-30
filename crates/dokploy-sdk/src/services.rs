@@ -1,16 +1,18 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
     Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, MariaDbCollection, MariaDbDetails, MariaDbId, MySqlCollection,
-    MySqlDetails, MySqlId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails,
-    ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
+    EnvironmentId, Error, MariaDbCollection, MariaDbDetails, MariaDbId, MongoCollection,
+    MongoDetails, MongoId, MySqlCollection, MySqlDetails, MySqlId, PostgresCollection,
+    PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology, RedisCollection,
+    RedisDetails, RedisId,
 };
 use crate::{
-    ChangeMariaDbPassword, ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment,
-    CreateMariaDb, CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication,
-    CreatedDomain, CreatedEnvironment, CreatedMariaDb, CreatedMySql, CreatedPostgres,
-    CreatedProject, CreatedRedis, UpdateApplication, UpdateDomain, UpdateEnvironment,
-    UpdateMariaDb, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
+    ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword, CreateApplication,
+    CreateDomain, CreateEnvironment, CreateMariaDb, CreateMongo, CreateMySql, CreatePostgres,
+    CreateProject, CreateRedis, CreatedApplication, CreatedDomain, CreatedEnvironment,
+    CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis,
+    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb, UpdateMongo, UpdateMySql,
+    UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -138,6 +140,52 @@ impl<'a> Environments<'a> {
     /// Permanently removes one environment.
     pub async fn delete(&self, environment_id: EnvironmentId) -> Result<(), Error> {
         self.client.environment_delete(environment_id).await
+    }
+}
+
+/// Read and mutation operations for Dokploy MongoDB databases.
+pub struct Mongo<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Mongo<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one MongoDB database from fresh remote state.
+    pub async fn get(&self, mongo_id: MongoId) -> Result<MongoDetails, Error> {
+        self.client.mongo_get(mongo_id.as_str()).await
+    }
+
+    /// Reads every MongoDB database in one environment from fresh paginated state.
+    pub async fn by_environment(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<MongoCollection, Error> {
+        self.client
+            .mongo_by_environment(environment_id.as_str())
+            .await
+    }
+
+    /// Creates a MongoDB database with write-only credentials.
+    pub async fn create(&self, input: CreateMongo) -> Result<CreatedMongo, Error> {
+        self.client.mongo_create(input).await
+    }
+
+    /// Writes an explicit subset of owned non-secret MongoDB fields.
+    pub async fn update(&self, input: UpdateMongo) -> Result<(), Error> {
+        self.client.mongo_update(input).await
+    }
+
+    /// Rotates the MongoDB database password.
+    pub async fn change_password(&self, input: ChangeMongoPassword) -> Result<(), Error> {
+        self.client.mongo_change_password(input).await
+    }
+
+    /// Removes one MongoDB database by physical identity.
+    pub async fn delete(&self, mongo_id: MongoId) -> Result<(), Error> {
+        self.client.mongo_delete(mongo_id).await
     }
 }
 

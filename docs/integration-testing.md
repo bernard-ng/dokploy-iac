@@ -134,6 +134,28 @@ Before publishing, the command proves cleanup through `mariadb.one`,
 `mariadb.search`, and `project.one`. An ownership-scoped cleanup trap removes
 the disposable database and project after interruption.
 
+## Disposable MongoDB contract capture
+
+Capture the MongoDB adapter contract against the pinned local instance with:
+
+```bash
+scripts/integration/capture-mongo-contract.sh
+```
+
+The command creates a disposable project, environment, and MongoDB record. It
+captures create, read, environment-scoped search, username and replica-set
+update, password change, and delete. The database remains idle and is never
+deployed. Dokploy `v0.30.6` therefore returns a structured HTTP 400 response
+for the password change because no database container is running; the SDK
+transport test verifies the successful request contract independently.
+
+Raw passwords and generated identifiers remain in ignored owner-only storage.
+Published fixtures redact the password and normalize the generated MongoDB
+application name, including the name embedded in the idle password-change
+error. Before publishing, the command proves cleanup through `mongo.one`,
+`mongo.search`, and `project.one`. An ownership-scoped cleanup trap removes the
+disposable database and project after interruption.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

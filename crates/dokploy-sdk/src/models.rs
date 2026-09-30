@@ -37,6 +37,7 @@ macro_rules! identifier {
 identifier!(ApplicationId);
 identifier!(EnvironmentId);
 identifier!(MariaDbId);
+identifier!(MongoId);
 identifier!(MySqlId);
 identifier!(PostgresId);
 identifier!(ProjectId);
@@ -617,6 +618,225 @@ impl Serialize for UpdatePostgres {
         if let Some(database_password) = &self.database_password {
             body.serialize_field("databasePassword", database_password.as_str())?;
         }
+        body.end()
+    }
+}
+
+/// Inputs required to create one Dokploy MongoDB database.
+pub struct CreateMongo {
+    name: String,
+    environment_id: EnvironmentId,
+    database_user: String,
+    database_password: Zeroizing<String>,
+    replica_sets: Option<bool>,
+}
+
+impl CreateMongo {
+    /// Creates MongoDB input while retaining the required password in zeroizing memory.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        environment_id: EnvironmentId,
+        database_user: impl Into<String>,
+        database_password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+            database_user: database_user.into(),
+            database_password,
+            replica_sets: None,
+        }
+    }
+
+    /// Selects whether Dokploy configures MongoDB replica sets.
+    #[must_use]
+    pub fn with_replica_sets(mut self, replica_sets: bool) -> Self {
+        self.replica_sets = Some(replica_sets);
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.database_user.is_empty()
+            && !self.database_password.is_empty()
+            && self
+                .database_password
+                .chars()
+                .all(valid_database_password_character)
+    }
+}
+
+impl fmt::Debug for CreateMongo {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateMongo")
+            .field("name", &self.name)
+            .field("environment_id", &self.environment_id)
+            .field("database_user", &self.database_user)
+            .field("database_password", &"[REDACTED]")
+            .field("replica_sets", &self.replica_sets)
+            .finish()
+    }
+}
+
+impl Serialize for CreateMongo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer
+            .serialize_struct("CreateMongo", 4 + usize::from(self.replica_sets.is_some()))?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("databaseUser", &self.database_user)?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        if let Some(replica_sets) = self.replica_sets {
+            body.serialize_field("replicaSets", &replica_sets)?;
+        }
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when MongoDB is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedMongo {
+    mongo_id: MongoId,
+}
+
+impl CreatedMongo {
+    pub(crate) fn from_response(response: MongoCreateResponse) -> Self {
+        Self {
+            mongo_id: response.mongo_id,
+        }
+    }
+
+    /// Returns the new MongoDB identity.
+    #[must_use]
+    pub const fn mongo_id(&self) -> &MongoId {
+        &self.mongo_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MongoCreateResponse {
+    mongo_id: MongoId,
+}
+
+/// Owned non-secret MongoDB fields written by one update.
+pub struct UpdateMongo {
+    mongo_id: MongoId,
+    database_user: Option<String>,
+    replica_sets: Option<bool>,
+}
+
+impl UpdateMongo {
+    /// Starts a MongoDB update with no fields selected.
+    #[must_use]
+    pub fn new(mongo_id: MongoId) -> Self {
+        Self {
+            mongo_id,
+            database_user: None,
+            replica_sets: None,
+        }
+    }
+
+    /// Selects the database user.
+    #[must_use]
+    pub fn with_username(mut self, database_user: impl Into<String>) -> Self {
+        self.database_user = Some(database_user.into());
+        self
+    }
+
+    /// Selects whether Dokploy configures MongoDB replica sets.
+    #[must_use]
+    pub fn with_replica_sets(mut self, replica_sets: bool) -> Self {
+        self.replica_sets = Some(replica_sets);
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mongo_id.as_str().is_empty()
+            && (self
+                .database_user
+                .as_ref()
+                .is_some_and(|value| !value.is_empty())
+                || self.replica_sets.is_some())
+    }
+}
+
+impl fmt::Debug for UpdateMongo {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateMongo")
+            .field("mongo_id", &self.mongo_id)
+            .field("database_user", &self.database_user)
+            .field("replica_sets", &self.replica_sets)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateMongo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "UpdateMongo",
+            1 + usize::from(self.database_user.is_some())
+                + usize::from(self.replica_sets.is_some()),
+        )?;
+        body.serialize_field("mongoId", self.mongo_id.as_str())?;
+        if let Some(database_user) = &self.database_user {
+            body.serialize_field("databaseUser", database_user)?;
+        }
+        if let Some(replica_sets) = self.replica_sets {
+            body.serialize_field("replicaSets", &replica_sets)?;
+        }
+        body.end()
+    }
+}
+
+/// A write-only MongoDB password rotation.
+pub struct ChangeMongoPassword {
+    mongo_id: MongoId,
+    password: Zeroizing<String>,
+}
+
+impl ChangeMongoPassword {
+    /// Creates an explicit MongoDB password rotation.
+    #[must_use]
+    pub fn new(mongo_id: MongoId, password: Zeroizing<String>) -> Self {
+        Self { mongo_id, password }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mongo_id.as_str().is_empty()
+            && !self.password.is_empty()
+            && self.password.chars().all(valid_database_password_character)
+    }
+}
+
+impl fmt::Debug for ChangeMongoPassword {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChangeMongoPassword")
+            .field("mongo_id", &self.mongo_id)
+            .field("password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for ChangeMongoPassword {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("ChangeMongoPassword", 2)?;
+        body.serialize_field("mongoId", self.mongo_id.as_str())?;
+        body.serialize_field("password", self.password.as_str())?;
         body.end()
     }
 }
@@ -1545,6 +1765,64 @@ pub struct MariaDbDetails {
     pub external_port: Option<u16>,
     #[serde(default)]
     pub server_id: Option<ServerId>,
+}
+
+/// A safe subset of the response returned by `mongo.one`.
+///
+/// Passwords, environment variables, mounts, and other secret-bearing runtime
+/// fields are deliberately absent. Unknown response fields are ignored because
+/// Dokploy's OpenAPI success schema is empty.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MongoDetails {
+    pub mongo_id: MongoId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    pub app_name: String,
+    pub docker_image: String,
+    #[serde(default)]
+    pub database_user: ResponseField<String>,
+    #[serde(default)]
+    pub replica_sets: ResponseField<bool>,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub external_port: Option<u16>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+/// One safe MongoDB entry returned by `mongo.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MongoSearchItem {
+    pub mongo_id: MongoId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+}
+
+/// The fully collected MongoDB search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MongoCollection {
+    pub(crate) mongo: Vec<MongoSearchItem>,
+}
+
+impl MongoCollection {
+    /// Returns all MongoDB databases discovered in the parent environment.
+    #[must_use]
+    pub fn mongo(&self) -> &[MongoSearchItem] {
+        &self.mongo
+    }
+}
+
+/// One page returned by the runtime `mongo.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MongoSearchPage {
+    pub(crate) items: Vec<MongoSearchItem>,
+    pub(crate) total: u64,
 }
 
 /// One safe MariaDB entry returned by `mariadb.search`.

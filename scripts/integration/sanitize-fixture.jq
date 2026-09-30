@@ -11,6 +11,8 @@ def normalized_scalar:
     if .value == null then . else .value = "redis-1" end
   elif .key == "mariadbId" then
     if .value == null then . else .value = "mariadb-1" end
+  elif .key == "mongoId" then
+    if .value == null then . else .value = "mongo-1" end
   elif .key == "mysqlId" then
     if .value == null then . else .value = "mysql-1" end
   elif .key == "domainId" then
@@ -41,6 +43,10 @@ def normalized_scalar:
     and (.value | startswith("No running container found for mariadb-"))
   then
     .value = "No running container found for mariadb-contract-test"
+  elif .key == "message" and (.value | type) == "string"
+    and (.value | startswith("No running container found for mongo-"))
+  then
+    .value = "No running container found for mongodb-contract-test"
   elif .key == "env"
     or .key == "previewEnv"
     or .key == "buildArgs"
@@ -70,6 +76,14 @@ walk(
           else
             .
           end)
+      elif has("mongoId") then
+        (if has("appName") then .appName = "mongodb-contract-test" else . end)
+        | (if has("name") then .name = "MongoDB Contract Test" else . end)
+        | (if has("description") and .description != null then
+            .description = "Disposable MongoDB SDK contract"
+          else
+            .
+          end)
       elif has("mariadbId") then
         (if has("appName") then .appName = "mariadb-contract-test" else . end)
         | (if has("name") then .name = "MariaDB Contract Test" else . end)
@@ -86,6 +100,10 @@ walk(
           else
             .
           end)
+      elif has("projectId") and has("name")
+        and (.name | startswith("mongodb-sdk-contract-"))
+      then
+        .name = "MongoDB SDK Contract Test"
       elif has("projectId") and has("name")
         and (.name | startswith("mariadb-sdk-contract-"))
       then
