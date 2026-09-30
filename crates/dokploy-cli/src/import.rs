@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 
 use dokploy_config::{
     ApplicationDocument, ConfigDocument, ConfigWriteError, DomainDocument, EnvironmentDocument,
-    Field, LifecycleDocument, PostgresDocument, RedisDocument, SourceDocument,
+    Field, LifecycleDocument, MySqlDocument, PostgresDocument, RedisDocument, SourceDocument,
 };
 use dokploy_sdk::{
     ApplicationDetails, ApplicationId, Dokploy, DomainId, EnvironmentDetails, EnvironmentId,
-    Error as SdkError, PostgresId, ProjectDetails, ProjectId, RedisId, ResponseField,
+    Error as SdkError, MySqlId, PostgresId, ProjectDetails, ProjectId, RedisId, ResponseField,
 };
 use dokploy_state::{
     ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -110,6 +110,18 @@ pub async fn select_with_prompter(
                     database.name.as_deref().unwrap_or("unnamed-postgres"),
                 ));
             }
+            for database in client
+                .mysql()
+                .by_environment(environment.environment_id.clone())
+                .await?
+                .mysql()
+            {
+                choices.push(ImportChoice::new(
+                    ImportKind::MySql,
+                    database.mysql_id.as_str(),
+                    &database.name,
+                ));
+            }
             for database in &environment.redis {
                 choices.push(ImportChoice::new(
                     ImportKind::Redis,
@@ -179,6 +191,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Environment => "environment",
         ImportKind::Application => "application",
         ImportKind::Postgres => "postgres",
+        ImportKind::MySql => "mysql",
         ImportKind::Redis => "redis",
         ImportKind::Domain => "domain",
     }
@@ -300,6 +313,18 @@ async fn discover(
                 .get(environment.project_id.clone())
                 .await?;
             build_postgres(project, environment, database, target)
+        }
+        ImportKind::MySql => {
+            let database = client.mysql().get(MySqlId::new(remote_id)).await?;
+            let environment = client
+                .environments()
+                .get(database.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_mysql(project, environment, database, target)
         }
         ImportKind::Redis => {
             let database = client.redis().get(RedisId::new(remote_id)).await?;
@@ -509,6 +534,53 @@ fn build_redis(
     Ok(imported)
 }
 
+fn build_mysql(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    database: dokploy_sdk::MySqlDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    let config = MySqlDocument {
+        database: response_field(&database.database_name),
+        username: response_field(&database.database_user),
+        lifecycle: LifecycleDocument {
+            protect: Field::Set(true),
+            ..LifecycleDocument::default()
+        },
+        ..MySqlDocument::default()
+    };
+    environment_config.add_mysql(target.name().clone(), config)?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    let mut inputs = serde_json::Map::new();
+    insert_response(&mut inputs, "database", &database.database_name);
+    insert_response(&mut inputs, "username", &database.database_user);
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            database.mysql_id.as_str(),
+            true,
+            inputs,
+            Some(environment_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
 fn build_domain(
     project: ProjectDetails,
     environment: EnvironmentDetails,
@@ -705,6 +777,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Environment => ResourceKind::Environment,
         ImportKind::Application => ResourceKind::Application,
         ImportKind::Postgres => ResourceKind::Postgres,
+        ImportKind::MySql => ResourceKind::MySql,
         ImportKind::Redis => ResourceKind::Redis,
         ImportKind::Domain => ResourceKind::Domain,
     }

@@ -312,6 +312,90 @@ async fn postgres_import_is_read_only_protected_secret_free_and_immediately_conv
 }
 
 #[tokio::test]
+async fn mysql_import_is_protected_two_secret_free_and_immediately_convergent() {
+    let mysql = r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"Remote database","appName":"remote-db","dockerImage":"mysql:8","databaseName":"app","databaseUser":"app","databasePassword":"user-canary","databaseRootPassword":"root-canary"}"#;
+    let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
+    let project =
+        r#"{"projectId":"project-1","name":"platform","description":"Platform","environments":[]}"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","description":"Platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection =
+        r#"[{"environmentId":"environment-1","name":"production","description":"Production"}]"#;
+    let mysql_collection = r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"Remote database"}],"total":1}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        mysql,
+        environment,
+        project,
+        project_topology,
+        environment_collection,
+        environment,
+        mysql_collection,
+        mysql,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client is valid");
+    let workspace = tempfile::tempdir().expect("workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::MySql,
+            remote_id: "mysql-1".to_owned(),
+            address: "mysql.main".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("database imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 3);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).expect("config is readable");
+    assert!(!source.contains("password"));
+    assert!(!source.contains("user-canary"));
+    assert!(!source.contains("root-canary"));
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"mysql.main".parse().unwrap()).unwrap();
+    let database = resource.as_mysql().unwrap();
+    assert_eq!(database.password(), &Field::Unmanaged);
+    assert_eq!(database.root_password(), &Field::Unmanaged);
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    assert!(
+        state
+            .resource(&"mysql.main".parse().unwrap())
+            .unwrap()
+            .is_protected()
+    );
+    assert_eq!(
+        state
+            .resource(&"mysql.main".parse().unwrap())
+            .unwrap()
+            .sensitive_inputs()
+            .paths()
+            .count(),
+        0
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 8);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
 async fn redis_import_is_protected_secret_free_and_immediately_convergent() {
     let redis = r#"{"redisId":"redis-1","environmentId":"environment-1","name":"Remote cache","appName":"remote-cache","dockerImage":"redis:8"}"#;
     let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;

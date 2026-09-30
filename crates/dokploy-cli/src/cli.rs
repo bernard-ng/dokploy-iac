@@ -201,6 +201,8 @@ pub enum ImportKind {
     Environment,
     Application,
     Postgres,
+    #[value(name = "mysql")]
+    MySql,
     Redis,
     Domain,
 }
@@ -289,6 +291,25 @@ mod tests {
                 address: Some(ref address),
                 ..
             } if id == "postgres-1" && address == "postgres.main"
+        ));
+
+        let mysql = Cli::try_parse_from([
+            "dokploy",
+            "import",
+            "mysql",
+            "mysql-1",
+            "--as",
+            "mysql.main",
+        ])
+        .expect("MySQL import is valid");
+        assert!(matches!(
+            mysql.command,
+            Command::Import {
+                kind: Some(ImportKind::MySql),
+                remote_id: Some(ref id),
+                address: Some(ref address),
+                ..
+            } if id == "mysql-1" && address == "mysql.main"
         ));
 
         let interactive =
