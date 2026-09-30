@@ -23,6 +23,8 @@ All notable changes to this project will be documented in this file.
   recovery/state revalidation, and detailed exit status.
 - Add the first typed mutation SDK path for project creation, preserving both
   the project and Dokploy-created default-environment identities.
+- Add planner-selected checkpoint materialization into validated durable
+  resource state without exposing non-null sensitive input receipts.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

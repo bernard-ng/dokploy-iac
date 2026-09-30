@@ -244,6 +244,10 @@ impl SensitiveIntent {
     pub fn matches(&self, other: &Self) -> bool {
         self.0 == other.0
     }
+
+    pub(crate) const fn fingerprint(&self) -> &SensitiveFingerprint {
+        &self.0
+    }
 }
 
 impl PartialEq for SensitiveIntent {

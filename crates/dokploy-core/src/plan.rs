@@ -1,7 +1,11 @@
 use std::{collections::BTreeMap, fmt};
 
-use dokploy_state::ResourceAddress;
+use dokploy_state::{
+    ManagedInputs, ManagedInputsError, RemoteId, ResourceAddress, ResourceState,
+    ResourceStateError, SensitiveInputs, SensitiveInputsError, SensitivePropertyPath,
+};
 use serde::Serialize;
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::ReplacementOrder;
@@ -406,6 +410,145 @@ impl ResourceCheckpoint {
             OwnedValue::Sensitive(_) => CheckpointValueRef::Sensitive,
         })
     }
+
+    /// Materializes the exact durable resource selected by the planner.
+    pub fn materialize(
+        &self,
+        address: &ResourceAddress,
+        remote_id: RemoteId,
+    ) -> Result<ResourceState, CheckpointMaterializationError> {
+        let mut managed = serde_json::Map::new();
+        let mut source = serde_json::Map::new();
+        let mut environment = serde_json::Map::new();
+        let mut environment_root = None;
+        let mut sensitive = Vec::new();
+
+        for (path, value) in &self.properties {
+            match path {
+                PropertyPath::Source if matches!(value, OwnedValue::Null) => {
+                    managed.insert("source".to_owned(), serde_json::Value::Null);
+                }
+                PropertyPath::Source => {
+                    return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                }
+                PropertyPath::SourceRepository => {
+                    source.insert("repository".to_owned(), materialize_value(value)?);
+                }
+                PropertyPath::SourceBranch => {
+                    source.insert("branch".to_owned(), materialize_value(value)?);
+                }
+                PropertyPath::Environment => {
+                    environment_root = Some(match value {
+                        OwnedValue::Null => serde_json::Value::Null,
+                        OwnedValue::EmptyCollection => {
+                            serde_json::Value::Object(serde_json::Map::new())
+                        }
+                        OwnedValue::Value(_) | OwnedValue::Sensitive(_) => {
+                            return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                        }
+                    });
+                }
+                PropertyPath::EnvironmentVariable(name) => match value {
+                    OwnedValue::Null => {
+                        environment.insert(name.as_str().to_owned(), serde_json::Value::Null);
+                    }
+                    OwnedValue::Sensitive(intent) => sensitive.push((
+                        SensitivePropertyPath::parse(&path.to_string())
+                            .map_err(|_| CheckpointMaterializationError::InvalidPropertyShape)?,
+                        intent.fingerprint().clone(),
+                    )),
+                    OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
+                        return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                    }
+                },
+                PropertyPath::Password => match value {
+                    OwnedValue::Null => {
+                        managed.insert("password".to_owned(), serde_json::Value::Null);
+                    }
+                    OwnedValue::Sensitive(intent) => sensitive.push((
+                        SensitivePropertyPath::parse("password")
+                            .expect("password is a canonical sensitive path"),
+                        intent.fingerprint().clone(),
+                    )),
+                    OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
+                        return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                    }
+                },
+                PropertyPath::Description
+                | PropertyPath::Replicas
+                | PropertyPath::Database
+                | PropertyPath::Username
+                | PropertyPath::Host
+                | PropertyPath::Application => {
+                    managed.insert(path.to_string(), materialize_value(value)?);
+                }
+                PropertyPath::DeploymentStatus => {
+                    return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                }
+            }
+        }
+
+        if !source.is_empty() {
+            if managed.contains_key("source") {
+                return Err(CheckpointMaterializationError::InvalidPropertyShape);
+            }
+            managed.insert("source".to_owned(), serde_json::Value::Object(source));
+        }
+        if let Some(root) = environment_root {
+            if !environment.is_empty() {
+                return Err(CheckpointMaterializationError::InvalidPropertyShape);
+            }
+            managed.insert("environment".to_owned(), root);
+        } else if !environment.is_empty() {
+            managed.insert(
+                "environment".to_owned(),
+                serde_json::Value::Object(environment),
+            );
+        }
+
+        let managed = ManagedInputs::try_from_json(serde_json::Value::Object(managed))?;
+        let sensitive = SensitiveInputs::try_from_entries(sensitive)?;
+
+        ResourceState::try_new(
+            address.kind(),
+            remote_id,
+            self.protected,
+            managed,
+            sensitive,
+            self.containment.clone(),
+            self.dependencies.clone(),
+        )
+        .map_err(CheckpointMaterializationError::ResourceState)
+    }
+}
+
+fn materialize_value(
+    value: &OwnedValue,
+) -> Result<serde_json::Value, CheckpointMaterializationError> {
+    match value {
+        OwnedValue::Null => Ok(serde_json::Value::Null),
+        OwnedValue::Value(value) => Ok(value.as_json().clone()),
+        OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => {
+            Err(CheckpointMaterializationError::InvalidPropertyShape)
+        }
+    }
+}
+
+/// A planner checkpoint that cannot be represented by durable state.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum CheckpointMaterializationError {
+    /// A property carries a value variant that is invalid at its typed path.
+    #[error("checkpoint contains an invalid property shape")]
+    InvalidPropertyShape,
+    /// Non-sensitive managed inputs violate durable-state constraints.
+    #[error("checkpoint managed inputs are invalid")]
+    ManagedInputs(#[from] ManagedInputsError),
+    /// Sensitive receipts violate durable-state constraints.
+    #[error("checkpoint sensitive inputs are invalid")]
+    SensitiveInputs(#[from] SensitiveInputsError),
+    /// Resource containment or input ownership violates durable-state constraints.
+    #[error("checkpoint resource state is invalid")]
+    ResourceState(#[source] ResourceStateError),
 }
 
 impl fmt::Debug for ResourceCheckpoint {

@@ -13,9 +13,9 @@ mod snapshot;
 
 pub use mutation::{MutationContract, MutationMode, PropertyMutation, ReplacementOrder};
 pub use plan::{
-    ChangeKind, ChangeOrigin, CheckpointTarget, CheckpointValueRef, DriftChange, DriftKind,
-    FieldChange, MetadataChangeKind, MoveAction, Plan, PlanDiagnostic, PlanDiagnosticCode,
-    PlannedChange, ResourceCheckpoint, UnsupportedDirectiveKind, ValueState,
+    ChangeKind, ChangeOrigin, CheckpointMaterializationError, CheckpointTarget, CheckpointValueRef,
+    DriftChange, DriftKind, FieldChange, MetadataChangeKind, MoveAction, Plan, PlanDiagnostic,
+    PlanDiagnosticCode, PlannedChange, ResourceCheckpoint, UnsupportedDirectiveKind, ValueState,
 };
 pub use planner::plan;
 pub use property::{
