@@ -137,8 +137,11 @@ durable state semantics.
 
 - Typed SDK contracts and live create-update-delete evidence cover MySQL,
   MariaDB, MongoDB, LibSQL, and Compose.
-- MySQL has entered the declarative configuration, state, planner, and fresh
-  discovery layers; its executor and convergence validation are in progress.
+- MySQL is declarative end to end: strict configuration, durable state, fresh
+  discovery, mutation contracts, journaled create-update-delete execution,
+  recovery, protected import, and live apply-then-plan convergence. Database
+  and username changes update in place; post-create credential changes remain
+  blocked until Dokploy can persist them safely without requiring deployment.
 - Mounts, ports, redirects, security entries, backups, and schedules use the
   shared typed-target and external-selector model in ADR 0026.
 - Completion still requires declarative reconciliation plus unit, sanitized

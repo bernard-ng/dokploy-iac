@@ -278,3 +278,26 @@ executes with a parallelism bound of two, and requires the next fresh plan to
 contain zero changes. It does not deploy the empty application and therefore
 does not require Docker Swarm. Cleanup removes only the collision-resistant
 project created by that run and deletes its ignored temporary workspace.
+
+## Live MySQL declarative apply test
+
+Verify MySQL reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-mysql-apply.sh
+```
+
+The check creates a disposable project, environment, and undeployed MySQL
+record from two environment-backed one-shot secrets. It requires a fresh no-op
+plan after creation, then rotates the user-password source and proves that the
+read-only plan is blocked as an unsupported mutation without contacting a
+mutation endpoint. After restoring the source, it requires another no-op plan,
+updates the database and username in place, and proves convergence again.
+
+The final apply removes the MySQL record. The check confirms absence through
+both `mysql.one` and the environment-scoped `mysql.search`, removes the durable
+state entry, and requires a final no-op plan. Before cleanup, it scans the
+configuration, plans, diagnostics, state, and journals for the original user
+password, root password, and rejected rotation value. The script verifies the
+exact Dokploy `v0.30.6` image digest, never deploys the database, and removes
+only its collision-resistant project and owner-only temporary workspace.
