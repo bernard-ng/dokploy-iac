@@ -1,10 +1,11 @@
 use std::fs;
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
-use dokploy_cli::executor::apply_workspace;
+use dokploy_cli::executor::{ApplyOptions, apply_workspace, apply_workspace_with_approval};
 use dokploy_cli::planning::plan_workspace;
 use dokploy_sdk::Dokploy;
 use dokploy_state::{InstanceIdentity, RecoveryStatus, ResourceAddress, StateStore};
@@ -12,6 +13,12 @@ use dokploy_state::{InstanceIdentity, RecoveryStatus, ResourceAddress, StateStor
 struct TestServer {
     url: String,
     requests: Receiver<Vec<String>>,
+    thread: JoinHandle<()>,
+}
+
+struct ConcurrentDatabaseServer {
+    url: String,
+    result: Receiver<(Vec<String>, bool)>,
     thread: JoinHandle<()>,
 }
 
@@ -266,25 +273,8 @@ impl TestServer {
 
             for (status, body) in responses {
                 let (mut stream, _) = listener.accept().expect("test server accepts a request");
-                let mut bytes = Vec::new();
-                let mut buffer = [0_u8; 1024];
-
-                loop {
-                    let count = stream.read(&mut buffer).expect("request is readable");
-                    bytes.extend_from_slice(&buffer[..count]);
-                    if count == 0 || request_is_complete(&bytes) {
-                        break;
-                    }
-                }
-
-                received.push(String::from_utf8(bytes).expect("request is UTF-8"));
-                write!(
-                    stream,
-                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                )
-                .expect("response is writable");
+                received.push(read_request(&mut stream));
+                write_response(&mut stream, status, body);
             }
 
             sender.send(received).expect("test receives requests");
@@ -310,6 +300,114 @@ impl TestServer {
         self.thread.join().expect("test server exits cleanly");
         requests
     }
+}
+
+impl ConcurrentDatabaseServer {
+    fn with_failing_postgres() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+        let address = listener.local_addr().expect("test server has an address");
+        let (sender, result) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let mut received = Vec::new();
+            for (status, body) in [
+                ("200 OK", "[]"),
+                (
+                    "200 OK",
+                    include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+                ),
+            ] {
+                let (mut stream, _) = listener.accept().expect("test server accepts a request");
+                received.push(read_request(&mut stream));
+                write_response(&mut stream, status, body);
+            }
+
+            listener
+                .set_nonblocking(true)
+                .expect("listener becomes nonblocking");
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let mut database_requests = Vec::new();
+            while database_requests.len() < 2 && Instant::now() < deadline {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let request = read_request(&mut stream);
+                        database_requests.push((stream, request));
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("test server accepts database request: {error}"),
+                }
+            }
+            let overlapped = database_requests.len() == 2;
+            for (mut stream, request) in database_requests {
+                if request.starts_with("POST /api/postgres.create ") {
+                    write_response(
+                        &mut stream,
+                        "500 Internal Server Error",
+                        r#"{"error":"failed"}"#,
+                    );
+                } else if request.starts_with("POST /api/redis.create ") {
+                    write_response(
+                        &mut stream,
+                        "200 OK",
+                        include_str!("../../../fixtures/api/live/v0.30.6/redis-create.owner.json"),
+                    );
+                } else {
+                    write_response(&mut stream, "404 Not Found", r#"{"error":"unexpected"}"#);
+                }
+                received.push(request);
+            }
+
+            sender
+                .send((received, overlapped))
+                .expect("test receives result");
+        });
+
+        Self {
+            url: format!("http://{address}"),
+            result,
+            thread,
+        }
+    }
+
+    fn client(&self) -> Dokploy {
+        Dokploy::builder()
+            .url(&self.url)
+            .api_key("test-api-key")
+            .build()
+            .expect("client configuration is valid")
+    }
+
+    fn finish(self) -> (Vec<String>, bool) {
+        let result = self.result.recv().expect("test receives result");
+        self.thread.join().expect("test server exits cleanly");
+        result
+    }
+}
+
+fn read_request(stream: &mut TcpStream) -> String {
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 1024];
+
+    loop {
+        let count = stream.read(&mut buffer).expect("request is readable");
+        bytes.extend_from_slice(&buffer[..count]);
+        if count == 0 || request_is_complete(&bytes) {
+            break;
+        }
+    }
+
+    String::from_utf8(bytes).expect("request is UTF-8")
+}
+
+fn write_response(stream: &mut TcpStream, status: &str, body: &str) {
+    write!(
+        stream,
+        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    )
+    .expect("response is writable");
 }
 
 fn request_is_complete(bytes: &[u8]) -> bool {
@@ -676,6 +774,94 @@ async fn all_mvp_resources_are_created_and_checkpointed_in_dependency_order() {
     assert!(requests[4].contains(r#""databasePassword":"postgres-password-canary""#));
     assert!(requests[5].starts_with("POST /api/redis.create HTTP/1.1\r\n"));
     assert!(requests[5].contains(r#""databasePassword":"redis-password-canary""#));
+}
+
+#[tokio::test]
+async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibling() {
+    let server = ConcurrentDatabaseServer::with_failing_postgres();
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("postgres"), "postgres-password")
+        .expect("Postgres secret fixture is writable");
+    fs::write(secrets.join("redis"), "redis-password").expect("Redis secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    postgres:\n",
+            "      main:\n",
+            "        database: app\n",
+            "        username: app\n",
+            "        password:\n",
+            "          file: .secrets/postgres\n",
+            "    redis:\n",
+            "      cache:\n",
+            "        password:\n",
+            "          file: .secrets/redis\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace_with_approval(
+        &server.client(),
+        &config,
+        ApplyOptions::new(2).expect("parallelism is valid"),
+        |_| Ok(true),
+    )
+    .await
+    .expect_err("the Postgres failure must fail the operation");
+
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::RemoteRejected
+        }
+    ));
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    let postgres: ResourceAddress = "postgres.main".parse().expect("address is valid");
+    let redis: ResourceAddress = "redis.cache".parse().expect("address is valid");
+    assert!(state.resource(&postgres).is_none());
+    assert_eq!(
+        state
+            .resource(&redis)
+            .expect("successful sibling is checkpointed")
+            .remote_id()
+            .as_str(),
+        "redis-1"
+    );
+    match store.recovery_status().expect("journal scan succeeds") {
+        RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
+            summary.reason(),
+            &dokploy_state::RecoveryReason::Failed(dokploy_state::FailureCode::RemoteRejected)
+        ),
+        RecoveryStatus::Clean => panic!("failed apply must require recovery"),
+    }
+
+    let (requests, overlapped) = server.finish();
+    assert!(
+        overlapped,
+        "both database requests must be in flight together"
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.starts_with("POST /api/postgres.create "))
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.starts_with("POST /api/redis.create "))
+    );
 }
 
 #[tokio::test]

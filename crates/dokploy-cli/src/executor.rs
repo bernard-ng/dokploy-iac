@@ -85,7 +85,7 @@ pub async fn apply_workspace_with_approval(
     options: ApplyOptions,
     approval: impl FnOnce(&Plan) -> io::Result<bool>,
 ) -> Result<ApplySummary, ApplyWorkspaceError> {
-    let _parallelism = options.parallelism();
+    let parallelism = options.parallelism();
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
     let store = StateStore::new(&workspace, instance.clone())?;
@@ -134,11 +134,34 @@ pub async fn apply_workspace_with_approval(
     let mut applied = 0;
     let mut default_environments = BTreeMap::new();
 
-    for change in plan.changes() {
+    let mut change_index = 0;
+    while change_index < plan.changes().len() {
+        let database_batch = database_batch_len(&plan.changes()[change_index..], parallelism);
+        if database_batch > 0 {
+            match execute_database_batch(
+                client,
+                &mut compiled,
+                &plan.changes()[change_index..change_index + database_batch],
+                &mut state,
+                &mut journal,
+            )
+            .await
+            {
+                Ok(checkpointed) => {
+                    applied += checkpointed;
+                    change_index += database_batch;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        let change = &plan.changes()[change_index];
         if change.kind() != ChangeKind::Create {
             execute_existing_change(client, &mut compiled, change, &mut state, &mut journal)
                 .await?;
             applied += 1;
+            change_index += 1;
             continue;
         }
 
@@ -208,6 +231,7 @@ pub async fn apply_workspace_with_approval(
                         state.upsert_resource(change.address().clone(), resource)?;
                         journal.succeed(update_token, Some(remote_id), &state)?;
                         applied += 1;
+                        change_index += 1;
                         continue;
                     }
                     remote_id
@@ -307,6 +331,7 @@ pub async fn apply_workspace_with_approval(
                     }
 
                     applied += 1;
+                    change_index += 1;
                     continue;
                 }
             }
@@ -384,6 +409,7 @@ pub async fn apply_workspace_with_approval(
         state.upsert_resource(change.address().clone(), resource)?;
         journal.succeed(token, Some(remote_id), &state)?;
         applied += 1;
+        change_index += 1;
     }
 
     journal.commit()?;
@@ -707,6 +733,239 @@ fn application_requires_deploy<'a>(mut paths: impl Iterator<Item = &'a PropertyP
                 | PropertyPath::EnvironmentVariable(_)
         )
     })
+}
+
+fn database_batch_len(changes: &[dokploy_core::PlannedChange], parallelism: usize) -> usize {
+    changes
+        .iter()
+        .take(parallelism)
+        .take_while(|change| {
+            matches!(change.kind(), ChangeKind::Create | ChangeKind::Update)
+                && matches!(
+                    change.address().kind(),
+                    ResourceKind::Postgres | ResourceKind::Redis
+                )
+        })
+        .count()
+}
+
+async fn execute_database_batch(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    changes: &[dokploy_core::PlannedChange],
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<usize, ApplyWorkspaceError> {
+    let mut prepared = Vec::with_capacity(changes.len());
+    for change in changes {
+        prepared.push(prepare_database_mutation(compiled, change, state)?);
+    }
+
+    let mut in_flight = Vec::with_capacity(prepared.len());
+    for prepared in prepared {
+        let token = journal.start_step(prepared.address.clone(), prepared.action)?;
+        let task_client = client.clone();
+        let handle = tokio::spawn(async move { prepared.mutation.execute(&task_client).await });
+        in_flight.push((token, prepared.address, prepared.checkpoint, handle));
+    }
+
+    let mut completed = Vec::with_capacity(in_flight.len());
+    for (token, address, checkpoint, handle) in in_flight {
+        let result = match handle.await {
+            Ok(result) => result,
+            Err(_) => Err(DatabaseMutationFailure::Internal),
+        };
+        completed.push((token, address, checkpoint, result));
+    }
+
+    let mut first_failure = None;
+    let mut checkpointed = 0;
+    for (token, address, checkpoint, result) in completed {
+        match result {
+            Ok(remote_id) => {
+                let resource = checkpoint.materialize(&address, remote_id.clone())?;
+                state.upsert_resource(address, resource)?;
+                journal.succeed(token, Some(remote_id), state)?;
+                checkpointed += 1;
+            }
+            Err(error) => {
+                let code = error.code();
+                journal.fail(token, code)?;
+                first_failure.get_or_insert(code);
+            }
+        }
+    }
+
+    if let Some(code) = first_failure {
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+
+    Ok(checkpointed)
+}
+
+fn prepare_database_mutation(
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    state: &StateFile,
+) -> Result<PreparedDatabaseMutation, ApplyWorkspaceError> {
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let address = change.address().clone();
+    let (action, mutation) = match (change.kind(), change.address().kind()) {
+        (ChangeKind::Create, ResourceKind::Postgres) => {
+            let environment_id = checkpoint_environment_id(&checkpoint, state)?;
+            let database = required_string(&checkpoint, &PropertyPath::Database)?;
+            let username = required_string(&checkpoint, &PropertyPath::Username)?;
+            let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
+            let input = CreatePostgres::new(
+                address.name().as_str(),
+                environment_id,
+                database,
+                username,
+                password,
+            );
+
+            (
+                JournalAction::Create,
+                DatabaseMutation::CreatePostgres(input),
+            )
+        }
+        (ChangeKind::Create, ResourceKind::Redis) => {
+            let environment_id = checkpoint_environment_id(&checkpoint, state)?;
+            let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
+            let input = CreateRedis::new(address.name().as_str(), environment_id, password);
+
+            (JournalAction::Create, DatabaseMutation::CreateRedis(input))
+        }
+        (ChangeKind::Update, ResourceKind::Postgres) => {
+            let remote_id = state
+                .resource(&address)
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                .remote_id()
+                .clone();
+            let mut input = UpdatePostgres::new(PostgresId::new(remote_id.as_str()));
+            for path in change.fields().iter().map(|field| field.key()) {
+                match path {
+                    PropertyPath::Database => {
+                        input = input.with_database(required_string(&checkpoint, path)?);
+                    }
+                    PropertyPath::Username => {
+                        input = input.with_username(required_string(&checkpoint, path)?);
+                    }
+                    PropertyPath::Password => {
+                        input =
+                            input.with_password(take_sensitive_string(compiled, &address, path)?);
+                    }
+                    _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+                }
+            }
+
+            (
+                JournalAction::Update,
+                DatabaseMutation::UpdatePostgres(input, remote_id),
+            )
+        }
+        (ChangeKind::Update, ResourceKind::Redis) => {
+            if change.fields().len() != 1 || change.fields()[0].key() != &PropertyPath::Password {
+                return Err(ApplyWorkspaceError::InvalidCheckpoint);
+            }
+            let remote_id = state
+                .resource(&address)
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                .remote_id()
+                .clone();
+            let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
+
+            (
+                JournalAction::Update,
+                DatabaseMutation::UpdateRedis(
+                    UpdateRedis::new(RedisId::new(remote_id.as_str()), password),
+                    remote_id,
+                ),
+            )
+        }
+        _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+    };
+
+    Ok(PreparedDatabaseMutation {
+        address,
+        checkpoint,
+        action,
+        mutation,
+    })
+}
+
+struct PreparedDatabaseMutation {
+    address: ResourceAddress,
+    checkpoint: dokploy_core::ResourceCheckpoint,
+    action: JournalAction,
+    mutation: DatabaseMutation,
+}
+
+enum DatabaseMutation {
+    CreatePostgres(CreatePostgres),
+    CreateRedis(CreateRedis),
+    UpdatePostgres(UpdatePostgres, RemoteId),
+    UpdateRedis(UpdateRedis, RemoteId),
+}
+
+impl DatabaseMutation {
+    async fn execute(self, client: &Dokploy) -> Result<RemoteId, DatabaseMutationFailure> {
+        match self {
+            Self::CreatePostgres(input) => {
+                let created = client
+                    .postgres()
+                    .create(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                RemoteId::new(created.postgres_id().as_str())
+                    .map_err(|_| DatabaseMutationFailure::InvalidIdentity)
+            }
+            Self::CreateRedis(input) => {
+                let created = client
+                    .redis()
+                    .create(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                RemoteId::new(created.redis_id().as_str())
+                    .map_err(|_| DatabaseMutationFailure::InvalidIdentity)
+            }
+            Self::UpdatePostgres(input, remote_id) => {
+                client
+                    .postgres()
+                    .update(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                Ok(remote_id)
+            }
+            Self::UpdateRedis(input, remote_id) => {
+                client
+                    .redis()
+                    .update(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                Ok(remote_id)
+            }
+        }
+    }
+}
+
+enum DatabaseMutationFailure {
+    Sdk(SdkError),
+    InvalidIdentity,
+    Internal,
+}
+
+impl DatabaseMutationFailure {
+    fn code(&self) -> FailureCode {
+        match self {
+            Self::Sdk(error) => failure_code(error),
+            Self::InvalidIdentity | Self::Internal => FailureCode::Internal,
+        }
+    }
 }
 
 async fn execute_existing_change(
