@@ -27,6 +27,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::desired::{CompileDesiredError, compile_desired_for_instance};
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
+use crate::saved_plan::{SavedPlan, SavedPlanError};
+use crate::sensitive::SensitiveFingerprinter;
 
 /// Outcome of a completed apply operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,6 +167,27 @@ pub async fn apply_workspace_with_approval(
     options: ApplyOptions,
     approval: impl FnOnce(&Plan) -> io::Result<bool>,
 ) -> Result<ApplySummary, ApplyWorkspaceError> {
+    apply_workspace_with_expectation(client, config_file, options, None, approval).await
+}
+
+/// Rebuilds and executes a saved plan only when every bound input remains fresh.
+pub async fn apply_saved_plan_with_approval(
+    client: &Dokploy,
+    config_file: &Path,
+    options: ApplyOptions,
+    saved_plan: &SavedPlan,
+    approval: impl FnOnce(&Plan) -> io::Result<bool>,
+) -> Result<ApplySummary, ApplyWorkspaceError> {
+    apply_workspace_with_expectation(client, config_file, options, Some(saved_plan), approval).await
+}
+
+async fn apply_workspace_with_expectation(
+    client: &Dokploy,
+    config_file: &Path,
+    options: ApplyOptions,
+    saved_plan: Option<&SavedPlan>,
+    approval: impl FnOnce(&Plan) -> io::Result<bool>,
+) -> Result<ApplySummary, ApplyWorkspaceError> {
     let parallelism = options.parallelism();
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
@@ -181,10 +204,13 @@ pub async fn apply_workspace_with_approval(
             env!("CARGO_PKG_VERSION")
                 .parse()
                 .expect("crate version is valid semver"),
-            instance,
+            instance.clone(),
         )
     });
-    let stored = StoredState::try_from_state(&state)?;
+    let stored = match durable.as_ref() {
+        Some(state) => StoredState::try_from_state(state)?,
+        None => StoredState::absent(instance.clone()),
+    };
     let remote = discover_remote(
         client,
         &compiled,
@@ -193,6 +219,13 @@ pub async fn apply_workspace_with_approval(
     )
     .await?;
     let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
+
+    if let Some(saved_plan) = saved_plan {
+        let fingerprinter = SensitiveFingerprinter::load(instance.clone())
+            .map_err(|_| ApplyWorkspaceError::SavedPlanBindingKey)?;
+        let remote_receipt = fingerprinter.remote_binding_receipt(&remote);
+        saved_plan.verify_fresh(&instance, &plan, remote_receipt)?;
+    }
 
     if !approval(&plan).map_err(|source| ApplyWorkspaceError::Approval { source })? {
         return Err(ApplyWorkspaceError::Declined);
@@ -1721,6 +1754,10 @@ pub enum ApplyWorkspaceError {
     Remote(#[from] DiscoverRemoteError),
     #[error("the fresh plan is incomplete or blocked")]
     PlanBlocked,
+    #[error("the saved plan cannot be applied safely")]
+    SavedPlan(#[from] SavedPlanError),
+    #[error("the saved plan remote binding key is unavailable or invalid")]
+    SavedPlanBindingKey,
     #[error("apply was declined")]
     Declined,
     #[error("apply parallelism must be between 1 and 64")]

@@ -158,6 +158,7 @@ pub async fn execute_with_input(
             }
         }
         Command::Apply {
+            plan,
             file,
             parallelism,
             auto_approve,
@@ -179,7 +180,7 @@ pub async fn execute_with_input(
                 .into_diagnostic()?;
             let options =
                 executor::ApplyOptions::new(usize::from(parallelism)).into_diagnostic()?;
-            let result = executor::apply_workspace_with_approval(&client, &file, options, |plan| {
+            let approval = |plan: &dokploy_core::Plan| {
                 plan_output::render(plan, output)?;
                 if auto_approve
                     || plan.changes().is_empty()
@@ -195,8 +196,14 @@ pub async fn execute_with_input(
                 input.read_line(&mut answer)?;
 
                 Ok(answer.trim() == "yes")
-            })
-            .await;
+            };
+            let result = if let Some(plan_file) = plan {
+                let saved = saved_plan::read(&plan_file).into_diagnostic()?;
+                executor::apply_saved_plan_with_approval(&client, &file, options, &saved, approval)
+                    .await
+            } else {
+                executor::apply_workspace_with_approval(&client, &file, options, approval).await
+            };
             match result {
                 Ok(summary) => {
                     writeln!(output, "Apply complete: {} change(s).", summary.applied())

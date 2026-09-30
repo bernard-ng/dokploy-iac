@@ -144,6 +144,19 @@ dokploy apply
 dokploy apply --parallelism 4
 ```
 
+For reviewed or deferred execution, save a plan and apply that artifact:
+
+```bash
+dokploy plan --out plan.json
+dokploy apply plan.json --auto-approve
+```
+
+Saved plans are owner-only, redaction-safe evidence envelopes rather than
+trusted mutation scripts. Apply rebuilds the plan from the current
+configuration, durable state, and fresh Dokploy reads under the writer lock.
+It rejects the artifact before approval or mutation if its instance, lineage,
+serial, configuration digest, actions, or keyed remote evidence changed.
+
 The execution bound accepts values from 1 through 64. Independent Postgres and
 Redis mutations may overlap; hierarchy-dependent and multi-step operations stay
 ordered. Each successful remote step is checkpointed before dependent work

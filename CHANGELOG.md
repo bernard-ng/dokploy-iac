@@ -11,8 +11,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Add `dokploy plan --out` with a strict, owner-only saved-plan envelope bound
-  to configuration, state lineage and serial, and keyed fresh-remote evidence.
+- Add `dokploy plan --out` and `dokploy apply PLAN` with a strict, owner-only
+  saved-plan envelope that is revalidated under the writer lock against
+  configuration, state lineage and serial, and keyed fresh-remote evidence.
 - Add `dokploy recover` with durable checkpoint reconstruction, fresh remote
   verification, exact approval, safe create adoption, and fail-closed handling
   for unreadable or ambiguous interrupted outcomes.

@@ -96,6 +96,10 @@ pub enum Command {
 
     /// Preview and reconcile configuration against fresh Dokploy state.
     Apply {
+        /// Saved plan to verify against fresh evidence before applying.
+        #[arg(value_name = "PLAN")]
+        plan: Option<PathBuf>,
+
         /// Configuration file to apply.
         #[arg(
             long,
@@ -380,6 +384,7 @@ mod tests {
         assert!(matches!(
             default.command,
             Command::Apply {
+                plan: None,
                 file,
                 parallelism: 4,
                 auto_approve: false,
@@ -390,6 +395,7 @@ mod tests {
         let explicit = Cli::try_parse_from([
             "dokploy",
             "apply",
+            "plan.json",
             "--file",
             "stack.yaml",
             "--parallelism",
@@ -400,11 +406,13 @@ mod tests {
         assert!(matches!(
             explicit.command,
             Command::Apply {
+                plan: Some(plan),
                 file,
                 parallelism: 8,
                 auto_approve: true,
             }
-                if file.as_path() == Path::new("stack.yaml")
+                if plan.as_path() == Path::new("plan.json")
+                    && file.as_path() == Path::new("stack.yaml")
         ));
         assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "0"]).is_err());
         assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "65"]).is_err());
