@@ -2989,6 +2989,60 @@ fn required_create_property_can_remain_unsupported_after_creation() {
 }
 
 #[test]
+fn optional_create_property_can_remain_unsupported_after_creation() {
+    let address = address("application.api");
+    let instance = instance();
+    let empty =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Description,
+            OwnedValue::Value(value(json!("optional-on-create"))),
+        )])),
+    );
+    let contract = MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+        .allowing_on_create(PropertyPath::Description);
+    let remote = RemoteState::try_new_with_contracts(
+        instance,
+        [(address.clone(), RemoteObservation::Missing)],
+        [(address, contract)],
+    )
+    .expect("contract coverage must be exact");
+
+    let create = plan(&desired, &empty, &remote);
+
+    assert!(create.applyable());
+    assert_eq!(create.changes()[0].kind(), ChangeKind::Create);
+    assert!(create.diagnostics().is_empty());
+}
+
+#[test]
+fn allowed_create_property_is_not_required() {
+    let address = address("application.api");
+    let instance = instance();
+    let empty =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let desired = desired_state(&address, DesiredResource::new(BTreeMap::new()));
+    let contract = MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+        .allowing_on_create(PropertyPath::Description);
+    let remote = RemoteState::try_new_with_contracts(
+        instance,
+        [(address.clone(), RemoteObservation::Missing)],
+        [(address, contract)],
+    )
+    .expect("contract coverage must be exact");
+
+    let create = plan(&desired, &empty, &remote);
+
+    assert!(create.applyable());
+    assert_eq!(create.changes()[0].kind(), ChangeKind::Create);
+    assert!(create.diagnostics().is_empty());
+}
+
+#[test]
 fn ignored_existing_property_preserves_stored_baseline_during_an_unrelated_update() {
     let address = address("application.api");
     let instance = instance();

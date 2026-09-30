@@ -722,7 +722,7 @@ fn add_create_contract_diagnostic(
     }
     for (property, value) in &desired.properties {
         let clear = matches!(value, OwnedValue::Null);
-        if !clear && contract.accepts_required_set_on_create(property) {
+        if !clear && contract.accepts_set_on_create(property) {
             continue;
         }
         if contract.property_mode(property, clear) == MutationMode::Unsupported {

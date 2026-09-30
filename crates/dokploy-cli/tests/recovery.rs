@@ -73,6 +73,18 @@ impl TestServer {
 
 #[tokio::test]
 async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state() {
+    exercise_uncertain_mysql_update_recovery(1, true).await;
+}
+
+#[tokio::test]
+async fn uncertain_mysql_secret_rotation_requires_manual_intervention() {
+    exercise_uncertain_mysql_update_recovery(9, false).await;
+}
+
+async fn exercise_uncertain_mysql_update_recovery(
+    proposed_password_fingerprint: u8,
+    expect_recovery: bool,
+) {
     let server = TestServer::respond_in_sequence(vec![
         r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
         r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
@@ -93,6 +105,8 @@ async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state(
             "      main:\n",
             "        database: next\n",
             "        username: next\n",
+            "        password: null\n",
+            "        root_password: null\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -146,7 +160,7 @@ async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state(
     state
         .upsert_resource(
             address("mysql.main"),
-            ResourceState::new(
+            ResourceState::try_new(
                 ResourceKind::MySql,
                 RemoteId::new("mysql-1").unwrap(),
                 false,
@@ -154,9 +168,11 @@ async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state(
                     serde_json::json!({"database":"old","username":"old"}),
                 )
                 .unwrap(),
+                mysql_sensitive_inputs(1, 2),
                 Some(address("environment.production")),
                 Vec::new(),
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
     store
@@ -165,15 +181,17 @@ async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state(
         .checkpoint(ExpectedState::from_state(&before_mysql), &state)
         .unwrap();
     let before = state.resource(&address("mysql.main")).unwrap().clone();
-    let after = ResourceState::new(
+    let after = ResourceState::try_new(
         ResourceKind::MySql,
         RemoteId::new("mysql-1").unwrap(),
         false,
         ManagedInputs::try_from_json(serde_json::json!({"database":"next","username":"next"}))
             .unwrap(),
+        mysql_sensitive_inputs(proposed_password_fingerprint, 2),
         Some(address("environment.production")),
         Vec::new(),
-    );
+    )
+    .unwrap();
     let mut write = store.begin_write().unwrap();
     let mut journal =
         OperationJournal::begin(&mut write, PlanDigest::parse("c".repeat(64)).unwrap()).unwrap();
@@ -192,20 +210,31 @@ async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state(
         assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
         Ok(true)
     })
-    .await
-    .expect("readable MySQL update recovery succeeds");
+    .await;
 
-    assert_eq!(result.recovered_steps(), 1);
-    let recovered = store.inspect().unwrap().unwrap();
-    assert_eq!(
-        recovered
-            .resource(&address("mysql.main"))
-            .unwrap()
-            .last_applied()
-            .as_json(),
-        &serde_json::json!({"database":"next","username":"next"})
-    );
-    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    if expect_recovery {
+        let result = result.expect("readable MySQL update recovery succeeds");
+        assert_eq!(result.recovered_steps(), 1);
+        let recovered = store.inspect().unwrap().unwrap();
+        assert_eq!(
+            recovered
+                .resource(&address("mysql.main"))
+                .unwrap()
+                .last_applied()
+                .as_json(),
+            &serde_json::json!({"database":"next","username":"next"})
+        );
+        assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    } else {
+        assert!(matches!(
+            result,
+            Err(dokploy_cli::recovery::RecoverWorkspaceError::ManualIntervention)
+        ));
+        assert!(matches!(
+            store.recovery_status().unwrap(),
+            RecoveryStatus::RecoveryRequired(_)
+        ));
+    }
     assert_eq!(server.finish().len(), 5);
 }
 
@@ -704,4 +733,22 @@ fn write_response(stream: &mut std::net::TcpStream, body: &str) {
 
 fn address(value: &str) -> ResourceAddress {
     value.parse().expect("address is valid")
+}
+
+fn mysql_sensitive_inputs(password: u8, root_password: u8) -> SensitiveInputs {
+    let key_id = FingerprintKeyId::new(
+        uuid::Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").unwrap(),
+    )
+    .unwrap();
+    SensitiveInputs::try_from_entries([
+        (
+            SensitivePropertyPath::parse("password").unwrap(),
+            SensitiveFingerprint::new_v1(key_id.clone(), [password; 32]),
+        ),
+        (
+            SensitivePropertyPath::parse("root_password").unwrap(),
+            SensitiveFingerprint::new_v1(key_id, [root_password; 32]),
+        ),
+    ])
+    .unwrap()
 }

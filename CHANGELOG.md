@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Separate optional create-only mutation properties from required create
+  properties, preserve every uncertain serial or batched mutation as an
+  in-progress recovery step, and allow write-only update recovery only when
+  sensitive fingerprints prove that no secret rotation was attempted.
 - Record the completed Phase 7, 9, and 10 acceptance work and the remaining
   adapter-by-adapter Phase 8 scope in the implementation roadmap.
 - Separate command results on standard output from plans, prompts, warnings,

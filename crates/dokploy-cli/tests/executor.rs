@@ -367,6 +367,200 @@ async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
 }
 
 #[tokio::test]
+async fn mysql_invalid_create_identity_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", r#"{"mysqlId":""}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(
+        secrets.join("mysql-user"),
+        "invalid-id-user-password-canary",
+    )
+    .expect("MySQL user secret fixture is writable");
+    fs::write(
+        secrets.join("mysql-root"),
+        "invalid-id-root-password-canary",
+    )
+    .expect("MySQL root secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mysql:\n",
+            "      main:\n",
+            "        database: app\n",
+            "        username: app\n",
+            "        password:\n",
+            "          file: .secrets/mysql-user\n",
+            "        root_password:\n",
+            "          file: .secrets/mysql-root\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace(&server.client(), &config)
+        .await
+        .expect_err("an invalid identity cannot prove whether create succeeded");
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::Internal
+        }
+    ));
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    match store.recovery_status().expect("journal scan succeeds") {
+        RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
+            summary.reason(),
+            &dokploy_state::RecoveryReason::StepInProgress
+        ),
+        RecoveryStatus::Clean => panic!("unusable create identity must require recovery"),
+    }
+    let journal = fs::read_dir(directory.path().join(".dokploy/journal"))
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.ok()?.path();
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+                .then(|| fs::read_to_string(path).unwrap())
+        })
+        .expect("journal exists");
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("invalid-id-user-password-canary"));
+    assert!(!journal.contains("invalid-id-root-password-canary"));
+    assert_eq!(server.finish().len(), 3);
+}
+
+#[tokio::test]
+async fn serial_create_unknown_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![("200 OK", "[]")]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, "version: 1\nproject:\n  name: platform\n")
+        .expect("configuration fixture is writable");
+
+    assert_unknown_mutation(apply_workspace(&server.client(), &config).await);
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    assert_eq!(server.finish().len(), 2);
+}
+
+#[tokio::test]
+async fn serial_update_unknown_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","description":"before","environments":[]}]"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        "version: 1\nproject:\n  name: platform\n  description: before\n",
+    )
+    .expect("configuration fixture is writable");
+    apply_workspace(&server.client(), &config)
+        .await
+        .expect("initial apply succeeds");
+    fs::write(
+        &config,
+        "version: 1\nproject:\n  name: platform\n  description: after\n",
+    )
+    .expect("updated configuration fixture is writable");
+
+    assert_unknown_mutation(apply_workspace(&server.client(), &config).await);
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    assert_eq!(server.finish().len(), 4);
+}
+
+#[tokio::test]
+async fn serial_delete_unknown_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[]}]"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, "version: 1\nproject:\n  name: platform\n")
+        .expect("configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial apply succeeds");
+
+    let result = destroy_workspace_with_approval(&client, &config, |_| Ok(true)).await;
+    assert!(
+        matches!(
+            result,
+            Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+                code: dokploy_state::FailureCode::TransportOutcomeUnknown
+            })
+        ),
+        "unexpected destroy result: {result:?}"
+    );
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    assert_eq!(server.finish().len(), 4);
+}
+
+#[tokio::test]
+async fn deploy_unknown_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        replicas: 1\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    assert_unknown_mutation(apply_workspace(&server.client(), &config).await);
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    assert_eq!(server.finish().len(), 5);
+}
+
+#[tokio::test]
 async fn redis_password_rotation_uses_the_new_one_shot_secret_value() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", "[]"),
@@ -590,6 +784,27 @@ impl TestServer {
         let requests = self.requests.recv().expect("test receives requests");
         self.thread.join().expect("test server exits cleanly");
         requests
+    }
+}
+
+fn assert_unknown_mutation<T>(result: Result<T, dokploy_cli::executor::ApplyWorkspaceError>) {
+    assert!(matches!(
+        result,
+        Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
+        })
+    ));
+}
+
+fn assert_recovery_step_in_progress(workspace: &std::path::Path, server_url: &str) {
+    let instance = InstanceIdentity::parse(server_url).expect("instance is valid");
+    let store = StateStore::new(workspace, instance).expect("state store is valid");
+    match store.recovery_status().expect("journal scan succeeds") {
+        RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
+            summary.reason(),
+            &dokploy_state::RecoveryReason::StepInProgress
+        ),
+        RecoveryStatus::Clean => panic!("unknown mutation outcome must require recovery"),
     }
 }
 

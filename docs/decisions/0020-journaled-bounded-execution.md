@@ -34,6 +34,10 @@ because they carry hierarchy or multi-step dependencies.
 
 No automatic rollback is attempted. The durable journal and checkpointed state
 are the source of truth for the recovery workflow delivered in Phase 7.
+Only definitive pre-dispatch failures and remote rejections close a step as
+failed. Transport outcome loss, success-response decoding failures, invalid
+created identities, and executor task failures keep the step in progress so
+serial and batched mutations share the same recovery boundary.
 
 ## Consequences
 

@@ -9,7 +9,8 @@ use dokploy_core::{
 };
 use dokploy_sdk::Dokploy;
 use dokploy_state::{
-    JournalAction, RecoveryStep, RecoveryStepOutcome, RemoteId, ResourceAddress, StateStore,
+    JournalAction, RecoveryStep, RecoveryStepOutcome, RemoteId, ResourceAddress, StateFile,
+    StateStore,
 };
 use thiserror::Error;
 
@@ -277,6 +278,20 @@ async fn decision_for_step(
                     }
                 },
                 ResourceObservationMatch::ExactExceptSensitive
+                    if exact_except_sensitive_confirms_update(
+                        step.action(),
+                        recovery.current_state(),
+                        &proposed,
+                        step.address(),
+                    ) =>
+                {
+                    Ok(RecoveryDecision::CheckpointUncertain {
+                        sequence: step.sequence(),
+                        remote_id: None,
+                        action: RecoveryAction::CheckpointConfirmedSuccess,
+                    })
+                }
+                ResourceObservationMatch::ExactExceptSensitive
                 | ResourceObservationMatch::Unavailable => {
                     Err(RecoverWorkspaceError::ManualIntervention)
                 }
@@ -286,6 +301,26 @@ async fn decision_for_step(
             unreachable!("state-only action returned before discovery")
         }
     }
+}
+
+fn exact_except_sensitive_confirms_update(
+    action: JournalAction,
+    current: &StateFile,
+    proposed: &StateFile,
+    address: &ResourceAddress,
+) -> bool {
+    if action != JournalAction::Update {
+        return false;
+    }
+
+    let Some(before) = current.resource(address) else {
+        return false;
+    };
+    let Some(after) = proposed.resource(address) else {
+        return false;
+    };
+
+    before.sensitive_inputs() == after.sensitive_inputs()
 }
 
 fn canonical_workspace(config_file: &Path) -> Result<PathBuf, RecoverWorkspaceError> {

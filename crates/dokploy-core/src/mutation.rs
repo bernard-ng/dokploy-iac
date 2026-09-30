@@ -49,6 +49,7 @@ pub enum ReplacementOrder {
 /// Adapter-owned facts used by the pure planner to classify mutations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MutationContract {
+    allowed_on_create: BTreeSet<PropertyPath>,
     required_on_create: BTreeSet<PropertyPath>,
     properties: BTreeMap<PropertyPath, PropertyMutation>,
     default_property: PropertyMutation,
@@ -61,6 +62,7 @@ impl MutationContract {
     #[must_use]
     pub fn deny_all(replacement_order: ReplacementOrder) -> Self {
         Self {
+            allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
             default_property: PropertyMutation::new(
@@ -76,6 +78,7 @@ impl MutationContract {
     #[must_use]
     pub fn permissive() -> Self {
         Self {
+            allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
             default_property: PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace),
@@ -87,7 +90,15 @@ impl MutationContract {
     /// Marks a property as required when creating a physical resource.
     #[must_use]
     pub fn requiring(mut self, path: PropertyPath) -> Self {
+        self.allowed_on_create.insert(path.clone());
         self.required_on_create.insert(path);
+        self
+    }
+
+    /// Allows a property to be supplied at creation without requiring it.
+    #[must_use]
+    pub fn allowing_on_create(mut self, path: PropertyPath) -> Self {
+        self.allowed_on_create.insert(path);
         self
     }
 
@@ -121,8 +132,8 @@ impl MutationContract {
             .find(|path| !properties.contains_key(*path))
     }
 
-    pub(crate) fn accepts_required_set_on_create(&self, path: &PropertyPath) -> bool {
-        self.required_on_create.contains(path)
+    pub(crate) fn accepts_set_on_create(&self, path: &PropertyPath) -> bool {
+        self.allowed_on_create.contains(path)
     }
 
     pub(crate) fn property_mode(&self, path: &PropertyPath, clear: bool) -> MutationMode {

@@ -15,9 +15,12 @@ would make plans misleading.
 ## Decision
 
 Every fresh remote observation has a matching value-only `MutationContract`.
-The CLI adapter projects required create fields, set and clear behavior,
-containment behavior, and a fixed safe replacement order. The core planner
-contains no SDK callbacks or transport types.
+The CLI adapter projects fields allowed during creation, the subset required
+during creation, set and clear behavior after creation, containment behavior,
+and a fixed safe replacement order. A required create field is always allowed,
+but an optional create-only field is not made required merely because the
+update endpoint cannot change it later. The core planner contains no SDK
+callbacks or transport types.
 
 The planner classifies supported containment changes as `reparent`, proven
 replacement transitions as `replace`, and attaches `create_before_delete` or

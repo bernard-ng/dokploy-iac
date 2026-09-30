@@ -1316,7 +1316,9 @@ async fn execute_database_batch(
             }
             Err(error) => {
                 let code = error.code();
-                fail_if_definitive(journal, token, code)?;
+                if error.is_definitive() {
+                    journal.fail(token, code)?;
+                }
                 first_failure.get_or_insert(code);
             }
         }
@@ -1578,6 +1580,10 @@ impl DatabaseMutationFailure {
             Self::Sdk(error) => failure_code(error),
             Self::InvalidIdentity | Self::Internal => FailureCode::Internal,
         }
+    }
+
+    fn is_definitive(&self) -> bool {
+        matches!(self, Self::Sdk(error) if failure_code(error) != FailureCode::TransportOutcomeUnknown)
     }
 }
 

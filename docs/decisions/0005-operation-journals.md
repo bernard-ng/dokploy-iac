@@ -52,8 +52,18 @@ resource-specific reads, and classifies the unresolved step without retrying
 it. A uniquely matching uncertain create may be adopted; a confirmed missing
 delete may be checkpointed; and a resource still carrying its prior identity
 can confirm that deletion made no change. Updates and deployments are
-checkpointed only when every owned readable value matches. Write-only or
-ambiguous outcomes fail closed for manual review.
+checkpointed only when every owned readable value matches. An interrupted
+update may also be checkpointed when all readable values match and the before
+and proposed sensitive fingerprints are identical; this proves the interrupted
+operation was not a secret rotation. A changed sensitive fingerprint, a
+write-only deployment result, or any other ambiguous outcome fails closed for
+manual review.
+
+A definitive remote rejection may append `StepFailed`. A timeout, transport
+loss after dispatch, undecodable successful response, unusable identity in a
+successful create response, or failed executor task leaves the durable step in
+progress. These outcomes require fresh recovery evidence because the mutation
+may already have happened remotely.
 
 ## Consequences
 
