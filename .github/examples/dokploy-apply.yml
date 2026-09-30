@@ -2,8 +2,14 @@ name: Dokploy apply example
 
 on:
   workflow_dispatch:
+    inputs:
+      plan_run_id:
+        description: Run ID of the approved Dokploy plan workflow
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 # This must match the plan workflow. Never let two jobs mutate the same state
@@ -36,16 +42,26 @@ jobs:
       - name: Build pinned source
         run: cargo build --manifest-path source/Cargo.toml --release --locked --package dokploy-cli
 
+      - name: Download approved saved plan
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.1
+        with:
+          name: dokploy-plan-${{ inputs.plan_run_id }}
+          path: ${{ runner.temp }}/dokploy-approved-plan
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.plan_run_id }}
+
       - name: Refresh configuration without replacing state
         shell: bash
         run: |
           install -d -m 0700 "$DOKPLOY_WORKSPACE"
           install -m 0600 source/dokploy.yaml "$DOKPLOY_WORKSPACE/dokploy.yaml"
 
-      # Apply obtains the workspace writer lock and computes a fresh plan. The
-      # plan artifact from the review workflow is not a saved executable plan.
-      - name: Apply a fresh approved plan
+      # Apply obtains the workspace writer lock, computes a fresh plan, and
+      # rejects the reviewed envelope if configuration, state, or Dokploy
+      # changed since the plan workflow.
+      - name: Revalidate and apply the approved plan
         run: |
           source/target/release/dokploy apply \
+            "$RUNNER_TEMP/dokploy-approved-plan/dokploy-saved-plan.json" \
             --file "$DOKPLOY_WORKSPACE/dokploy.yaml" \
             --auto-approve

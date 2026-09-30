@@ -32,14 +32,13 @@ apply; a plan artifact alone does not replace either input.
 
 The example [plan workflow](../.github/examples/dokploy-plan.yml) treats exit
 status 0 as no changes, status 2 as an applyable plan, and every other status as
-a failure. Its JSON artifact is redaction-safe review evidence. A deferred
-apply can instead use `dokploy plan --out plan.json` and
-`dokploy apply plan.json --auto-approve`. The saved envelope is not blindly
-executed: apply rebuilds and compares the plan under the workspace writer lock
-using fresh remote reads. The example
-[apply workflow](../.github/examples/dokploy-apply.yml) waits for a protected
-GitHub Environment and then computes a fresh plan before applying it
-non-interactively.
+a failure. It uploads both redaction-safe JSON review output and the strict
+saved-plan envelope. The example
+[apply workflow](../.github/examples/dokploy-apply.yml) accepts the approved
+plan workflow run ID, downloads that run's envelope, waits for a protected
+GitHub Environment, then invokes `dokploy apply PLAN --auto-approve`. The
+envelope is not blindly executed: apply rebuilds and compares the plan under
+the workspace writer lock using fresh remote reads.
 
 Both examples intentionally select the same self-hosted runner label, fixed
 workspace path, and concurrency group. The runner storage must preserve the
