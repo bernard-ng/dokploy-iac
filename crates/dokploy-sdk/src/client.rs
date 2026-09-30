@@ -5,8 +5,9 @@ use dokploy_api::{
     APPLICATION_ONE, APPLICATION_SEARCH, ApplicationOneRequest, ApplicationOneRequestQuery,
     ApplicationSearchRequest, ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID, DOMAIN_ONE,
     DokployApiClient, DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery,
-    DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint,
-    EndpointMethod, EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery,
+    DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE,
+    ENVIRONMENT_ONE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
+    EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
     EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL,
     PROJECT_CREATE, PROJECT_ONE, PostgresOneRequest, PostgresOneRequestQuery,
     PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
@@ -27,12 +28,12 @@ use crate::imperative::{
 };
 use crate::models::{
     ApplicationCollection, ApplicationDetails, ApplicationSearchPage, DomainCollection,
-    DomainDetails, EnvironmentCollection, EnvironmentDetails, PostgresCollection, PostgresDetails,
-    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
-    RedisDetails, RedisSearchPage,
+    DomainDetails, EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
+    PostgresCollection, PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails,
+    ProjectTopology, RedisCollection, RedisDetails, RedisSearchPage,
 };
 use crate::services::{Applications, Domains, Environments, Postgres, Projects, Redis};
-use crate::{CreateProject, CreatedProject};
+use crate::{CreateEnvironment, CreateProject, CreatedEnvironment, CreatedProject};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -246,6 +247,25 @@ impl Dokploy {
 
         self.read_query_json(ENVIRONMENT_BY_PROJECT_ID, &request.query)
             .await
+    }
+
+    pub(crate) async fn environment_create(
+        &self,
+        input: CreateEnvironment,
+    ) -> Result<CreatedEnvironment, Error> {
+        let request = EnvironmentCreateRequest {
+            body: EnvironmentCreateRequestBody {
+                name: input.name,
+                description: input.description,
+                project_id: input.project_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(ENVIRONMENT_CREATE, &request)?;
+        let response: EnvironmentCreateResponse = self
+            .mutate_body_json(ENVIRONMENT_CREATE, &request.body)
+            .await?;
+
+        Ok(CreatedEnvironment::from_response(response))
     }
 
     pub(crate) async fn postgres_get(&self, postgres_id: &str) -> Result<PostgresDetails, Error> {

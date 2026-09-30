@@ -3,7 +3,7 @@ use std::net::TcpListener;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 
-use dokploy_sdk::{CreateProject, Dokploy};
+use dokploy_sdk::{CreateEnvironment, CreateProject, Dokploy, ProjectId};
 
 struct TestServer {
     url: String,
@@ -106,6 +106,40 @@ async fn project_create_returns_both_physical_identities() {
         serde_json::json!({
             "name": "Platform",
             "description": "Managed by Dokploy IaC"
+        })
+    );
+}
+
+#[tokio::test]
+async fn environment_create_returns_its_physical_identity() {
+    let server = TestServer::respond_with_json(
+        r#"{"environmentId":"environment-2","projectId":"project-1","name":"staging","description":"Managed"}"#,
+    );
+
+    let created = server
+        .client()
+        .environments()
+        .create(
+            CreateEnvironment::new("staging", ProjectId::new("project-1"))
+                .with_description("Managed"),
+        )
+        .await
+        .expect("environment creation succeeds");
+
+    assert_eq!(created.environment_id().as_str(), "environment-2");
+
+    let request = server.finish();
+    assert!(request.starts_with("POST /api/environment.create HTTP/1.1\r\n"));
+    let body = request
+        .split_once("\r\n\r\n")
+        .expect("request contains a body")
+        .1;
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(body).expect("request body is JSON"),
+        serde_json::json!({
+            "name": "staging",
+            "projectId": "project-1",
+            "description": "Managed"
         })
     );
 }

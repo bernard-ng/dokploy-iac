@@ -28,6 +28,9 @@ All notable changes to this project will be documented in this file.
 - Add the first journaled executor slice for fresh project creation, including
   exclusive locking, initial lineage creation, per-step checkpoints, and
   apply-then-plan convergence coverage.
+- Add typed environment creation and executor handling for both explicit
+  environment mutations and safe adoption of Dokploy's project-created default
+  environment without a duplicate create.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

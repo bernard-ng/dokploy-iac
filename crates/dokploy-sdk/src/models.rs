@@ -112,6 +112,59 @@ struct CreatedEnvironmentResponse {
     name: String,
 }
 
+/// Inputs required to create one Dokploy environment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreateEnvironment {
+    pub(crate) name: String,
+    pub(crate) project_id: ProjectId,
+    pub(crate) description: Option<String>,
+}
+
+impl CreateEnvironment {
+    /// Creates environment input with no managed description.
+    #[must_use]
+    pub fn new(name: impl Into<String>, project_id: ProjectId) -> Self {
+        Self {
+            name: name.into(),
+            project_id,
+            description: None,
+        }
+    }
+
+    /// Sets the initial environment description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+}
+
+/// Physical identity returned by Dokploy when an environment is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedEnvironment {
+    environment_id: EnvironmentId,
+}
+
+impl CreatedEnvironment {
+    pub(crate) fn from_response(response: EnvironmentCreateResponse) -> Self {
+        Self {
+            environment_id: response.environment_id,
+        }
+    }
+
+    /// Returns the new environment identity.
+    #[must_use]
+    pub const fn environment_id(&self) -> &EnvironmentId {
+        &self.environment_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EnvironmentCreateResponse {
+    environment_id: EnvironmentId,
+}
+
 /// Presence-aware value returned by a tolerant Dokploy response model.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum ResponseField<T> {

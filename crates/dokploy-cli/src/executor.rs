@@ -1,15 +1,17 @@
 //! Journaled execution of immutable reconciliation plans.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use dokploy_core::{
     ChangeKind, CheckpointMaterializationError, CheckpointValueRef, ConfigDigest, Plan, StoredState,
 };
-use dokploy_sdk::{CreateProject, Dokploy, Error as SdkError};
+use dokploy_sdk::{CreateEnvironment, CreateProject, Dokploy, Error as SdkError, ProjectId};
 use dokploy_state::{
     ExpectedState, FailureCode, InstanceIdentity, JournalAction, JournalError, OperationJournal,
-    PlanDigest, RemoteId, StateError, StateFile, StateStore, StateStoreError,
+    PlanDigest, RemoteId, ResourceAddress, ResourceKind, StateError, StateFile, StateStore,
+    StateStoreError,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -79,6 +81,7 @@ pub async fn apply_workspace(
     let digest = plan_digest(&plan);
     let mut journal = OperationJournal::begin(&mut session, digest)?;
     let mut applied = 0;
+    let mut default_environments = BTreeMap::new();
 
     for change in plan.changes() {
         let token = journal.start_step(change.address().clone(), JournalAction::Create)?;
@@ -86,17 +89,69 @@ pub async fn apply_workspace(
             .checkpoint()
             .present()
             .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
-        let input = project_create_input(change.address(), checkpoint)?;
-        let created = match client.projects().create(input).await {
-            Ok(created) => created,
-            Err(error) => {
-                let code = failure_code(&error);
-                journal.fail(token, code)?;
-                return Err(ApplyWorkspaceError::RemoteMutation { code });
+        let remote_id = match change.address().kind() {
+            ResourceKind::Project => {
+                let input = project_create_input(change.address(), checkpoint)?;
+                let created = match client.projects().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        journal.fail(token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                let remote_id = RemoteId::new(created.project_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+                let environment_id = RemoteId::new(created.default_environment_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+                default_environments.insert(
+                    change.address().clone(),
+                    DefaultEnvironment {
+                        name: created.default_environment_name().to_owned(),
+                        remote_id: environment_id,
+                    },
+                );
+                remote_id
             }
+            ResourceKind::Environment => {
+                let parent = checkpoint
+                    .containment()
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+                if default_environments
+                    .get(parent)
+                    .is_some_and(|default| default.name == change.address().name().as_str())
+                {
+                    default_environments
+                        .remove(parent)
+                        .expect("matching default environment exists")
+                        .remote_id
+                } else {
+                    let parent_id = state
+                        .resource(parent)
+                        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                        .remote_id();
+                    let input = environment_create_input(
+                        change.address(),
+                        checkpoint,
+                        ProjectId::new(parent_id.as_str()),
+                    )?;
+                    let created = match client.environments().create(input).await {
+                        Ok(created) => created,
+                        Err(error) => {
+                            let code = failure_code(&error);
+                            journal.fail(token, code)?;
+                            return Err(ApplyWorkspaceError::RemoteMutation { code });
+                        }
+                    };
+                    RemoteId::new(created.environment_id().as_str())
+                        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+                }
+            }
+            ResourceKind::Application
+            | ResourceKind::Postgres
+            | ResourceKind::Redis
+            | ResourceKind::Domain => return Err(ApplyWorkspaceError::UnsupportedChange),
         };
-        let remote_id = RemoteId::new(created.project_id().as_str())
-            .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
         let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
         state.upsert_resource(change.address().clone(), resource)?;
         journal.succeed(token, Some(remote_id), &state)?;
@@ -111,7 +166,10 @@ pub async fn apply_workspace(
 fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
     if plan.changes().iter().all(|change| {
         change.kind() == ChangeKind::Create
-            && change.address().kind() == dokploy_state::ResourceKind::Project
+            && matches!(
+                change.address().kind(),
+                ResourceKind::Project | ResourceKind::Environment
+            )
     }) {
         Ok(())
     } else {
@@ -120,7 +178,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
 }
 
 fn project_create_input(
-    address: &dokploy_state::ResourceAddress,
+    address: &ResourceAddress,
     checkpoint: &dokploy_core::ResourceCheckpoint,
 ) -> Result<CreateProject, ApplyWorkspaceError> {
     let mut input = CreateProject::new(address.name().as_str());
@@ -138,6 +196,33 @@ fn project_create_input(
     }
 
     Ok(input)
+}
+
+fn environment_create_input(
+    address: &ResourceAddress,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    project_id: ProjectId,
+) -> Result<CreateEnvironment, ApplyWorkspaceError> {
+    let mut input = CreateEnvironment::new(address.name().as_str(), project_id);
+    match checkpoint.property(&dokploy_core::PropertyPath::Description) {
+        None | Some(CheckpointValueRef::Null) => {}
+        Some(CheckpointValueRef::NonSensitive(value)) => {
+            let description = value
+                .as_str()
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+            input = input.with_description(description);
+        }
+        Some(CheckpointValueRef::EmptyCollection | CheckpointValueRef::Sensitive) => {
+            return Err(ApplyWorkspaceError::InvalidCheckpoint);
+        }
+    }
+
+    Ok(input)
+}
+
+struct DefaultEnvironment {
+    name: String,
+    remote_id: RemoteId,
 }
 
 fn plan_digest(plan: &Plan) -> PlanDigest {

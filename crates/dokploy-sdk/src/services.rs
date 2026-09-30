@@ -4,7 +4,7 @@ use crate::{
     PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
     RedisCollection, RedisDetails, RedisId,
 };
-use crate::{CreateProject, CreatedProject};
+use crate::{CreateEnvironment, CreateProject, CreatedEnvironment, CreatedProject};
 
 /// Read operations for Dokploy projects.
 pub struct Projects<'a> {
@@ -78,6 +78,11 @@ impl<'a> Environments<'a> {
         self.client
             .environments_by_project(project_id.as_str())
             .await
+    }
+
+    /// Creates an environment under one project.
+    pub async fn create(&self, input: CreateEnvironment) -> Result<CreatedEnvironment, Error> {
+        self.client.environment_create(input).await
     }
 }
 
