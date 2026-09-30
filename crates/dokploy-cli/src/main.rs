@@ -29,9 +29,9 @@ async fn run() -> Result<CommandStatus> {
     let stdin = io::stdin();
     let mut input = stdin.lock();
     let stdout = io::stdout();
-    let mut output = stdout.lock();
 
     if cli.is_offline() {
+        let mut output = stdout.lock();
         let terminal_available = io::stdin().is_terminal() && stdout.is_terminal();
         dokploy_cli::execute_offline(cli, &mut output, terminal_available)?;
         return Ok(CommandStatus::Success);
@@ -39,14 +39,18 @@ async fn run() -> Result<CommandStatus> {
 
     let config = ConfigRepository::platform()?;
     let credentials = KeyringCredentialStore;
+    let stderr = io::stderr();
+    let mut result_output = stdout.lock();
+    let mut diagnostic_output = stderr.lock();
 
-    let terminal_available = io::stdin().is_terminal() && stdout.is_terminal();
-    dokploy_cli::execute_with_terminal(
+    let terminal_available = io::stdin().is_terminal() && stderr.is_terminal();
+    dokploy_cli::execute_with_terminal_io(
         cli,
         &config,
         &credentials,
         &mut input,
-        &mut output,
+        &mut result_output,
+        &mut diagnostic_output,
         terminal_available,
     )
     .await

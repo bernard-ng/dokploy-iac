@@ -214,6 +214,34 @@ fn public_apply_revalidates_and_executes_a_saved_plan() {
 }
 
 #[test]
+fn public_apply_without_a_terminal_fails_closed_before_mutation() {
+    let server = TestServer::empty_project_topology(1);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    fs::write(
+        directory.path().join("dokploy.yaml"),
+        "version: 1\nproject: { name: platform }\nenvironments: {}\n",
+    )
+    .expect("configuration fixture is writable");
+
+    let applied = Command::new(env!("CARGO_BIN_EXE_dokploy"))
+        .current_dir(directory.path())
+        .env("DOKPLOY_FINGERPRINT_KEY", fingerprint_key())
+        .args(["--url", &server.url, "--api-key", "test-api-key", "apply"])
+        .output()
+        .expect("dokploy apply runs");
+
+    assert_eq!(applied.status.code(), Some(1));
+    assert!(applied.stdout.is_empty());
+    let diagnostics = String::from_utf8_lossy(&applied.stderr);
+    assert!(diagnostics.contains("Plan: 1 change(s), 0 drift record(s)"));
+    assert!(diagnostics.contains("apply approval requires a terminal; use --auto-approve"));
+    assert!(!directory.path().join(".dokploy/state.json").exists());
+    let requests = server.finish();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("GET /api/project.all HTTP/1.1\r\n"));
+}
+
+#[test]
 fn public_apply_rejects_a_saved_plan_after_configuration_changes() {
     let server = TestServer::empty_project_topology(2);
     let directory = tempfile::tempdir().expect("temporary workspace is available");

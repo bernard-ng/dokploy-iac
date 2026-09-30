@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Separate command results on standard output from plans, prompts, warnings,
+  and diagnostics on standard error, and reject non-interactive apply,
+  recovery, and destroy approval unless `--auto-approve` is explicit.
 - Reframe the README as a project presentation focused on the product,
   capabilities, architecture, maturity, and contributor entry points.
 
@@ -30,7 +33,8 @@ All notable changes to this project will be documented in this file.
 - Add `dokploy apply --auto-approve` for explicitly non-interactive execution
   while preserving fresh plan rendering and validation.
 - Add offline shell completion generation for Bash, Zsh, Fish, PowerShell, and
-  Elvish from the public CLI command tree.
+  Elvish from the public CLI command tree, with deterministic command coverage
+  and installation guidance for every supported shell.
 - Add an explicit `DOKPLOY_FINGERPRINT_KEY` source for deterministic,
   keyring-free sensitive-intent receipts in headless CI environments.
 - Add typed, single-attempt delete operations for all six MVP SDK resources,

@@ -6,7 +6,8 @@ use std::os::unix::fs::PermissionsExt;
 
 use dokploy_cli::saved_plan::{SavedPlan, SavedPlanError, read, write_new};
 use dokploy_core::{ConfigDigest, DesiredState, RemoteState, StoredState, plan};
-use dokploy_state::InstanceIdentity;
+use dokploy_state::{InstanceIdentity, StateFile};
+use semver::Version;
 
 #[test]
 fn saved_plan_round_trip_rebinds_fresh_evidence_and_is_owner_only() {
@@ -89,6 +90,65 @@ fn saved_plan_reader_rejects_unknown_duplicate_and_tampered_fields() {
         read(&unknown_path),
         Err(SavedPlanError::InvalidDocument)
     ));
+}
+
+#[test]
+fn saved_plan_rejects_each_stale_execution_boundary() {
+    let instance =
+        InstanceIdentity::parse("https://deploy.example.test").expect("instance is valid");
+    let state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    let original = empty_plan_for_state(&instance, "a", &state);
+    let document = SavedPlan::from_fresh_plan(instance.clone(), &original, [7; 32])
+        .expect("complete plan can be saved");
+
+    let other_instance =
+        InstanceIdentity::parse("https://other.example.test").expect("instance is valid");
+    assert_stale(document.verify_fresh(&other_instance, &original, [7; 32]));
+
+    let other_lineage = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    let other_lineage_plan = empty_plan_for_state(&instance, "a", &other_lineage);
+    assert_stale(document.verify_fresh(&instance, &other_lineage_plan, [7; 32]));
+
+    let mut next_serial_json = serde_json::to_value(&state).expect("state serializes");
+    next_serial_json["serial"] = serde_json::json!(1);
+    let next_serial = StateFile::from_json_slice(
+        &serde_json::to_vec(&next_serial_json).expect("state JSON serializes"),
+    )
+    .expect("next state serial is valid");
+    let next_serial_plan = empty_plan_for_state(&instance, "a", &next_serial);
+    assert_stale(document.verify_fresh(&instance, &next_serial_plan, [7; 32]));
+
+    let changed_configuration = empty_plan_for_state(&instance, "b", &state);
+    assert_stale(document.verify_fresh(&instance, &changed_configuration, [7; 32]));
+
+    assert_stale(document.verify_fresh(&instance, &original, [8; 32]));
+}
+
+fn assert_stale(result: Result<(), SavedPlanError>) {
+    assert!(matches!(result, Err(SavedPlanError::StaleEvidence)));
+}
+
+fn empty_plan_for_state(
+    instance: &InstanceIdentity,
+    digest_byte: &str,
+    state: &StateFile,
+) -> dokploy_core::Plan {
+    let desired = DesiredState::try_new(
+        ConfigDigest::parse(digest_byte.repeat(64)).expect("digest is valid"),
+        BTreeMap::new(),
+    )
+    .expect("desired state is valid");
+    let stored = StoredState::try_from_state(state).expect("stored state is valid");
+    let remote = RemoteState::try_new(
+        instance.clone(),
+        std::iter::empty::<(
+            dokploy_state::ResourceAddress,
+            dokploy_core::RemoteObservation,
+        )>(),
+    )
+    .expect("remote state is valid");
+
+    plan(&desired, &stored, &remote)
 }
 
 fn empty_plan() -> (InstanceIdentity, dokploy_core::Plan) {

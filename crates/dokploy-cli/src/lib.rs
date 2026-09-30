@@ -31,7 +31,7 @@ pub enum CommandStatus {
     ChangesPresent,
 }
 
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead, Write};
 
 use cli::{Cli, Command, ContextCommand};
 use config::ConfigRepository;
@@ -75,8 +75,84 @@ pub async fn execute_with_terminal(
     output: &mut dyn Write,
     terminal_available: bool,
 ) -> Result<CommandStatus> {
+    execute_inner(
+        cli,
+        config,
+        credentials,
+        input,
+        CommandStreams::unified(output),
+        terminal_available,
+    )
+    .await
+}
+
+/// Executes one command with independent result and diagnostic streams.
+///
+/// Machine-readable and requested result data is written to `result_output`.
+/// Plans, prompts, warnings, and cancellation notices are written to
+/// `diagnostic_output` so callers can safely parse standard output.
+pub async fn execute_with_terminal_io(
+    cli: Cli,
+    config: &ConfigRepository,
+    credentials: &dyn CredentialStore,
+    input: &mut dyn BufRead,
+    result_output: &mut dyn Write,
+    diagnostic_output: &mut dyn Write,
+    terminal_available: bool,
+) -> Result<CommandStatus> {
+    execute_inner(
+        cli,
+        config,
+        credentials,
+        input,
+        CommandStreams::split(result_output, diagnostic_output),
+        terminal_available,
+    )
+    .await
+}
+
+struct CommandStreams<'a> {
+    result: &'a mut dyn Write,
+    diagnostics: Option<&'a mut dyn Write>,
+}
+
+impl<'a> CommandStreams<'a> {
+    fn unified(output: &'a mut dyn Write) -> Self {
+        Self {
+            result: output,
+            diagnostics: None,
+        }
+    }
+
+    fn split(result: &'a mut dyn Write, diagnostics: &'a mut dyn Write) -> Self {
+        Self {
+            result,
+            diagnostics: Some(diagnostics),
+        }
+    }
+
+    fn result(&mut self) -> &mut dyn Write {
+        self.result
+    }
+
+    fn diagnostics(&mut self) -> &mut dyn Write {
+        match self.diagnostics.as_deref_mut() {
+            Some(output) => output,
+            None => &mut *self.result,
+        }
+    }
+}
+
+async fn execute_inner(
+    cli: Cli,
+    config: &ConfigRepository,
+    credentials: &dyn CredentialStore,
+    input: &mut dyn BufRead,
+    mut streams: CommandStreams<'_>,
+    terminal_available: bool,
+) -> Result<CommandStatus> {
     if cli.is_offline() {
-        execute_offline(cli, output, false)?;
+        execute_offline(cli, streams.result(), terminal_available)?;
         return Ok(CommandStatus::Success);
     }
 
@@ -95,10 +171,10 @@ pub async fn execute_with_terminal(
         }
         Command::Context { command } => {
             match command {
-                ContextCommand::List => list_contexts(config, output)?,
-                ContextCommand::Use { name } => use_context(config, &name, output)?,
+                ContextCommand::List => list_contexts(config, streams.result())?,
+                ContextCommand::Use { name } => use_context(config, &name, streams.result())?,
                 ContextCommand::Show { name } => {
-                    show_context(config, credentials, name.as_deref(), output)?
+                    show_context(config, credentials, name.as_deref(), streams.result())?
                 }
             }
             Ok(CommandStatus::Success)
@@ -108,7 +184,7 @@ pub async fn execute_with_terminal(
             let url = resolve_instance_url(url, &ProcessEnvironment, &configuration)?;
             let instance =
                 dokploy_state::InstanceIdentity::parse(url.as_str()).into_diagnostic()?;
-            state_command::execute(&file, instance, command, output).into_diagnostic()?;
+            state_command::execute(&file, instance, command, streams.result()).into_diagnostic()?;
 
             Ok(CommandStatus::Success)
         }
@@ -156,10 +232,13 @@ pub async fn execute_with_terminal(
             }
 
             if json {
-                output.write_all(&plan.to_json_bytes()).into_diagnostic()?;
-                writeln!(output).into_diagnostic()?;
+                streams
+                    .result()
+                    .write_all(&plan.to_json_bytes())
+                    .into_diagnostic()?;
+                writeln!(streams.result()).into_diagnostic()?;
             } else {
-                plan_output::render(plan, output).into_diagnostic()?;
+                plan_output::render(plan, streams.result()).into_diagnostic()?;
             }
 
             if !plan.complete() || !plan.applyable() {
@@ -193,38 +272,51 @@ pub async fn execute_with_terminal(
                 .into_diagnostic()?;
             let options =
                 executor::ApplyOptions::new(usize::from(parallelism)).into_diagnostic()?;
-            let approval = |plan: &dokploy_core::Plan| {
-                plan_output::render(plan, output)?;
-                if auto_approve
-                    || plan.changes().is_empty()
-                    || !plan.complete()
-                    || !plan.applyable()
-                {
-                    return Ok(true);
-                }
+            let result = {
+                let diagnostics = streams.diagnostics();
+                let approval = |plan: &dokploy_core::Plan| {
+                    plan_output::render(plan, diagnostics)?;
+                    if auto_approve
+                        || plan.changes().is_empty()
+                        || !plan.complete()
+                        || !plan.applyable()
+                    {
+                        return Ok(true);
+                    }
+                    if !terminal_available {
+                        return Err(non_interactive_approval_error("apply"));
+                    }
 
-                write!(output, "Apply these changes? Type 'yes' to continue: ")?;
-                output.flush()?;
-                let mut answer = String::new();
-                input.read_line(&mut answer)?;
+                    write!(diagnostics, "Apply these changes? Type 'yes' to continue: ")?;
+                    diagnostics.flush()?;
+                    let mut answer = String::new();
+                    input.read_line(&mut answer)?;
 
-                Ok(answer.trim() == "yes")
-            };
-            let result = if let Some(plan_file) = plan {
-                let saved = saved_plan::read(&plan_file).into_diagnostic()?;
-                executor::apply_saved_plan_with_approval(&client, &file, options, &saved, approval)
+                    Ok(answer.trim() == "yes")
+                };
+
+                if let Some(plan_file) = plan {
+                    let saved = saved_plan::read(&plan_file).into_diagnostic()?;
+                    executor::apply_saved_plan_with_approval(
+                        &client, &file, options, &saved, approval,
+                    )
                     .await
-            } else {
-                executor::apply_workspace_with_approval(&client, &file, options, approval).await
+                } else {
+                    executor::apply_workspace_with_approval(&client, &file, options, approval).await
+                }
             };
             match result {
                 Ok(summary) => {
-                    writeln!(output, "Apply complete: {} change(s).", summary.applied())
-                        .into_diagnostic()?;
+                    writeln!(
+                        streams.result(),
+                        "Apply complete: {} change(s).",
+                        summary.applied()
+                    )
+                    .into_diagnostic()?;
                     Ok(CommandStatus::Success)
                 }
                 Err(executor::ApplyWorkspaceError::Declined) => {
-                    writeln!(output, "Apply cancelled.").into_diagnostic()?;
+                    writeln!(streams.diagnostics(), "Apply cancelled.").into_diagnostic()?;
                     Ok(CommandStatus::Success)
                 }
                 Err(error) => Err(error).into_diagnostic(),
@@ -246,31 +338,40 @@ pub async fn execute_with_terminal(
                 .api_key(settings.api_key().expose())
                 .build()
                 .into_diagnostic()?;
-            let result = recovery::recover_workspace_with_approval(&client, &file, |preview| {
-                match preview.address() {
-                    Some(address) => writeln!(
-                        output,
-                        "Recovery action for {address}: {:?}",
-                        preview.action()
-                    )?,
-                    None => writeln!(output, "Recovery action: {:?}", preview.action())?,
-                }
-                if auto_approve {
-                    return Ok(true);
-                }
+            let result = {
+                let diagnostics = streams.diagnostics();
+                recovery::recover_workspace_with_approval(&client, &file, |preview| {
+                    match preview.address() {
+                        Some(address) => writeln!(
+                            diagnostics,
+                            "Recovery action for {address}: {:?}",
+                            preview.action()
+                        )?,
+                        None => writeln!(diagnostics, "Recovery action: {:?}", preview.action())?,
+                    }
+                    if auto_approve {
+                        return Ok(true);
+                    }
+                    if !terminal_available {
+                        return Err(non_interactive_approval_error("recovery"));
+                    }
 
-                write!(output, "Complete this recovery? Type 'yes' to continue: ")?;
-                output.flush()?;
-                let mut answer = String::new();
-                input.read_line(&mut answer)?;
+                    write!(
+                        diagnostics,
+                        "Complete this recovery? Type 'yes' to continue: "
+                    )?;
+                    diagnostics.flush()?;
+                    let mut answer = String::new();
+                    input.read_line(&mut answer)?;
 
-                Ok(answer.trim() == "yes")
-            })
-            .await;
+                    Ok(answer.trim() == "yes")
+                })
+                .await
+            };
             match result {
                 Ok(result) => {
                     writeln!(
-                        output,
+                        streams.result(),
                         "Recovery complete: {} interrupted step(s) resolved.",
                         result.recovered_steps()
                     )
@@ -278,7 +379,7 @@ pub async fn execute_with_terminal(
                     Ok(CommandStatus::Success)
                 }
                 Err(recovery::RecoverWorkspaceError::Declined) => {
-                    writeln!(output, "Recovery cancelled.").into_diagnostic()?;
+                    writeln!(streams.diagnostics(), "Recovery cancelled.").into_diagnostic()?;
                     Ok(CommandStatus::Success)
                 }
                 Err(error) => Err(error).into_diagnostic(),
@@ -300,31 +401,37 @@ pub async fn execute_with_terminal(
                 .api_key(settings.api_key().expose())
                 .build()
                 .into_diagnostic()?;
-            let result = executor::destroy_workspace_with_approval(&client, &file, |plan| {
-                plan_output::render(plan, output)?;
-                if auto_approve
-                    || plan.changes().is_empty()
-                    || !plan.complete()
-                    || !plan.applyable()
-                {
-                    return Ok(true);
-                }
+            let result = {
+                let diagnostics = streams.diagnostics();
+                executor::destroy_workspace_with_approval(&client, &file, |plan| {
+                    plan_output::render(plan, diagnostics)?;
+                    if auto_approve
+                        || plan.changes().is_empty()
+                        || !plan.complete()
+                        || !plan.applyable()
+                    {
+                        return Ok(true);
+                    }
+                    if !terminal_available {
+                        return Err(non_interactive_approval_error("destroy"));
+                    }
 
-                write!(
-                    output,
-                    "Destroy all tracked resources? Type 'yes' to continue: "
-                )?;
-                output.flush()?;
-                let mut answer = String::new();
-                input.read_line(&mut answer)?;
+                    write!(
+                        diagnostics,
+                        "Destroy all tracked resources? Type 'yes' to continue: "
+                    )?;
+                    diagnostics.flush()?;
+                    let mut answer = String::new();
+                    input.read_line(&mut answer)?;
 
-                Ok(answer.trim() == "yes")
-            })
-            .await;
+                    Ok(answer.trim() == "yes")
+                })
+                .await
+            };
             match result {
                 Ok(summary) => {
                     writeln!(
-                        output,
+                        streams.result(),
                         "Destroy complete: {} resource(s) deleted.",
                         summary.applied()
                     )
@@ -332,7 +439,7 @@ pub async fn execute_with_terminal(
                     Ok(CommandStatus::Success)
                 }
                 Err(executor::ApplyWorkspaceError::Declined) => {
-                    writeln!(output, "Destroy cancelled.").into_diagnostic()?;
+                    writeln!(streams.diagnostics(), "Destroy cancelled.").into_diagnostic()?;
                     Ok(CommandStatus::Success)
                 }
                 Err(error) => Err(error).into_diagnostic(),
@@ -376,7 +483,11 @@ pub async fn execute_with_terminal(
             let count = import::import_resource(&client, request)
                 .await
                 .into_diagnostic()?;
-            writeln!(output, "Import complete: {count} resource(s) tracked.").into_diagnostic()?;
+            writeln!(
+                streams.result(),
+                "Import complete: {count} resource(s) tracked."
+            )
+            .into_diagnostic()?;
             Ok(CommandStatus::Success)
         }
         Command::Imperative(command) => {
@@ -403,12 +514,19 @@ pub async fn execute_with_terminal(
                 .into_diagnostic()?;
 
             let response = redaction::redact_response(response);
-            serde_json::to_writer_pretty(&mut *output, &response).into_diagnostic()?;
-            writeln!(output).into_diagnostic()?;
+            serde_json::to_writer_pretty(&mut *streams.result(), &response).into_diagnostic()?;
+            writeln!(streams.result()).into_diagnostic()?;
 
             Ok(CommandStatus::Success)
         }
     }
+}
+
+fn non_interactive_approval_error(operation: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!("{operation} approval requires a terminal; use --auto-approve"),
+    )
 }
 
 fn list_contexts(config: &ConfigRepository, output: &mut dyn Write) -> Result<()> {
@@ -472,7 +590,10 @@ mod tests {
     use clap::Parser;
     use dokploy_config::DokployConfig;
 
-    use super::{execute, execute_offline, execute_with_input};
+    use super::{
+        execute, execute_offline, execute_with_input, execute_with_terminal,
+        execute_with_terminal_io,
+    };
     use crate::cli::Cli;
     use crate::config::ConfigRepository;
     use crate::credentials::{ApiKey, CredentialStore, CredentialStoreError};
@@ -1318,9 +1439,16 @@ url = "https://deploy.example.com"
         let mut input = Cursor::new(b"no\n");
         let mut output = Vec::new();
 
-        let status = execute_with_input(cli, &repository, &credentials, &mut input, &mut output)
-            .await
-            .expect("declining apply is a successful command outcome");
+        let status = execute_with_terminal(
+            cli,
+            &repository,
+            &credentials,
+            &mut input,
+            &mut output,
+            true,
+        )
+        .await
+        .expect("declining apply is a successful command outcome");
 
         assert_eq!(status, super::CommandStatus::Success);
         let output = String::from_utf8(output).expect("output is UTF-8");
@@ -1377,5 +1505,106 @@ url = "https://deploy.example.com"
         let requests = server.finish_all();
         assert_eq!(requests.len(), 2);
         assert!(requests[1].starts_with("POST /api/project.create HTTP/1.1\r\n"));
+    }
+
+    #[tokio::test]
+    async fn non_interactive_apply_requires_auto_approve_without_mutating_remote_state() {
+        let server = TestServer::respond_with_json("[]");
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let config_file = temporary_directory.path().join("dokploy.yaml");
+        fs::write(
+            &config_file,
+            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+        )
+        .expect("configuration fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-config.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "--url",
+            &server.url,
+            "--api-key",
+            "test-api-key",
+            "apply",
+            "--file",
+            config_file.to_str().expect("fixture path is UTF-8"),
+        ])
+        .expect("apply command line is valid");
+        let mut input = Cursor::new(b"yes\n");
+        let mut output = Vec::new();
+
+        let error = execute_with_input(cli, &repository, &credentials, &mut input, &mut output)
+            .await
+            .expect_err("non-interactive apply must fail closed");
+
+        assert!(format!("{error:?}").contains("apply approval requires a terminal"));
+        assert!(
+            !temporary_directory
+                .path()
+                .join(".dokploy/state.json")
+                .exists()
+        );
+        let request = server.finish();
+        assert!(request.starts_with("GET /api/project.all HTTP/1.1\r\n"));
+    }
+
+    #[tokio::test]
+    async fn split_apply_streams_keep_result_output_machine_safe() {
+        let server = TestServer::respond_in_sequence(vec![
+            ("200 OK", "[]"),
+            (
+                "200 OK",
+                include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+            ),
+        ]);
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let config_file = temporary_directory.path().join("dokploy.yaml");
+        fs::write(
+            &config_file,
+            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+        )
+        .expect("configuration fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-config.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "--url",
+            &server.url,
+            "--api-key",
+            "test-api-key",
+            "apply",
+            "--file",
+            config_file.to_str().expect("fixture path is UTF-8"),
+            "--auto-approve",
+        ])
+        .expect("apply command line is valid");
+        let mut input = Cursor::new(Vec::<u8>::new());
+        let mut result_output = Vec::new();
+        let mut diagnostic_output = Vec::new();
+
+        let status = execute_with_terminal_io(
+            cli,
+            &repository,
+            &credentials,
+            &mut input,
+            &mut result_output,
+            &mut diagnostic_output,
+            false,
+        )
+        .await
+        .expect("auto-approved apply succeeds");
+
+        assert_eq!(status, super::CommandStatus::Success);
+        assert_eq!(
+            String::from_utf8(result_output).expect("result output is UTF-8"),
+            "Apply complete: 1 change(s).\n"
+        );
+        let diagnostics = String::from_utf8(diagnostic_output).expect("diagnostic output is UTF-8");
+        assert!(diagnostics.contains("Plan: 1 change(s), 0 drift record(s)"));
+        assert!(diagnostics.contains("create project.platform"));
+        assert!(!diagnostics.contains("Apply complete"));
+        server.finish_all();
     }
 }

@@ -99,6 +99,15 @@ target/release/dokploy --help
 target/release/dokploy project --help
 ```
 
+Generate a completion script for the current CLI command tree:
+
+```bash
+target/release/dokploy completions bash
+```
+
+Installation instructions for Bash, Zsh, Fish, PowerShell, and Elvish are in
+[Shell completions](docs/shell-completions.md).
+
 Create and validate a starter declarative configuration without contacting a
 Dokploy instance:
 
@@ -143,6 +152,12 @@ It proceeds only after the operator types exactly `yes`:
 dokploy apply
 dokploy apply --parallelism 4
 ```
+
+Interactive approval requires a terminal. Automation must pass
+`--auto-approve` explicitly; redirected or closed input never counts as a
+decline or an approval. Command results and machine-readable output use
+standard output, while plans, prompts, warnings, and diagnostics use standard
+error.
 
 For reviewed or deferred execution, save a plan and apply that artifact:
 
@@ -201,6 +216,10 @@ For delivery detail, see the [implementation phases](docs/implementation-phases.
   behind the generated/private API boundary.
 - [CI and dependency policy](docs/ci.md) — repository validation and supply-chain
   checks.
+- [Releasing the CLI](docs/releasing.md) — cargo-dist artifacts and the release
+  procedure.
+- [Shell completions](docs/shell-completions.md) — installation for every
+  supported shell.
 
 ## Development
 
