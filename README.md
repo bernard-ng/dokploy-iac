@@ -11,8 +11,8 @@ about ownership, drift, secrets, remote identity, and recovery.
 > [!IMPORTANT]
 > This project is pre-release. The imperative CLI and offline configuration
 > commands are usable today. Declarative `plan` and confirmed `apply` cover the
-> six MVP resource types. Explicit interrupted-operation recovery is available;
-> the workspace-wide destroy workflow remains later work.
+> six MVP resource types. Explicit interrupted-operation recovery and
+> workspace-wide tracked-resource destruction are available.
 
 ## What it offers
 
@@ -162,6 +162,17 @@ Recovery never retries an uncertain create. It adopts only a uniquely observed
 resource whose readable owned values match the durable checkpoint. Uncertain
 updates involving write-only values or ambiguous observations stop for manual
 review.
+
+Destroy renders a fresh dependent-first plan and honors stored protection
+before issuing any deletion:
+
+```bash
+dokploy destroy
+dokploy destroy --auto-approve
+```
+
+Only resources owned by the workspace state are considered. An uninitialized
+workspace is a no-op and does not create state.
 
 For delivery detail, see the [implementation phases](docs/implementation-phases.md).
 

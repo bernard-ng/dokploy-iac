@@ -17,7 +17,7 @@ use dokploy_core::{
     ConfigDigest, DesiredResource, DesiredState, DesiredStateError, MoveDirective, OwnedValue,
     PropertyPath, ProtectionIntent, RemovalDirective, SensitiveIntent,
 };
-use dokploy_state::{InstanceIdentity, ResourceAddress, SensitiveFingerprint};
+use dokploy_state::{InstanceIdentity, ResourceAddress, SensitiveFingerprint, StateFile};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -54,6 +54,27 @@ impl CompiledDesired {
         self.bindings
             .sensitive
             .remove(&(address.clone(), path.clone()))
+    }
+
+    /// Builds the synthetic empty desired state used by workspace destruction.
+    pub(crate) fn destroy_all(
+        state: &StateFile,
+        digest: ConfigDigest,
+    ) -> Result<Self, CompileDesiredError> {
+        let removals = state
+            .resources()
+            .keys()
+            .cloned()
+            .map(|address| RemovalDirective::new(address, true))
+            .collect();
+        let desired_state = DesiredState::try_new(digest, BTreeMap::new())
+            .map_err(CompileDesiredError::InvalidDesiredState)?
+            .with_removals(removals);
+
+        Ok(Self {
+            desired_state,
+            bindings: ExecutionBindings::default(),
+        })
     }
 }
 

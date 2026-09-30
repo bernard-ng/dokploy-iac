@@ -5,7 +5,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use dokploy_cli::executor::{ApplyOptions, apply_workspace, apply_workspace_with_approval};
+use dokploy_cli::executor::{
+    ApplyOptions, apply_workspace, apply_workspace_with_approval, destroy_workspace_with_approval,
+};
 use dokploy_cli::planning::plan_workspace;
 use dokploy_sdk::Dokploy;
 use dokploy_state::{InstanceIdentity, RecoveryStatus, ResourceAddress, StateStore};
@@ -20,6 +22,74 @@ struct ConcurrentDatabaseServer {
     url: String,
     result: Receiver<(Vec<String>, bool)>,
     thread: JoinHandle<()>,
+}
+
+#[tokio::test]
+async fn destroy_deletes_every_tracked_resource_and_leaves_initialized_empty_state() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, "version: 1\nproject:\n  name: platform\n")
+        .expect("configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial apply succeeds");
+
+    let summary = destroy_workspace_with_approval(&client, &config, |plan| {
+        assert_eq!(plan.changes().len(), 1);
+        Ok(true)
+    })
+    .await
+    .expect("destroy succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    assert!(
+        store
+            .inspect()
+            .expect("state is readable")
+            .expect("state remains initialized")
+            .resources()
+            .is_empty()
+    );
+    assert_eq!(
+        store.recovery_status().expect("journal scan succeeds"),
+        RecoveryStatus::Clean
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[3].starts_with("POST /api/project.remove HTTP/1.1\r\n"));
+    assert!(requests[3].contains(r#""projectId":"project-1""#));
+}
+
+#[tokio::test]
+async fn destroy_without_state_is_a_noop_without_remote_reads_or_state_creation() {
+    let server = TestServer::respond_in_sequence(Vec::new());
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    let summary = destroy_workspace_with_approval(&server.client(), &config, |plan| {
+        assert!(plan.changes().is_empty());
+        Ok(true)
+    })
+    .await
+    .expect("empty destroy succeeds");
+
+    assert_eq!(summary.applied(), 0);
+    assert!(!directory.path().join(".dokploy/state.json").exists());
+    assert!(server.finish().is_empty());
 }
 
 #[tokio::test]

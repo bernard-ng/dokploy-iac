@@ -79,6 +79,85 @@ pub async fn apply_workspace(
     apply_workspace_with_approval(client, config_file, ApplyOptions::default(), |_| Ok(true)).await
 }
 
+/// Builds and executes a dependent-first deletion plan for every tracked resource.
+pub async fn destroy_workspace_with_approval(
+    client: &Dokploy,
+    config_file: &Path,
+    approval: impl FnOnce(&Plan) -> io::Result<bool>,
+) -> Result<ApplySummary, ApplyWorkspaceError> {
+    let workspace = canonical_workspace(config_file)?;
+    let instance = InstanceIdentity::parse(client.base_url().as_str())?;
+    let store = StateStore::new(&workspace, instance.clone())?;
+    let digest = ConfigDigest::parse(hex_digest(Sha256::digest(b"dokploy-destroy-all-v1").into()))
+        .expect("a SHA-256 digest is canonical lowercase hexadecimal");
+
+    if store.inspect()?.is_none() {
+        let state = StateFile::new(
+            env!("CARGO_PKG_VERSION")
+                .parse()
+                .expect("crate version is valid semver"),
+            instance.clone(),
+        );
+        let compiled = crate::desired::CompiledDesired::destroy_all(&state, digest)?;
+        let stored = StoredState::absent(instance.clone());
+        let remote = dokploy_core::RemoteState::try_new(
+            instance,
+            std::iter::empty::<(ResourceAddress, dokploy_core::RemoteObservation)>(),
+        )
+        .expect("an empty remote snapshot is valid");
+        let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
+        if !approval(&plan).map_err(|source| ApplyWorkspaceError::Approval { source })? {
+            return Err(ApplyWorkspaceError::Declined);
+        }
+
+        return Ok(ApplySummary { applied: 0 });
+    }
+
+    let mut session = store.begin_write()?;
+    let mut state = store
+        .inspect()?
+        .ok_or(ApplyWorkspaceError::StateDisappeared)?;
+    let compiled = crate::desired::CompiledDesired::destroy_all(&state, digest)?;
+    let stored = StoredState::try_from_state(&state)?;
+    let remote = discover_remote(
+        client,
+        &compiled,
+        &state,
+        DiscoveryAuthority::reconciliation(),
+    )
+    .await?;
+    let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
+
+    if !approval(&plan).map_err(|source| ApplyWorkspaceError::Approval { source })? {
+        return Err(ApplyWorkspaceError::Declined);
+    }
+    if !plan.complete() || !plan.applyable() {
+        return Err(ApplyWorkspaceError::PlanBlocked);
+    }
+    preflight(&plan)?;
+    if plan.changes().is_empty() {
+        return Ok(ApplySummary { applied: 0 });
+    }
+    if plan
+        .changes()
+        .iter()
+        .any(|change| change.kind() != ChangeKind::Delete)
+    {
+        return Err(ApplyWorkspaceError::UnsupportedChange);
+    }
+
+    let digest = plan_digest(&plan);
+    let mut journal = OperationJournal::begin(&mut session, digest)?;
+    let mut applied = 0;
+    for change in plan.changes() {
+        execute_removal_change(client, change, &mut state, &mut journal).await?;
+        applied += 1;
+    }
+    journal.commit()?;
+
+    Ok(ApplySummary { applied })
+}
+
 /// Builds, presents, approves, and executes one fresh plan under the writer lock.
 pub async fn apply_workspace_with_approval(
     client: &Dokploy,
@@ -1419,6 +1498,8 @@ pub enum ApplyWorkspaceError {
     Instance(#[from] dokploy_state::InstanceIdentityError),
     #[error("failed to access durable workspace state")]
     StateStore(#[from] StateStoreError),
+    #[error("durable workspace state disappeared while destruction was starting")]
+    StateDisappeared,
     #[error("desired configuration cannot be compiled safely")]
     Desired(#[from] CompileDesiredError),
     #[error("durable state cannot be projected into planner input")]

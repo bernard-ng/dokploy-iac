@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 - Add `dokploy recover` with durable checkpoint reconstruction, fresh remote
   verification, exact approval, safe create adoption, and fail-closed handling
   for unreadable or ambiguous interrupted outcomes.
+- Add `dokploy destroy` with a fresh dependent-first deletion plan, protection
+  enforcement, exact approval, journaled checkpoints, and an absent-state no-op.
 - Add atomic state address moves, idempotent protection toggles, and guarded
   state-only forgetting with dependent-reference validation.
 - Add `dokploy apply --auto-approve` for explicitly non-interactive execution

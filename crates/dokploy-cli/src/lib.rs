@@ -243,6 +243,60 @@ pub async fn execute_with_input(
                 Err(error) => Err(error).into_diagnostic(),
             }
         }
+        Command::Destroy { file, auto_approve } => {
+            let configuration = config.load()?;
+            let settings = resolve_connection(
+                ConnectionOptions {
+                    url,
+                    api_key: api_key.map(ApiKey::new),
+                },
+                &ProcessEnvironment,
+                &configuration,
+                credentials,
+            )?;
+            let client = Dokploy::builder()
+                .url(settings.url().as_str())
+                .api_key(settings.api_key().expose())
+                .build()
+                .into_diagnostic()?;
+            let result = executor::destroy_workspace_with_approval(&client, &file, |plan| {
+                plan_output::render(plan, output)?;
+                if auto_approve
+                    || plan.changes().is_empty()
+                    || !plan.complete()
+                    || !plan.applyable()
+                {
+                    return Ok(true);
+                }
+
+                write!(
+                    output,
+                    "Destroy all tracked resources? Type 'yes' to continue: "
+                )?;
+                output.flush()?;
+                let mut answer = String::new();
+                input.read_line(&mut answer)?;
+
+                Ok(answer.trim() == "yes")
+            })
+            .await;
+            match result {
+                Ok(summary) => {
+                    writeln!(
+                        output,
+                        "Destroy complete: {} resource(s) deleted.",
+                        summary.applied()
+                    )
+                    .into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                Err(executor::ApplyWorkspaceError::Declined) => {
+                    writeln!(output, "Destroy cancelled.").into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                Err(error) => Err(error).into_diagnostic(),
+            }
+        }
         Command::Imperative(command) => {
             let invocation = command.into_invocation()?;
             let configuration = config.load()?;

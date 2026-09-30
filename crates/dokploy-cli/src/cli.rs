@@ -124,6 +124,21 @@ pub enum Command {
         auto_approve: bool,
     },
 
+    /// Delete every resource tracked by this workspace from Dokploy.
+    Destroy {
+        /// Configuration file whose directory owns the state.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+
+        /// Execute a complete destruction plan without interactive confirmation.
+        #[arg(long)]
+        auto_approve: bool,
+    },
+
     /// Inspect resources tracked in the local workspace state.
     State {
         /// Configuration file whose directory owns the state.
@@ -324,6 +339,26 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Recover {
+                file,
+                auto_approve: true
+            } if file.as_path() == Path::new("stack.yaml")
+        ));
+    }
+
+    #[test]
+    fn destroy_supports_non_interactive_approval() {
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "destroy",
+            "--file",
+            "stack.yaml",
+            "--auto-approve",
+        ])
+        .expect("destroy command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Destroy {
                 file,
                 auto_approve: true
             } if file.as_path() == Path::new("stack.yaml")
