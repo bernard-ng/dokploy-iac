@@ -29,6 +29,9 @@ All notable changes to this project will be documented in this file.
 - Add a typed application Port SDK contract with nonzero integer ports,
   authoritative parent collection validation, exact single-attempt mutations,
   sanitized live fixtures, and an undeployed all-field lifecycle proof.
+- Add a typed application Redirect SDK contract with collision preflight,
+  authoritative set-difference identity discovery, direct-parent agreement,
+  sanitized live fixtures, and an undeployed all-field lifecycle proof.
 - Add read-only interactive and non-interactive resource import with canonical
   configuration generation, durable identity adoption, unmanaged secrets,
   protected databases, and immediate plan convergence.

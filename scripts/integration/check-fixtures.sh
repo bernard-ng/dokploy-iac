@@ -138,6 +138,20 @@ required_port_fixtures=(
     "port-contract.metadata.json"
 )
 
+required_redirect_fixtures=(
+    "redirect-create.owner.json"
+    "application-one.redirect-created.owner.json"
+    "redirect-one.created.owner.json"
+    "redirect-update.owner.json"
+    "redirect-one.updated.owner.json"
+    "application-one.redirect-updated.owner.json"
+    "redirect-delete.owner.json"
+    "redirect-one.deleted.owner.json"
+    "application-one.redirect-deleted.owner.json"
+    "project-one.redirect-deleted.owner.json"
+    "redirect-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -197,6 +211,13 @@ done
 for fixture_name in "${required_port_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Port contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_redirect_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Redirect contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1120,6 +1141,109 @@ fi
 
 if grep -R -E -q 'port-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Port project name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '. == true' \
+    "$versioned_fixture_directory/redirect-create.owner.json" >/dev/null
+then
+    echo "Redirect create fixture does not preserve boolean acceptance." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationId == "application-1"
+    and (.redirects | length) == 1
+    and .redirects[0].redirectId == "redirect-1"
+    and .redirects[0].applicationId == "application-1"
+    and .redirects[0].regex == "^/legacy/(.*)$"
+    and .redirects[0].replacement == "/current/$1"
+    and .redirects[0].permanent == false
+' "$versioned_fixture_directory/application-one.redirect-created.owner.json" >/dev/null; then
+    echo "Redirect parent fixture does not prove one exact created identity." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .redirectId == "redirect-1"
+    and .applicationId == "application-1"
+    and .regex == "^/legacy/(.*)$"
+    and .replacement == "/current/$1"
+    and .permanent == false
+' "$versioned_fixture_directory/redirect-one.created.owner.json" >/dev/null; then
+    echo "Redirect detail fixture does not agree with its created parent entry." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .redirectId == "redirect-1"
+    and .applicationId == "application-1"
+    and .regex == "^/old/(.*)$"
+    and .replacement == "/new/$1"
+    and .permanent == true
+' "$versioned_fixture_directory/redirect-one.updated.owner.json" >/dev/null; then
+    echo "Redirect updated detail fixture does not preserve every mutable field." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    (.redirects | length) == 1
+    and .redirects[0].redirectId == "redirect-1"
+    and .redirects[0].regex == "^/old/(.*)$"
+    and .redirects[0].replacement == "/new/$1"
+    and .redirects[0].permanent == true
+' "$versioned_fixture_directory/application-one.redirect-updated.owner.json" >/dev/null; then
+    echo "Redirect updated parent fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "redirects.one"
+' "$versioned_fixture_directory/redirect-one.deleted.owner.json" >/dev/null; then
+    echo "Redirect cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.redirects | length) == 0
+' "$versioned_fixture_directory/application-one.redirect-deleted.owner.json" >/dev/null; then
+    echo "Redirect cleanup parent fixture retained runtime effects." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "project.one"
+' "$versioned_fixture_directory/project-one.redirect-deleted.owner.json" >/dev/null; then
+    echo "Redirect disposable project cleanup is not proven." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .collisionKey == "application+regex"
+    and .createIdentity.setDifference == true
+    and .createIdentity.parentVerified == true
+    and .update.allFieldsPersisted == true
+    and .update.parentVerified == true
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.applicationRedirectsEmpty == true
+    and .cleanupEvidence.projectOneStatus == 404
+' "$versioned_fixture_directory/redirect-contract.metadata.json" >/dev/null; then
+    echo "Redirect metadata does not prove identity, update, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'redirect-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Redirect project name." >&2
     exit 1
 fi
 

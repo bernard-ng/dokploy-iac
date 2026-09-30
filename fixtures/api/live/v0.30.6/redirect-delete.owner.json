@@ -1,0 +1,9 @@
+{
+  "applicationId": "application-1",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "permanent": true,
+  "redirectId": "redirect-1",
+  "regex": "^/old/(.*)$",
+  "replacement": "/new/$1",
+  "uniqueConfigKey": 1
+}

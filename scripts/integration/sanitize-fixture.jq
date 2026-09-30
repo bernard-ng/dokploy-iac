@@ -37,6 +37,8 @@ def normalized_scalar:
     if .value == null then . else .value = "mount-1" end
   elif .key == "portId" then
     if .value == null then . else .value = "port-1" end
+  elif .key == "redirectId" then
+    if .value == null then . else .value = "redirect-1" end
   elif .key == "volumeName" then
     if .value == null then . else .value = "volume-1" end
   elif .key == "organizationId" then
@@ -170,6 +172,10 @@ walk(
         and (.name | startswith("port-sdk-contract-"))
       then
         .name = "Port SDK Contract Test"
+      elif has("projectId") and has("name")
+        and (.name | startswith("redirect-sdk-contract-"))
+      then
+        .name = "Redirect SDK Contract Test"
       else
         .
       end

@@ -1,0 +1,9 @@
+{
+  "applicationId": "application-1",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "permanent": false,
+  "redirectId": "redirect-1",
+  "regex": "^/legacy/(.*)$",
+  "replacement": "/current/$1",
+  "uniqueConfigKey": 1
+}

@@ -36,9 +36,11 @@ use dokploy_api::{
     PostgresIdRequestBody, PostgresOneRequest, PostgresOneRequestQuery, PostgresRemoveRequest,
     PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
     ProjectCreateRequestBody, ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
-    ProjectRemoveRequest, REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE,
-    RedisIdRequestBody, RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest,
-    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    ProjectRemoveRequest, REDIRECTS_CREATE, REDIRECTS_DELETE, REDIRECTS_ONE, REDIRECTS_UPDATE,
+    REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedirectIdRequestBody,
+    RedirectsDeleteRequest, RedirectsOneRequest, RedirectsOneRequestQuery, RedisIdRequestBody,
+    RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
+    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -54,32 +56,33 @@ use crate::imperative::{
 use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse,
-    ApplicationPortCollectionResponse, ApplicationSearchPage, ComposeCollection,
-    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DomainCollection,
-    DomainCreateResponse, DomainDetails, EnvironmentCollection, EnvironmentCreateResponse,
-    EnvironmentDetails, LibSqlCollection, LibSqlDetails, MariaDbCollection, MariaDbCreateResponse,
-    MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
-    MongoSearchPage, MountCollection, MountDetails, MySqlCollection, MySqlCreateResponse,
-    MySqlDetails, MySqlSearchPage, PortCollection, PortDetails, PostgresCollection,
-    PostgresCreateResponse, PostgresDetails, PostgresSearchPage, ProjectCreateResponse,
-    ProjectDetails, ProjectTopology, RedisCollection, RedisCreateResponse, RedisDetails,
-    RedisSearchPage,
+    ApplicationPortCollectionResponse, ApplicationRedirectCollectionResponse,
+    ApplicationSearchPage, ComposeCollection, ComposeCreateResponse, ComposeDetails,
+    ComposeSearchPage, DomainCollection, DomainCreateResponse, DomainDetails,
+    EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails, LibSqlCollection,
+    LibSqlDetails, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails, MariaDbSearchPage,
+    MongoCollection, MongoCreateResponse, MongoDetails, MongoSearchPage, MountCollection,
+    MountDetails, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
+    PortCollection, PortDetails, PostgresCollection, PostgresCreateResponse, PostgresDetails,
+    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedirectCollection,
+    RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails, RedisSearchPage,
 };
 use crate::services::{
     Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Ports,
-    Postgres, Projects, Redis,
+    Postgres, Projects, Redirects, Redis,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
     ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
     CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount,
-    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedis, CreatedApplication,
-    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
-    CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres, CreatedProject, CreatedRedis,
-    DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId, PortId, PostgresId,
-    ProjectId, RedisId, ServiceTarget, UpdateApplication, UpdateCompose, UpdateDomain,
-    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
-    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedis,
+    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
+    CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
+    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres,
+    CreatedProject, CreatedRedirect, CreatedRedis, DomainId, EnvironmentId, LibSqlId, MariaDbId,
+    MongoId, MountId, MySqlId, PortId, PostgresId, ProjectId, RedirectId, RedisId, ServiceTarget,
+    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
+    UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject,
+    UpdateRedirect, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -96,6 +99,7 @@ const MONGO_SEARCH_PAGE_SIZE: usize = 100;
 const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MOUNT_LIST_ITEM_LIMIT: usize = 10_000;
 const PORT_LIST_ITEM_LIMIT: usize = 10_000;
+const REDIRECT_LIST_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -182,6 +186,12 @@ impl Dokploy {
     #[must_use]
     pub fn ports(&self) -> Ports<'_> {
         Ports::new(self)
+    }
+
+    /// Returns access to application Redirect read and mutation operations.
+    #[must_use]
+    pub fn redirects(&self) -> Redirects<'_> {
+        Redirects::new(self)
     }
 
     /// Returns access to MySQL read and mutation operations.
@@ -715,6 +725,150 @@ impl Dokploy {
         validate_generated_request(PORT_DELETE, &request)?;
 
         self.mutate_body_ok(PORT_DELETE, &request.body).await
+    }
+
+    pub(crate) async fn redirect_get(&self, redirect_id: &str) -> Result<RedirectDetails, Error> {
+        let request = RedirectsOneRequest {
+            query: RedirectsOneRequestQuery {
+                redirect_id: redirect_id.to_owned(),
+            },
+        };
+        validate_generated_request(REDIRECTS_ONE, &request)?;
+        let details: RedirectDetails = self.read_query_json(REDIRECTS_ONE, &request.query).await?;
+        if !details.is_valid() || details.redirect_id.as_str() != redirect_id {
+            return Err(Error::UnexpectedResponse {
+                operation: REDIRECTS_ONE.operation(),
+            });
+        }
+        let collection = self
+            .redirects_by_application(&details.application_id)
+            .await?;
+        let matching = collection
+            .redirects()
+            .iter()
+            .find(|redirect| redirect.redirect_id.as_str() == redirect_id);
+        if matching != Some(&details) {
+            return Err(Error::UnexpectedResponse {
+                operation: REDIRECTS_ONE.operation(),
+            });
+        }
+
+        Ok(details)
+    }
+
+    pub(crate) async fn redirects_by_application(
+        &self,
+        application_id: &ApplicationId,
+    ) -> Result<RedirectCollection, Error> {
+        let request = ApplicationOneRequest {
+            query: ApplicationOneRequestQuery {
+                application_id: application_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(APPLICATION_ONE, &request)?;
+        let response: ApplicationRedirectCollectionResponse = self
+            .read_query_json(APPLICATION_ONE, &request.query)
+            .await?;
+        let mut seen_ids = HashSet::new();
+        let contradictory = response.application_id != *application_id
+            || response.redirects.len() > REDIRECT_LIST_ITEM_LIMIT
+            || response.redirects.iter().any(|redirect| {
+                !redirect.is_valid()
+                    || redirect.application_id != *application_id
+                    || !seen_ids.insert(redirect.redirect_id.as_str().to_owned())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: APPLICATION_ONE.operation(),
+            });
+        }
+
+        Ok(RedirectCollection::new(
+            response.application_id,
+            response.redirects,
+        ))
+    }
+
+    pub(crate) async fn redirect_create(
+        &self,
+        input: CreateRedirect,
+    ) -> Result<CreatedRedirect, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                REDIRECTS_CREATE.operation(),
+                "Redirect create fields are invalid",
+            ));
+        }
+        let before = self
+            .redirects_by_application(input.application_id())
+            .await?;
+        if before
+            .redirects()
+            .iter()
+            .any(|redirect| redirect.regex == input.regex())
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: REDIRECTS_CREATE.operation(),
+            });
+        }
+        let before_ids = before
+            .redirects()
+            .iter()
+            .map(|redirect| redirect.redirect_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+
+        let accepted: bool = self.mutate_body_json(REDIRECTS_CREATE, &input).await?;
+        if !accepted {
+            return Err(Error::UnexpectedResponse {
+                operation: REDIRECTS_CREATE.operation(),
+            });
+        }
+
+        let after = self
+            .redirects_by_application(input.application_id())
+            .await?;
+        let after_ids = after
+            .redirects()
+            .iter()
+            .map(|redirect| redirect.redirect_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let new = after
+            .redirects()
+            .iter()
+            .filter(|redirect| !before_ids.contains(redirect.redirect_id.as_str()))
+            .collect::<Vec<_>>();
+        if before_ids.is_subset(&after_ids)
+            && let [created] = new.as_slice()
+            && input.matches(created)
+        {
+            return Ok(CreatedRedirect::new(created.redirect_id.clone()));
+        }
+
+        Err(Error::UnexpectedResponse {
+            operation: REDIRECTS_CREATE.operation(),
+        })
+    }
+
+    pub(crate) async fn redirect_update(&self, input: UpdateRedirect) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                REDIRECTS_UPDATE.operation(),
+                "Redirect update fields are invalid",
+            ));
+        }
+
+        self.mutate_body_ok(REDIRECTS_UPDATE, &input).await
+    }
+
+    pub(crate) async fn redirect_delete(&self, redirect_id: RedirectId) -> Result<(), Error> {
+        let request = RedirectsDeleteRequest {
+            body: RedirectIdRequestBody {
+                redirect_id: redirect_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(REDIRECTS_DELETE, &request)?;
+
+        self.mutate_body_ok(REDIRECTS_DELETE, &request.body).await
     }
 
     pub(crate) async fn environment_get(

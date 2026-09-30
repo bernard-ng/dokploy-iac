@@ -6,17 +6,19 @@ use crate::{
     MongoCollection, MongoDetails, MongoId, MountCollection, MountDetails, MountId,
     MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
     PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
-    RedisCollection, RedisDetails, RedisId, ServiceTarget,
+    RedirectCollection, RedirectDetails, RedirectId, RedisCollection, RedisDetails, RedisId,
+    ServiceTarget,
 };
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
-    CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedis,
-    CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
-    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres,
-    CreatedProject, CreatedRedis, UpdateApplication, UpdateCompose, UpdateDomain,
-    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
-    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedis,
+    CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject,
+    CreateRedirect, CreateRedis, CreatedApplication, CreatedCompose, CreatedDomain,
+    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql,
+    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, UpdateApplication,
+    UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo,
+    UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect,
+    UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -264,6 +266,45 @@ impl<'a> Ports<'a> {
     /// Permanently removes one Port by physical identity.
     pub async fn delete(&self, port_id: PortId) -> Result<(), Error> {
         self.client.port_delete(port_id).await
+    }
+}
+
+/// Read and mutation operations for application Redirects.
+pub struct Redirects<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Redirects<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Redirect and requires agreement with its application collection.
+    pub async fn get(&self, redirect_id: RedirectId) -> Result<RedirectDetails, Error> {
+        self.client.redirect_get(redirect_id.as_str()).await
+    }
+
+    /// Reads the authoritative bounded Redirect collection for one application.
+    pub async fn by_application(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<RedirectCollection, Error> {
+        self.client.redirects_by_application(&application_id).await
+    }
+
+    /// Creates a Redirect and discovers exactly one new matching identity.
+    pub async fn create(&self, input: CreateRedirect) -> Result<CreatedRedirect, Error> {
+        self.client.redirect_create(input).await
+    }
+
+    /// Replaces every mutable field without changing the Redirect parent.
+    pub async fn update(&self, input: UpdateRedirect) -> Result<(), Error> {
+        self.client.redirect_update(input).await
+    }
+
+    /// Permanently removes one Redirect by physical identity.
+    pub async fn delete(&self, redirect_id: RedirectId) -> Result<(), Error> {
+        self.client.redirect_delete(redirect_id).await
     }
 }
 

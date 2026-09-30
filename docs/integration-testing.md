@@ -267,6 +267,37 @@ The wrapper supplies the owner-only local credential only to the test process.
 It verifies create, direct and parent reads, an all-field update, delete, parent
 absence, and cleanup without deploying the application.
 
+## Disposable Redirect contract capture
+
+Capture the application Redirect contract against the pinned local instance
+with:
+
+```bash
+scripts/integration/capture-redirect-contract.sh
+```
+
+The command creates a disposable project and undeployed application. It proves
+the boolean response from `redirects.create`, discovers exactly one new
+identity through the before/after `application.one.redirects` set difference,
+and requires `redirects.one` to agree with that authoritative parent entry. It
+then updates the regular expression, replacement, and permanent flag together,
+verifies the direct and parent views, and deletes the Redirect.
+
+Cleanup requires a 404 from `redirects.one`, an empty parent collection, an
+idle application with no deployments, and a 404 after removing the disposable
+project. The cleanup trap can recover the run's uniquely named project after an
+interrupted create and removes only that owned hierarchy.
+
+Exercise the public SDK adapter through the same undeployed lifecycle with:
+
+```bash
+scripts/integration/test-redirect-sdk.sh
+```
+
+The wrapper supplies the owner-only local credential only to the test process.
+It verifies create discovery, direct/parent agreement, all-field update,
+authoritative deletion, and complete project cleanup.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

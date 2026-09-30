@@ -46,6 +46,7 @@ identifier!(MySqlId);
 identifier!(PortId);
 identifier!(PostgresId);
 identifier!(ProjectId);
+identifier!(RedirectId);
 identifier!(RedisId);
 identifier!(DomainId);
 identifier!(ServerId);
@@ -459,6 +460,108 @@ impl UpdatePort {
 
     pub(crate) fn is_valid(&self) -> bool {
         !self.port_id.as_str().is_empty()
+    }
+}
+
+/// Complete inputs required to create one application Redirect.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRedirect {
+    application_id: ApplicationId,
+    regex: String,
+    replacement: String,
+    permanent: bool,
+}
+
+impl CreateRedirect {
+    /// Creates one Redirect attached to an application.
+    #[must_use]
+    pub fn new(
+        application_id: ApplicationId,
+        regex: impl Into<String>,
+        replacement: impl Into<String>,
+        permanent: bool,
+    ) -> Self {
+        Self {
+            application_id,
+            regex: regex.into(),
+            replacement: replacement.into(),
+            permanent,
+        }
+    }
+
+    pub(crate) fn application_id(&self) -> &ApplicationId {
+        &self.application_id
+    }
+
+    pub(crate) fn regex(&self) -> &str {
+        &self.regex
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.application_id.as_str().is_empty()
+            && !self.regex.is_empty()
+            && !self.replacement.is_empty()
+    }
+
+    pub(crate) fn matches(&self, details: &RedirectDetails) -> bool {
+        !details.redirect_id.as_str().is_empty()
+            && details.application_id == self.application_id
+            && details.regex == self.regex
+            && details.replacement == self.replacement
+            && details.permanent == self.permanent
+    }
+}
+
+/// Physical identity discovered after Dokploy creates a Redirect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedRedirect {
+    redirect_id: RedirectId,
+}
+
+impl CreatedRedirect {
+    pub(crate) fn new(redirect_id: RedirectId) -> Self {
+        Self { redirect_id }
+    }
+
+    /// Returns the new Redirect identity.
+    #[must_use]
+    pub const fn redirect_id(&self) -> &RedirectId {
+        &self.redirect_id
+    }
+}
+
+/// Complete mutable fields required by Dokploy's Redirect update operation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRedirect {
+    redirect_id: RedirectId,
+    regex: String,
+    replacement: String,
+    permanent: bool,
+}
+
+impl UpdateRedirect {
+    /// Replaces every mutable field of one Redirect without changing its parent.
+    #[must_use]
+    pub fn new(
+        redirect_id: RedirectId,
+        regex: impl Into<String>,
+        replacement: impl Into<String>,
+        permanent: bool,
+    ) -> Self {
+        Self {
+            redirect_id,
+            regex: regex.into(),
+            replacement: replacement.into(),
+            permanent,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.redirect_id.as_str().is_empty()
+            && !self.regex.is_empty()
+            && !self.replacement.is_empty()
     }
 }
 
@@ -2934,6 +3037,66 @@ pub(crate) struct ApplicationPortCollectionResponse {
     pub(crate) application_id: ApplicationId,
     #[serde(default)]
     pub(crate) ports: Vec<PortDetails>,
+}
+
+/// A safe complete Redirect record returned by Dokploy's Redirect operations.
+///
+/// Nested application data and unknown response fields are ignored so
+/// application environment values cannot enter the model.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RedirectDetails {
+    pub redirect_id: RedirectId,
+    pub application_id: ApplicationId,
+    pub regex: String,
+    pub replacement: String,
+    pub permanent: bool,
+}
+
+impl RedirectDetails {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.redirect_id.as_str().is_empty()
+            && !self.application_id.as_str().is_empty()
+            && !self.regex.is_empty()
+            && !self.replacement.is_empty()
+    }
+}
+
+/// The complete bounded Redirect collection for one exact application.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RedirectCollection {
+    application_id: ApplicationId,
+    redirects: Vec<RedirectDetails>,
+}
+
+impl RedirectCollection {
+    pub(crate) fn new(application_id: ApplicationId, redirects: Vec<RedirectDetails>) -> Self {
+        Self {
+            application_id,
+            redirects,
+        }
+    }
+
+    /// Returns the application whose Redirect collection was read.
+    #[must_use]
+    pub const fn application_id(&self) -> &ApplicationId {
+        &self.application_id
+    }
+
+    /// Returns every Redirect authoritatively reported by the application.
+    #[must_use]
+    pub fn redirects(&self) -> &[RedirectDetails] {
+        &self.redirects
+    }
+}
+
+/// Minimal parent response used to reconcile Redirects through `application.one`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApplicationRedirectCollectionResponse {
+    pub(crate) application_id: ApplicationId,
+    #[serde(default)]
+    pub(crate) redirects: Vec<RedirectDetails>,
 }
 
 /// A safe subset of the response returned by Mount read operations.
