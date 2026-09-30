@@ -21,6 +21,8 @@ All notable changes to this project will be documented in this file.
 - Add the public read-only `dokploy plan` workflow with single-read source
   digests, deterministic absent-state planning, canonical JSON, human summaries,
   recovery/state revalidation, and detailed exit status.
+- Add the first typed mutation SDK path for project creation, preserving both
+  the project and Dokploy-created default-environment identities.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

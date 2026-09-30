@@ -8,10 +8,11 @@ use dokploy_api::{
     DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_ONE, Endpoint,
     EndpointMethod, EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery,
     EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_ONE, POSTGRES_SEARCH, PROJECT_ALL,
-    PROJECT_ONE, PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest,
-    PostgresSearchRequestQuery, ProjectAllRequest, ProjectOneRequest, ProjectOneRequestQuery,
-    REDIS_ONE, REDIS_SEARCH, RedisOneRequest, RedisOneRequestQuery, RedisSearchRequest,
-    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    PROJECT_CREATE, PROJECT_ONE, PostgresOneRequest, PostgresOneRequestQuery,
+    PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
+    ProjectCreateRequestBody, ProjectOneRequest, ProjectOneRequestQuery, REDIS_ONE, REDIS_SEARCH,
+    RedisOneRequest, RedisOneRequestQuery, RedisSearchRequest, RedisSearchRequestQuery,
+    endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -27,10 +28,11 @@ use crate::imperative::{
 use crate::models::{
     ApplicationCollection, ApplicationDetails, ApplicationSearchPage, DomainCollection,
     DomainDetails, EnvironmentCollection, EnvironmentDetails, PostgresCollection, PostgresDetails,
-    PostgresSearchPage, ProjectDetails, ProjectTopology, RedisCollection, RedisDetails,
-    RedisSearchPage,
+    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
+    RedisDetails, RedisSearchPage,
 };
 use crate::services::{Applications, Domains, Environments, Postgres, Projects, Redis};
+use crate::{CreateProject, CreatedProject};
 
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -127,6 +129,24 @@ impl Dokploy {
         validate_generated_request(PROJECT_ONE, &request)?;
 
         self.read_query_json(PROJECT_ONE, &request.query).await
+    }
+
+    pub(crate) async fn project_create(
+        &self,
+        input: CreateProject,
+    ) -> Result<CreatedProject, Error> {
+        let request = ProjectCreateRequest {
+            body: ProjectCreateRequestBody {
+                name: input.name,
+                description: input.description,
+                env: None,
+            },
+        };
+        validate_generated_request(PROJECT_CREATE, &request)?;
+        let response: ProjectCreateResponse =
+            self.mutate_body_json(PROJECT_CREATE, &request.body).await?;
+
+        Ok(CreatedProject::from_response(response))
     }
 
     pub(crate) async fn application_get(
@@ -402,6 +422,18 @@ impl Dokploy {
     {
         let builder = self.request(endpoint).query(query);
         let response = self.send(endpoint, builder).await?;
+
+        decode_json_response(endpoint, response).await
+    }
+
+    async fn mutate_body_json<T, B>(&self, endpoint: Endpoint, body: &B) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
+        let response = self
+            .send(endpoint, self.request(endpoint).json(body))
+            .await?;
 
         decode_json_response(endpoint, response).await
     }

@@ -31,6 +31,87 @@ identifier!(RedisId);
 identifier!(DomainId);
 identifier!(ServerId);
 
+/// Inputs required to create one Dokploy project.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreateProject {
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+}
+
+impl CreateProject {
+    /// Creates project input with no managed description.
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            description: None,
+        }
+    }
+
+    /// Sets the initial project description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+}
+
+/// Physical identities returned by Dokploy when a project is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedProject {
+    project_id: ProjectId,
+    default_environment_id: EnvironmentId,
+    default_environment_name: String,
+}
+
+impl CreatedProject {
+    pub(crate) fn from_response(response: ProjectCreateResponse) -> Self {
+        Self {
+            project_id: response.project.project_id,
+            default_environment_id: response.environment.environment_id,
+            default_environment_name: response.environment.name,
+        }
+    }
+
+    /// Returns the new project identity.
+    #[must_use]
+    pub const fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+
+    /// Returns the identity of the default environment created with the project.
+    #[must_use]
+    pub const fn default_environment_id(&self) -> &EnvironmentId {
+        &self.default_environment_id
+    }
+
+    /// Returns the name of the default environment created with the project.
+    #[must_use]
+    pub fn default_environment_name(&self) -> &str {
+        &self.default_environment_name
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectCreateResponse {
+    project: CreatedProjectResponse,
+    environment: CreatedEnvironmentResponse,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatedProjectResponse {
+    project_id: ProjectId,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatedEnvironmentResponse {
+    environment_id: EnvironmentId,
+    name: String,
+}
+
 /// Presence-aware value returned by a tolerant Dokploy response model.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum ResponseField<T> {

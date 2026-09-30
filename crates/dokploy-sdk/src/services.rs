@@ -4,6 +4,7 @@ use crate::{
     PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
     RedisCollection, RedisDetails, RedisId,
 };
+use crate::{CreateProject, CreatedProject};
 
 /// Read operations for Dokploy projects.
 pub struct Projects<'a> {
@@ -23,6 +24,11 @@ impl<'a> Projects<'a> {
     /// Reads one project from fresh remote state.
     pub async fn get(&self, project_id: ProjectId) -> Result<ProjectDetails, Error> {
         self.client.project_get(project_id.as_str()).await
+    }
+
+    /// Creates a project and returns both identities created by Dokploy.
+    pub async fn create(&self, input: CreateProject) -> Result<CreatedProject, Error> {
+        self.client.project_create(input).await
     }
 }
 
