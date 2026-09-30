@@ -26,7 +26,7 @@ pub enum CommandStatus {
     ChangesPresent,
 }
 
-use std::io::Write;
+use std::io::{BufRead, Write};
 
 use cli::{Cli, Command, ContextCommand};
 use config::ConfigRepository;
@@ -45,6 +45,17 @@ pub async fn execute(
     cli: Cli,
     config: &ConfigRepository,
     credentials: &dyn CredentialStore,
+    output: &mut dyn Write,
+) -> Result<CommandStatus> {
+    execute_with_input(cli, config, credentials, &mut std::io::empty(), output).await
+}
+
+/// Executes one parsed command with an injected confirmation input stream.
+pub async fn execute_with_input(
+    cli: Cli,
+    config: &ConfigRepository,
+    credentials: &dyn CredentialStore,
+    input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> Result<CommandStatus> {
     if cli.is_offline() {
@@ -100,7 +111,7 @@ pub async fn execute(
                 output.write_all(&plan.to_json_bytes()).into_diagnostic()?;
                 writeln!(output).into_diagnostic()?;
             } else {
-                plan_output::render(&plan, output)?;
+                plan_output::render(&plan, output).into_diagnostic()?;
             }
 
             if !plan.complete() || !plan.applyable() {
@@ -109,6 +120,51 @@ pub async fn execute(
                 Ok(CommandStatus::ChangesPresent)
             } else {
                 Ok(CommandStatus::Success)
+            }
+        }
+        Command::Apply { file, parallelism } => {
+            let configuration = config.load()?;
+            let settings = resolve_connection(
+                ConnectionOptions {
+                    url,
+                    api_key: api_key.map(ApiKey::new),
+                },
+                &ProcessEnvironment,
+                &configuration,
+                credentials,
+            )?;
+            let client = Dokploy::builder()
+                .url(settings.url().as_str())
+                .api_key(settings.api_key().expose())
+                .build()
+                .into_diagnostic()?;
+            let options =
+                executor::ApplyOptions::new(usize::from(parallelism)).into_diagnostic()?;
+            let result = executor::apply_workspace_with_approval(&client, &file, options, |plan| {
+                plan_output::render(plan, output)?;
+                if plan.changes().is_empty() || !plan.complete() || !plan.applyable() {
+                    return Ok(true);
+                }
+
+                write!(output, "Apply these changes? Type 'yes' to continue: ")?;
+                output.flush()?;
+                let mut answer = String::new();
+                input.read_line(&mut answer)?;
+
+                Ok(answer.trim() == "yes")
+            })
+            .await;
+            match result {
+                Ok(summary) => {
+                    writeln!(output, "Apply complete: {} change(s).", summary.applied())
+                        .into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                Err(executor::ApplyWorkspaceError::Declined) => {
+                    writeln!(output, "Apply cancelled.").into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                Err(error) => Err(error).into_diagnostic(),
             }
         }
         Command::Imperative(command) => {
@@ -196,7 +252,7 @@ fn show_context(
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
-    use std::io::{Read, Write};
+    use std::io::{Cursor, Read, Write};
     use std::net::TcpListener;
     use std::sync::mpsc::{self, Receiver};
     use std::thread::{self, JoinHandle};
@@ -204,7 +260,7 @@ mod tests {
     use clap::Parser;
     use dokploy_config::DokployConfig;
 
-    use super::{execute, execute_offline};
+    use super::{execute, execute_offline, execute_with_input};
     use crate::cli::Cli;
     use crate::config::ConfigRepository;
     use crate::credentials::{ApiKey, CredentialStore, CredentialStoreError};
@@ -940,5 +996,45 @@ url = "https://deploy.example.com"
             serde_json::from_str::<serde_json::Value>(body).expect("request body is JSON"),
             serde_json::json!({"name": "IaC Project"})
         );
+    }
+
+    #[tokio::test]
+    async fn public_apply_renders_the_fresh_plan_and_requires_exact_confirmation() {
+        let server = TestServer::respond_with_json("[]");
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let config_file = temporary_directory.path().join("dokploy.yaml");
+        fs::write(
+            &config_file,
+            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+        )
+        .expect("configuration fixture is writable");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-config.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "--url",
+            &server.url,
+            "--api-key",
+            "test-api-key",
+            "apply",
+            "--file",
+            config_file.to_str().expect("fixture path is UTF-8"),
+        ])
+        .expect("apply command line is valid");
+        let mut input = Cursor::new(b"no\n");
+        let mut output = Vec::new();
+
+        let status = execute_with_input(cli, &repository, &credentials, &mut input, &mut output)
+            .await
+            .expect("declining apply is a successful command outcome");
+
+        assert_eq!(status, super::CommandStatus::Success);
+        let output = String::from_utf8(output).expect("output is UTF-8");
+        assert!(output.contains("Plan: 1 change(s), 0 drift record(s)"));
+        assert!(output.contains("create project.platform"));
+        assert!(output.contains("Apply cancelled."));
+        let request = server.finish();
+        assert!(request.starts_with("GET /api/project.all HTTP/1.1\r\n"));
     }
 }

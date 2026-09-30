@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use dokploy_core::{
@@ -32,6 +33,35 @@ pub struct ApplySummary {
     applied: usize,
 }
 
+/// Bounded execution settings selected by the caller.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApplyOptions {
+    parallelism: usize,
+}
+
+impl ApplyOptions {
+    /// Validates an explicit executor concurrency limit.
+    pub fn new(parallelism: usize) -> Result<Self, ApplyWorkspaceError> {
+        if !(1..=64).contains(&parallelism) {
+            return Err(ApplyWorkspaceError::InvalidParallelism);
+        }
+
+        Ok(Self { parallelism })
+    }
+
+    /// Returns the maximum number of remote mutations allowed in flight.
+    #[must_use]
+    pub const fn parallelism(self) -> usize {
+        self.parallelism
+    }
+}
+
+impl Default for ApplyOptions {
+    fn default() -> Self {
+        Self { parallelism: 4 }
+    }
+}
+
 impl ApplySummary {
     /// Returns the number of planned changes checkpointed successfully.
     #[must_use]
@@ -45,6 +75,17 @@ pub async fn apply_workspace(
     client: &Dokploy,
     config_file: &Path,
 ) -> Result<ApplySummary, ApplyWorkspaceError> {
+    apply_workspace_with_approval(client, config_file, ApplyOptions::default(), |_| Ok(true)).await
+}
+
+/// Builds, presents, approves, and executes one fresh plan under the writer lock.
+pub async fn apply_workspace_with_approval(
+    client: &Dokploy,
+    config_file: &Path,
+    options: ApplyOptions,
+    approval: impl FnOnce(&Plan) -> io::Result<bool>,
+) -> Result<ApplySummary, ApplyWorkspaceError> {
+    let _parallelism = options.parallelism();
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
     let store = StateStore::new(&workspace, instance.clone())?;
@@ -73,6 +114,9 @@ pub async fn apply_workspace(
     .await?;
     let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
 
+    if !approval(&plan).map_err(|source| ApplyWorkspaceError::Approval { source })? {
+        return Err(ApplyWorkspaceError::Declined);
+    }
     if !plan.complete() || !plan.applyable() {
         return Err(ApplyWorkspaceError::PlanBlocked);
     }
@@ -949,6 +993,15 @@ pub enum ApplyWorkspaceError {
     Remote(#[from] DiscoverRemoteError),
     #[error("the fresh plan is incomplete or blocked")]
     PlanBlocked,
+    #[error("apply was declined")]
+    Declined,
+    #[error("apply parallelism must be between 1 and 64")]
+    InvalidParallelism,
+    #[error("failed to read or render apply confirmation")]
+    Approval {
+        #[source]
+        source: io::Error,
+    },
     #[error("the plan contains a change unsupported by this executor checkpoint")]
     UnsupportedChange,
     #[error("the planned checkpoint is invalid for execution")]

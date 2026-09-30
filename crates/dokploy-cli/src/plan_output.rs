@@ -1,17 +1,14 @@
 use std::io::Write;
 
 use dokploy_core::{ChangeKind, ChangeOrigin, Plan};
-use miette::{IntoDiagnostic, Result};
-
 /// Renders a value-free human plan summary.
-pub fn render(plan: &Plan, output: &mut dyn Write) -> Result<()> {
+pub fn render(plan: &Plan, output: &mut dyn Write) -> std::io::Result<()> {
     writeln!(
         output,
         "Plan: {} change(s), {} drift record(s)",
         plan.changes().len(),
         plan.drift().len()
-    )
-    .into_diagnostic()?;
+    )?;
 
     for change in plan.changes() {
         writeln!(
@@ -20,25 +17,24 @@ pub fn render(plan: &Plan, output: &mut dyn Write) -> Result<()> {
             change_kind(change.kind()),
             change.address(),
             change_origin(change.origin())
-        )
-        .into_diagnostic()?;
+        )?;
         for field in change.fields() {
-            writeln!(output, "    property: {}", field.key()).into_diagnostic()?;
+            writeln!(output, "    property: {}", field.key())?;
         }
         for metadata in change.metadata() {
-            writeln!(output, "    metadata: {metadata:?}").into_diagnostic()?;
+            writeln!(output, "    metadata: {metadata:?}")?;
         }
     }
 
     for diagnostic in plan.diagnostics() {
-        write!(output, "  {}", diagnostic.code().as_str()).into_diagnostic()?;
+        write!(output, "  {}", diagnostic.code().as_str())?;
         if let Some(address) = diagnostic.address() {
-            write!(output, " {address}").into_diagnostic()?;
+            write!(output, " {address}")?;
         }
         if let Some(property) = diagnostic.property() {
-            write!(output, " property={property}").into_diagnostic()?;
+            write!(output, " property={property}")?;
         }
-        writeln!(output).into_diagnostic()?;
+        writeln!(output)?;
     }
 
     Ok(())

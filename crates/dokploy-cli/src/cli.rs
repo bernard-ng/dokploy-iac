@@ -80,6 +80,21 @@ pub enum Command {
         detailed_exitcode: bool,
     },
 
+    /// Preview and reconcile configuration against fresh Dokploy state.
+    Apply {
+        /// Configuration file to apply.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+
+        /// Maximum number of independent remote operations in flight.
+        #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u8).range(1..=64))]
+        parallelism: u8,
+    },
+
     /// Inspect or select local connection contexts.
     Context {
         #[command(subcommand)]
@@ -197,6 +212,34 @@ mod tests {
                 detailed_exitcode: true,
             } if file.as_path() == Path::new("stack.yaml")
         ));
+    }
+
+    #[test]
+    fn apply_uses_safe_defaults_and_accepts_bounded_parallelism() {
+        let default =
+            Cli::try_parse_from(["dokploy", "apply"]).expect("default apply command line is valid");
+        assert!(matches!(
+            default.command,
+            Command::Apply { file, parallelism: 4 }
+                if file.as_path() == Path::new("dokploy.yaml")
+        ));
+
+        let explicit = Cli::try_parse_from([
+            "dokploy",
+            "apply",
+            "--file",
+            "stack.yaml",
+            "--parallelism",
+            "8",
+        ])
+        .expect("explicit apply command line is valid");
+        assert!(matches!(
+            explicit.command,
+            Command::Apply { file, parallelism: 8 }
+                if file.as_path() == Path::new("stack.yaml")
+        ));
+        assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "0"]).is_err());
+        assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "65"]).is_err());
     }
 
     #[test]

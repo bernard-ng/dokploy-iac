@@ -26,6 +26,8 @@ async fn run() -> Result<CommandStatus> {
     dokploy_cli::telemetry::initialize()?;
 
     let cli = Cli::parse();
+    let stdin = io::stdin();
+    let mut input = stdin.lock();
     let stdout = io::stdout();
     let mut output = stdout.lock();
 
@@ -38,5 +40,5 @@ async fn run() -> Result<CommandStatus> {
     let config = ConfigRepository::platform()?;
     let credentials = KeyringCredentialStore;
 
-    dokploy_cli::execute(cli, &config, &credentials, &mut output).await
+    dokploy_cli::execute_with_input(cli, &config, &credentials, &mut input, &mut output).await
 }

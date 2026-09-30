@@ -37,6 +37,9 @@ All notable changes to this project will be documented in this file.
 - Add typed in-place updates across all MVP resources, multi-step application
   configuration, deploy-on-runtime-change, state-only lifecycle checkpoints,
   and redacted environment merging that preserves unowned remote variables.
+- Add the public `dokploy apply` workflow with fresh plan rendering, exact
+  interactive confirmation, a validated execution-bound option, and a concise
+  applied-change summary.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid
