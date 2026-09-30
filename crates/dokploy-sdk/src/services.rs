@@ -1,14 +1,16 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
     Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails,
-    ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
+    EnvironmentId, Error, MySqlCollection, MySqlDetails, MySqlId, PostgresCollection,
+    PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology, RedisCollection,
+    RedisDetails, RedisId,
 };
 use crate::{
-    CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres, CreateProject, CreateRedis,
-    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedPostgres, CreatedProject,
-    CreatedRedis, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres,
-    UpdateProject, UpdateRedis,
+    ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment, CreateMySql,
+    CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
+    CreatedEnvironment, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis,
+    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMySql, UpdatePostgres, UpdateProject,
+    UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -136,6 +138,52 @@ impl<'a> Environments<'a> {
     /// Permanently removes one environment.
     pub async fn delete(&self, environment_id: EnvironmentId) -> Result<(), Error> {
         self.client.environment_delete(environment_id).await
+    }
+}
+
+/// Read and mutation operations for Dokploy MySQL databases.
+pub struct MySql<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> MySql<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one MySQL database from fresh remote state.
+    pub async fn get(&self, mysql_id: MySqlId) -> Result<MySqlDetails, Error> {
+        self.client.mysql_get(mysql_id.as_str()).await
+    }
+
+    /// Reads every MySQL database in one environment from fresh paginated state.
+    pub async fn by_environment(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<MySqlCollection, Error> {
+        self.client
+            .mysql_by_environment(environment_id.as_str())
+            .await
+    }
+
+    /// Creates a MySQL database with separate write-only user and root credentials.
+    pub async fn create(&self, input: CreateMySql) -> Result<CreatedMySql, Error> {
+        self.client.mysql_create(input).await
+    }
+
+    /// Writes an explicit subset of owned non-secret MySQL fields.
+    pub async fn update(&self, input: UpdateMySql) -> Result<(), Error> {
+        self.client.mysql_update(input).await
+    }
+
+    /// Rotates either the configured user or root password explicitly.
+    pub async fn change_password(&self, input: ChangeMySqlPassword) -> Result<(), Error> {
+        self.client.mysql_change_password(input).await
+    }
+
+    /// Removes one MySQL database by physical identity.
+    pub async fn delete(&self, mysql_id: MySqlId) -> Result<(), Error> {
+        self.client.mysql_delete(mysql_id).await
     }
 }
 

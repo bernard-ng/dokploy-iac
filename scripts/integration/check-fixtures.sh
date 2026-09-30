@@ -39,6 +39,21 @@ required_domain_fixtures=(
     "domain-contract.metadata.json"
 )
 
+required_mysql_fixtures=(
+    "mysql-create.owner.json"
+    "mysql-one.created.owner.json"
+    "mysql-search.created.owner.json"
+    "mysql-update.owner.json"
+    "mysql-change-user-password.idle.owner.json"
+    "mysql-change-root-password.idle.owner.json"
+    "mysql-one.updated.owner.json"
+    "mysql-remove.owner.json"
+    "mysql-one.removed.owner.json"
+    "mysql-search.removed.owner.json"
+    "project-one.mysql-removed.owner.json"
+    "mysql-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -49,6 +64,13 @@ done
 for fixture_name in "${required_domain_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Domain contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_mysql_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing MySQL contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -305,6 +327,104 @@ fi
 
 if grep -R -E -q 'iac-domain-contract-(created|updated)-' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Domain host." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .mysqlId == "mysql-1"
+    and .environmentId == "environment-1"
+    and .name == "MySQL Contract Test"
+    and .appName == "mysql-contract-test"
+    and .databaseName == "contract"
+    and .databaseUser == "contract"
+    and .databasePassword == "<redacted>"
+    and .databaseRootPassword == "<redacted>"
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+    and (.mounts | length) == 1
+    and .mounts[0].mysqlId == "mysql-1"
+    and .mounts[0].mountId == "mount-1"
+    and .mounts[0].volumeName == "volume-1"
+' "$versioned_fixture_directory/mysql-one.created.owner.json" >/dev/null; then
+    echo "MySQL detail fixture does not preserve the sanitized live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .total == 1
+    and (.items | length) == 1
+    and .items[0].mysqlId == "mysql-1"
+    and .items[0].environmentId == "environment-1"
+' "$versioned_fixture_directory/mysql-search.created.owner.json" >/dev/null; then
+    echo "MySQL populated search fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .databaseName == "contract_next"
+    and .databaseUser == "contract_next"
+    and .databasePassword == "<redacted>"
+    and .databaseRootPassword == "<redacted>"
+    and .applicationStatus == "idle"
+' "$versioned_fixture_directory/mysql-one.updated.owner.json" >/dev/null; then
+    echo "MySQL updated detail fixture is incomplete." >&2
+    exit 1
+fi
+
+for password_fixture in \
+    mysql-change-user-password.idle.owner.json \
+    mysql-change-root-password.idle.owner.json
+do
+    if ! jq --exit-status '
+        .code == "BAD_REQUEST"
+        and .data.httpStatus == 400
+        and .data.path == "mysql.changePassword"
+    ' "$versioned_fixture_directory/$password_fixture" >/dev/null; then
+        echo "Idle MySQL password-change fixture is incomplete: $password_fixture" >&2
+        exit 1
+    fi
+done
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "mysql.one"
+' "$versioned_fixture_directory/mysql-one.removed.owner.json" >/dev/null; then
+    echo "MySQL cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '.items == [] and .total == 0' \
+    "$versioned_fixture_directory/mysql-search.removed.owner.json" >/dev/null
+then
+    echo "MySQL cleanup search fixture is not empty." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '[.environments[]?.mysql[]?] | length == 0' \
+    "$versioned_fixture_directory/project-one.mysql-removed.owner.json" >/dev/null
+then
+    echo "MySQL cleanup project fixture still contains a MySQL record." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .idlePasswordChange == {userStatus:400, rootStatus:400}
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.searchEmpty == true
+    and .cleanupEvidence.projectOneAbsent == true
+' "$versioned_fixture_directory/mysql-contract.metadata.json" >/dev/null; then
+    echo "MySQL contract metadata does not prove capture, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'mysql-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable MySQL project name." >&2
     exit 1
 fi
 

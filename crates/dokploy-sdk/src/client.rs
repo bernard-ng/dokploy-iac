@@ -14,14 +14,17 @@ use dokploy_api::{
     ENVIRONMENT_UPDATE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
     EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
     EnvironmentIdRequestBody, EnvironmentOneRequest, EnvironmentOneRequestQuery,
-    EnvironmentRemoveRequest, POSTGRES_CREATE, POSTGRES_ONE, POSTGRES_REMOVE, POSTGRES_SEARCH,
-    POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PROJECT_REMOVE, PROJECT_UPDATE,
-    PostgresIdRequestBody, PostgresOneRequest, PostgresOneRequestQuery, PostgresRemoveRequest,
-    PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
-    ProjectCreateRequestBody, ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
-    ProjectRemoveRequest, REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE,
-    RedisIdRequestBody, RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest,
-    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    EnvironmentRemoveRequest, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
+    MYSQL_SEARCH, MYSQL_UPDATE, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
+    MysqlRemoveRequest, MysqlSearchRequest, MysqlSearchRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
+    POSTGRES_REMOVE, POSTGRES_SEARCH, POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE,
+    PROJECT_REMOVE, PROJECT_UPDATE, PostgresIdRequestBody, PostgresOneRequest,
+    PostgresOneRequestQuery, PostgresRemoveRequest, PostgresSearchRequest,
+    PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest, ProjectCreateRequestBody,
+    ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery, ProjectRemoveRequest,
+    REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedisIdRequestBody,
+    RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
+    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -38,17 +41,18 @@ use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse, ApplicationSearchPage,
     DomainCollection, DomainCreateResponse, DomainDetails, EnvironmentCollection,
-    EnvironmentCreateResponse, EnvironmentDetails, PostgresCollection, PostgresCreateResponse,
-    PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology,
-    RedisCollection, RedisCreateResponse, RedisDetails, RedisSearchPage,
+    EnvironmentCreateResponse, EnvironmentDetails, MySqlCollection, MySqlCreateResponse,
+    MySqlDetails, MySqlSearchPage, PostgresCollection, PostgresCreateResponse, PostgresDetails,
+    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
+    RedisCreateResponse, RedisDetails, RedisSearchPage,
 };
-use crate::services::{Applications, Domains, Environments, Postgres, Projects, Redis};
+use crate::services::{Applications, Domains, Environments, MySql, Postgres, Projects, Redis};
 use crate::{
-    ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
-    CreateProject, CreateRedis, CreatedApplication, CreatedDomain, CreatedEnvironment,
-    CreatedPostgres, CreatedProject, CreatedRedis, DomainId, EnvironmentId, PostgresId, ProjectId,
-    RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres, UpdateProject,
-    UpdateRedis,
+    ApplicationId, ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment,
+    CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
+    CreatedEnvironment, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, DomainId,
+    EnvironmentId, MySqlId, PostgresId, ProjectId, RedisId, UpdateApplication, UpdateDomain,
+    UpdateEnvironment, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -56,6 +60,8 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("dokploy-iac/", env!("CARGO_PKG_VERSION"));
 const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
+const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
+const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
 const POSTGRES_SEARCH_ITEM_LIMIT: usize = 10_000;
 const REDIS_SEARCH_PAGE_SIZE: usize = 100;
@@ -104,6 +110,12 @@ impl Dokploy {
     #[must_use]
     pub fn environments(&self) -> Environments<'_> {
         Environments::new(self)
+    }
+
+    /// Returns access to MySQL read and mutation operations.
+    #[must_use]
+    pub fn mysql(&self) -> MySql<'_> {
+        MySql::new(self)
     }
 
     /// Returns access to Postgres read operations.
@@ -403,6 +415,119 @@ impl Dokploy {
         validate_generated_request(POSTGRES_ONE, &request)?;
 
         self.read_query_json(POSTGRES_ONE, &request.query).await
+    }
+
+    pub(crate) async fn mysql_get(&self, mysql_id: &str) -> Result<MySqlDetails, Error> {
+        let request = MysqlOneRequest {
+            query: MysqlOneRequestQuery {
+                mysql_id: mysql_id.to_owned(),
+            },
+        };
+        validate_generated_request(MYSQL_ONE, &request)?;
+
+        self.read_query_json(MYSQL_ONE, &request.query).await
+    }
+
+    pub(crate) async fn mysql_create(&self, input: CreateMySql) -> Result<CreatedMySql, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MYSQL_CREATE.operation(),
+                "MySQL create fields cannot be empty",
+            ));
+        }
+        let response: MySqlCreateResponse = self.mutate_body_json(MYSQL_CREATE, &input).await?;
+
+        Ok(CreatedMySql::from_response(response))
+    }
+
+    pub(crate) async fn mysql_update(&self, input: UpdateMySql) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MYSQL_UPDATE.operation(),
+                "MySQL update requires an identity and at least one non-empty field",
+            ));
+        }
+
+        self.mutate_body_ok(MYSQL_UPDATE, &input).await
+    }
+
+    pub(crate) async fn mysql_change_password(
+        &self,
+        input: ChangeMySqlPassword,
+    ) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                MYSQL_CHANGE_PASSWORD.operation(),
+                "MySQL password change fields are invalid",
+            ));
+        }
+
+        self.mutate_body_ok(MYSQL_CHANGE_PASSWORD, &input).await
+    }
+
+    pub(crate) async fn mysql_delete(&self, mysql_id: MySqlId) -> Result<(), Error> {
+        let request = MysqlRemoveRequest {
+            body: MysqlIdRequestBody {
+                mysql_id: mysql_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(MYSQL_REMOVE, &request)?;
+
+        self.mutate_body_ok(MYSQL_REMOVE, &request.body).await
+    }
+
+    pub(crate) async fn mysql_by_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<MySqlCollection, Error> {
+        if environment_id.is_empty() {
+            return Err(invalid_request(
+                MYSQL_SEARCH.operation(),
+                "environment ID cannot be empty",
+            ));
+        }
+        let mut mysql = Vec::new();
+        let mut expected_total = None;
+
+        loop {
+            let request = MysqlSearchRequest {
+                query: MysqlSearchRequestQuery {
+                    environment_id: Some(environment_id.to_owned()),
+                    limit: Some(MYSQL_SEARCH_PAGE_SIZE as f64),
+                    offset: Some(mysql.len() as f64),
+                    ..MysqlSearchRequestQuery::default()
+                },
+            };
+            validate_generated_request(MYSQL_SEARCH, &request)?;
+            let page: MySqlSearchPage = self.read_query_json(MYSQL_SEARCH, &request.query).await?;
+
+            let expected = *expected_total.get_or_insert(page.total);
+            if page.total != expected
+                || expected > MYSQL_SEARCH_ITEM_LIMIT as u64
+                || page.items.len() > MYSQL_SEARCH_PAGE_SIZE
+            {
+                return Err(Error::UnexpectedResponse {
+                    operation: MYSQL_SEARCH.operation(),
+                });
+            }
+            let expected = usize::try_from(expected).map_err(|_| Error::UnexpectedResponse {
+                operation: MYSQL_SEARCH.operation(),
+            })?;
+            let page_would_exceed_total = mysql
+                .len()
+                .checked_add(page.items.len())
+                .is_none_or(|count| count > expected);
+            if page_would_exceed_total || (page.items.is_empty() && mysql.len() < expected) {
+                return Err(Error::UnexpectedResponse {
+                    operation: MYSQL_SEARCH.operation(),
+                });
+            }
+
+            mysql.extend(page.items);
+            if mysql.len() == expected {
+                return Ok(MySqlCollection { mysql });
+            }
+        }
     }
 
     pub(crate) async fn postgres_create(

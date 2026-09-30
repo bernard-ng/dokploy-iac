@@ -9,6 +9,8 @@ def normalized_scalar:
     if .value == null then . else .value = "postgres-1" end
   elif .key == "redisId" then
     if .value == null then . else .value = "redis-1" end
+  elif .key == "mysqlId" then
+    if .value == null then . else .value = "mysql-1" end
   elif .key == "domainId" then
     if .value == null then . else .value = "domain-1" end
   elif .key == "uniqueConfigKey" then
@@ -62,6 +64,18 @@ walk(
           else
             .
           end)
+      elif has("mysqlId") then
+        (if has("appName") then .appName = "mysql-contract-test" else . end)
+        | (if has("name") then .name = "MySQL Contract Test" else . end)
+        | (if has("description") and .description != null then
+            .description = "Disposable MySQL SDK contract"
+          else
+            .
+          end)
+      elif has("projectId") and has("name")
+        and (.name | startswith("mysql-sdk-contract-"))
+      then
+        .name = "MySQL SDK Contract Test"
       else
         .
       end

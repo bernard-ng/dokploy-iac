@@ -36,6 +36,7 @@ macro_rules! identifier {
 
 identifier!(ApplicationId);
 identifier!(EnvironmentId);
+identifier!(MySqlId);
 identifier!(PostgresId);
 identifier!(ProjectId);
 identifier!(RedisId);
@@ -619,6 +620,286 @@ impl Serialize for UpdatePostgres {
     }
 }
 
+/// Inputs required to create one Dokploy MySQL database.
+pub struct CreateMySql {
+    name: String,
+    environment_id: EnvironmentId,
+    database_name: String,
+    database_user: String,
+    database_password: Zeroizing<String>,
+    database_root_password: Zeroizing<String>,
+}
+
+impl CreateMySql {
+    /// Creates MySQL input while retaining both required passwords in zeroizing memory.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        environment_id: EnvironmentId,
+        database_name: impl Into<String>,
+        database_user: impl Into<String>,
+        database_password: Zeroizing<String>,
+        database_root_password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+            database_name: database_name.into(),
+            database_user: database_user.into(),
+            database_password,
+            database_root_password,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.database_name.is_empty()
+            && !self.database_user.is_empty()
+            && !self.database_password.is_empty()
+            && !self.database_root_password.is_empty()
+    }
+}
+
+impl fmt::Debug for CreateMySql {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateMySql")
+            .field("name", &self.name)
+            .field("environment_id", &self.environment_id)
+            .field("database_name", &self.database_name)
+            .field("database_user", &self.database_user)
+            .field("database_password", &"[REDACTED]")
+            .field("database_root_password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for CreateMySql {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreateMySql", 6)?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("databaseName", &self.database_name)?;
+        body.serialize_field("databaseUser", &self.database_user)?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        body.serialize_field("databaseRootPassword", self.database_root_password.as_str())?;
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when MySQL is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedMySql {
+    mysql_id: MySqlId,
+}
+
+impl CreatedMySql {
+    pub(crate) fn from_response(response: MySqlCreateResponse) -> Self {
+        Self {
+            mysql_id: response.mysql_id,
+        }
+    }
+
+    /// Returns the new MySQL identity.
+    #[must_use]
+    pub const fn mysql_id(&self) -> &MySqlId {
+        &self.mysql_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MySqlCreateResponse {
+    mysql_id: MySqlId,
+}
+
+/// Owned non-secret MySQL fields written by one update.
+pub struct UpdateMySql {
+    mysql_id: MySqlId,
+    database_name: Option<String>,
+    database_user: Option<String>,
+}
+
+impl UpdateMySql {
+    /// Starts a MySQL update with no fields selected.
+    #[must_use]
+    pub fn new(mysql_id: MySqlId) -> Self {
+        Self {
+            mysql_id,
+            database_name: None,
+            database_user: None,
+        }
+    }
+
+    /// Selects the database name.
+    #[must_use]
+    pub fn with_database(mut self, database_name: impl Into<String>) -> Self {
+        self.database_name = Some(database_name.into());
+        self
+    }
+
+    /// Selects the database user.
+    #[must_use]
+    pub fn with_username(mut self, database_user: impl Into<String>) -> Self {
+        self.database_user = Some(database_user.into());
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mysql_id.as_str().is_empty()
+            && (self
+                .database_name
+                .as_ref()
+                .is_some_and(|value| !value.is_empty())
+                || self
+                    .database_user
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty()))
+    }
+}
+
+impl fmt::Debug for UpdateMySql {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateMySql")
+            .field("mysql_id", &self.mysql_id)
+            .field("database_name", &self.database_name)
+            .field("database_user", &self.database_user)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateMySql {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "UpdateMySql",
+            1 + usize::from(self.database_name.is_some())
+                + usize::from(self.database_user.is_some()),
+        )?;
+        body.serialize_field("mysqlId", self.mysql_id.as_str())?;
+        if let Some(database_name) = &self.database_name {
+            body.serialize_field("databaseName", database_name)?;
+        }
+        if let Some(database_user) = &self.database_user {
+            body.serialize_field("databaseUser", database_user)?;
+        }
+        body.end()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MySqlPasswordTarget {
+    User,
+    Root,
+}
+
+impl MySqlPasswordTarget {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Root => "root",
+        }
+    }
+}
+
+/// A write-only MySQL user or root password rotation.
+pub struct ChangeMySqlPassword {
+    mysql_id: MySqlId,
+    password: Zeroizing<String>,
+    target: MySqlPasswordTarget,
+}
+
+impl ChangeMySqlPassword {
+    /// Rotates the configured database user's password.
+    #[must_use]
+    pub fn user(mysql_id: MySqlId, password: Zeroizing<String>) -> Self {
+        Self {
+            mysql_id,
+            password,
+            target: MySqlPasswordTarget::User,
+        }
+    }
+
+    /// Rotates the MySQL root password.
+    #[must_use]
+    pub fn root(mysql_id: MySqlId, password: Zeroizing<String>) -> Self {
+        Self {
+            mysql_id,
+            password,
+            target: MySqlPasswordTarget::Root,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mysql_id.as_str().is_empty()
+            && !self.password.is_empty()
+            && self.password.chars().all(valid_mysql_password_character)
+    }
+}
+
+impl fmt::Debug for ChangeMySqlPassword {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChangeMySqlPassword")
+            .field("mysql_id", &self.mysql_id)
+            .field("password", &"[REDACTED]")
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
+impl Serialize for ChangeMySqlPassword {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("ChangeMySqlPassword", 3)?;
+        body.serialize_field("mysqlId", self.mysql_id.as_str())?;
+        body.serialize_field("password", self.password.as_str())?;
+        body.serialize_field("type", self.target.as_str())?;
+        body.end()
+    }
+}
+
+fn valid_mysql_password_character(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(
+            character,
+            '@' | '#'
+                | '%'
+                | '^'
+                | '&'
+                | '*'
+                | '('
+                | ')'
+                | '_'
+                | '+'
+                | '-'
+                | '='
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '|'
+                | ';'
+                | ':'
+                | ','
+                | '.'
+                | '<'
+                | '>'
+                | '?'
+                | '~'
+                | '`'
+        )
+}
+
 /// Inputs required to create one Dokploy Redis database.
 pub struct CreateRedis {
     name: String,
@@ -968,6 +1249,64 @@ pub struct PostgresDetails {
     pub external_port: Option<u16>,
     #[serde(default)]
     pub server_id: Option<ServerId>,
+}
+
+/// A safe subset of the response returned by `mysql.one`.
+///
+/// User and root passwords, environment variables, mounts, backups, and other
+/// secret-bearing runtime fields are deliberately absent. Unknown response
+/// fields are ignored because Dokploy's OpenAPI success schema is empty.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MySqlDetails {
+    pub mysql_id: MySqlId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    pub app_name: String,
+    pub docker_image: String,
+    #[serde(default)]
+    pub database_name: ResponseField<String>,
+    #[serde(default)]
+    pub database_user: ResponseField<String>,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub external_port: Option<u16>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+/// One safe MySQL entry returned by `mysql.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MySqlSearchItem {
+    pub mysql_id: MySqlId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+}
+
+/// The fully collected MySQL search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MySqlCollection {
+    pub(crate) mysql: Vec<MySqlSearchItem>,
+}
+
+impl MySqlCollection {
+    /// Returns all MySQL databases discovered in the parent environment.
+    #[must_use]
+    pub fn mysql(&self) -> &[MySqlSearchItem] {
+        &self.mysql
+    }
+}
+
+/// One page returned by the runtime `mysql.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MySqlSearchPage {
+    pub(crate) items: Vec<MySqlSearchItem>,
+    pub(crate) total: u64,
 }
 
 /// One safe Postgres entry returned by `postgres.search`.

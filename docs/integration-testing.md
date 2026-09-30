@@ -88,6 +88,29 @@ integration secret. The capture also verifies the running container's exact
 image reference and requires the Redis record to remain idle with no assigned
 server before recording that no deployment occurred.
 
+## Disposable MySQL contract capture
+
+Capture the MySQL mutation contract against the pinned local instance with:
+
+```bash
+scripts/integration/capture-mysql-contract.sh
+```
+
+The command creates a disposable project, environment, and MySQL record. It
+captures create, read, environment-scoped search, metadata update, user and
+root password change attempts, and delete without deploying the database. On
+Dokploy `v0.30.6`, both password-change endpoints reject an idle database with
+a structured HTTP 400 response because no database container is running. The
+SDK transport tests independently verify the exact successful request bodies
+for the explicit user and root password variants.
+
+The capture requires both the database user password and MySQL root password,
+keeps raw secret-bearing evidence only under ignored owner-only storage, and
+publishes sanitized fixtures after proving authoritative absence through
+`mysql.one`, `mysql.search`, and `project.one`. A cleanup trap uses the unique
+ownership marker to recover the exact disposable record after interruption.
+The script never deploys the database.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK
