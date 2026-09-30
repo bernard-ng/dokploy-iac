@@ -36,6 +36,7 @@ macro_rules! identifier {
 
 identifier!(ApplicationId);
 identifier!(EnvironmentId);
+identifier!(MariaDbId);
 identifier!(MySqlId);
 identifier!(PostgresId);
 identifier!(ProjectId);
@@ -620,6 +621,274 @@ impl Serialize for UpdatePostgres {
     }
 }
 
+/// Inputs required to create one Dokploy MariaDB database.
+pub struct CreateMariaDb {
+    name: String,
+    environment_id: EnvironmentId,
+    database_name: String,
+    database_user: String,
+    database_password: Zeroizing<String>,
+    database_root_password: Option<Zeroizing<String>>,
+}
+
+impl CreateMariaDb {
+    /// Creates MariaDB input while retaining the required user password in zeroizing memory.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        environment_id: EnvironmentId,
+        database_name: impl Into<String>,
+        database_user: impl Into<String>,
+        database_password: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+            database_name: database_name.into(),
+            database_user: database_user.into(),
+            database_password,
+            database_root_password: None,
+        }
+    }
+
+    /// Supplies an explicit root password instead of allowing Dokploy to generate one.
+    #[must_use]
+    pub fn with_root_password(mut self, database_root_password: Zeroizing<String>) -> Self {
+        self.database_root_password = Some(database_root_password);
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.database_name.is_empty()
+            && !self.database_user.is_empty()
+            && !self.database_password.is_empty()
+            && self
+                .database_password
+                .chars()
+                .all(valid_database_password_character)
+            && self.database_root_password.as_ref().is_none_or(|password| {
+                !password.is_empty() && password.chars().all(valid_database_password_character)
+            })
+    }
+}
+
+impl fmt::Debug for CreateMariaDb {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateMariaDb")
+            .field("name", &self.name)
+            .field("environment_id", &self.environment_id)
+            .field("database_name", &self.database_name)
+            .field("database_user", &self.database_user)
+            .field("database_password", &"[REDACTED]")
+            .field(
+                "database_root_password",
+                &self.database_root_password.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
+impl Serialize for CreateMariaDb {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "CreateMariaDb",
+            5 + usize::from(self.database_root_password.is_some()),
+        )?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("databaseName", &self.database_name)?;
+        body.serialize_field("databaseUser", &self.database_user)?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        if let Some(database_root_password) = &self.database_root_password {
+            body.serialize_field("databaseRootPassword", database_root_password.as_str())?;
+        }
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when MariaDB is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedMariaDb {
+    mariadb_id: MariaDbId,
+}
+
+impl CreatedMariaDb {
+    pub(crate) fn from_response(response: MariaDbCreateResponse) -> Self {
+        Self {
+            mariadb_id: response.mariadb_id,
+        }
+    }
+
+    /// Returns the new MariaDB identity.
+    #[must_use]
+    pub const fn mariadb_id(&self) -> &MariaDbId {
+        &self.mariadb_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MariaDbCreateResponse {
+    mariadb_id: MariaDbId,
+}
+
+/// Owned non-secret MariaDB fields written by one update.
+pub struct UpdateMariaDb {
+    mariadb_id: MariaDbId,
+    database_name: Option<String>,
+    database_user: Option<String>,
+}
+
+impl UpdateMariaDb {
+    /// Starts a MariaDB update with no fields selected.
+    #[must_use]
+    pub fn new(mariadb_id: MariaDbId) -> Self {
+        Self {
+            mariadb_id,
+            database_name: None,
+            database_user: None,
+        }
+    }
+
+    /// Selects the database name.
+    #[must_use]
+    pub fn with_database(mut self, database_name: impl Into<String>) -> Self {
+        self.database_name = Some(database_name.into());
+        self
+    }
+
+    /// Selects the database user.
+    #[must_use]
+    pub fn with_username(mut self, database_user: impl Into<String>) -> Self {
+        self.database_user = Some(database_user.into());
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mariadb_id.as_str().is_empty()
+            && (self
+                .database_name
+                .as_ref()
+                .is_some_and(|value| !value.is_empty())
+                || self
+                    .database_user
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty()))
+    }
+}
+
+impl fmt::Debug for UpdateMariaDb {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateMariaDb")
+            .field("mariadb_id", &self.mariadb_id)
+            .field("database_name", &self.database_name)
+            .field("database_user", &self.database_user)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateMariaDb {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "UpdateMariaDb",
+            1 + usize::from(self.database_name.is_some())
+                + usize::from(self.database_user.is_some()),
+        )?;
+        body.serialize_field("mariadbId", self.mariadb_id.as_str())?;
+        if let Some(database_name) = &self.database_name {
+            body.serialize_field("databaseName", database_name)?;
+        }
+        if let Some(database_user) = &self.database_user {
+            body.serialize_field("databaseUser", database_user)?;
+        }
+        body.end()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MariaDbPasswordTarget {
+    User,
+    Root,
+}
+
+impl MariaDbPasswordTarget {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Root => "root",
+        }
+    }
+}
+
+/// A write-only MariaDB user or root password rotation.
+pub struct ChangeMariaDbPassword {
+    mariadb_id: MariaDbId,
+    password: Zeroizing<String>,
+    target: MariaDbPasswordTarget,
+}
+
+impl ChangeMariaDbPassword {
+    /// Rotates the configured database user's password.
+    #[must_use]
+    pub fn user(mariadb_id: MariaDbId, password: Zeroizing<String>) -> Self {
+        Self {
+            mariadb_id,
+            password,
+            target: MariaDbPasswordTarget::User,
+        }
+    }
+
+    /// Rotates the MariaDB root password.
+    #[must_use]
+    pub fn root(mariadb_id: MariaDbId, password: Zeroizing<String>) -> Self {
+        Self {
+            mariadb_id,
+            password,
+            target: MariaDbPasswordTarget::Root,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.mariadb_id.as_str().is_empty()
+            && !self.password.is_empty()
+            && self.password.chars().all(valid_database_password_character)
+    }
+}
+
+impl fmt::Debug for ChangeMariaDbPassword {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChangeMariaDbPassword")
+            .field("mariadb_id", &self.mariadb_id)
+            .field("password", &"[REDACTED]")
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
+impl Serialize for ChangeMariaDbPassword {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("ChangeMariaDbPassword", 3)?;
+        body.serialize_field("mariadbId", self.mariadb_id.as_str())?;
+        body.serialize_field("password", self.password.as_str())?;
+        body.serialize_field("type", self.target.as_str())?;
+        body.end()
+    }
+}
+
 /// Inputs required to create one Dokploy MySQL database.
 pub struct CreateMySql {
     name: String,
@@ -840,7 +1109,7 @@ impl ChangeMySqlPassword {
     pub(crate) fn is_valid(&self) -> bool {
         !self.mysql_id.as_str().is_empty()
             && !self.password.is_empty()
-            && self.password.chars().all(valid_mysql_password_character)
+            && self.password.chars().all(valid_database_password_character)
     }
 }
 
@@ -868,7 +1137,7 @@ impl Serialize for ChangeMySqlPassword {
     }
 }
 
-fn valid_mysql_password_character(character: char) -> bool {
+fn valid_database_password_character(character: char) -> bool {
     character.is_ascii_alphanumeric()
         || matches!(
             character,
@@ -1249,6 +1518,64 @@ pub struct PostgresDetails {
     pub external_port: Option<u16>,
     #[serde(default)]
     pub server_id: Option<ServerId>,
+}
+
+/// A safe subset of the response returned by `mariadb.one`.
+///
+/// User and root passwords, environment variables, and other secret-bearing
+/// runtime fields are deliberately absent. Unknown response fields are ignored
+/// because Dokploy's OpenAPI success schema is empty.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MariaDbDetails {
+    pub mariadb_id: MariaDbId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    pub app_name: String,
+    pub docker_image: String,
+    #[serde(default)]
+    pub database_name: ResponseField<String>,
+    #[serde(default)]
+    pub database_user: ResponseField<String>,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub external_port: Option<u16>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+/// One safe MariaDB entry returned by `mariadb.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MariaDbSearchItem {
+    pub mariadb_id: MariaDbId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+}
+
+/// The fully collected MariaDB search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MariaDbCollection {
+    pub(crate) mariadb: Vec<MariaDbSearchItem>,
+}
+
+impl MariaDbCollection {
+    /// Returns all MariaDB databases discovered in the parent environment.
+    #[must_use]
+    pub fn mariadb(&self) -> &[MariaDbSearchItem] {
+        &self.mariadb
+    }
+}
+
+/// One page returned by the runtime `mariadb.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MariaDbSearchPage {
+    pub(crate) items: Vec<MariaDbSearchItem>,
+    pub(crate) total: u64,
 }
 
 /// A safe subset of the response returned by `mysql.one`.

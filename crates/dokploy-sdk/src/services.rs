@@ -1,16 +1,16 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
     Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, MySqlCollection, MySqlDetails, MySqlId, PostgresCollection,
-    PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology, RedisCollection,
-    RedisDetails, RedisId,
+    EnvironmentId, Error, MariaDbCollection, MariaDbDetails, MariaDbId, MySqlCollection,
+    MySqlDetails, MySqlId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails,
+    ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
 };
 use crate::{
-    ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment, CreateMySql,
-    CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
-    CreatedEnvironment, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis,
-    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMySql, UpdatePostgres, UpdateProject,
-    UpdateRedis,
+    ChangeMariaDbPassword, ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment,
+    CreateMariaDb, CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication,
+    CreatedDomain, CreatedEnvironment, CreatedMariaDb, CreatedMySql, CreatedPostgres,
+    CreatedProject, CreatedRedis, UpdateApplication, UpdateDomain, UpdateEnvironment,
+    UpdateMariaDb, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -138,6 +138,52 @@ impl<'a> Environments<'a> {
     /// Permanently removes one environment.
     pub async fn delete(&self, environment_id: EnvironmentId) -> Result<(), Error> {
         self.client.environment_delete(environment_id).await
+    }
+}
+
+/// Read and mutation operations for Dokploy MariaDB databases.
+pub struct MariaDb<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> MariaDb<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one MariaDB database from fresh remote state.
+    pub async fn get(&self, mariadb_id: MariaDbId) -> Result<MariaDbDetails, Error> {
+        self.client.mariadb_get(mariadb_id.as_str()).await
+    }
+
+    /// Reads every MariaDB database in one environment from fresh paginated state.
+    pub async fn by_environment(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<MariaDbCollection, Error> {
+        self.client
+            .mariadb_by_environment(environment_id.as_str())
+            .await
+    }
+
+    /// Creates a MariaDB database with a required user password and optional root password.
+    pub async fn create(&self, input: CreateMariaDb) -> Result<CreatedMariaDb, Error> {
+        self.client.mariadb_create(input).await
+    }
+
+    /// Writes an explicit subset of owned non-secret MariaDB fields.
+    pub async fn update(&self, input: UpdateMariaDb) -> Result<(), Error> {
+        self.client.mariadb_update(input).await
+    }
+
+    /// Rotates either the configured user or root password explicitly.
+    pub async fn change_password(&self, input: ChangeMariaDbPassword) -> Result<(), Error> {
+        self.client.mariadb_change_password(input).await
+    }
+
+    /// Removes one MariaDB database by physical identity.
+    pub async fn delete(&self, mariadb_id: MariaDbId) -> Result<(), Error> {
+        self.client.mariadb_delete(mariadb_id).await
     }
 }
 

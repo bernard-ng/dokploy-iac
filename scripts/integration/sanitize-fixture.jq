@@ -9,6 +9,8 @@ def normalized_scalar:
     if .value == null then . else .value = "postgres-1" end
   elif .key == "redisId" then
     if .value == null then . else .value = "redis-1" end
+  elif .key == "mariadbId" then
+    if .value == null then . else .value = "mariadb-1" end
   elif .key == "mysqlId" then
     if .value == null then . else .value = "mysql-1" end
   elif .key == "domainId" then
@@ -35,6 +37,10 @@ def normalized_scalar:
     if .value == null then . else .value = "user-1" end
   elif .key == "createdAt" or .key == "updatedAt" then
     if .value == null then . else .value = "2026-09-28T00:00:00.000Z" end
+  elif .key == "message" and (.value | type) == "string"
+    and (.value | startswith("No running container found for mariadb-"))
+  then
+    .value = "No running container found for mariadb-contract-test"
   elif .key == "env"
     or .key == "previewEnv"
     or .key == "buildArgs"
@@ -64,6 +70,14 @@ walk(
           else
             .
           end)
+      elif has("mariadbId") then
+        (if has("appName") then .appName = "mariadb-contract-test" else . end)
+        | (if has("name") then .name = "MariaDB Contract Test" else . end)
+        | (if has("description") and .description != null then
+            .description = "Disposable MariaDB SDK contract"
+          else
+            .
+          end)
       elif has("mysqlId") then
         (if has("appName") then .appName = "mysql-contract-test" else . end)
         | (if has("name") then .name = "MySQL Contract Test" else . end)
@@ -72,6 +86,10 @@ walk(
           else
             .
           end)
+      elif has("projectId") and has("name")
+        and (.name | startswith("mariadb-sdk-contract-"))
+      then
+        .name = "MariaDB SDK Contract Test"
       elif has("projectId") and has("name")
         and (.name | startswith("mysql-sdk-contract-"))
       then

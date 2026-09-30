@@ -111,6 +111,29 @@ publishes sanitized fixtures after proving authoritative absence through
 ownership marker to recover the exact disposable record after interruption.
 The script never deploys the database.
 
+## Disposable MariaDB contract capture
+
+Capture the MariaDB adapter contract against the pinned local instance with:
+
+```bash
+scripts/integration/capture-mariadb-contract.sh
+```
+
+The command creates a disposable project, environment, and MariaDB record. It
+supplies both user and root passwords during capture, then records create,
+read, environment-scoped search, metadata update, both password-change
+variants, and delete. The database remains idle and is never deployed. Dokploy
+`v0.30.6` therefore returns a structured HTTP 400 response for user and root
+password changes because no database container is running; SDK transport tests
+verify both successful request contracts independently.
+
+Raw passwords and generated identifiers remain in ignored owner-only storage.
+Published fixtures redact both passwords and normalize the generated MariaDB
+application name, including the name embedded in idle password-change errors.
+Before publishing, the command proves cleanup through `mariadb.one`,
+`mariadb.search`, and `project.one`. An ownership-scoped cleanup trap removes
+the disposable database and project after interruption.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

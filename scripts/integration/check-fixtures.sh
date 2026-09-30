@@ -54,6 +54,21 @@ required_mysql_fixtures=(
     "mysql-contract.metadata.json"
 )
 
+required_mariadb_fixtures=(
+    "mariadb-create.owner.json"
+    "mariadb-one.created.owner.json"
+    "mariadb-search.created.owner.json"
+    "mariadb-update.owner.json"
+    "mariadb-change-user-password.idle.owner.json"
+    "mariadb-change-root-password.idle.owner.json"
+    "mariadb-one.updated.owner.json"
+    "mariadb-remove.owner.json"
+    "mariadb-one.removed.owner.json"
+    "mariadb-search.removed.owner.json"
+    "project-one.mariadb-removed.owner.json"
+    "mariadb-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -71,6 +86,13 @@ done
 for fixture_name in "${required_mysql_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing MySQL contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_mariadb_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing MariaDB contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -425,6 +447,113 @@ fi
 
 if grep -R -E -q 'mysql-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable MySQL project name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .mariadbId == "mariadb-1"
+    and .environmentId == "environment-1"
+    and .name == "MariaDB Contract Test"
+    and .appName == "mariadb-contract-test"
+    and .dockerImage == "mariadb:11"
+    and .databaseName == "contract"
+    and .databaseUser == "contract"
+    and .databasePassword == "<redacted>"
+    and .databaseRootPassword == "<redacted>"
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+    and (.mounts | length) == 1
+    and .mounts[0].mariadbId == "mariadb-1"
+    and .mounts[0].mountId == "mount-1"
+    and .mounts[0].volumeName == "volume-1"
+' "$versioned_fixture_directory/mariadb-one.created.owner.json" >/dev/null; then
+    echo "MariaDB detail fixture does not preserve the sanitized live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .total == 1
+    and (.items | length) == 1
+    and .items[0].mariadbId == "mariadb-1"
+    and .items[0].environmentId == "environment-1"
+' "$versioned_fixture_directory/mariadb-search.created.owner.json" >/dev/null; then
+    echo "MariaDB populated search fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .databaseName == "contract_next"
+    and .databaseUser == "contract_next"
+    and .databasePassword == "<redacted>"
+    and .databaseRootPassword == "<redacted>"
+    and .applicationStatus == "idle"
+' "$versioned_fixture_directory/mariadb-one.updated.owner.json" >/dev/null; then
+    echo "MariaDB updated detail fixture is incomplete." >&2
+    exit 1
+fi
+
+for password_fixture in \
+    mariadb-change-user-password.idle.owner.json \
+    mariadb-change-root-password.idle.owner.json
+do
+    if ! jq --exit-status '
+        .code == "BAD_REQUEST"
+        and .data.httpStatus == 400
+        and .data.path == "mariadb.changePassword"
+        and .message == "No running container found for mariadb-contract-test"
+    ' "$versioned_fixture_directory/$password_fixture" >/dev/null; then
+        echo "Idle MariaDB password-change fixture is incomplete: $password_fixture" >&2
+        exit 1
+    fi
+done
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "mariadb.one"
+' "$versioned_fixture_directory/mariadb-one.removed.owner.json" >/dev/null; then
+    echo "MariaDB cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '.items == [] and .total == 0' \
+    "$versioned_fixture_directory/mariadb-search.removed.owner.json" >/dev/null
+then
+    echo "MariaDB cleanup search fixture is not empty." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '[.environments[]?.mariadb[]?] | length == 0' \
+    "$versioned_fixture_directory/project-one.mariadb-removed.owner.json" >/dev/null
+then
+    echo "MariaDB cleanup project fixture still contains a MariaDB record." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .idlePasswordChange == {userStatus:400, rootStatus:400}
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.searchEmpty == true
+    and .cleanupEvidence.projectOneAbsent == true
+' "$versioned_fixture_directory/mariadb-contract.metadata.json" >/dev/null; then
+    echo "MariaDB contract metadata does not prove capture, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'mariadb-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable MariaDB project name." >&2
+    exit 1
+fi
+
+if grep -R -E 'No running container found for mariadb-' "$fixture_directory" \
+    | grep -F -v -q 'mariadb-contract-test'
+then
+    echo "Live fixtures contain an unsanitized generated MariaDB application name." >&2
     exit 1
 fi
 
