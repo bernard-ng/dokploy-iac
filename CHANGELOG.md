@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - Add application-scoped Domain discovery with managed-ID matching, exact-host
   collision probes, explicit collection authority, and fail-closed duplicate
   and endpoint-consistency checks.
+- Add adapter-projected mutation contracts, explicit reparent actions, stable
+  unsupported-transition diagnostics, and protected ordered replacements.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

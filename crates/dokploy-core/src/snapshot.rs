@@ -902,6 +902,7 @@ pub enum RemoteObservation {
 pub struct RemoteState {
     pub(crate) instance: InstanceIdentity,
     observations: BTreeMap<ResourceAddress, RemoteObservation>,
+    mutation_contracts: BTreeMap<ResourceAddress, crate::MutationContract>,
 }
 
 impl RemoteState {
@@ -909,6 +910,20 @@ impl RemoteState {
     pub fn try_new(
         instance: InstanceIdentity,
         observations: impl IntoIterator<Item = (ResourceAddress, RemoteObservation)>,
+    ) -> Result<Self, RemoteStateError> {
+        let observations = observations.into_iter().collect::<Vec<_>>();
+        let contracts: Vec<_> = observations
+            .iter()
+            .map(|(address, _)| (address.clone(), crate::MutationContract::permissive()))
+            .collect();
+        Self::try_new_with_contracts(instance, observations, contracts)
+    }
+
+    /// Builds a remote snapshot with an explicit adapter-projected mutation contract.
+    pub fn try_new_with_contracts(
+        instance: InstanceIdentity,
+        observations: impl IntoIterator<Item = (ResourceAddress, RemoteObservation)>,
+        mutation_contracts: impl IntoIterator<Item = (ResourceAddress, crate::MutationContract)>,
     ) -> Result<Self, RemoteStateError> {
         let mut normalized = BTreeMap::new();
         let mut physical_identities = BTreeMap::new();
@@ -931,9 +946,15 @@ impl RemoteState {
             normalized.insert(address, observation);
         }
 
+        let mutation_contracts = mutation_contracts.into_iter().collect::<BTreeMap<_, _>>();
+        if mutation_contracts.keys().ne(normalized.keys()) {
+            return Err(RemoteStateError::MutationContractMismatch);
+        }
+
         Ok(Self {
             instance,
             observations: normalized,
+            mutation_contracts,
         })
     }
 
@@ -947,6 +968,13 @@ impl RemoteState {
     #[must_use]
     pub fn observation(&self, address: &ResourceAddress) -> Option<&RemoteObservation> {
         self.observations.get(address)
+    }
+
+    pub(crate) fn mutation_contract(
+        &self,
+        address: &ResourceAddress,
+    ) -> Option<&crate::MutationContract> {
+        self.mutation_contracts.get(address)
     }
 }
 
@@ -983,6 +1011,9 @@ pub enum RemoteStateError {
     /// A collection root and one of its child paths were both observed.
     #[error("remote resource `{address}` contains conflicting property paths")]
     ConflictingPropertyPaths { address: ResourceAddress },
+    /// Observation and mutation-contract address sets differ.
+    #[error("remote observations and mutation contracts cover different addresses")]
+    MutationContractMismatch,
 }
 
 fn validate_remote_resource(

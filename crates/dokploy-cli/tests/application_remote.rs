@@ -942,7 +942,7 @@ environments:
     let plan = plan(desired.desired_state(), &stored, &remote);
     assert!(plan.diagnostics().is_empty());
     assert!(plan.changes().iter().any(|change| {
-        change.kind() == ChangeKind::NoOp && change.address().to_string() == "application.api"
+        change.kind() == ChangeKind::Reparent && change.address().to_string() == "application.api"
     }));
     let requests = server.finish();
     assert_eq!(requests.len(), 7);

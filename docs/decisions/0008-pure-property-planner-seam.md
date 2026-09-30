@@ -106,12 +106,12 @@ ignore/replacement overlaps, and ancestor/descendant selector conflicts fail
 at the desired-state seam. An ignored baseline that would make durable source
 ownership invalid blocks with a typed diagnostic.
 
-Replacement metadata remains typed-blocking. Safe replacement requires
-adapter-projected mutability and an explicit `ReplacementOrder` rather than a
-global create/delete default. It also requires protection enforcement,
-explicit move interaction, recoverable journal steps, and a checkpoint that
-accepts the new physical identity. Until those inputs and executor semantics
-exist, replacement cannot degrade into create, update, or move.
+Adapter-projected mutation contracts classify property and containment changes
+as in-place, replacement, state-only, or unsupported. Replacement has an
+explicit `ReplacementOrder`, honors protection, and remains incompatible with
+an address move in one plan entry. The planner selects and exposes the strategy;
+Phase 6 remains responsible for recoverable journal steps and checkpointing the
+new physical identity.
 
 The CLI crate is the composition seam from validated `dokploy.yaml` models to
 core desired state. One compiler maps all MVP resource variants, lifecycle

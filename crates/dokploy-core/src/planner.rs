@@ -5,10 +5,10 @@ use dokploy_state::ResourceAddress;
 use crate::dependency::{DependencyGraphKind, DependencyOrdering};
 use crate::{
     ChangeKind, ChangeOrigin, CheckpointTarget, DesiredResource, DesiredState, DriftChange,
-    DriftKind, FieldChange, MetadataChangeKind, MoveAction, OwnedValue, Plan, PlanDiagnostic,
-    PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, PropertyUnknownReason,
-    ProtectionIntent, RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint,
-    StoredState, UnsupportedDirectiveKind, ValueState,
+    DriftKind, FieldChange, MetadataChangeKind, MoveAction, MutationContract, MutationMode,
+    OwnedValue, Plan, PlanDiagnostic, PlanDiagnosticCode, PlannedChange, PropertyObservation,
+    PropertyPath, PropertyUnknownReason, ProtectionIntent, RemoteObservation, RemoteResource,
+    RemoteState, ResourceCheckpoint, StoredState, UnsupportedDirectiveKind, ValueState,
     plan::PLAN_FORMAT_VERSION,
     snapshot::{StoredResource, owned_source_shape_valid},
 };
@@ -114,6 +114,9 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
             ));
             continue;
         };
+        let contract = remote
+            .mutation_contract(&address)
+            .expect("remote snapshots require one mutation contract per observation");
 
         match observation {
             RemoteObservation::Unavailable(failure) => {
@@ -125,6 +128,7 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
                 address,
                 desired_resource,
                 stored_resource,
+                contract,
                 &mut changes,
                 &mut drift,
                 &mut diagnostics,
@@ -134,6 +138,7 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
                 desired_resource,
                 stored_resource,
                 remote_resource,
+                contract,
                 &mut changes,
                 &mut drift,
                 &mut diagnostics,
@@ -325,7 +330,7 @@ fn plan_move(
     }
     let desired_resource = &desired.resources[target];
     let diagnostic_start = diagnostics.len();
-    if add_unsupported_resource_diagnostics(target, desired_resource, diagnostics) {
+    if add_move_replacement_diagnostic(target, desired_resource, diagnostics) {
         for issue in &mut diagnostics[diagnostic_start..] {
             issue.address = Some(source.clone());
             issue.related_address = Some(target.clone());
@@ -383,6 +388,24 @@ fn plan_move(
         )
         .preserving(desired_resource.ignore_changes.clone()),
     );
+}
+
+fn add_move_replacement_diagnostic(
+    address: &ResourceAddress,
+    desired: &DesiredResource,
+    diagnostics: &mut Vec<PlanDiagnostic>,
+) -> bool {
+    let Some(property) = desired.replace_on_changes.first() else {
+        return false;
+    };
+    let mut issue = diagnostic(
+        PlanDiagnosticCode::UnsupportedDirective,
+        Some(address.clone()),
+    );
+    issue.property = Some(property.clone());
+    issue.unsupported = Some(UnsupportedDirectiveKind::Replacement);
+    diagnostics.push(issue);
+    true
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -460,13 +483,14 @@ fn plan_missing_resource(
     address: ResourceAddress,
     desired: Option<&DesiredResource>,
     stored: Option<&StoredResource>,
+    contract: &MutationContract,
     changes: &mut Vec<PlannedChange>,
     drift: &mut Vec<DriftChange>,
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) {
     match (desired, stored) {
         (Some(desired), None) => {
-            if add_unsupported_resource_diagnostics(&address, desired, diagnostics) {
+            if add_create_contract_diagnostic(&address, desired, contract, diagnostics) {
                 return;
             }
 
@@ -480,7 +504,7 @@ fn plan_missing_resource(
             ));
         }
         (Some(desired), Some(stored)) => {
-            if add_unsupported_resource_diagnostics(&address, desired, diagnostics) {
+            if add_create_contract_diagnostic(&address, desired, contract, diagnostics) {
                 return;
             }
 
@@ -535,11 +559,13 @@ fn plan_missing_resource(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn plan_present_resource(
     address: ResourceAddress,
     desired: Option<&DesiredResource>,
     stored: Option<&StoredResource>,
     remote: &RemoteResource,
+    contract: &MutationContract,
     changes: &mut Vec<PlannedChange>,
     drift: &mut Vec<DriftChange>,
     diagnostics: &mut Vec<PlanDiagnostic>,
@@ -566,10 +592,6 @@ fn plan_present_resource(
         plan_present_delete(address, stored, remote, changes, drift, diagnostics);
         return;
     };
-
-    if add_unsupported_resource_diagnostics(&address, desired, diagnostics) {
-        return;
-    }
 
     let mut property_diagnostics = required_property_diagnostics(&address, desired, remote);
     if !property_diagnostics.is_empty() {
@@ -599,25 +621,39 @@ fn plan_present_resource(
         return;
     }
 
-    changes.push(
-        PlannedChange::resource(
-            address,
-            if property_plan.convergence_required {
-                ChangeKind::Update
-            } else {
-                ChangeKind::NoOp
-            },
-            change_origin(config_changed, remote_changed),
-            property_plan.fields,
-            metadata,
-            CheckpointTarget::Present(resource_checkpoint_for_properties(
-                desired,
-                Some(stored),
-                property_plan.checkpoint_properties,
-            )),
-        )
-        .preserving(desired.ignore_changes.clone()),
-    );
+    let containment_changed = desired.containment != stored.containment;
+    let Some((kind, replacement_order)) = classify_mutation(
+        &address,
+        desired,
+        stored,
+        contract,
+        containment_changed,
+        &property_plan.mutations,
+        diagnostics,
+    ) else {
+        return;
+    };
+    let mut change = PlannedChange::resource(
+        address,
+        if property_plan.convergence_required || containment_changed {
+            kind
+        } else {
+            ChangeKind::NoOp
+        },
+        change_origin(config_changed, remote_changed),
+        property_plan.fields,
+        metadata,
+        CheckpointTarget::Present(resource_checkpoint_for_properties(
+            desired,
+            Some(stored),
+            property_plan.checkpoint_properties,
+        )),
+    )
+    .preserving(desired.ignore_changes.clone());
+    if let Some(order) = replacement_order {
+        change = change.replacing(order);
+    }
+    changes.push(change);
 }
 
 fn plan_present_delete(
@@ -669,22 +705,108 @@ fn plan_present_delete(
     ));
 }
 
-fn add_unsupported_resource_diagnostics(
+fn add_create_contract_diagnostic(
     address: &ResourceAddress,
     desired: &DesiredResource,
+    contract: &MutationContract,
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) -> bool {
-    let before = diagnostics.len();
-    if !desired.replace_on_changes.is_empty() {
+    if let Some(property) = contract.missing_required(&desired.properties) {
         let mut issue = diagnostic(
-            PlanDiagnosticCode::UnsupportedDirective,
+            PlanDiagnosticCode::MissingCreateProperty,
             Some(address.clone()),
         );
-        issue.property = desired.replace_on_changes.first().cloned();
-        issue.unsupported = Some(UnsupportedDirectiveKind::Replacement);
+        issue.property = Some(property.clone());
         diagnostics.push(issue);
+        return true;
     }
-    diagnostics.len() != before
+    for (property, value) in &desired.properties {
+        let clear = matches!(value, OwnedValue::Null);
+        if contract.property_mode(property, clear) == MutationMode::Unsupported {
+            let mut issue = diagnostic(
+                PlanDiagnosticCode::UnsupportedMutation,
+                Some(address.clone()),
+            );
+            issue.property = Some(property.clone());
+            diagnostics.push(issue);
+            return true;
+        }
+    }
+
+    false
+}
+
+fn classify_mutation(
+    address: &ResourceAddress,
+    desired: &DesiredResource,
+    stored: &StoredResource,
+    contract: &MutationContract,
+    containment_changed: bool,
+    mutations: &[(PropertyPath, bool)],
+    diagnostics: &mut Vec<PlanDiagnostic>,
+) -> Option<(ChangeKind, Option<crate::ReplacementOrder>)> {
+    let mut replace = false;
+    let mut reparent = false;
+    if containment_changed {
+        match contract.containment_mode() {
+            MutationMode::StateOnly => {}
+            MutationMode::InPlace => reparent = true,
+            MutationMode::Replace => replace = true,
+            MutationMode::Unsupported => {
+                diagnostics.push(diagnostic(
+                    PlanDiagnosticCode::UnsupportedMutation,
+                    Some(address.clone()),
+                ));
+                return None;
+            }
+        }
+    }
+
+    for (property, clear) in mutations {
+        let mode = if desired.replace_on_changes.contains(property) {
+            MutationMode::Replace
+        } else {
+            contract.property_mode(property, *clear)
+        };
+        match mode {
+            MutationMode::StateOnly => {
+                let mut issue = diagnostic(
+                    PlanDiagnosticCode::UnsupportedMutation,
+                    Some(address.clone()),
+                );
+                issue.property = Some(property.clone());
+                diagnostics.push(issue);
+                return None;
+            }
+            MutationMode::InPlace => {}
+            MutationMode::Replace => replace = true,
+            MutationMode::Unsupported => {
+                let mut issue = diagnostic(
+                    PlanDiagnosticCode::UnsupportedMutation,
+                    Some(address.clone()),
+                );
+                issue.property = Some(property.clone());
+                diagnostics.push(issue);
+                return None;
+            }
+        }
+    }
+
+    if replace {
+        if stored.protected {
+            diagnostics.push(diagnostic(
+                PlanDiagnosticCode::ProtectedDelete,
+                Some(address.clone()),
+            ));
+            return None;
+        }
+        return Some((ChangeKind::Replace, Some(contract.replacement_order())));
+    }
+    if reparent {
+        return Some((ChangeKind::Reparent, None));
+    }
+
+    Some((ChangeKind::Update, None))
 }
 
 fn required_property_diagnostics(
@@ -738,6 +860,7 @@ struct PropertyPlan {
     config_changed: bool,
     remote_changed: bool,
     convergence_required: bool,
+    mutations: Vec<(PropertyPath, bool)>,
     checkpoint_properties: BTreeMap<PropertyPath, OwnedValue>,
 }
 
@@ -757,6 +880,7 @@ fn compare_properties(
     let mut any_config = false;
     let mut any_remote = false;
     let mut convergence_required = false;
+    let mut mutations = Vec::new();
     let checkpoint_properties = effective_existing_properties(desired, stored);
 
     for key in keys {
@@ -812,6 +936,9 @@ fn compare_properties(
         any_config |= config_changed;
         any_remote |= remote_changed;
         convergence_required |= convergence;
+        if convergence {
+            mutations.push((key, matches!(desired_value, OwnedValue::Null)));
+        }
     }
 
     PropertyPlan {
@@ -820,6 +947,7 @@ fn compare_properties(
         config_changed: any_config,
         remote_changed: any_remote,
         convergence_required,
+        mutations,
         checkpoint_properties,
     }
 }

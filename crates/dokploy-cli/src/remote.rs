@@ -3,8 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dokploy_core::{
-    ComparableValue, PropertyObservation, PropertyPath, PropertyUnknownReason, RemoteFailureKind,
-    RemoteObservation, RemoteResource, RemoteState, RemoteStateError,
+    ComparableValue, MutationContract, MutationMode, PropertyMutation, PropertyObservation,
+    PropertyPath, PropertyUnknownReason, RemoteFailureKind, RemoteObservation, RemoteResource,
+    RemoteState, RemoteStateError, ReplacementOrder,
 };
 use dokploy_sdk::{ApplicationEnvironmentShape, Dokploy, Error as SdkError, ResponseField};
 use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, ResourceKind, StateFile};
@@ -208,7 +209,7 @@ pub async fn discover_projects(
 
     let observations = discover_project_observations(client, compiled, state, authority).await?;
 
-    RemoteState::try_new(state.instance().clone(), observations)
+    remote_state_with_contracts(state.instance().clone(), observations)
         .map_err(DiscoverProjectsError::InvalidRemoteState)
 }
 
@@ -259,8 +260,55 @@ pub async fn discover_remote(
             .await?;
     observations.extend(domains);
 
-    RemoteState::try_new(state.instance().clone(), observations)
+    remote_state_with_contracts(state.instance().clone(), observations)
         .map_err(DiscoverRemoteError::InvalidRemoteState)
+}
+
+fn remote_state_with_contracts(
+    instance: InstanceIdentity,
+    observations: Vec<(ResourceAddress, RemoteObservation)>,
+) -> Result<RemoteState, RemoteStateError> {
+    let contracts = observations
+        .iter()
+        .map(|(address, _)| (address.clone(), mutation_contract(address.kind())))
+        .collect::<Vec<_>>();
+    RemoteState::try_new_with_contracts(instance, observations, contracts)
+}
+
+fn mutation_contract(kind: ResourceKind) -> MutationContract {
+    let in_place = PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace);
+    let set_only = PropertyMutation::new(MutationMode::InPlace, MutationMode::Unsupported);
+    match kind {
+        ResourceKind::Project => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .with_property(PropertyPath::Description, in_place),
+        ResourceKind::Environment => {
+            MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+                .with_property(PropertyPath::Description, in_place)
+                .with_containment(MutationMode::Replace)
+        }
+        ResourceKind::Application => {
+            MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+                .with_default_property(in_place)
+                .with_containment(MutationMode::InPlace)
+        }
+        ResourceKind::Postgres => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .with_property(PropertyPath::Database, set_only)
+            .with_property(PropertyPath::Username, set_only)
+            .with_property(PropertyPath::Password, set_only)
+            .with_containment(MutationMode::StateOnly),
+        ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .with_property(PropertyPath::Password, set_only)
+            .with_containment(MutationMode::StateOnly),
+        ResourceKind::Domain => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Host)
+            .requiring(PropertyPath::Application)
+            .with_property(PropertyPath::Host, set_only)
+            .with_property(
+                PropertyPath::Application,
+                PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+            )
+            .with_containment(MutationMode::StateOnly),
+    }
 }
 
 async fn discover_domain_observations(

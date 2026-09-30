@@ -4,6 +4,7 @@ use dokploy_state::ResourceAddress;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::ReplacementOrder;
 use crate::{ConfigDigest, OwnedValue, PropertyPath, PropertyUnknownReason, RemoteFailureKind};
 
 pub(crate) const PLAN_FORMAT_VERSION: u32 = 1;
@@ -18,6 +19,8 @@ pub enum ChangeKind {
     Update,
     /// Replace a resource in a later planner slice.
     Replace,
+    /// Change the physical containment of an existing resource.
+    Reparent,
     /// Delete a resource still present remotely.
     Delete,
     /// Preserve physical identity under a new logical address.
@@ -130,6 +133,8 @@ pub struct PlannedChange {
     previous_address: Option<ResourceAddress>,
     #[serde(skip_serializing_if = "Option::is_none")]
     move_action: Option<MoveAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replacement_order: Option<ReplacementOrder>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     preserved_paths: Vec<PropertyPath>,
     kind: ChangeKind,
@@ -147,6 +152,7 @@ impl fmt::Debug for PlannedChange {
             .field("address", &self.address)
             .field("previous_address", &self.previous_address)
             .field("move_action", &self.move_action)
+            .field("replacement_order", &self.replacement_order)
             .field("preserved_paths", &self.preserved_paths)
             .field("kind", &self.kind)
             .field("origin", &self.origin)
@@ -175,6 +181,7 @@ impl PlannedChange {
             address,
             previous_address: None,
             move_action: None,
+            replacement_order: None,
             preserved_paths: Vec::new(),
             kind,
             origin,
@@ -197,6 +204,7 @@ impl PlannedChange {
             address: to,
             previous_address: Some(from.clone()),
             move_action: Some(action),
+            replacement_order: None,
             preserved_paths: Vec::new(),
             kind: ChangeKind::Move,
             origin,
@@ -224,6 +232,18 @@ impl PlannedChange {
         self.move_action
     }
 
+    /// Returns the proven physical ordering for a replacement.
+    #[must_use]
+    pub const fn replacement_order(&self) -> Option<ReplacementOrder> {
+        self.replacement_order
+    }
+
+    pub(crate) fn replacing(mut self, order: ReplacementOrder) -> Self {
+        assert_eq!(self.kind, ChangeKind::Replace);
+        self.replacement_order = Some(order);
+        self
+    }
+
     /// Returns paths that a future mutation must preserve rather than write.
     #[must_use]
     pub fn preserved_paths(&self) -> &[PropertyPath] {
@@ -234,7 +254,11 @@ impl PlannedChange {
         assert!(
             matches!(
                 self.kind,
-                ChangeKind::Update | ChangeKind::NoOp | ChangeKind::Move
+                ChangeKind::Update
+                    | ChangeKind::Replace
+                    | ChangeKind::Reparent
+                    | ChangeKind::NoOp
+                    | ChangeKind::Move
             ),
             "only existing-resource actions can preserve ignored paths"
         );
@@ -501,6 +525,10 @@ pub enum PlanDiagnosticCode {
     MoveTargetCollision,
     /// Applying ignore ownership would create an invalid durable property shape.
     InvalidIgnoredCheckpoint,
+    /// The adapter has no proven mutation for a required transition.
+    UnsupportedMutation,
+    /// A create is missing a property required by the adapter contract.
+    MissingCreateProperty,
 }
 
 impl PlanDiagnosticCode {
@@ -524,6 +552,8 @@ impl PlanDiagnosticCode {
             Self::MoveSourceMissing => "DOKPLAN014",
             Self::MoveTargetCollision => "DOKPLAN015",
             Self::InvalidIgnoredCheckpoint => "DOKPLAN016",
+            Self::UnsupportedMutation => "DOKPLAN017",
+            Self::MissingCreateProperty => "DOKPLAN018",
         }
     }
 }

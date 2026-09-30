@@ -114,12 +114,12 @@ the context workflow without exposing stored API keys.
 ## Project status
 
 The foundation, API/SDK, durable state, configuration language, and core
-planner are implemented. Fresh remote projection currently covers projects,
-environments, applications, PostgreSQL, and Redis. Redis reconciliation uses
-bounded parent-scoped discovery and value-free password observations.
+planner are implemented. Fresh remote projection covers projects,
+environments, applications, PostgreSQL, Redis, and application domains.
+Adapter-owned contracts classify in-place changes, reparenting, and ordered
+replacement without admitting mutation code to the planner.
 
-The remaining MVP work is centered on domain projection, explicit adapter
-mutability and replacement rules, the public `plan` workflow, and the
+The remaining MVP work is centered on the public `plan` workflow and the
 recoverable executor behind `apply`.
 
 For delivery detail, see the [implementation phases](docs/implementation-phases.md).

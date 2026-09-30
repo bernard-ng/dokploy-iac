@@ -5,11 +5,13 @@
 //! read or mutate remote infrastructure.
 
 mod dependency;
+mod mutation;
 mod plan;
 mod planner;
 mod property;
 mod snapshot;
 
+pub use mutation::{MutationContract, MutationMode, PropertyMutation, ReplacementOrder};
 pub use plan::{
     ChangeKind, ChangeOrigin, CheckpointTarget, CheckpointValueRef, DriftChange, DriftKind,
     FieldChange, MetadataChangeKind, MoveAction, Plan, PlanDiagnostic, PlanDiagnosticCode,

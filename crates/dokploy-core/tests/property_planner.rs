@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 
 use dokploy_core::{
     ChangeKind, ChangeOrigin, CheckpointValueRef, ComparableValue, ConfigDigest, DesiredResource,
-    DesiredState, DesiredStateError, MetadataChangeKind, MoveAction, MoveDirective, OwnedValue,
-    Plan, PlanDiagnosticCode, PropertyObservation, PropertyPath, PropertyUnknownReason,
-    ProtectionIntent, RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState,
-    RemoteStateError, RemovalDirective, SensitiveIntent, StoredState, StoredStateError,
-    UnsupportedDirectiveKind, ValueState, plan,
+    DesiredState, DesiredStateError, MetadataChangeKind, MoveAction, MoveDirective,
+    MutationContract, MutationMode, OwnedValue, Plan, PlanDiagnosticCode, PropertyMutation,
+    PropertyObservation, PropertyPath, PropertyUnknownReason, ProtectionIntent, RemoteFailureKind,
+    RemoteObservation, RemoteResource, RemoteState, RemoteStateError, RemovalDirective,
+    ReplacementOrder, SensitiveIntent, StoredState, StoredStateError, UnsupportedDirectiveKind,
+    ValueState, plan,
 };
 use dokploy_state::{
     FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -1333,7 +1334,7 @@ fn dependency_change_is_a_state_only_checkpoint() {
 }
 
 #[test]
-fn containment_change_is_a_distinct_state_only_checkpoint() {
+fn containment_change_is_an_explicit_reparent_checkpoint() {
     let project = address("project.platform");
     let old_environment = address("environment.old");
     let new_environment = address("environment.production");
@@ -1400,7 +1401,7 @@ fn containment_change_is_a_distinct_state_only_checkpoint() {
         .find(|change| change.address() == &application)
         .expect("application containment must checkpoint");
 
-    assert_eq!(change.kind(), ChangeKind::NoOp);
+    assert_eq!(change.kind(), ChangeKind::Reparent);
     assert_eq!(change.metadata(), &[MetadataChangeKind::Containment]);
     assert_eq!(
         change
@@ -2805,7 +2806,7 @@ fn explicit_removals_follow_stored_dependencies_dependent_first() {
 }
 
 #[test]
-fn replacement_metadata_blocks_update_and_create_until_strategy_is_explicit() {
+fn replacement_metadata_orders_existing_replacement_but_not_initial_creation() {
     let address = address("application.api");
     let instance = instance();
     let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
@@ -2817,7 +2818,7 @@ fn replacement_metadata_blocks_update_and_create_until_strategy_is_explicit() {
             OwnedValue::Value(value(json!(2))),
         )]))
         .with_ignored_changes(vec![PropertyPath::SourceBranch])
-        .with_replacement_changes(vec![PropertyPath::DeploymentStatus]),
+        .with_replacement_changes(vec![PropertyPath::Replicas]),
     );
     let remote = remote_state(
         instance.clone(),
@@ -2831,17 +2832,13 @@ fn replacement_metadata_blocks_update_and_create_until_strategy_is_explicit() {
     let update_plan = plan(&desired, &stored, &remote);
 
     assert!(update_plan.complete());
-    assert!(!update_plan.applyable());
-    assert!(update_plan.changes().is_empty());
-    assert_eq!(update_plan.diagnostics().len(), 1);
+    assert!(update_plan.applyable());
+    assert_eq!(update_plan.changes()[0].kind(), ChangeKind::Replace);
     assert_eq!(
-        update_plan.diagnostics()[0].unsupported(),
-        Some(UnsupportedDirectiveKind::Replacement)
+        update_plan.changes()[0].replacement_order(),
+        Some(dokploy_core::ReplacementOrder::DeleteBeforeCreate)
     );
-    assert_eq!(
-        update_plan.diagnostics()[0].property(),
-        Some(&PropertyPath::DeploymentStatus)
-    );
+    assert!(update_plan.diagnostics().is_empty());
 
     let stored =
         StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
@@ -2857,10 +2854,76 @@ fn replacement_metadata_blocks_update_and_create_until_strategy_is_explicit() {
     let remote = RemoteState::try_new(instance, [(address, RemoteObservation::Missing)])
         .expect("remote state must be valid");
     let create = plan(&desired, &stored, &remote);
-    assert!(create.changes().is_empty());
+    assert_eq!(create.changes()[0].kind(), ChangeKind::Create);
+    assert!(create.diagnostics().is_empty());
+}
+
+#[test]
+fn adapter_mutation_contract_controls_replacement_and_create_requirements() {
+    let address = address("application.api");
+    let instance = instance();
+    let state = state_with_resource(&address, &instance, json!({ "replicas": 1 }), false);
+    let stored = StoredState::try_from_state(&state).expect("state must project");
+    let desired = desired_state(
+        &address,
+        DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Replicas,
+            OwnedValue::Value(value(json!(2))),
+        )])),
+    );
+    let contract = MutationContract::deny_all(ReplacementOrder::CreateBeforeDelete).with_property(
+        PropertyPath::Replicas,
+        PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+    );
+    let remote = RemoteState::try_new_with_contracts(
+        instance.clone(),
+        [(
+            address.clone(),
+            RemoteObservation::Present(RemoteResource::new(
+                remote_id(),
+                BTreeMap::from([(
+                    PropertyPath::Replicas,
+                    PropertyObservation::Known(value(json!(1))),
+                )]),
+            )),
+        )],
+        [(address.clone(), contract)],
+    )
+    .expect("contract coverage must be exact");
+
+    let replacement = plan(&desired, &stored, &remote);
+
+    assert_eq!(replacement.changes()[0].kind(), ChangeKind::Replace);
     assert_eq!(
-        create.diagnostics()[0].unsupported(),
-        Some(UnsupportedDirectiveKind::Replacement)
+        replacement.changes()[0].replacement_order(),
+        Some(ReplacementOrder::CreateBeforeDelete)
+    );
+
+    let empty =
+        StoredState::try_from_state(&StateFile::new(Version::new(0, 1, 0), instance.clone()))
+            .expect("empty state must project");
+    let contract = MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+        .requiring(PropertyPath::Description)
+        .with_property(
+            PropertyPath::Replicas,
+            PropertyMutation::new(MutationMode::InPlace, MutationMode::Unsupported),
+        );
+    let missing = RemoteState::try_new_with_contracts(
+        instance,
+        [(address.clone(), RemoteObservation::Missing)],
+        [(address, contract)],
+    )
+    .expect("contract coverage must be exact");
+    let blocked = plan(&desired, &empty, &missing);
+
+    assert!(blocked.changes().is_empty());
+    assert_eq!(
+        blocked.diagnostics()[0].code(),
+        PlanDiagnosticCode::MissingCreateProperty
+    );
+    assert_eq!(
+        blocked.diagnostics()[0].property(),
+        Some(&PropertyPath::Description)
     );
 }
 
