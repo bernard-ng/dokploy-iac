@@ -1,114 +1,150 @@
-# Dokploy Rust CLI and IaC engine
+# Dokploy CLI and Infrastructure as Code
 
-This repository is the implementation workspace for a native Rust `dokploy`
-CLI. It will expose Dokploy's imperative API and a declarative infrastructure
-workflow backed by the same SDK.
+A native Rust toolkit for managing an existing [Dokploy](https://dokploy.com/)
+instance from the command line and, progressively, through declarative
+infrastructure configuration.
 
-The implementation is intentionally phased. Phase 0 validates the external
-contracts before the production workspace is shaped around an OpenAPI
-generator.
+The project combines broad access to Dokploy's API with a safety-focused IaC
+engine. It is designed for operators who want automation that remains explicit
+about ownership, drift, secrets, remote identity, and recovery.
 
-## Current phase
+> [!IMPORTANT]
+> This project is pre-release. The imperative CLI and offline configuration
+> commands are usable today. Declarative planning is under active development;
+> `plan` and `apply` are not yet public commands.
 
-Phase 0 is complete:
+## What it offers
 
-- the upstream Dokploy OpenAPI 3.1 document is vendored at an immutable commit;
-- Rust generator candidates are tested against the same document;
-- incomplete response schemas are inventoried;
-- critical runtime responses are represented by handwritten tolerant models;
-- live authentication and response fixtures are verified against local Dokploy
-  `v0.30.6`.
+### A native Dokploy CLI
 
-Phase 1 is complete. The workspace now includes the CLI skeleton, contexts,
-credential storage, diagnostics, tracing, and CI foundation.
+- Commands generated for all 604 operations in the pinned Dokploy API contract.
+- Named connection contexts with API keys stored in the operating system's
+  credential store.
+- Structured diagnostics, bounded retries for safe reads, and explicit
+  outcome-unknown errors for interrupted mutations.
+- Recursive redaction of secret-bearing imperative responses before they reach
+  the terminal.
 
-Phase 2 is complete. The workspace now includes reproducible bindings and
-imperative commands for all 604 upstream operations, an owned SDK for critical
-project, application, and Postgres reads, bounded GET retries, explicit
-outcome-unknown errors for interrupted mutations, and recursive secret
-redaction for CLI responses. Fixture tests and live tests run against the
-pinned local Dokploy `v0.30.6` environment. Phase 3 adds the durable state
-engine.
+### A declarative engine built for safe reconciliation
 
-Phase 3 is complete. The state subsystem now includes typed resource identity,
-instance binding, lineage and serial revisions, fail-fast writer locking,
-strict loading, atomic primary/backup checkpoints, durable operation journals,
-and fail-closed recovery detection.
+- A strict, versioned `dokploy.yaml` format for projects, environments,
+  applications, PostgreSQL, Redis, and domains.
+- Ownership-aware fields, typed references, dependencies, lifecycle rules,
+  moves, removals, and `ignore_changes` semantics.
+- A three-way planner that compares desired configuration, durable state, and
+  fresh remote observations.
+- Deterministic dependency ordering, drift attribution, protected deletion,
+  and fail-closed handling of incomplete or ambiguous remote data.
+- Sensitive intent represented by opaque, instance-bound fingerprints rather
+  than plaintext values in plans or state.
 
-Phase 4 is complete. The configuration subsystem provides a versioned,
-strictly bounded `dokploy.yaml` language with ownership-aware fields, typed
-references, deferred secret descriptors, parent relationships, lifecycle
-rules, moves, removals, JSON Schema, and redaction-safe semantic validation.
-The offline `init`, `schema`, and `validate` commands do not require a Dokploy
-context, credentials, or network access.
+### An owned Rust SDK
 
-Phase 5 is underway. Its first checkpoint adds a pure planner seam over
-explicit desired, stored, and remote property snapshots, with ownership-aware
-path-level three-way diffs, opaque sensitive intent, fail-closed partial
-observations, protection checks, immutable state-checkpoint targets, and
-deterministic redaction-safe JSON output. Dependency graphs now reject cycles
-and deterministically order desired actions dependency-first before removals
-run dependent-first. Explicit moves now preserve managed identity through an
-atomic source-to-target checkpoint, while removal directives choose retain or
-destroy semantics without weakening identity or protection checks. Ignored
-changes preserve stored ownership baselines for existing resources and expose
-explicit write exclusions for future executors. The CLI composition layer now
-projects one fresh, explicitly authoritative project topology into planner
-observations, binding the client to the state instance, preserving omitted
-versus null response fields, matching managed projects by physical ID, and
-probing unmanaged names without exposing any mutation path.
+- Generated request bindings kept private behind a handwritten SDK.
+- Stable typed identifiers and tolerant runtime response models for critical
+  reconciliation reads.
+- Contract tests backed by sanitized responses captured from a digest-pinned
+  Dokploy `v0.30.6` instance.
 
-The same composition seam now returns one combined project-and-environment
-snapshot. Environment discovery binds managed resources by physical ID,
-validates their containing project, probes unmanaged names only inside a
-proved-present parent, distinguishes authoritative from partial collections,
-and preserves description omission versus null without admitting Dokploy's
-environment variables or nested resource payloads into planner state.
+## Design principles
 
-Application discovery now extends that snapshot with fully paginated search
-inside proved physical environments and direct managed-ID reads. It validates
-current containment, probes move and reparent targets without trusting
-replacement parents, preserves owned field presence, and reduces the
-secret-bearing runtime environment document to a value-free shape before it
-crosses the SDK seam.
+**Fresh state over cached assumptions.** Reconciliation reads Dokploy before it
+plans. The project does not maintain a persistent API cache.
 
-Postgres discovery uses the same combined snapshot with its own collection
-authority. It exhausts bounded parent-scoped search, validates managed IDs and
-current containment, preserves database and username field presence, and
-represents every requested password as a write-only sensitive observation.
-Logical moves remain safe inside one physical environment, while physical
-reparenting fails closed until an explicit remote action exists.
+**Fail closed when evidence is incomplete.** Partial collections, conflicting
+identities, uncertain containment, unsupported mutations, and unresolved
+recovery records block changes instead of being guessed away.
 
-The durable sensitive-state foundation now stores non-null password and
-application environment intent only as opaque, versioned HMAC-SHA-256
-receipts. State format version 2 rejects raw sensitive values, ambiguous
-clear-and-receipt ownership, noncanonical receipts, and version 1 state. The
-planner compares those receipts without exposing their MACs or key identifiers
-and treats write-only remote observations without inventing drift. A private
-CLI module keeps one random fingerprint key per normalized Dokploy instance in
-the OS credential store.
+**Secrets stay out of durable artifacts.** Configuration uses deferred secret
+descriptors. Plans, state, diagnostics, journals, fixtures, and debug output are
+designed not to retain raw secret values.
 
-The instance-bound compiler now preflights unsupported references before any
-external access, resolves literal, environment, and bounded workspace-relative
-file sources exactly once, derives path-bound receipts, and returns exact bytes
-only through a redacted one-shot execution sidecar. Effective configuration
-digests include canonical receipt identities, so content and key rotation plan
-updates while unchanged intent converges. The offline compiler still rejects
-concrete sensitive inputs and keeps clear or unmanaged fields I/O-free.
+**Generated breadth, handwritten stability.** OpenAPI generation provides broad
+request coverage. The public SDK owns transport policy, authentication, stable
+types, and runtime contracts where the upstream schema is incomplete.
 
-See [the Phase 0 report](docs/phase-0-generator-bakeoff.md) for the evidence and
-decision record.
+**Recovery is part of mutation design.** State writes are locked and atomic,
+with previous-state backups and durable operation journals that prevent new
+mutations while an earlier outcome remains unresolved.
 
-The disposable runtime used to capture live API contracts is documented in
-[the integration testing guide](docs/integration-testing.md).
+## Architecture
 
-The ordered delivery plan is tracked in
-[the implementation phases](docs/implementation-phases.md).
+| Crate | Responsibility |
+| --- | --- |
+| `dokploy-api` | Generated request bindings and endpoint metadata from the pinned OpenAPI contract |
+| `dokploy-sdk` | Authentication, transport policy, typed resources, and safe runtime models |
+| `dokploy-config` | Strict parsing, schema generation, and semantic validation for `dokploy.yaml` |
+| `dokploy-state` | Durable resource identity, locking, checkpoints, backups, and operation journals |
+| `dokploy-core` | Pure desired/stored/remote snapshots and deterministic planning |
+| `dokploy-cli` | Command-line interface and composition of configuration, SDK, state, and planning |
 
-## Product boundary
+The CLI manages resources through an existing Dokploy API. Installing or
+provisioning the Dokploy server itself is outside the project boundary.
 
-The CLI manages resources through an existing Dokploy API. It does not install
-or provision the server that runs Dokploy.
+## Quick look
 
-Every reconciliation command reads fresh remote state. The project will not
-contain a persistent API cache.
+Build the CLI with the pinned Rust toolchain:
+
+```bash
+cargo build --release -p dokploy-cli
+```
+
+Explore the available commands:
+
+```bash
+target/release/dokploy --help
+target/release/dokploy project --help
+```
+
+Create and validate a starter declarative configuration without contacting a
+Dokploy instance:
+
+```bash
+target/release/dokploy init --empty
+target/release/dokploy validate
+target/release/dokploy schema > dokploy.schema.json
+```
+
+Connection settings can come from command-line overrides, environment
+variables, or a selected local context. Use `dokploy context --help` to inspect
+the context workflow without exposing stored API keys.
+
+## Project status
+
+The foundation, API/SDK, durable state, configuration language, and core
+planner are implemented. Fresh remote projection currently covers projects,
+environments, applications, and PostgreSQL. Sanitized Redis runtime contracts
+have been captured for the next adapter.
+
+The remaining MVP work is centered on Redis and domain projection, explicit
+adapter mutability and replacement rules, the public `plan` workflow, and the
+recoverable executor behind `apply`.
+
+For delivery detail, see the [implementation phases](docs/implementation-phases.md).
+
+## Documentation
+
+- [Implementation phases](docs/implementation-phases.md) — current delivery
+  sequence and remaining MVP work.
+- [Architecture decisions](docs/decisions/) — design rationale and accepted
+  constraints.
+- [Integration testing](docs/integration-testing.md) — the disposable,
+  digest-pinned Dokploy environment and live contract checks.
+- [Phase 0 generator bake-off](docs/phase-0-generator-bakeoff.md) — evidence
+  behind the generated/private API boundary.
+- [CI and dependency policy](docs/ci.md) — repository validation and supply-chain
+  checks.
+
+## Development
+
+Run the primary repository gate before committing implementation changes:
+
+```bash
+cargo fmt --all -- --check
+cargo test --workspace --all-targets --all-features --locked
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+```
+
+Additional code generation, OpenAPI, fixture, Compose, and dependency-policy
+checks are documented in [CI and dependency policy](docs/ci.md).

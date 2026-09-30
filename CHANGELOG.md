@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Reframe the README as a project presentation focused on the product,
+  capabilities, architecture, maturity, and contributor entry points.
+
 ### Added
 
 - Add the pinned Dokploy OpenAPI 3.1 contract and a reproducible contract audit.
