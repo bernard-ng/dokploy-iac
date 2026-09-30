@@ -329,6 +329,41 @@ The wrapper supplies the owner-only local credential only to the test process.
 It verifies create discovery, secret-safe direct and parent reads, complete
 credential update, authoritative deletion, and project cleanup.
 
+## Disposable Schedule contract capture
+
+Capture the Application and Compose Schedule contracts against the pinned
+local instance with:
+
+```bash
+scripts/integration/capture-schedule-contract.sh
+```
+
+The command creates a disposable project with an undeployed application and an
+undeployed Compose service. It keeps both Schedules disabled and privately
+verifies the created and updated command and script text. Each lifecycle proves
+the identity returned by `schedule.create`, agreement between `schedule.one`
+and the authoritative target-scoped `schedule.list`, complete safe-field
+update, delete, and collection absence. Host and Dokploy-server Schedules are
+deliberately unsupported.
+
+Cleanup requires empty Application and Compose Schedule collections, idle
+targets with no deployment history, and a 404 after removing the disposable
+project. The capture validates a complete candidate fixture tree, including
+API-key and executable-text canary scans, before replacing the tracked fixture
+directory. A failed validation keeps its private evidence and leaves the
+tracked tree unchanged.
+
+Exercise the public SDK adapter through the same undeployed lifecycles with:
+
+```bash
+scripts/integration/test-schedule-sdk.sh
+```
+
+The wrapper supplies the owner-only local credential only to the test process.
+It verifies safe reads, collision preflight, all-field disabled updates,
+authoritative deletion, absence of executions or deployments, and complete
+project cleanup.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

@@ -41,6 +41,8 @@ def normalized_scalar:
     if .value == null then . else .value = "redirect-1" end
   elif .key == "securityId" then
     if .value == null then . else .value = "security-1" end
+  elif .key == "scheduleId" then
+    if .value == null then . else .value = "schedule-1" end
   elif .key == "volumeName" then
     if .value == null then . else .value = "volume-1" end
   elif .key == "organizationId" then
@@ -65,6 +67,8 @@ def normalized_scalar:
     or .key == "buildSecrets"
     or .key == "previewBuildSecrets"
     or .key == "content"
+    or .key == "command"
+    or .key == "script"
   then
     if .value == null or .value == "" then . else .value = "<redacted>" end
   elif (.key | test("(?i)(password|secret|token|privatekey|accesskey)")) then
@@ -182,6 +186,10 @@ walk(
         and (.name | startswith("security-sdk-contract-"))
       then
         .name = "Security SDK Contract Test"
+      elif has("projectId") and has("name")
+        and (.name | startswith("schedule-sdk-contract-"))
+      then
+        .name = "Schedule SDK Contract Test"
       else
         .
       end

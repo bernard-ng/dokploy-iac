@@ -48,6 +48,10 @@ All notable changes to this project will be documented in this file.
 - Add a typed application Security SDK contract with zeroizing credential
   inputs, password-presence-only response models, authoritative identity
   discovery, sanitized fixtures, and an undeployed credential lifecycle proof.
+- Add a typed Application and Compose Schedule SDK contract with closed targets,
+  zeroizing executable inputs, presence-only safe reads, authoritative
+  target-scoped validation, transactional sanitized fixtures, and disabled
+  undeployed lifecycle proofs.
 - Add read-only interactive and non-interactive resource import with canonical
   configuration generation, durable identity adoption, unmanaged secrets,
   protected databases, and immediate plan convergence.

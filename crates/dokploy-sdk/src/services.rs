@@ -7,18 +7,20 @@ use crate::{
     MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
     PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
     RedirectCollection, RedirectDetails, RedirectId, RedisCollection, RedisDetails, RedisId,
-    SecurityCollection, SecurityDetails, SecurityId, ServiceTarget,
+    ScheduleCollection, ScheduleDetails, ScheduleId, ScheduleTarget, SecurityCollection,
+    SecurityDetails, SecurityId, ServiceTarget,
 };
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
     CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject,
-    CreateRedirect, CreateRedis, CreateSecurity, CreatedApplication, CreatedCompose, CreatedDomain,
-    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql,
-    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSecurity,
-    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
-    UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject,
-    UpdateRedirect, UpdateRedis, UpdateSecurity,
+    CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreatedApplication,
+    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
+    CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect,
+    CreatedRedis, CreatedSchedule, CreatedSecurity, UpdateApplication, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
+    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule,
+    UpdateSecurity,
 };
 
 /// Read operations for Dokploy projects.
@@ -344,6 +346,42 @@ impl<'a> Security<'a> {
     /// Permanently removes one Security entry by physical identity.
     pub async fn delete(&self, security_id: SecurityId) -> Result<(), Error> {
         self.client.security_delete(security_id).await
+    }
+}
+
+/// Read and mutation operations for application and Compose Schedules.
+pub struct Schedules<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Schedules<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Schedule and requires agreement with its target collection.
+    pub async fn get(&self, schedule_id: ScheduleId) -> Result<ScheduleDetails, Error> {
+        self.client.schedule_get(schedule_id.as_str()).await
+    }
+
+    /// Reads the authoritative bounded Schedule collection for one exact target.
+    pub async fn by_target(&self, target: ScheduleTarget) -> Result<ScheduleCollection, Error> {
+        self.client.schedules_by_target(&target).await
+    }
+
+    /// Creates a Schedule and validates its returned and collected identity.
+    pub async fn create(&self, input: CreateSchedule) -> Result<CreatedSchedule, Error> {
+        self.client.schedule_create(input).await
+    }
+
+    /// Replaces every safe mutable field without changing target or service.
+    pub async fn update(&self, input: UpdateSchedule) -> Result<(), Error> {
+        self.client.schedule_update(input).await
+    }
+
+    /// Permanently removes one Schedule by physical identity.
+    pub async fn delete(&self, schedule_id: ScheduleId) -> Result<(), Error> {
+        self.client.schedule_delete(schedule_id).await
     }
 }
 

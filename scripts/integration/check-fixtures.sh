@@ -165,6 +165,31 @@ required_security_fixtures=(
     "security-contract.metadata.json"
 )
 
+required_schedule_fixtures=(
+    "schedule-create.application.owner.json"
+    "schedule-one.application-created.owner.json"
+    "schedule-list.application-created.owner.json"
+    "schedule-update.application.owner.json"
+    "schedule-one.application-updated.owner.json"
+    "schedule-list.application-updated.owner.json"
+    "schedule-delete.application.owner.json"
+    "schedule-one.application-deleted.owner.json"
+    "schedule-list.application-deleted.owner.json"
+    "schedule-create.compose.owner.json"
+    "schedule-one.compose-created.owner.json"
+    "schedule-list.compose-created.owner.json"
+    "schedule-update.compose.owner.json"
+    "schedule-one.compose-updated.owner.json"
+    "schedule-list.compose-updated.owner.json"
+    "schedule-delete.compose.owner.json"
+    "schedule-one.compose-deleted.owner.json"
+    "schedule-list.compose-deleted.owner.json"
+    "application-one.schedule-deleted.owner.json"
+    "compose-one.schedule-deleted.owner.json"
+    "project-one.schedule-deleted.owner.json"
+    "schedule-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -238,6 +263,13 @@ done
 for fixture_name in "${required_security_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Security contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_schedule_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Schedule contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1368,6 +1400,130 @@ if grep -R -E -q 'security-sdk-contract-[0-9]' "$fixture_directory"; then
     exit 1
 fi
 
+for schedule_type in application compose; do
+    if ! jq --exit-status --arg type "$schedule_type" '
+        .scheduleId == "schedule-1"
+        and .scheduleType == $type
+        and .name == ($type + "-job")
+        and .cronExpression == "7 4 * * 0"
+        and .shellType == "bash"
+        and .command == "<redacted>"
+        and .script == "<redacted>"
+        and .enabled == false
+        and .timezone == "UTC"
+        and (if $type == "application" then
+            .applicationId == "application-1" and .composeId == null and .serviceName == null
+        else
+            .composeId == "compose-1" and .applicationId == null and .serviceName == "worker"
+        end)
+    ' "$versioned_fixture_directory/schedule-one.$schedule_type-created.owner.json" >/dev/null; then
+        echo "Created $schedule_type Schedule fixture is incomplete." >&2
+        exit 1
+    fi
+
+    if ! jq --exit-status --arg type "$schedule_type" '
+        length == 1
+        and .[0].scheduleId == "schedule-1"
+        and .[0].scheduleType == $type
+        and (.[0].deployments | length) == 0
+        and .[0].command == "<redacted>"
+        and .[0].script == "<redacted>"
+    ' "$versioned_fixture_directory/schedule-list.$schedule_type-created.owner.json" >/dev/null; then
+        echo "Created $schedule_type Schedule collection is not authoritative." >&2
+        exit 1
+    fi
+
+    if ! jq --exit-status --arg type "$schedule_type" '
+        .scheduleId == "schedule-1"
+        and .scheduleType == $type
+        and .name == ($type + "-job-updated")
+        and .description == "updated disabled schedule"
+        and .cronExpression == "13 5 * * 1"
+        and .shellType == "sh"
+        and .command == "<redacted>"
+        and .script == "<redacted>"
+        and .enabled == false
+        and .timezone == "Africa/Lubumbashi"
+    ' "$versioned_fixture_directory/schedule-one.$schedule_type-updated.owner.json" >/dev/null; then
+        echo "Updated $schedule_type Schedule fixture is incomplete." >&2
+        exit 1
+    fi
+
+    if ! jq --exit-status '
+        length == 1
+        and (.[0].deployments | length) == 0
+        and (.[0].name | endswith("-updated"))
+    ' "$versioned_fixture_directory/schedule-list.$schedule_type-updated.owner.json" >/dev/null; then
+        echo "Updated $schedule_type Schedule collection retained execution evidence." >&2
+        exit 1
+    fi
+
+    if ! jq --exit-status '
+        .code == "NOT_FOUND"
+        and .data.httpStatus == 404
+        and .data.path == "schedule.one"
+    ' "$versioned_fixture_directory/schedule-one.$schedule_type-deleted.owner.json" >/dev/null; then
+        echo "Deleted $schedule_type Schedule lookup is not a 404." >&2
+        exit 1
+    fi
+
+    if ! jq --exit-status 'length == 0' \
+        "$versioned_fixture_directory/schedule-list.$schedule_type-deleted.owner.json" >/dev/null
+    then
+        echo "Deleted $schedule_type Schedule remains in its target collection." >&2
+        exit 1
+    fi
+done
+
+if ! jq --exit-status '.applicationStatus == "idle" and (.deployments | length) == 0' \
+    "$versioned_fixture_directory/application-one.schedule-deleted.owner.json" >/dev/null
+then
+    echo "Schedule application target retained deployment effects." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '.composeStatus == "idle" and (.deployments | length) == 0' \
+    "$versioned_fixture_directory/compose-one.schedule-deleted.owner.json" >/dev/null
+then
+    echo "Schedule Compose target retained deployment effects." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND" and .data.httpStatus == 404 and .data.path == "project.one"
+' "$versioned_fixture_directory/project-one.schedule-deleted.owner.json" >/dev/null; then
+    echo "Schedule disposable project cleanup is not proven." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .executed == false
+    and .collisionKey == "target+name"
+    and .supportedTargets == ["application", "compose"]
+    and .privilegedTargetsSupported == false
+    and .executableTextVerifiedPrivately == true
+    and .createIdentity.direct == true
+    and .createIdentity.parentVerified == true
+    and .update.allSafeMutableFieldsPersisted == true
+    and .update.parentVerified == true
+    and .update.enabled == false
+    and .cleanupEvidence.applicationSchedulesEmpty == true
+    and .cleanupEvidence.composeSchedulesEmpty == true
+    and .cleanupEvidence.projectOneStatus == 404
+' "$versioned_fixture_directory/schedule-contract.metadata.json" >/dev/null; then
+    echo "Schedule metadata does not prove safe lifecycle and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'schedule-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Schedule project name." >&2
+    exit 1
+fi
+
 unsafe_values="$(
     find "$fixture_directory" -type f -name '*.json' -print0 \
     | xargs -0 jq -r '
@@ -1383,6 +1539,8 @@ unsafe_values="$(
             or $key == "buildSecrets"
             or $key == "previewBuildSecrets"
             or $key == "content"
+            or $key == "command"
+            or $key == "script"
             or ($key | test("(?i)(password|secret|token|privatekey|accesskey)"))
         )
         | select($value != null and $value != "" and $value != "<redacted>")

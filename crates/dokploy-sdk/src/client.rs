@@ -40,7 +40,10 @@ use dokploy_api::{
     REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedirectIdRequestBody,
     RedirectsDeleteRequest, RedirectsOneRequest, RedirectsOneRequestQuery, RedisIdRequestBody,
     RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
-    RedisSearchRequestQuery, SECURITY_CREATE, SECURITY_DELETE, SECURITY_ONE, SECURITY_UPDATE,
+    RedisSearchRequestQuery, SCHEDULE_CREATE, SCHEDULE_DELETE, SCHEDULE_LIST, SCHEDULE_ONE,
+    SCHEDULE_UPDATE, SECURITY_CREATE, SECURITY_DELETE, SECURITY_ONE, SECURITY_UPDATE,
+    ScheduleCreateRequestBodyScheduleType, ScheduleDeleteRequest, ScheduleIdRequestBody,
+    ScheduleListRequest, ScheduleListRequestQuery, ScheduleOneRequest, ScheduleOneRequestQuery,
     SecurityDeleteRequest, SecurityIdRequestBody, SecurityOneRequest, SecurityOneRequestQuery,
     endpoint_by_operation, validate_request,
 };
@@ -68,24 +71,26 @@ use crate::models::{
     MySqlDetails, MySqlSearchPage, PortCollection, PortDetails, PostgresCollection,
     PostgresCreateResponse, PostgresDetails, PostgresSearchPage, ProjectCreateResponse,
     ProjectDetails, ProjectTopology, RedirectCollection, RedirectDetails, RedisCollection,
-    RedisCreateResponse, RedisDetails, RedisSearchPage, SecurityCollection, SecurityDetails,
+    RedisCreateResponse, RedisDetails, RedisSearchPage, ScheduleCollection, ScheduleDetails,
+    SecurityCollection, SecurityDetails,
 };
 use crate::services::{
     Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Ports,
-    Postgres, Projects, Redirects, Redis, Security,
+    Postgres, Projects, Redirects, Redis, Schedules, Security,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
     ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
     CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount,
     CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
-    CreateSecurity, CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment,
-    CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort,
-    CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSecurity, DomainId,
-    EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId, PortId, PostgresId, ProjectId,
-    RedirectId, RedisId, SecurityId, ServiceTarget, UpdateApplication, UpdateCompose, UpdateDomain,
-    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
-    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSecurity,
+    CreateSchedule, CreateSecurity, CreatedApplication, CreatedCompose, CreatedDomain,
+    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql,
+    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSchedule,
+    CreatedSecurity, DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId,
+    PortId, PostgresId, ProjectId, RedirectId, RedisId, ScheduleId, ScheduleTarget, SecurityId,
+    ServiceTarget, UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql,
+    UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres,
+    UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule, UpdateSecurity,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -103,6 +108,7 @@ const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MOUNT_LIST_ITEM_LIMIT: usize = 10_000;
 const PORT_LIST_ITEM_LIMIT: usize = 10_000;
 const REDIRECT_LIST_ITEM_LIMIT: usize = 10_000;
+const SCHEDULE_LIST_ITEM_LIMIT: usize = 10_000;
 const SECURITY_LIST_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
@@ -202,6 +208,12 @@ impl Dokploy {
     #[must_use]
     pub fn security(&self) -> Security<'_> {
         Security::new(self)
+    }
+
+    /// Returns access to application and Compose Schedule operations.
+    #[must_use]
+    pub fn schedules(&self) -> Schedules<'_> {
+        Schedules::new(self)
     }
 
     /// Returns access to MySQL read and mutation operations.
@@ -1023,6 +1035,159 @@ impl Dokploy {
         validate_generated_request(SECURITY_DELETE, &request)?;
 
         self.mutate_body_ok(SECURITY_DELETE, &request.body).await
+    }
+
+    pub(crate) async fn schedule_get(&self, schedule_id: &str) -> Result<ScheduleDetails, Error> {
+        let request = ScheduleOneRequest {
+            query: ScheduleOneRequestQuery {
+                schedule_id: schedule_id.to_owned(),
+            },
+        };
+        validate_generated_request(SCHEDULE_ONE, &request)?;
+        let details: ScheduleDetails = self
+            .read_query_json_secret(SCHEDULE_ONE, &request.query)
+            .await?;
+        if !details.is_valid() || details.schedule_id.as_str() != schedule_id {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_ONE.operation(),
+            });
+        }
+        let collection = self.schedules_by_target(&details.target).await?;
+        let matching = collection
+            .schedules()
+            .iter()
+            .find(|schedule| schedule.schedule_id.as_str() == schedule_id);
+        if matching != Some(&details) {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_ONE.operation(),
+            });
+        }
+
+        Ok(details)
+    }
+
+    pub(crate) async fn schedules_by_target(
+        &self,
+        target: &ScheduleTarget,
+    ) -> Result<ScheduleCollection, Error> {
+        if !target.is_valid() {
+            return Err(invalid_request(
+                SCHEDULE_LIST.operation(),
+                "Schedule target fields are invalid",
+            ));
+        }
+        let schedule_type = match target {
+            ScheduleTarget::Application(_) => ScheduleCreateRequestBodyScheduleType::Application,
+            ScheduleTarget::Compose { .. } => ScheduleCreateRequestBodyScheduleType::Compose,
+        };
+        let request = ScheduleListRequest {
+            query: ScheduleListRequestQuery {
+                id: target.id().to_owned(),
+                schedule_type,
+            },
+        };
+        validate_generated_request(SCHEDULE_LIST, &request)?;
+        let schedules: Vec<ScheduleDetails> = self
+            .read_query_json_secret(SCHEDULE_LIST, &request.query)
+            .await?;
+        let mut seen_ids = HashSet::new();
+        let mut seen_names = HashSet::new();
+        let contradictory = schedules.len() > SCHEDULE_LIST_ITEM_LIMIT
+            || schedules.iter().any(|schedule| {
+                !schedule.is_valid()
+                    || schedule.target != *target
+                    || !seen_ids.insert(schedule.schedule_id.as_str().to_owned())
+                    || !seen_names.insert(schedule.name.clone())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_LIST.operation(),
+            });
+        }
+
+        Ok(ScheduleCollection::new(target.clone(), schedules))
+    }
+
+    pub(crate) async fn schedule_create(
+        &self,
+        input: CreateSchedule,
+    ) -> Result<CreatedSchedule, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                SCHEDULE_CREATE.operation(),
+                "Schedule create fields are invalid",
+            ));
+        }
+        let before = self.schedules_by_target(input.target()).await?;
+        if before
+            .schedules()
+            .iter()
+            .any(|schedule| schedule.name == input.name())
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_CREATE.operation(),
+            });
+        }
+
+        let created: ScheduleDetails = self
+            .mutate_body_json_secret(SCHEDULE_CREATE, &input)
+            .await
+            .map_err(|error| mutation_decode_unknown(SCHEDULE_CREATE, error))?;
+        if !input.matches(&created) {
+            return Err(post_mutation_proof_unknown(SCHEDULE_CREATE));
+        }
+        let after = self
+            .schedules_by_target(input.target())
+            .await
+            .map_err(|_| post_mutation_proof_unknown(SCHEDULE_CREATE))?;
+        let matching = after.schedules().iter().find(|schedule| {
+            schedule.schedule_id == created.schedule_id && schedule.name == created.name
+        });
+        if matching != Some(&created) {
+            return Err(post_mutation_proof_unknown(SCHEDULE_CREATE));
+        }
+
+        Ok(CreatedSchedule::new(created.schedule_id))
+    }
+
+    pub(crate) async fn schedule_update(&self, input: UpdateSchedule) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                SCHEDULE_UPDATE.operation(),
+                "Schedule update fields are invalid",
+            ));
+        }
+        let updated: ScheduleDetails = self
+            .mutate_body_json_secret(SCHEDULE_UPDATE, &input)
+            .await
+            .map_err(|error| mutation_decode_unknown(SCHEDULE_UPDATE, error))?;
+        if !input.matches(&updated) {
+            return Err(post_mutation_proof_unknown(SCHEDULE_UPDATE));
+        }
+        let after = self
+            .schedules_by_target(input.target())
+            .await
+            .map_err(|_| post_mutation_proof_unknown(SCHEDULE_UPDATE))?;
+        let matching = after
+            .schedules()
+            .iter()
+            .find(|schedule| schedule.schedule_id == updated.schedule_id);
+        if matching != Some(&updated) {
+            return Err(post_mutation_proof_unknown(SCHEDULE_UPDATE));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn schedule_delete(&self, schedule_id: ScheduleId) -> Result<(), Error> {
+        let request = ScheduleDeleteRequest {
+            body: ScheduleIdRequestBody {
+                schedule_id: schedule_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(SCHEDULE_DELETE, &request)?;
+
+        self.mutate_body_ok(SCHEDULE_DELETE, &request.body).await
     }
 
     pub(crate) async fn environment_get(
@@ -1850,6 +2015,17 @@ impl Dokploy {
         decode_json_response(endpoint, response).await
     }
 
+    async fn read_query_json_secret<T, Q>(&self, endpoint: Endpoint, query: &Q) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+        Q: Serialize + ?Sized,
+    {
+        let builder = self.request(endpoint).query(query);
+        let response = self.send(endpoint, builder).await?;
+
+        decode_json_response_secret(endpoint, response).await
+    }
+
     async fn mutate_body_json<T, B>(&self, endpoint: Endpoint, body: &B) -> Result<T, Error>
     where
         T: DeserializeOwned,
@@ -2024,6 +2200,14 @@ fn post_mutation_proof_unknown(endpoint: Endpoint) -> Error {
     }
 }
 
+fn mutation_decode_unknown(endpoint: Endpoint, error: Error) -> Error {
+    if matches!(error, Error::Decode { .. }) {
+        return post_mutation_proof_unknown(endpoint);
+    }
+
+    error
+}
+
 fn operation_url(base_url: &Url, endpoint: Endpoint) -> Url {
     let mut url = base_url.clone();
     url.path_segments_mut()
@@ -2083,6 +2267,26 @@ where
     }
 
     Err(Error::Api(decode_dokploy_error(status, &bytes)))
+}
+
+async fn decode_json_response_secret<T>(endpoint: Endpoint, response: Response) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+{
+    let status = response.status();
+    if !status.is_success() {
+        return Err(Error::Api(sanitized_dokploy_error(status)));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|source| transport_error(endpoint, source))?;
+    let bytes = Zeroizing::new(bytes.to_vec());
+
+    serde_json::from_slice(&bytes).map_err(|source| Error::Decode {
+        operation: endpoint.operation(),
+        source,
+    })
 }
 
 async fn decode_raw_response(

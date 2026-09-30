@@ -1,0 +1,30 @@
+{
+  "capturedAt": "2026-09-30",
+  "cleanupEvidence": {
+    "applicationSchedulesEmpty": true,
+    "composeSchedulesEmpty": true,
+    "projectOneStatus": 404
+  },
+  "collisionKey": "target+name",
+  "createIdentity": {
+    "direct": true,
+    "parentVerified": true
+  },
+  "deployed": false,
+  "executableTextVerifiedPrivately": true,
+  "executed": false,
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "privilegedTargetsSupported": false,
+  "role": "owner",
+  "sanitized": true,
+  "supportedTargets": [
+    "application",
+    "compose"
+  ],
+  "update": {
+    "allSafeMutableFieldsPersisted": true,
+    "enabled": false,
+    "parentVerified": true
+  },
+  "version": "v0.30.6"
+}

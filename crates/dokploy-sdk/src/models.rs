@@ -50,6 +50,7 @@ identifier!(RedirectId);
 identifier!(RedisId);
 identifier!(DomainId);
 identifier!(SecurityId);
+identifier!(ScheduleId);
 identifier!(ServerId);
 
 const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32";
@@ -701,6 +702,314 @@ impl Serialize for UpdateSecurity {
         body.serialize_field("securityId", self.security_id.as_str())?;
         body.serialize_field("username", &self.username)?;
         body.serialize_field("password", self.password.as_str())?;
+        body.end()
+    }
+}
+
+/// The shell used to execute one Schedule command.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShellType {
+    /// Execute with Bash.
+    Bash,
+    /// Execute with POSIX `sh`.
+    Sh,
+}
+
+/// The exact undeployed service target that owns a Schedule.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ScheduleTarget {
+    /// Run against one application.
+    Application(ApplicationId),
+    /// Run against one named service in a Compose record.
+    Compose {
+        /// The owning Compose identity.
+        compose_id: ComposeId,
+        /// The service key inside the Compose document.
+        service_name: String,
+    },
+}
+
+impl ScheduleTarget {
+    pub(crate) fn is_valid(&self) -> bool {
+        match self {
+            Self::Application(application_id) => !application_id.as_str().is_empty(),
+            Self::Compose {
+                compose_id,
+                service_name,
+            } => !compose_id.as_str().is_empty() && !service_name.is_empty(),
+        }
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::Application(application_id) => application_id.as_str(),
+            Self::Compose { compose_id, .. } => compose_id.as_str(),
+        }
+    }
+}
+
+/// Complete inputs required to create one Schedule.
+pub struct CreateSchedule {
+    target: ScheduleTarget,
+    name: String,
+    description: Option<String>,
+    cron_expression: String,
+    shell_type: ShellType,
+    command: Zeroizing<String>,
+    script: Option<Zeroizing<String>>,
+    enabled: bool,
+    timezone: Option<String>,
+}
+
+impl CreateSchedule {
+    /// Creates one disabled or enabled Schedule for an explicit supported target.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        target: ScheduleTarget,
+        name: impl Into<String>,
+        description: Option<String>,
+        cron_expression: impl Into<String>,
+        shell_type: ShellType,
+        command: Zeroizing<String>,
+        script: Option<Zeroizing<String>>,
+        enabled: bool,
+        timezone: Option<String>,
+    ) -> Self {
+        Self {
+            target,
+            name: name.into(),
+            description,
+            cron_expression: cron_expression.into(),
+            shell_type,
+            command,
+            script,
+            enabled,
+            timezone,
+        }
+    }
+
+    pub(crate) const fn target(&self) -> &ScheduleTarget {
+        &self.target
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        self.target.is_valid()
+            && !self.name.is_empty()
+            && !self.cron_expression.is_empty()
+            && !self.command.is_empty()
+            && self.script.as_ref().is_none_or(|script| !script.is_empty())
+            && self
+                .timezone
+                .as_ref()
+                .is_none_or(|timezone| !timezone.is_empty())
+    }
+
+    pub(crate) fn matches(&self, details: &ScheduleDetails) -> bool {
+        details.is_valid()
+            && details.target == self.target
+            && details.name == self.name
+            && details.description == self.description
+            && details.cron_expression == self.cron_expression
+            && details.shell_type == self.shell_type
+            && details.command_present
+            && details.script_present == self.script.is_some()
+            && details.enabled == self.enabled
+            && details.timezone == self.timezone
+    }
+}
+
+impl fmt::Debug for CreateSchedule {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateSchedule")
+            .field("target", &self.target)
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field("cron_expression", &self.cron_expression)
+            .field("shell_type", &self.shell_type)
+            .field("command", &"[REDACTED]")
+            .field("script", &self.script.as_ref().map(|_| "[REDACTED]"))
+            .field("enabled", &self.enabled)
+            .field("timezone", &self.timezone)
+            .finish()
+    }
+}
+
+impl Serialize for CreateSchedule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let field_count = match self.target {
+            ScheduleTarget::Application(_) => 10,
+            ScheduleTarget::Compose { .. } => 11,
+        };
+        let mut body = serializer.serialize_struct("CreateSchedule", field_count)?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("description", &self.description)?;
+        body.serialize_field("cronExpression", &self.cron_expression)?;
+        body.serialize_field("shellType", &self.shell_type)?;
+        body.serialize_field("command", self.command.as_str())?;
+        body.serialize_field(
+            "script",
+            &self.script.as_ref().map(|script| script.as_str()),
+        )?;
+        body.serialize_field("enabled", &self.enabled)?;
+        body.serialize_field("timezone", &self.timezone)?;
+        match &self.target {
+            ScheduleTarget::Application(application_id) => {
+                body.serialize_field("scheduleType", "application")?;
+                body.serialize_field("applicationId", application_id.as_str())?;
+            }
+            ScheduleTarget::Compose {
+                compose_id,
+                service_name,
+            } => {
+                body.serialize_field("scheduleType", "compose")?;
+                body.serialize_field("composeId", compose_id.as_str())?;
+                body.serialize_field("serviceName", service_name)?;
+            }
+        }
+        body.end()
+    }
+}
+
+/// Physical identity returned after Dokploy creates a Schedule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedSchedule {
+    schedule_id: ScheduleId,
+}
+
+impl CreatedSchedule {
+    pub(crate) fn new(schedule_id: ScheduleId) -> Self {
+        Self { schedule_id }
+    }
+
+    /// Returns the new Schedule identity.
+    #[must_use]
+    pub const fn schedule_id(&self) -> &ScheduleId {
+        &self.schedule_id
+    }
+}
+
+/// Every safely mutable field required by Dokploy's Schedule update.
+pub struct UpdateSchedule {
+    schedule_id: ScheduleId,
+    target: ScheduleTarget,
+    name: String,
+    description: Option<String>,
+    cron_expression: String,
+    shell_type: ShellType,
+    command: Zeroizing<String>,
+    script: Option<Zeroizing<String>>,
+    enabled: bool,
+    timezone: Option<String>,
+}
+
+impl UpdateSchedule {
+    /// Replaces every mutable field without changing the target or service.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        schedule_id: ScheduleId,
+        target: ScheduleTarget,
+        name: impl Into<String>,
+        description: Option<String>,
+        cron_expression: impl Into<String>,
+        shell_type: ShellType,
+        command: Zeroizing<String>,
+        script: Option<Zeroizing<String>>,
+        enabled: bool,
+        timezone: Option<String>,
+    ) -> Self {
+        Self {
+            schedule_id,
+            target,
+            name: name.into(),
+            description,
+            cron_expression: cron_expression.into(),
+            shell_type,
+            command,
+            script,
+            enabled,
+            timezone,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.schedule_id.as_str().is_empty()
+            && self.target.is_valid()
+            && !self.name.is_empty()
+            && !self.cron_expression.is_empty()
+            && !self.command.is_empty()
+            && self.script.as_ref().is_none_or(|script| !script.is_empty())
+            && self
+                .timezone
+                .as_ref()
+                .is_none_or(|timezone| !timezone.is_empty())
+    }
+
+    pub(crate) const fn target(&self) -> &ScheduleTarget {
+        &self.target
+    }
+
+    pub(crate) fn matches(&self, details: &ScheduleDetails) -> bool {
+        details.is_valid()
+            && details.schedule_id == self.schedule_id
+            && details.target == self.target
+            && details.name == self.name
+            && details.description == self.description
+            && details.cron_expression == self.cron_expression
+            && details.shell_type == self.shell_type
+            && details.command_present
+            && details.script_present == self.script.is_some()
+            && details.enabled == self.enabled
+            && details.timezone == self.timezone
+    }
+}
+
+impl fmt::Debug for UpdateSchedule {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateSchedule")
+            .field("schedule_id", &self.schedule_id)
+            .field("target", &self.target)
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field("cron_expression", &self.cron_expression)
+            .field("shell_type", &self.shell_type)
+            .field("command", &"[REDACTED]")
+            .field("script", &self.script.as_ref().map(|_| "[REDACTED]"))
+            .field("enabled", &self.enabled)
+            .field("timezone", &self.timezone)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateSchedule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("UpdateSchedule", 9)?;
+        body.serialize_field("scheduleId", self.schedule_id.as_str())?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("description", &self.description)?;
+        body.serialize_field("cronExpression", &self.cron_expression)?;
+        body.serialize_field("shellType", &self.shell_type)?;
+        body.serialize_field("command", self.command.as_str())?;
+        body.serialize_field(
+            "script",
+            &self.script.as_ref().map(|script| script.as_str()),
+        )?;
+        body.serialize_field("enabled", &self.enabled)?;
+        body.serialize_field("timezone", &self.timezone)?;
         body.end()
     }
 }
@@ -3296,6 +3605,155 @@ pub(crate) struct ApplicationSecurityCollectionResponse {
     pub(crate) entries: Vec<SecurityDetails>,
 }
 
+/// A safe Schedule returned by direct or target-scoped read operations.
+///
+/// Command and script bytes are consumed during decoding, zeroized when owned,
+/// and represented only by presence flags.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScheduleDetails {
+    pub schedule_id: ScheduleId,
+    pub target: ScheduleTarget,
+    pub name: String,
+    pub description: Option<String>,
+    pub cron_expression: String,
+    pub shell_type: ShellType,
+    pub command_present: bool,
+    pub script_present: bool,
+    pub enabled: bool,
+    pub timezone: Option<String>,
+}
+
+impl ScheduleDetails {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.schedule_id.as_str().is_empty()
+            && self.target.is_valid()
+            && !self.name.is_empty()
+            && !self.cron_expression.is_empty()
+            && self.command_present
+            && self
+                .timezone
+                .as_ref()
+                .is_none_or(|timezone| !timezone.is_empty())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleResponse {
+    schedule_id: ScheduleId,
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    cron_expression: String,
+    shell_type: ShellType,
+    schedule_type: ScheduleTypeResponse,
+    #[serde(default)]
+    application_id: Option<ApplicationId>,
+    #[serde(default)]
+    compose_id: Option<ComposeId>,
+    #[serde(default)]
+    server_id: Option<ServerId>,
+    #[serde(default)]
+    service_name: Option<String>,
+    #[serde(rename = "command", deserialize_with = "deserialize_secret_presence")]
+    command_present: bool,
+    #[serde(
+        default,
+        rename = "script",
+        deserialize_with = "deserialize_secret_presence"
+    )]
+    script_present: bool,
+    enabled: bool,
+    #[serde(default)]
+    timezone: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum ScheduleTypeResponse {
+    Application,
+    Compose,
+    Server,
+    DokployServer,
+}
+
+impl<'de> Deserialize<'de> for ScheduleDetails {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let response = ScheduleResponse::deserialize(deserializer)?;
+        let target = match response.schedule_type {
+            ScheduleTypeResponse::Application => match (
+                response.application_id,
+                response.compose_id,
+                response.server_id,
+                response.service_name.as_deref(),
+            ) {
+                (Some(application_id), None, None, None | Some("")) => {
+                    ScheduleTarget::Application(application_id)
+                }
+                _ => return Err(de::Error::custom("invalid application Schedule target")),
+            },
+            ScheduleTypeResponse::Compose => match (
+                response.application_id,
+                response.compose_id,
+                response.server_id,
+                response.service_name,
+            ) {
+                (None, Some(compose_id), None, Some(service_name)) if !service_name.is_empty() => {
+                    ScheduleTarget::Compose {
+                        compose_id,
+                        service_name,
+                    }
+                }
+                _ => return Err(de::Error::custom("invalid Compose Schedule target")),
+            },
+            ScheduleTypeResponse::Server | ScheduleTypeResponse::DokployServer => {
+                return Err(de::Error::custom("unsupported privileged Schedule target"));
+            }
+        };
+
+        Ok(Self {
+            schedule_id: response.schedule_id,
+            target,
+            name: response.name,
+            description: response.description,
+            cron_expression: response.cron_expression,
+            shell_type: response.shell_type,
+            command_present: response.command_present,
+            script_present: response.script_present,
+            enabled: response.enabled,
+            timezone: response.timezone,
+        })
+    }
+}
+
+/// The complete bounded Schedule collection for one exact supported target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScheduleCollection {
+    target: ScheduleTarget,
+    schedules: Vec<ScheduleDetails>,
+}
+
+impl ScheduleCollection {
+    pub(crate) fn new(target: ScheduleTarget, schedules: Vec<ScheduleDetails>) -> Self {
+        Self { target, schedules }
+    }
+
+    /// Returns the exact target whose Schedule collection was read.
+    #[must_use]
+    pub const fn target(&self) -> &ScheduleTarget {
+        &self.target
+    }
+
+    /// Returns every Schedule authoritatively reported for the target.
+    #[must_use]
+    pub fn schedules(&self) -> &[ScheduleDetails] {
+        &self.schedules
+    }
+}
+
 fn deserialize_secret_presence<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'de>,
@@ -3306,7 +3764,7 @@ where
         type Value = bool;
 
         fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-            formatter.write_str("a plaintext password string or null")
+            formatter.write_str("a plaintext secret string or null")
         }
 
         fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
