@@ -19,7 +19,7 @@ use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
     JournalAction, JournalError, ManagedInputs, OperationJournal, PlanDigest, RemoteId,
     ResourceAddress, ResourceKind, ResourceState, StateError, StateFile, StateStore,
-    StateStoreError,
+    StateStoreError, StepToken,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -329,7 +329,7 @@ async fn apply_workspace_with_expectation(
                     Ok(created) => created,
                     Err(error) => {
                         let code = failure_code(&error);
-                        journal.fail(token, code)?;
+                        fail_if_definitive(&mut journal, token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
@@ -384,7 +384,7 @@ async fn apply_workspace_with_expectation(
                         )?;
                         if let Err(error) = client.environments().update(input).await {
                             let code = failure_code(&error);
-                            journal.fail(update_token, code)?;
+                            fail_if_definitive(&mut journal, update_token, code)?;
                             return Err(ApplyWorkspaceError::RemoteMutation { code });
                         }
                         state.upsert_resource(change.address().clone(), resource)?;
@@ -408,7 +408,7 @@ async fn apply_workspace_with_expectation(
                         Ok(created) => created,
                         Err(error) => {
                             let code = failure_code(&error);
-                            journal.fail(token, code)?;
+                            fail_if_definitive(&mut journal, token, code)?;
                             return Err(ApplyWorkspaceError::RemoteMutation { code });
                         }
                     };
@@ -432,7 +432,7 @@ async fn apply_workspace_with_expectation(
                     Ok(created) => created,
                     Err(error) => {
                         let code = failure_code(&error);
-                        journal.fail(token, code)?;
+                        fail_if_definitive(&mut journal, token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
@@ -474,7 +474,7 @@ async fn apply_workspace_with_expectation(
                     )?;
                     if let Err(error) = client.applications().update(update).await {
                         let code = failure_code(&error);
-                        journal.fail(update_token, code)?;
+                        fail_if_definitive(&mut journal, update_token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                     state.upsert_resource(change.address().clone(), resource.clone())?;
@@ -492,7 +492,7 @@ async fn apply_workspace_with_expectation(
                             .await
                         {
                             let code = failure_code(&error);
-                            journal.fail(deploy_token, code)?;
+                            fail_if_definitive(&mut journal, deploy_token, code)?;
                             return Err(ApplyWorkspaceError::RemoteMutation { code });
                         }
                         state.upsert_resource(change.address().clone(), resource)?;
@@ -524,7 +524,7 @@ async fn apply_workspace_with_expectation(
                     Ok(created) => created,
                     Err(error) => {
                         let code = failure_code(&error);
-                        journal.fail(token, code)?;
+                        fail_if_definitive(&mut journal, token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
@@ -557,7 +557,7 @@ async fn apply_workspace_with_expectation(
                     Ok(created) => created,
                     Err(error) => {
                         let code = failure_code(&error);
-                        journal.fail(token, code)?;
+                        fail_if_definitive(&mut journal, token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
@@ -577,7 +577,7 @@ async fn apply_workspace_with_expectation(
                     Ok(created) => created,
                     Err(error) => {
                         let code = failure_code(&error);
-                        journal.fail(token, code)?;
+                        fail_if_definitive(&mut journal, token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
@@ -599,7 +599,7 @@ async fn apply_workspace_with_expectation(
                     Ok(created) => created,
                     Err(error) => {
                         let code = failure_code(&error);
-                        journal.fail(token, code)?;
+                        fail_if_definitive(&mut journal, token, code)?;
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
@@ -697,7 +697,7 @@ async fn execute_move_change(
             .await?;
             if let Err(error) = mutation.execute(client).await {
                 let code = failure_code(&error);
-                journal.fail(token, code)?;
+                fail_if_definitive(journal, token, code)?;
                 return Err(ApplyWorkspaceError::RemoteMutation { code });
             }
         } else if !selected_paths.is_empty() {
@@ -721,7 +721,7 @@ async fn execute_move_change(
                 .await
             {
                 let code = failure_code(&error);
-                journal.fail(token, code)?;
+                fail_if_definitive(journal, token, code)?;
                 return Err(ApplyWorkspaceError::RemoteMutation { code });
             }
             state.upsert_resource(source.clone(), source_target)?;
@@ -896,7 +896,7 @@ async fn execute_removal_change(
             && !is_already_missing(&error)
         {
             let code = failure_code(&error);
-            journal.fail(token, code)?;
+            fail_if_definitive(journal, token, code)?;
             return Err(ApplyWorkspaceError::RemoteMutation { code });
         }
     }
@@ -1316,7 +1316,7 @@ async fn execute_database_batch(
             }
             Err(error) => {
                 let code = error.code();
-                journal.fail(token, code)?;
+                fail_if_definitive(journal, token, code)?;
                 first_failure.get_or_insert(code);
             }
         }
@@ -1734,7 +1734,7 @@ async fn execute_existing_change(
     )?;
     if let Err(error) = mutation.execute(client).await {
         let code = failure_code(&error);
-        journal.fail(token, code)?;
+        fail_if_definitive(journal, token, code)?;
         return Err(ApplyWorkspaceError::RemoteMutation { code });
     }
     state.upsert_resource(change.address().clone(), resource.clone())?;
@@ -1754,7 +1754,7 @@ async fn execute_existing_change(
             .await
         {
             let code = failure_code(&error);
-            journal.fail(token, code)?;
+            fail_if_definitive(journal, token, code)?;
             return Err(ApplyWorkspaceError::RemoteMutation { code });
         }
         state.upsert_resource(change.address().clone(), resource)?;
@@ -1859,6 +1859,18 @@ fn hex_digest(bytes: [u8; 32]) -> String {
             write!(hex, "{byte:02x}").expect("writing to a string cannot fail");
             hex
         })
+}
+
+fn fail_if_definitive(
+    journal: &mut OperationJournal<'_, '_>,
+    token: StepToken,
+    code: FailureCode,
+) -> Result<(), JournalError> {
+    if code == FailureCode::TransportOutcomeUnknown {
+        return Ok(());
+    }
+
+    journal.fail(token, code)
 }
 
 fn failure_code(error: &SdkError) -> FailureCode {

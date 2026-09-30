@@ -290,6 +290,83 @@ async fn mysql_create_metadata_update_and_delete_are_checkpointed_without_secret
 }
 
 #[tokio::test]
+async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("mysql-user"), "unknown-user-password-canary")
+        .expect("MySQL user secret fixture is writable");
+    fs::write(secrets.join("mysql-root"), "unknown-root-password-canary")
+        .expect("MySQL root secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mysql:\n",
+            "      main:\n",
+            "        database: app\n",
+            "        username: app\n",
+            "        password:\n",
+            "          file: .secrets/mysql-user\n",
+            "        root_password:\n",
+            "          file: .secrets/mysql-root\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace(&server.client(), &config)
+        .await
+        .expect_err("an interrupted create has an unknown outcome");
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
+        }
+    ));
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    match store.recovery_status().expect("journal scan succeeds") {
+        RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
+            summary.reason(),
+            &dokploy_state::RecoveryReason::StepInProgress
+        ),
+        RecoveryStatus::Clean => panic!("unknown create outcome must require recovery"),
+    }
+    assert!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&"mysql.main".parse().unwrap())
+            .is_none()
+    );
+    let journal = fs::read_dir(directory.path().join(".dokploy/journal"))
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.ok()?.path();
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+                .then(|| fs::read_to_string(path).unwrap())
+        })
+        .expect("journal exists");
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("unknown-user-password-canary"));
+    assert!(!journal.contains("unknown-root-password-canary"));
+    assert_eq!(server.finish().len(), 3);
+}
+
+#[tokio::test]
 async fn redis_password_rotation_uses_the_new_one_shot_secret_value() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", "[]"),
@@ -465,6 +542,32 @@ impl TestServer {
                 write_response(&mut stream, status, body);
             }
 
+            sender.send(received).expect("test receives requests");
+        });
+
+        Self {
+            url: format!("http://{address}"),
+            requests,
+            thread,
+        }
+    }
+
+    fn respond_then_drop(responses: Vec<(&'static str, &'static str)>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+        let address = listener.local_addr().expect("test server has an address");
+        let (sender, requests) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let mut received = Vec::new();
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().expect("test server accepts a request");
+                received.push(read_request(&mut stream));
+                write_response(&mut stream, status, body);
+            }
+            let (mut stream, _) = listener
+                .accept()
+                .expect("test server accepts the interrupted mutation");
+            received.push(read_request(&mut stream));
+            drop(stream);
             sender.send(received).expect("test receives requests");
         });
 
