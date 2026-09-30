@@ -29,15 +29,16 @@ use dokploy_api::{
     MongoSearchRequestQuery, MountIdRequestBody, MountsListByServiceIdRequest,
     MountsListByServiceIdRequestQuery, MountsOneRequest, MountsOneRequestQuery,
     MountsRemoveRequest, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
-    MysqlRemoveRequest, MysqlSearchRequest, MysqlSearchRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
-    POSTGRES_REMOVE, POSTGRES_SEARCH, POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE,
-    PROJECT_REMOVE, PROJECT_UPDATE, PostgresIdRequestBody, PostgresOneRequest,
-    PostgresOneRequestQuery, PostgresRemoveRequest, PostgresSearchRequest,
-    PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest, ProjectCreateRequestBody,
-    ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery, ProjectRemoveRequest,
-    REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE, RedisIdRequestBody,
-    RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest, RedisSearchRequest,
-    RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    MysqlRemoveRequest, MysqlSearchRequest, MysqlSearchRequestQuery, PORT_CREATE, PORT_DELETE,
+    PORT_ONE, PORT_UPDATE, POSTGRES_CREATE, POSTGRES_ONE, POSTGRES_REMOVE, POSTGRES_SEARCH,
+    POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PROJECT_REMOVE, PROJECT_UPDATE,
+    PortDeleteRequest, PortIdRequestBody, PortOneRequest, PortOneRequestQuery,
+    PostgresIdRequestBody, PostgresOneRequest, PostgresOneRequestQuery, PostgresRemoveRequest,
+    PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest, ProjectCreateRequest,
+    ProjectCreateRequestBody, ProjectIdRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
+    ProjectRemoveRequest, REDIS_CREATE, REDIS_ONE, REDIS_REMOVE, REDIS_SEARCH, REDIS_UPDATE,
+    RedisIdRequestBody, RedisOneRequest, RedisOneRequestQuery, RedisRemoveRequest,
+    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -52,30 +53,33 @@ use crate::imperative::{
 };
 use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
-    ApplicationEnvironmentDocument, ApplicationEnvironmentResponse, ApplicationSearchPage,
-    ComposeCollection, ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DomainCollection,
+    ApplicationEnvironmentDocument, ApplicationEnvironmentResponse,
+    ApplicationPortCollectionResponse, ApplicationSearchPage, ComposeCollection,
+    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DomainCollection,
     DomainCreateResponse, DomainDetails, EnvironmentCollection, EnvironmentCreateResponse,
     EnvironmentDetails, LibSqlCollection, LibSqlDetails, MariaDbCollection, MariaDbCreateResponse,
     MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
     MongoSearchPage, MountCollection, MountDetails, MySqlCollection, MySqlCreateResponse,
-    MySqlDetails, MySqlSearchPage, PostgresCollection, PostgresCreateResponse, PostgresDetails,
-    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
-    RedisCreateResponse, RedisDetails, RedisSearchPage,
+    MySqlDetails, MySqlSearchPage, PortCollection, PortDetails, PostgresCollection,
+    PostgresCreateResponse, PostgresDetails, PostgresSearchPage, ProjectCreateResponse,
+    ProjectDetails, ProjectTopology, RedisCollection, RedisCreateResponse, RedisDetails,
+    RedisSearchPage,
 };
 use crate::services::{
-    Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Postgres,
-    Projects, Redis,
+    Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, Mounts, MySql, Ports,
+    Postgres, Projects, Redis,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
     ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
     CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount,
-    CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedCompose,
-    CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount,
-    CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, DomainId, EnvironmentId, LibSqlId,
-    MariaDbId, MongoId, MountId, MySqlId, PostgresId, ProjectId, RedisId, ServiceTarget,
-    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
-    UpdateMongo, UpdateMount, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
+    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedis, CreatedApplication,
+    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
+    CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres, CreatedProject, CreatedRedis,
+    DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId, PortId, PostgresId,
+    ProjectId, RedisId, ServiceTarget, UpdateApplication, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
+    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -91,6 +95,7 @@ const MARIADB_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MONGO_SEARCH_PAGE_SIZE: usize = 100;
 const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MOUNT_LIST_ITEM_LIMIT: usize = 10_000;
+const PORT_LIST_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -171,6 +176,12 @@ impl Dokploy {
     #[must_use]
     pub fn mounts(&self) -> Mounts<'_> {
         Mounts::new(self)
+    }
+
+    /// Returns access to application Port read and mutation operations.
+    #[must_use]
+    pub fn ports(&self) -> Ports<'_> {
+        Ports::new(self)
     }
 
     /// Returns access to MySQL read and mutation operations.
@@ -618,6 +629,92 @@ impl Dokploy {
         validate_generated_request(MOUNTS_REMOVE, &request)?;
 
         self.mutate_body_ok(MOUNTS_REMOVE, &request.body).await
+    }
+
+    pub(crate) async fn port_get(&self, port_id: &str) -> Result<PortDetails, Error> {
+        let request = PortOneRequest {
+            query: PortOneRequestQuery {
+                port_id: port_id.to_owned(),
+            },
+        };
+        validate_generated_request(PORT_ONE, &request)?;
+        let details: PortDetails = self.read_query_json(PORT_ONE, &request.query).await?;
+        if !details.is_valid() || details.port_id.as_str() != port_id {
+            return Err(Error::UnexpectedResponse {
+                operation: PORT_ONE.operation(),
+            });
+        }
+
+        Ok(details)
+    }
+
+    pub(crate) async fn ports_by_application(
+        &self,
+        application_id: &ApplicationId,
+    ) -> Result<PortCollection, Error> {
+        let request = ApplicationOneRequest {
+            query: ApplicationOneRequestQuery {
+                application_id: application_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(APPLICATION_ONE, &request)?;
+        let response: ApplicationPortCollectionResponse = self
+            .read_query_json(APPLICATION_ONE, &request.query)
+            .await?;
+        let mut seen_ids = HashSet::new();
+        let contradictory = response.application_id != *application_id
+            || response.ports.len() > PORT_LIST_ITEM_LIMIT
+            || response.ports.iter().any(|port| {
+                !port.is_valid()
+                    || port.application_id != *application_id
+                    || !seen_ids.insert(port.port_id.as_str().to_owned())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: APPLICATION_ONE.operation(),
+            });
+        }
+
+        Ok(PortCollection::new(response.application_id, response.ports))
+    }
+
+    pub(crate) async fn port_create(&self, input: CreatePort) -> Result<CreatedPort, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                PORT_CREATE.operation(),
+                "Port create fields are invalid",
+            ));
+        }
+        let response: PortDetails = self.mutate_body_json(PORT_CREATE, &input).await?;
+        if !input.matches(&response) {
+            return Err(Error::UnexpectedResponse {
+                operation: PORT_CREATE.operation(),
+            });
+        }
+
+        Ok(CreatedPort::new(response.port_id))
+    }
+
+    pub(crate) async fn port_update(&self, input: UpdatePort) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                PORT_UPDATE.operation(),
+                "Port update fields are invalid",
+            ));
+        }
+
+        self.mutate_body_ok(PORT_UPDATE, &input).await
+    }
+
+    pub(crate) async fn port_delete(&self, port_id: PortId) -> Result<(), Error> {
+        let request = PortDeleteRequest {
+            body: PortIdRequestBody {
+                port_id: port_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(PORT_DELETE, &request)?;
+
+        self.mutate_body_ok(PORT_DELETE, &request.body).await
     }
 
     pub(crate) async fn environment_get(

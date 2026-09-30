@@ -124,6 +124,20 @@ required_mount_fixtures=(
     "mount-contract.metadata.json"
 )
 
+required_port_fixtures=(
+    "port-create.owner.json"
+    "port-one.created.owner.json"
+    "application-one.port-created.owner.json"
+    "port-update.owner.json"
+    "port-one.updated.owner.json"
+    "application-one.port-updated.owner.json"
+    "port-delete.owner.json"
+    "port-one.deleted.owner.json"
+    "application-one.port-deleted.owner.json"
+    "project-one.port-deleted.owner.json"
+    "port-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -176,6 +190,13 @@ done
 for fixture_name in "${required_mount_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Mount contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_port_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Port contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1004,6 +1025,101 @@ fi
 
 if grep -R -E -q 'mount-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Mount project name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .portId == "port-1"
+    and .applicationId == "application-1"
+    and .publishedPort == 18080
+    and .targetPort == 8080
+    and .publishMode == "ingress"
+    and .protocol == "tcp"
+' "$versioned_fixture_directory/port-one.created.owner.json" >/dev/null; then
+    echo "Port detail fixture does not preserve the typed creation contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationId == "application-1"
+    and (.ports | length) == 1
+    and .ports[0].portId == "port-1"
+    and .ports[0].applicationId == "application-1"
+' "$versioned_fixture_directory/application-one.port-created.owner.json" >/dev/null; then
+    echo "Port parent fixture does not prove one exact created identity." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .portId == "port-1"
+    and .applicationId == "application-1"
+    and .publishedPort == 19090
+    and .targetPort == 9090
+    and .publishMode == "host"
+    and .protocol == "udp"
+' "$versioned_fixture_directory/port-one.updated.owner.json" >/dev/null; then
+    echo "Port updated detail fixture does not preserve every mutable field." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    (.ports | length) == 1
+    and .ports[0].portId == "port-1"
+    and .ports[0].publishedPort == 19090
+    and .ports[0].targetPort == 9090
+    and .ports[0].publishMode == "host"
+    and .ports[0].protocol == "udp"
+' "$versioned_fixture_directory/application-one.port-updated.owner.json" >/dev/null; then
+    echo "Port updated parent fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "BAD_REQUEST"
+    and .data.httpStatus == 400
+    and .data.path == "port.one"
+' "$versioned_fixture_directory/port-one.deleted.owner.json" >/dev/null; then
+    echo "Port cleanup lookup fixture does not preserve the runtime 400 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.ports | length) == 0
+' "$versioned_fixture_directory/application-one.port-deleted.owner.json" >/dev/null; then
+    echo "Port cleanup parent fixture retained runtime effects." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "project.one"
+' "$versioned_fixture_directory/project-one.port-deleted.owner.json" >/dev/null; then
+    echo "Port disposable project cleanup is not proven." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .createIdentity.direct == true
+    and .createIdentity.parentVerified == true
+    and .update.allFieldsPersisted == true
+    and .update.parentVerified == true
+    and .cleanupEvidence.oneStatus == 400
+    and .cleanupEvidence.applicationPortsEmpty == true
+    and .cleanupEvidence.projectOneStatus == 404
+' "$versioned_fixture_directory/port-contract.metadata.json" >/dev/null; then
+    echo "Port metadata does not prove identity, update, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'port-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Port project name." >&2
     exit 1
 fi
 

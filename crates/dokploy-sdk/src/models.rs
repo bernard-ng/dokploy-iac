@@ -1,6 +1,7 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use std::fmt;
+use std::num::NonZeroU16;
 use zeroize::Zeroizing;
 
 /// A mutation value that distinguishes omission from an explicit JSON null.
@@ -42,6 +43,7 @@ identifier!(MariaDbId);
 identifier!(MongoId);
 identifier!(MountId);
 identifier!(MySqlId);
+identifier!(PortId);
 identifier!(PostgresId);
 identifier!(ProjectId);
 identifier!(RedisId);
@@ -340,6 +342,123 @@ impl Serialize for UpdateCompose {
             body.serialize_field("composeFile", compose_file.as_str())?;
         }
         body.end()
+    }
+}
+
+/// The network scope used when Dokploy publishes an application port.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PublishMode {
+    /// Publish through Docker Swarm's routing mesh.
+    Ingress,
+    /// Publish directly on the node that runs the task.
+    Host,
+}
+
+/// The transport protocol carried by a published application port.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PortProtocol {
+    /// Transmission Control Protocol.
+    Tcp,
+    /// User Datagram Protocol.
+    Udp,
+}
+
+/// Complete inputs required to publish one application port.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatePort {
+    application_id: ApplicationId,
+    published_port: NonZeroU16,
+    target_port: NonZeroU16,
+    publish_mode: PublishMode,
+    protocol: PortProtocol,
+}
+
+impl CreatePort {
+    /// Creates one explicit port publication for an application.
+    #[must_use]
+    pub const fn new(
+        application_id: ApplicationId,
+        published_port: NonZeroU16,
+        target_port: NonZeroU16,
+        publish_mode: PublishMode,
+        protocol: PortProtocol,
+    ) -> Self {
+        Self {
+            application_id,
+            published_port,
+            target_port,
+            publish_mode,
+            protocol,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.application_id.as_str().is_empty()
+    }
+
+    pub(crate) fn matches(&self, details: &PortDetails) -> bool {
+        !details.port_id.as_str().is_empty()
+            && details.application_id == self.application_id
+            && details.published_port == self.published_port
+            && details.target_port == self.target_port
+            && details.publish_mode == self.publish_mode
+            && details.protocol == self.protocol
+    }
+}
+
+/// Physical identity returned by Dokploy when a port is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedPort {
+    port_id: PortId,
+}
+
+impl CreatedPort {
+    pub(crate) fn new(port_id: PortId) -> Self {
+        Self { port_id }
+    }
+
+    /// Returns the new Port identity.
+    #[must_use]
+    pub const fn port_id(&self) -> &PortId {
+        &self.port_id
+    }
+}
+
+/// Complete owned fields required by Dokploy's port update operation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePort {
+    port_id: PortId,
+    published_port: NonZeroU16,
+    target_port: NonZeroU16,
+    publish_mode: PublishMode,
+    protocol: PortProtocol,
+}
+
+impl UpdatePort {
+    /// Replaces all mutable fields of one application port.
+    #[must_use]
+    pub const fn new(
+        port_id: PortId,
+        published_port: NonZeroU16,
+        target_port: NonZeroU16,
+        publish_mode: PublishMode,
+        protocol: PortProtocol,
+    ) -> Self {
+        Self {
+            port_id,
+            published_port,
+            target_port,
+            publish_mode,
+            protocol,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.port_id.as_str().is_empty()
     }
 }
 
@@ -2757,6 +2876,64 @@ impl ComposeCollection {
 pub(crate) struct ComposeSearchPage {
     pub(crate) items: Vec<ComposeSearchItem>,
     pub(crate) total: u64,
+}
+
+/// A safe complete Port record returned by Dokploy's Port operations.
+///
+/// Unknown response fields and nested application data are intentionally
+/// ignored. Both port numbers are nonzero 16-bit integers at the SDK seam.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PortDetails {
+    pub port_id: PortId,
+    pub application_id: ApplicationId,
+    pub published_port: NonZeroU16,
+    pub target_port: NonZeroU16,
+    pub publish_mode: PublishMode,
+    pub protocol: PortProtocol,
+}
+
+impl PortDetails {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.port_id.as_str().is_empty() && !self.application_id.as_str().is_empty()
+    }
+}
+
+/// The complete bounded Port collection for one exact application.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortCollection {
+    application_id: ApplicationId,
+    ports: Vec<PortDetails>,
+}
+
+impl PortCollection {
+    pub(crate) fn new(application_id: ApplicationId, ports: Vec<PortDetails>) -> Self {
+        Self {
+            application_id,
+            ports,
+        }
+    }
+
+    /// Returns the application whose Port collection was read.
+    #[must_use]
+    pub const fn application_id(&self) -> &ApplicationId {
+        &self.application_id
+    }
+
+    /// Returns every Port authoritatively reported by the application.
+    #[must_use]
+    pub fn ports(&self) -> &[PortDetails] {
+        &self.ports
+    }
+}
+
+/// Minimal parent response used to reconcile Ports through `application.one`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApplicationPortCollectionResponse {
+    pub(crate) application_id: ApplicationId,
+    #[serde(default)]
+    pub(crate) ports: Vec<PortDetails>,
 }
 
 /// A safe subset of the response returned by Mount read operations.

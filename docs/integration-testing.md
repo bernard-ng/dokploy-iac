@@ -234,6 +234,39 @@ trap removes that hierarchy after interruption and verifies authoritative
 project absence. A successful run additionally requires the application to
 remain idle, undeployed, and free of Mounts before it removes the project.
 
+## Disposable Port contract capture
+
+Capture the typed application Port contract against the pinned local instance
+with:
+
+```bash
+scripts/integration/capture-port-contract.sh
+```
+
+The command creates a disposable project and undeployed application, then
+exercises the exact `port.create`, `port.one`, `port.update`, and `port.delete`
+operations. It verifies the direct record and the authoritative `ports`
+relation from `application.one` after create and after an update that changes
+both port numbers, publish mode, and protocol. The captured request and response
+shapes preserve port numbers as JSON integers.
+
+Dokploy `v0.30.6` returns HTTP 400 from `port.one` after successful deletion.
+The capture therefore proves deletion through an empty parent collection, then
+proves the application stayed idle with no deployments and verifies project
+absence after removing the disposable hierarchy. The cleanup trap can recover
+the run's uniquely named project after an interrupted create and removes only
+that owned hierarchy.
+
+Exercise the public SDK adapter through the same undeployed lifecycle with:
+
+```bash
+scripts/integration/test-port-sdk.sh
+```
+
+The wrapper supplies the owner-only local credential only to the test process.
+It verifies create, direct and parent reads, an all-field update, delete, parent
+absence, and cleanup without deploying the application.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

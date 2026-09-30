@@ -4,19 +4,19 @@ use crate::{
     DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
     LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection, MariaDbDetails, MariaDbId,
     MongoCollection, MongoDetails, MongoId, MountCollection, MountDetails, MountId,
-    MySqlCollection, MySqlDetails, MySqlId, PostgresCollection, PostgresDetails, PostgresId,
-    ProjectDetails, ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
-    ServiceTarget,
+    MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
+    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
+    RedisCollection, RedisDetails, RedisId, ServiceTarget,
 };
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
-    CreateMongo, CreateMount, CreateMySql, CreatePostgres, CreateProject, CreateRedis,
+    CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedis,
     CreatedApplication, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
-    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPostgres, CreatedProject,
-    CreatedRedis, UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql,
-    UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePostgres, UpdateProject,
-    UpdateRedis,
+    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres,
+    CreatedProject, CreatedRedis, UpdateApplication, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
+    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -225,6 +225,45 @@ impl<'a> Mounts<'a> {
     /// Permanently removes one Mount by physical identity.
     pub async fn delete(&self, mount_id: MountId) -> Result<(), Error> {
         self.client.mount_delete(mount_id).await
+    }
+}
+
+/// Read and mutation operations for application Ports.
+pub struct Ports<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Ports<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Port from fresh remote state and validates its parent identity.
+    pub async fn get(&self, port_id: PortId) -> Result<PortDetails, Error> {
+        self.client.port_get(port_id.as_str()).await
+    }
+
+    /// Reads the authoritative bounded Port collection for one application.
+    pub async fn by_application(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<PortCollection, Error> {
+        self.client.ports_by_application(&application_id).await
+    }
+
+    /// Creates a Port and validates the complete identity returned by Dokploy.
+    pub async fn create(&self, input: CreatePort) -> Result<CreatedPort, Error> {
+        self.client.port_create(input).await
+    }
+
+    /// Replaces every mutable field of one Port without deploying its application.
+    pub async fn update(&self, input: UpdatePort) -> Result<(), Error> {
+        self.client.port_update(input).await
+    }
+
+    /// Permanently removes one Port by physical identity.
+    pub async fn delete(&self, port_id: PortId) -> Result<(), Error> {
+        self.client.port_delete(port_id).await
     }
 }
 
