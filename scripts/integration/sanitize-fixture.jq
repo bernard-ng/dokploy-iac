@@ -9,6 +9,20 @@ def normalized_scalar:
     if .value == null then . else .value = "postgres-1" end
   elif .key == "redisId" then
     if .value == null then . else .value = "redis-1" end
+  elif .key == "domainId" then
+    if .value == null then . else .value = "domain-1" end
+  elif .key == "uniqueConfigKey" then
+    if .value == null then . else .value = 1 end
+  elif .key == "host" then
+    if .value == null then
+      .
+    elif (.value | startswith("iac-domain-contract-created-")) then
+      .value = "created.domain.example.test"
+    elif (.value | startswith("iac-domain-contract-updated-")) then
+      .value = "updated.domain.example.test"
+    else
+      .
+    end
   elif .key == "mountId" then
     if .value == null then . else .value = "mount-1" end
   elif .key == "volumeName" then

@@ -23,9 +23,32 @@ required_redis_fixtures=(
     "redis-contract.metadata.json"
 )
 
+required_domain_fixtures=(
+    "domain-create.owner.json"
+    "domain-one.created.owner.json"
+    "domain-by-application.created.owner.json"
+    "application-one.domain-created.owner.json"
+    "domain-update.owner.json"
+    "domain-one.updated.owner.json"
+    "domain-by-application.updated.owner.json"
+    "application-one.domain-updated.owner.json"
+    "domain-delete.owner.json"
+    "domain-one.deleted.owner.json"
+    "domain-by-application.deleted.owner.json"
+    "application-one.domain-deleted.owner.json"
+    "domain-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_domain_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Domain contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -117,6 +140,174 @@ then
     exit 1
 fi
 
+if ! jq --exit-status '
+    .domainId == "domain-1"
+    and .applicationId == "application-1"
+    and .host == "created.domain.example.test"
+    and .domainType == "application"
+    and .port == 3000
+    and .https == false
+    and .certificateType == "none"
+    and .uniqueConfigKey == 1
+' "$versioned_fixture_directory/domain-create.owner.json" >/dev/null; then
+    echo "Domain create response fixture does not preserve the defaulted live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .domainId == "domain-1"
+    and .applicationId == "application-1"
+    and .host == "created.domain.example.test"
+    and .domainType == "application"
+    and .port == 3000
+    and .https == false
+    and .certificateType == "none"
+    and .uniqueConfigKey == 1
+' "$versioned_fixture_directory/domain-one.created.owner.json" >/dev/null; then
+    echo "Created Domain detail fixture does not preserve the defaulted live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    length == 1
+    and .[0].domainId == "domain-1"
+    and .[0].applicationId == "application-1"
+    and .[0].host == "created.domain.example.test"
+' "$versioned_fixture_directory/domain-by-application.created.owner.json" >/dev/null; then
+    echo "Created Domain collection fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationId == "application-1"
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+    and ([.domains[] | select(
+        .domainId == "domain-1"
+        and .host == "created.domain.example.test"
+    )] | length == 1)
+' "$versioned_fixture_directory/application-one.domain-created.owner.json" >/dev/null; then
+    echo "Created Domain is not embedded in the idle application fixture." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .domainId == "domain-1"
+    and .applicationId == "application-1"
+    and .host == "updated.domain.example.test"
+    and .port == 8080
+    and .https == true
+    and .certificateType == "none"
+    and .uniqueConfigKey == 1
+' "$versioned_fixture_directory/domain-update.owner.json" >/dev/null; then
+    echo "Domain update response fixture does not preserve the requested live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .domainId == "domain-1"
+    and .applicationId == "application-1"
+    and .host == "updated.domain.example.test"
+    and .port == 8080
+    and .https == true
+    and .certificateType == "none"
+    and .uniqueConfigKey == 1
+' "$versioned_fixture_directory/domain-one.updated.owner.json" >/dev/null; then
+    echo "Updated Domain detail fixture does not preserve the requested live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    length == 1
+    and .[0].domainId == "domain-1"
+    and .[0].applicationId == "application-1"
+    and .[0].host == "updated.domain.example.test"
+' "$versioned_fixture_directory/domain-by-application.updated.owner.json" >/dev/null; then
+    echo "Updated Domain collection fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationId == "application-1"
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+    and ([.domains[] | select(
+        .domainId == "domain-1"
+        and .host == "updated.domain.example.test"
+    )] | length == 1)
+' "$versioned_fixture_directory/application-one.domain-updated.owner.json" >/dev/null; then
+    echo "Updated Domain is not embedded in the idle application fixture." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .domainId == "domain-1"
+    and .applicationId == "application-1"
+    and .host == "updated.domain.example.test"
+    and .port == 8080
+    and .https == true
+    and .certificateType == "none"
+    and .uniqueConfigKey == 1
+' "$versioned_fixture_directory/domain-delete.owner.json" >/dev/null; then
+    echo "Domain delete response fixture does not preserve the deleted live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "domain.one"
+' "$versioned_fixture_directory/domain-one.deleted.owner.json" >/dev/null; then
+    echo "Deleted Domain lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '. == []' \
+    "$versioned_fixture_directory/domain-by-application.deleted.owner.json" >/dev/null
+then
+    echo "Domain collection is not empty after deletion." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationId == "application-1"
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+    and ([.domains[] | select(
+        .domainId == "domain-1"
+        or .host == "created.domain.example.test"
+        or .host == "updated.domain.example.test"
+    )] | length == 0)
+' "$versioned_fixture_directory/application-one.domain-deleted.owner.json" >/dev/null; then
+    echo "Deleted Domain remains embedded in the application fixture." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .mutations == {create:1, update:1, delete:1}
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.collectionEmpty == true
+    and .cleanupEvidence.applicationDomainAbsent == true
+    and .cleanupEvidence.applicationIdle == true
+    and .cleanupEvidence.traefikRestored == true
+    and ([.endpoints[] | select(test("(?i)deploy"))] | length) == 0
+' "$versioned_fixture_directory/domain-contract.metadata.json" >/dev/null; then
+    echo "Domain contract metadata does not prove capture, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'iac-domain-contract-(created|updated)-' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Domain host." >&2
+    exit 1
+fi
+
 unsafe_values="$(
     find "$fixture_directory" -type f -name '*.json' -print0 \
     | xargs -0 jq -r '
@@ -145,6 +336,7 @@ fi
 
 runtime_secret_files=(
     "$repository_root/.integration/state/api-key"
+    "$repository_root/.integration/state/admin-password"
     "$repository_root/.integration/secrets/auth_secret"
     "$repository_root/.integration/secrets/postgres_password"
 )

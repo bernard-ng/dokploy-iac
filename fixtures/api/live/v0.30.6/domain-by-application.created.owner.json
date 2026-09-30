@@ -1,0 +1,29 @@
+[
+  {
+    "application": {
+      "appName": "application-contract-test",
+      "applicationId": "application-1",
+      "name": "API"
+    },
+    "applicationId": "application-1",
+    "certificateType": "none",
+    "composeId": null,
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "customCertResolver": null,
+    "customEntrypoint": null,
+    "domainId": "domain-1",
+    "domainType": "application",
+    "enabled": true,
+    "forwardAuthEnabled": false,
+    "host": "created.domain.example.test",
+    "https": false,
+    "internalPath": "/",
+    "middlewares": [],
+    "path": "/",
+    "port": 3000,
+    "previewDeploymentId": null,
+    "serviceName": null,
+    "stripPath": false,
+    "uniqueConfigKey": 1
+  }
+]
