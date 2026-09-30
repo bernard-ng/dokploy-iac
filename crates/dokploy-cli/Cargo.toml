@@ -19,6 +19,7 @@ dokploy-sdk.workspace = true
 dokploy-state.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
+inquire.workspace = true
 keyring.workspace = true
 miette.workspace = true
 serde.workspace = true

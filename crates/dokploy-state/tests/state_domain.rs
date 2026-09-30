@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use dokploy_state::{
@@ -820,6 +821,79 @@ fn resource_state(kind: ResourceKind, remote_id: &str) -> ResourceState {
         containment,
         Vec::new(),
     )
+}
+
+#[test]
+fn imported_state_starts_at_serial_zero_with_a_fresh_lineage() {
+    let project: ResourceAddress = "project.main".parse().unwrap();
+    let environment: ResourceAddress = "environment.production".parse().unwrap();
+    let resources = BTreeMap::from([
+        (
+            project.clone(),
+            resource_state(ResourceKind::Project, "project-1"),
+        ),
+        (
+            environment,
+            resource_state(ResourceKind::Environment, "environment-1"),
+        ),
+    ]);
+
+    let state = StateFile::new_with_resources(Version::new(0, 1, 0), instance(), resources)
+        .expect("complete imported state is valid");
+
+    assert_eq!(state.serial(), 0);
+    assert!(!state.lineage().is_nil());
+    assert_eq!(state.resources().len(), 2);
+}
+
+#[test]
+fn imported_state_rejects_missing_containment_and_dependencies() {
+    let environment: ResourceAddress = "environment.production".parse().unwrap();
+    let missing_parent = BTreeMap::from([(
+        environment.clone(),
+        resource_state(ResourceKind::Environment, "environment-1"),
+    )]);
+    assert!(matches!(
+        StateFile::new_with_resources(Version::new(0, 1, 0), instance(), missing_parent),
+        Err(StateError::MissingResourceReference { .. })
+    ));
+
+    let project: ResourceAddress = "project.main".parse().unwrap();
+    let project_state = ResourceState::new(
+        ResourceKind::Project,
+        RemoteId::new("project-1").unwrap(),
+        false,
+        ManagedInputs::try_from_json(json!({})).unwrap(),
+        None,
+        vec!["redis.missing".parse().unwrap()],
+    );
+    assert!(matches!(
+        StateFile::new_with_resources(
+            Version::new(0, 1, 0),
+            instance(),
+            BTreeMap::from([(project, project_state)])
+        ),
+        Err(StateError::MissingResourceReference { .. })
+    ));
+}
+
+#[test]
+fn imported_state_rejects_duplicate_physical_identities() {
+    let resources = BTreeMap::from([
+        (
+            "project.first".parse().unwrap(),
+            resource_state(ResourceKind::Project, "shared-id"),
+        ),
+        (
+            "project.second".parse().unwrap(),
+            resource_state(ResourceKind::Project, "shared-id"),
+        ),
+    ]);
+
+    assert!(matches!(
+        StateFile::new_with_resources(Version::new(0, 1, 0), instance(), resources),
+        Err(StateError::DuplicateRemoteIdentity { .. })
+    ));
 }
 
 fn fingerprint(byte: u8) -> SensitiveFingerprint {

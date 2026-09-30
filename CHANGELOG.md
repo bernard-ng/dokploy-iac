@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add read-only interactive and non-interactive resource import with canonical
+  configuration generation, durable identity adoption, unmanaged secrets,
+  protected databases, and immediate plan convergence.
 - Add `dokploy plan --out` and `dokploy apply PLAN` with a strict, owner-only
   saved-plan envelope that is revalidated under the writer lock against
   configuration, state lineage and serial, and keyed fresh-remote evidence.

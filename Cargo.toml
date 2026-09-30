@@ -29,6 +29,7 @@ dokploy-state = { path = "crates/dokploy-state", version = "0.1.0" }
 fs4 = { version = "1.1.0", features = ["sync"] }
 getrandom = "0.4.3"
 hmac = "0.12.1"
+inquire = "0.9.4"
 keyring = { version = "3.6.3", features = ["apple-native", "crypto-rust", "sync-secret-service", "windows-native"] }
 miette = { version = "7.6.0", features = ["fancy"] }
 petgraph = "=0.8.3"

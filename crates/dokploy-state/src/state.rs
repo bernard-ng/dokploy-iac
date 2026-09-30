@@ -648,6 +648,50 @@ impl StateFile {
         }
     }
 
+    /// Starts a new state lineage at serial zero with an atomically imported resource set.
+    pub fn new_with_resources(
+        cli_version: Version,
+        instance: InstanceIdentity,
+        resources: BTreeMap<ResourceAddress, ResourceState>,
+    ) -> Result<Self, StateError> {
+        let mut identities = BTreeMap::new();
+        for (address, resource) in &resources {
+            if let Some(first) = identities.insert(
+                (resource.kind(), resource.remote_id().clone()),
+                address.clone(),
+            ) {
+                return Err(StateError::DuplicateRemoteIdentity {
+                    first,
+                    second: address.clone(),
+                });
+            }
+            if let Some(parent) = resource.containment()
+                && !resources.contains_key(parent)
+            {
+                return Err(StateError::MissingResourceReference {
+                    address: address.clone(),
+                    reference: parent.clone(),
+                });
+            }
+            for dependency in resource.dependencies() {
+                if !resources.contains_key(dependency) {
+                    return Err(StateError::MissingResourceReference {
+                        address: address.clone(),
+                        reference: dependency.clone(),
+                    });
+                }
+            }
+        }
+        Self::from_serialized(SerializedStateFile {
+            format_version: CURRENT_FORMAT_VERSION,
+            cli_version,
+            lineage: Uuid::new_v4(),
+            serial: 0,
+            instance,
+            resources,
+        })
+    }
+
     /// Strictly decodes one state document, including duplicate-key checks.
     pub fn from_json_slice(bytes: &[u8]) -> Result<Self, StateDecodeError> {
         reject_duplicate_keys(bytes).map_err(|()| StateDecodeError)?;
@@ -920,6 +964,16 @@ pub enum StateError {
     ResourceKindMismatch {
         address: ResourceAddress,
         state_kind: ResourceKind,
+    },
+    #[error("resources `{first}` and `{second}` use the same remote identity")]
+    DuplicateRemoteIdentity {
+        first: ResourceAddress,
+        second: ResourceAddress,
+    },
+    #[error("resource `{address}` references missing resource `{reference}`")]
+    MissingResourceReference {
+        address: ResourceAddress,
+        reference: ResourceAddress,
     },
     #[error("resource `{address}` does not exist in state")]
     ResourceNotFound { address: ResourceAddress },

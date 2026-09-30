@@ -55,6 +55,11 @@ impl ConfigDocument {
         )
     }
 
+    /// Returns one explicitly contained environment for further resource additions.
+    pub fn environment_mut(&mut self, name: &ResourceName) -> Option<&mut EnvironmentDocument> {
+        self.environments.get_mut(name)
+    }
+
     pub fn add_move(&mut self, from: ResourceAddress, to: ResourceAddress) {
         self.moves.push((from, to));
     }

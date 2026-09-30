@@ -40,5 +40,14 @@ async fn run() -> Result<CommandStatus> {
     let config = ConfigRepository::platform()?;
     let credentials = KeyringCredentialStore;
 
-    dokploy_cli::execute_with_input(cli, &config, &credentials, &mut input, &mut output).await
+    let terminal_available = io::stdin().is_terminal() && stdout.is_terminal();
+    dokploy_cli::execute_with_terminal(
+        cli,
+        &config,
+        &credentials,
+        &mut input,
+        &mut output,
+        terminal_available,
+    )
+    .await
 }

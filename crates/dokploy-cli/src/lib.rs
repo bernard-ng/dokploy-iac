@@ -8,6 +8,7 @@ pub mod desired;
 pub mod executor;
 mod imperative;
 mod imperative_generated;
+pub mod import;
 mod plan_output;
 pub mod planning;
 pub mod recovery;
@@ -61,6 +62,18 @@ pub async fn execute_with_input(
     credentials: &dyn CredentialStore,
     input: &mut dyn BufRead,
     output: &mut dyn Write,
+) -> Result<CommandStatus> {
+    execute_with_terminal(cli, config, credentials, input, output, false).await
+}
+
+/// Executes one command with injectable terminal availability for interactive workflows.
+pub async fn execute_with_terminal(
+    cli: Cli,
+    config: &ConfigRepository,
+    credentials: &dyn CredentialStore,
+    input: &mut dyn BufRead,
+    output: &mut dyn Write,
+    terminal_available: bool,
 ) -> Result<CommandStatus> {
     if cli.is_offline() {
         execute_offline(cli, output, false)?;
@@ -324,6 +337,47 @@ pub async fn execute_with_input(
                 }
                 Err(error) => Err(error).into_diagnostic(),
             }
+        }
+        Command::Import {
+            kind,
+            remote_id,
+            address,
+            file,
+        } => {
+            let configuration = config.load()?;
+            let settings = resolve_connection(
+                ConnectionOptions {
+                    url,
+                    api_key: api_key.map(ApiKey::new),
+                },
+                &ProcessEnvironment,
+                &configuration,
+                credentials,
+            )?;
+            let client = Dokploy::builder()
+                .url(settings.url().as_str())
+                .api_key(settings.api_key().expose())
+                .build()
+                .into_diagnostic()?;
+            let request = match (kind, remote_id, address) {
+                (Some(kind), Some(remote_id), Some(address)) => import::ImportRequest {
+                    kind,
+                    remote_id,
+                    address: address
+                        .parse()
+                        .map_err(|_| miette::miette!("the import address is invalid"))?,
+                    config_file: file,
+                },
+                _ if terminal_available => import::select_interactively(&client, file)
+                    .await
+                    .into_diagnostic()?,
+                _ => return Err(miette::miette!("interactive import requires a terminal")),
+            };
+            let count = import::import_resource(&client, request)
+                .await
+                .into_diagnostic()?;
+            writeln!(output, "Import complete: {count} resource(s) tracked.").into_diagnostic()?;
+            Ok(CommandStatus::Success)
         }
         Command::Imperative(command) => {
             let invocation = command.into_invocation()?;

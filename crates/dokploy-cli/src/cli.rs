@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::imperative_generated::ImperativeCommand;
 
@@ -147,6 +147,29 @@ pub enum Command {
         auto_approve: bool,
     },
 
+    /// Adopt an existing Dokploy resource into canonical configuration and state.
+    Import {
+        /// Resource kind to import. Omit all positional arguments for interactive selection.
+        #[arg(value_enum, requires = "remote_id", requires = "address")]
+        kind: Option<ImportKind>,
+
+        /// Existing Dokploy physical identifier.
+        #[arg(requires = "kind", requires = "address")]
+        remote_id: Option<String>,
+
+        /// Logical address to assign, such as `application.api`.
+        #[arg(long = "as", value_name = "ADDRESS", requires = "kind")]
+        address: Option<String>,
+
+        /// Configuration file to create.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+    },
+
     /// Inspect resources tracked in the local workspace state.
     State {
         /// Configuration file whose directory owns the state.
@@ -170,6 +193,16 @@ pub enum Command {
     /// Call an operation from the pinned Dokploy API contract.
     #[command(flatten)]
     Imperative(Box<ImperativeCommand>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum ImportKind {
+    Project,
+    Environment,
+    Application,
+    Postgres,
+    Redis,
+    Domain,
 }
 
 #[derive(Subcommand)]
@@ -235,7 +268,41 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, Command, ContextCommand, StateCommand};
+    use super::{Cli, Command, ContextCommand, ImportKind, StateCommand};
+
+    #[test]
+    fn parses_noninteractive_import_and_interactive_import() {
+        let direct = Cli::try_parse_from([
+            "dokploy",
+            "import",
+            "postgres",
+            "postgres-1",
+            "--as",
+            "postgres.main",
+        ])
+        .expect("direct import is valid");
+        assert!(matches!(
+            direct.command,
+            Command::Import {
+                kind: Some(ImportKind::Postgres),
+                remote_id: Some(ref id),
+                address: Some(ref address),
+                ..
+            } if id == "postgres-1" && address == "postgres.main"
+        ));
+
+        let interactive =
+            Cli::try_parse_from(["dokploy", "import"]).expect("interactive import is valid");
+        assert!(matches!(
+            interactive.command,
+            Command::Import {
+                kind: None,
+                remote_id: None,
+                address: None,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn parses_context_use() {
