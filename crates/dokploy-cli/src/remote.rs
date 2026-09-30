@@ -49,6 +49,15 @@ pub enum PostgresTopologyAuthority {
     Partial,
 }
 
+/// Whether a fully paginated parent-scoped MySQL search is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MySqlTopologyAuthority {
+    /// Exhaustive absence below a proven environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Whether a fully paginated parent-scoped Redis search is complete.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RedisTopologyAuthority {
@@ -78,6 +87,8 @@ pub struct DiscoveryAuthority {
     pub applications: ApplicationTopologyAuthority,
     /// Completeness of each fully paginated `postgres.search` collection.
     pub postgres: PostgresTopologyAuthority,
+    /// Completeness of each fully paginated `mysql.search` collection.
+    pub mysql: MySqlTopologyAuthority,
     /// Completeness of each fully paginated `redis.search` collection.
     pub redis: RedisTopologyAuthority,
     /// Completeness of each `domain.byApplicationId` collection.
@@ -93,6 +104,7 @@ impl DiscoveryAuthority {
             environments: EnvironmentTopologyAuthority::Authoritative,
             applications: ApplicationTopologyAuthority::Authoritative,
             postgres: PostgresTopologyAuthority::Authoritative,
+            mysql: MySqlTopologyAuthority::Authoritative,
             redis: RedisTopologyAuthority::Authoritative,
             domains: DomainTopologyAuthority::Authoritative,
         }
@@ -186,6 +198,24 @@ pub enum DiscoverRemoteError {
     /// Direct and collection Domain reads contradict each other.
     #[error("DOKREM032: Domain read endpoints returned conflicting topology")]
     DomainTopologyConflict,
+    /// A MySQL database has no unambiguous containing environment.
+    #[error("DOKREM033: MySQL containment is unavailable")]
+    MySqlContainment,
+    /// A MySQL physical identity does not satisfy the state contract.
+    #[error("DOKREM034: MySQL topology contains an invalid remote identity")]
+    InvalidMySqlId,
+    /// More than one MySQL database has the same name within one environment.
+    #[error("DOKREM035: MySQL topology contains a duplicate scoped name")]
+    DuplicateMySqlName,
+    /// More than one MySQL database has the same physical identity.
+    #[error("DOKREM036: MySQL topology contains a duplicate remote identity")]
+    DuplicateMySqlId,
+    /// A MySQL containment change would require an unsupported remote reparent.
+    #[error("DOKREM037: MySQL reparenting is not supported")]
+    MySqlReparentUnsupported,
+    /// Direct and collection MySQL reads contradict each other.
+    #[error("DOKREM038: MySQL read endpoints returned conflicting topology")]
+    MySqlTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -228,7 +258,7 @@ pub async fn discover_projects(
         .map_err(DiscoverProjectsError::InvalidRemoteState)
 }
 
-/// Reads fresh project, environment, application, Postgres, and Redis state into one snapshot.
+/// Reads fresh project, environment, application, and database state into one snapshot.
 ///
 /// This is the public discovery seam for the current remote-projection
 /// checkpoint. Every invocation performs fresh reads and retains no cache.
@@ -266,6 +296,10 @@ pub async fn discover_remote(
         discover_postgres_observations(client, compiled, state, &observations, authority.postgres)
             .await?;
     observations.extend(postgres);
+    let mysql =
+        discover_mysql_observations(client, compiled, state, &observations, authority.mysql)
+            .await?;
+    observations.extend(mysql);
     let redis =
         discover_redis_observations(client, compiled, state, &observations, authority.redis)
             .await?;
@@ -314,7 +348,14 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::Password, set_only)
             .with_containment(MutationMode::StateOnly),
-        ResourceKind::MySql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate),
+        ResourceKind::MySql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Database)
+            .requiring(PropertyPath::Username)
+            .requiring(PropertyPath::Password)
+            .requiring(PropertyPath::RootPassword)
+            .with_property(PropertyPath::Database, set_only)
+            .with_property(PropertyPath::Username, set_only)
+            .with_containment(MutationMode::StateOnly),
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
@@ -773,6 +814,135 @@ async fn discover_postgres_observations(
         } else {
             let parent = postgres_parent_from_desired(&address, compiled, state)?;
             observe_postgres_under_parent(
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+async fn discover_mysql_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: MySqlTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::MySql)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![mysql_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = mysql_parent_from_state(address, state)?;
+            validate_mysql_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(environment_id) = trusted_environment_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .mysql()
+                .by_environment(dokploy_sdk::EnvironmentId::new(&environment_id))
+                .await;
+            collections.insert(environment_id, collection);
+        }
+    }
+    validate_mysql_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = mysql_parent_from_state(&address, state)?;
+            match client
+                .mysql()
+                .get(dokploy_sdk::MySqlId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(mysql) => {
+                    let remote_id = RemoteId::new(mysql.mysql_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidMySqlId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidMySqlId);
+                    }
+                    let expected_environment_id =
+                        trusted_environment_id(&current_parent, compiled, state, topology)
+                            .ok_or(DiscoverRemoteError::MySqlContainment)?;
+                    if mysql.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::MySqlContainment);
+                    }
+                    validate_direct_mysql_against_collection(
+                        &mysql,
+                        &expected_environment_id,
+                        &collections,
+                        authority,
+                    )?;
+                    if !seen_direct_ids.insert(remote_id.clone()) {
+                        return Err(DiscoverRemoteError::DuplicateMySqlId);
+                    }
+                    RemoteObservation::Present(RemoteResource::new(
+                        remote_id,
+                        mysql_properties(&address, compiled, &mysql),
+                    ))
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if mysql_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_mysql_under_parent(
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = mysql_parent_from_desired(&address, compiled, state)?;
+            observe_mysql_under_parent(
                 &address,
                 &parent,
                 compiled,
@@ -1888,6 +2058,260 @@ fn postgres_parent_from_desired(
         return postgres_parent_from_state(source, state);
     }
     postgres_parent_from_state(address, state)
+}
+
+fn mysql_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    mysql: &dokploy_sdk::MySqlDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let observed = match path {
+            PropertyPath::Database => observe_string_field(&mysql.database_name),
+            PropertyPath::Username => observe_string_field(&mysql.database_user),
+            PropertyPath::Password | PropertyPath::RootPassword => {
+                PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+            }
+            PropertyPath::Description
+            | PropertyPath::Replicas
+            | PropertyPath::Source
+            | PropertyPath::SourceRepository
+            | PropertyPath::SourceBranch
+            | PropertyPath::Environment
+            | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::Host
+            | PropertyPath::Application
+            | PropertyPath::DeploymentStatus => continue,
+        };
+        properties.insert(path.clone(), observed);
+    }
+
+    properties
+}
+
+fn validate_mysql_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::MySqlCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (environment_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_names = BTreeSet::new();
+        for mysql in collection.mysql() {
+            let remote_id = RemoteId::new(mysql.mysql_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidMySqlId)?;
+            if mysql.environment_id.as_str() != environment_id {
+                return Err(DiscoverRemoteError::MySqlContainment);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateMySqlId);
+            }
+            if !scoped_names.insert(mysql.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateMySqlName);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn observe_mysql_under_parent(
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::MySqlCollection, dokploy_sdk::Error>>,
+    authority: MySqlTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some(Ok(collection)) => {
+            if let Some(mysql) = collection
+                .mysql()
+                .iter()
+                .find(|mysql| mysql.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(mysql.mysql_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidMySqlId)?;
+                return Ok(RemoteObservation::Present(RemoteResource::new(
+                    remote_id,
+                    BTreeMap::new(),
+                )));
+            }
+            if authority == MySqlTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_mysql_against_collection(
+    mysql: &dokploy_sdk::MySqlDetails,
+    environment_id: &str,
+    collections: &BTreeMap<String, Result<dokploy_sdk::MySqlCollection, dokploy_sdk::Error>>,
+    authority: MySqlTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, result)| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .mysql()
+                        .iter()
+                        .any(|item| item.mysql_id == mysql.mysql_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::MySqlTopologyConflict);
+    }
+    let Some(collection) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::MySqlTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Ok(());
+    };
+    let matching = collection
+        .mysql()
+        .iter()
+        .find(|item| item.mysql_id == mysql.mysql_id);
+    match matching {
+        Some(item) if item.name == mysql.name => Ok(()),
+        Some(_) => Err(DiscoverRemoteError::MySqlTopologyConflict),
+        None if authority == MySqlTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::MySqlTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn mysql_collections_contain_id(
+    remote_id: &RemoteId,
+    collections: &BTreeMap<String, Result<dokploy_sdk::MySqlCollection, dokploy_sdk::Error>>,
+) -> bool {
+    collections.values().any(|result| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .mysql()
+                .iter()
+                .any(|mysql| mysql.mysql_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_mysql_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+
+    Err(DiscoverRemoteError::MySqlReparentUnsupported)
+}
+
+fn mysql_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::MySqlContainment)?;
+    let parent = resource
+        .containment()
+        .ok_or(DiscoverRemoteError::MySqlContainment)?;
+    if parent.kind() != ResourceKind::Environment {
+        return Err(DiscoverRemoteError::MySqlContainment);
+    }
+
+    Ok(parent.clone())
+}
+
+fn mysql_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::MySqlContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::MySqlContainment);
+        }
+        if state.resource(target).is_some() {
+            return mysql_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return mysql_parent_from_state(source, state);
+    }
+    mysql_parent_from_state(address, state)
 }
 
 fn redis_properties(

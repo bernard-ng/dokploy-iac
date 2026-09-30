@@ -6,8 +6,8 @@ use std::thread::{self, JoinHandle};
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
     ApplicationTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority, DomainTopologyAuthority,
-    EnvironmentTopologyAuthority, PostgresTopologyAuthority, ProjectTopologyAuthority,
-    RedisTopologyAuthority, discover_remote,
+    EnvironmentTopologyAuthority, MySqlTopologyAuthority, PostgresTopologyAuthority,
+    ProjectTopologyAuthority, RedisTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -99,6 +99,7 @@ fn authority(applications: ApplicationTopologyAuthority) -> DiscoveryAuthority {
         environments: EnvironmentTopologyAuthority::Authoritative,
         applications,
         postgres: PostgresTopologyAuthority::Authoritative,
+        mysql: MySqlTopologyAuthority::Authoritative,
         redis: RedisTopologyAuthority::Authoritative,
         domains: DomainTopologyAuthority::Authoritative,
     }
