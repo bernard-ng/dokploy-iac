@@ -142,7 +142,12 @@ durable state semantics.
   recovery, protected import, and live apply-then-plan convergence. Database
   and username changes update in place; post-create credential changes remain
   blocked until Dokploy can persist them safely without requiring deployment.
-- MariaDB, MongoDB, and LibSQL now share the central declarative vocabulary:
+- MariaDB is declarative end to end with authoritative bounded discovery,
+  collision and endpoint-consistency checks, an optional create-only root
+  password, journaled batched mutations, outcome-unknown recovery, protected
+  import, and disposable live acceptance. Database and username changes update
+  in place; post-create user or root password changes remain blocked.
+- MongoDB and LibSQL now share the central declarative vocabulary:
   environment containment, strict canonical configuration, descriptor-only
   secret fingerprints, and kind-scoped desired properties. LibSQL records the
   primary-or-replica node choice as one atomic property. Planning, apply,

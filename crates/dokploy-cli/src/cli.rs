@@ -203,6 +203,8 @@ pub enum ImportKind {
     Postgres,
     #[value(name = "mysql")]
     MySql,
+    #[value(name = "mariadb")]
+    MariaDb,
     Redis,
     Domain,
 }
@@ -310,6 +312,25 @@ mod tests {
                 address: Some(ref address),
                 ..
             } if id == "mysql-1" && address == "mysql.main"
+        ));
+
+        let mariadb = Cli::try_parse_from([
+            "dokploy",
+            "import",
+            "mariadb",
+            "mariadb-1",
+            "--as",
+            "mariadb.main",
+        ])
+        .expect("MariaDB import is valid");
+        assert!(matches!(
+            mariadb.command,
+            Command::Import {
+                kind: Some(ImportKind::MariaDb),
+                remote_id: Some(ref id),
+                address: Some(ref address),
+                ..
+            } if id == "mariadb-1" && address == "mariadb.main"
         ));
 
         let interactive =

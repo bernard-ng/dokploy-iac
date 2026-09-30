@@ -396,3 +396,27 @@ configuration, plans, diagnostics, state, and journals for the original user
 password, root password, and rejected rotation value. The script verifies the
 exact Dokploy `v0.30.6` image digest, never deploys the database, and removes
 only its collision-resistant project and owner-only temporary workspace.
+
+## Live MariaDB declarative apply test
+
+Verify MariaDB reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-mariadb-apply.sh
+```
+
+The check creates a disposable project, environment, and undeployed MariaDB
+record from one environment-backed user password, deliberately omitting the
+optional root password. It requires a fresh no-op plan, then proves that both a
+changed user-password source and a newly supplied root-password source are
+blocked during read-only planning without contacting a mutation endpoint.
+After restoring the original configuration, it updates the database and
+username in place and proves convergence again.
+
+The final apply removes the MariaDB record. The check confirms absence through
+both `mariadb.one` and the environment-scoped `mariadb.search`, removes the
+durable state entry, and requires a final no-op plan. Before cleanup, it scans
+configuration, plans, diagnostics, state, and journals for the original user
+password and both rejected secret values. The script verifies the exact
+Dokploy `v0.30.6` image digest, never deploys the database, and removes only its
+collision-resistant project and owner-only temporary workspace.

@@ -58,6 +58,15 @@ pub enum MySqlTopologyAuthority {
     Partial,
 }
 
+/// Whether a fully paginated parent-scoped MariaDB search is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MariaDbTopologyAuthority {
+    /// Exhaustive absence below a proven environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Whether a fully paginated parent-scoped Redis search is complete.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RedisTopologyAuthority {
@@ -89,6 +98,8 @@ pub struct DiscoveryAuthority {
     pub postgres: PostgresTopologyAuthority,
     /// Completeness of each fully paginated `mysql.search` collection.
     pub mysql: MySqlTopologyAuthority,
+    /// Completeness of each fully paginated `mariadb.search` collection.
+    pub mariadb: MariaDbTopologyAuthority,
     /// Completeness of each fully paginated `redis.search` collection.
     pub redis: RedisTopologyAuthority,
     /// Completeness of each `domain.byApplicationId` collection.
@@ -105,6 +116,7 @@ impl DiscoveryAuthority {
             applications: ApplicationTopologyAuthority::Authoritative,
             postgres: PostgresTopologyAuthority::Authoritative,
             mysql: MySqlTopologyAuthority::Authoritative,
+            mariadb: MariaDbTopologyAuthority::Authoritative,
             redis: RedisTopologyAuthority::Authoritative,
             domains: DomainTopologyAuthority::Authoritative,
         }
@@ -216,6 +228,24 @@ pub enum DiscoverRemoteError {
     /// Direct and collection MySQL reads contradict each other.
     #[error("DOKREM038: MySQL read endpoints returned conflicting topology")]
     MySqlTopologyConflict,
+    /// A MariaDB database has no unambiguous containing environment.
+    #[error("DOKREM039: MariaDB containment is unavailable")]
+    MariaDbContainment,
+    /// A MariaDB physical identity does not satisfy the state contract.
+    #[error("DOKREM040: MariaDB topology contains an invalid remote identity")]
+    InvalidMariaDbId,
+    /// More than one MariaDB database has the same name within one environment.
+    #[error("DOKREM041: MariaDB topology contains a duplicate scoped name")]
+    DuplicateMariaDbName,
+    /// More than one MariaDB database has the same physical identity.
+    #[error("DOKREM042: MariaDB topology contains a duplicate remote identity")]
+    DuplicateMariaDbId,
+    /// A MariaDB containment change would require an unsupported remote reparent.
+    #[error("DOKREM043: MariaDB reparenting is not supported")]
+    MariaDbReparentUnsupported,
+    /// Direct and collection MariaDB reads contradict each other.
+    #[error("DOKREM044: MariaDB read endpoints returned conflicting topology")]
+    MariaDbTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -300,6 +330,10 @@ pub async fn discover_remote(
         discover_mysql_observations(client, compiled, state, &observations, authority.mysql)
             .await?;
     observations.extend(mysql);
+    let mariadb =
+        discover_mariadb_observations(client, compiled, state, &observations, authority.mariadb)
+            .await?;
+    observations.extend(mariadb);
     let redis =
         discover_redis_observations(client, compiled, state, &observations, authority.redis)
             .await?;
@@ -356,7 +390,15 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
             .with_containment(MutationMode::StateOnly),
-        ResourceKind::MariaDb | ResourceKind::Mongo | ResourceKind::LibSql => {
+        ResourceKind::MariaDb => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Database)
+            .requiring(PropertyPath::Username)
+            .requiring(PropertyPath::Password)
+            .allowing_on_create(PropertyPath::RootPassword)
+            .with_property(PropertyPath::Database, set_only)
+            .with_property(PropertyPath::Username, set_only)
+            .with_containment(MutationMode::StateOnly),
+        ResourceKind::Mongo | ResourceKind::LibSql => {
             MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
         }
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
@@ -948,6 +990,139 @@ async fn discover_mysql_observations(
         } else {
             let parent = mysql_parent_from_desired(&address, compiled, state)?;
             observe_mysql_under_parent(
+                client,
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )
+            .await?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+async fn discover_mariadb_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: MariaDbTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::MariaDb)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![mariadb_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = mariadb_parent_from_state(address, state)?;
+            validate_mariadb_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(environment_id) = trusted_environment_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .mariadb()
+                .by_environment(dokploy_sdk::EnvironmentId::new(&environment_id))
+                .await;
+            collections.insert(environment_id, collection);
+        }
+    }
+    validate_mariadb_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = mariadb_parent_from_state(&address, state)?;
+            match client
+                .mariadb()
+                .get(dokploy_sdk::MariaDbId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(mariadb) => {
+                    let remote_id = RemoteId::new(mariadb.mariadb_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidMariaDbId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidMariaDbId);
+                    }
+                    let expected_environment_id =
+                        trusted_environment_id(&current_parent, compiled, state, topology)
+                            .ok_or(DiscoverRemoteError::MariaDbContainment)?;
+                    if mariadb.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::MariaDbContainment);
+                    }
+                    validate_direct_mariadb_against_collection(
+                        &mariadb,
+                        &expected_environment_id,
+                        &collections,
+                        authority,
+                    )?;
+                    if !seen_direct_ids.insert(remote_id.clone()) {
+                        return Err(DiscoverRemoteError::DuplicateMariaDbId);
+                    }
+                    RemoteObservation::Present(RemoteResource::new(
+                        remote_id,
+                        mariadb_properties(&address, compiled, &mariadb),
+                    ))
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if mariadb_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_mariadb_under_parent(
+                            client,
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )
+                        .await?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = mariadb_parent_from_desired(&address, compiled, state)?;
+            observe_mariadb_under_parent(
                 client,
                 &address,
                 &parent,
@@ -2346,6 +2521,283 @@ fn mysql_parent_from_desired(
         return mysql_parent_from_state(source, state);
     }
     mysql_parent_from_state(address, state)
+}
+
+fn mariadb_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    mariadb: &dokploy_sdk::MariaDbDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let observed = match path {
+            PropertyPath::Database => observe_string_field(&mariadb.database_name),
+            PropertyPath::Username => observe_string_field(&mariadb.database_user),
+            PropertyPath::Password | PropertyPath::RootPassword => {
+                PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+            }
+            PropertyPath::Description
+            | PropertyPath::Replicas
+            | PropertyPath::Source
+            | PropertyPath::SourceRepository
+            | PropertyPath::SourceBranch
+            | PropertyPath::Environment
+            | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::ReplicaSets
+            | PropertyPath::Node
+            | PropertyPath::Host
+            | PropertyPath::Application
+            | PropertyPath::DeploymentStatus => continue,
+        };
+        properties.insert(path.clone(), observed);
+    }
+
+    properties
+}
+
+fn validate_mariadb_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::MariaDbCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (environment_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_names = BTreeSet::new();
+        for mariadb in collection.mariadb() {
+            let remote_id = RemoteId::new(mariadb.mariadb_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidMariaDbId)?;
+            if mariadb.environment_id.as_str() != environment_id {
+                return Err(DiscoverRemoteError::MariaDbContainment);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateMariaDbId);
+            }
+            if !scoped_names.insert(mariadb.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateMariaDbName);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn observe_mariadb_under_parent(
+    client: &Dokploy,
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::MariaDbCollection, dokploy_sdk::Error>>,
+    authority: MariaDbTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some(Ok(collection)) => {
+            if let Some(mariadb) = collection
+                .mariadb()
+                .iter()
+                .find(|mariadb| mariadb.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(mariadb.mariadb_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidMariaDbId)?;
+                return match client.mariadb().get(mariadb.mariadb_id.clone()).await {
+                    Ok(details) => {
+                        if details.mariadb_id != mariadb.mariadb_id
+                            || details.environment_id.as_str() != environment_id
+                            || details.name != mariadb.name
+                        {
+                            return Err(DiscoverRemoteError::MariaDbTopologyConflict);
+                        }
+                        validate_direct_mariadb_against_collection(
+                            &details,
+                            &environment_id,
+                            collections,
+                            authority,
+                        )?;
+                        Ok(RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            mariadb_properties(address, compiled, &details),
+                        )))
+                    }
+                    Err(SdkError::Api(error)) if error.status() == 404 => Ok(
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse),
+                    ),
+                    Err(error) => Ok(RemoteObservation::Unavailable(classify_sdk_error(&error))),
+                };
+            }
+            if authority == MariaDbTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_mariadb_against_collection(
+    mariadb: &dokploy_sdk::MariaDbDetails,
+    environment_id: &str,
+    collections: &BTreeMap<String, Result<dokploy_sdk::MariaDbCollection, dokploy_sdk::Error>>,
+    authority: MariaDbTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, result)| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .mariadb()
+                        .iter()
+                        .any(|item| item.mariadb_id == mariadb.mariadb_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::MariaDbTopologyConflict);
+    }
+    let Some(collection) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::MariaDbTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Ok(());
+    };
+    let matching = collection
+        .mariadb()
+        .iter()
+        .find(|item| item.mariadb_id == mariadb.mariadb_id);
+    match matching {
+        Some(item) if item.name == mariadb.name => Ok(()),
+        Some(_) => Err(DiscoverRemoteError::MariaDbTopologyConflict),
+        None if authority == MariaDbTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::MariaDbTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn mariadb_collections_contain_id(
+    remote_id: &RemoteId,
+    collections: &BTreeMap<String, Result<dokploy_sdk::MariaDbCollection, dokploy_sdk::Error>>,
+) -> bool {
+    collections.values().any(|result| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .mariadb()
+                .iter()
+                .any(|mariadb| mariadb.mariadb_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_mariadb_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+
+    Err(DiscoverRemoteError::MariaDbReparentUnsupported)
+}
+
+fn mariadb_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::MariaDbContainment)?;
+    let parent = resource
+        .containment()
+        .ok_or(DiscoverRemoteError::MariaDbContainment)?;
+    if parent.kind() != ResourceKind::Environment {
+        return Err(DiscoverRemoteError::MariaDbContainment);
+    }
+
+    Ok(parent.clone())
+}
+
+fn mariadb_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::MariaDbContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::MariaDbContainment);
+        }
+        if state.resource(target).is_some() {
+            return mariadb_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return mariadb_parent_from_state(source, state);
+    }
+    mariadb_parent_from_state(address, state)
 }
 
 fn redis_properties(

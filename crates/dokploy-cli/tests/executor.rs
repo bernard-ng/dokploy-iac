@@ -290,6 +290,193 @@ async fn mysql_create_metadata_update_and_delete_are_checkpointed_without_secret
 }
 
 #[tokio::test]
+async fn mariadb_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let search = r#"{"items":[{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main"}],"total":1}"#;
+    let old = r#"{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main","appName":"mariadb-main","dockerImage":"mariadb:11","databaseName":"app","databaseUser":"app"}"#;
+    let updated = r#"{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main","appName":"mariadb-main","dockerImage":"mariadb:11","databaseName":"app_next","databaseUser":"app_next"}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", r#"{"mariadbId":"mariadb-1"}"#),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", old),
+        ("200 OK", "true"),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", updated),
+        ("200 OK", "true"),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("mariadb-user"), "mariadb-user-password-canary")
+        .expect("MariaDB user secret fixture is writable");
+    fs::write(secrets.join("mariadb-root"), "mariadb-root-password-canary")
+        .expect("MariaDB root secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    let mariadb_config = |database: &str, username: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    mariadb:\n",
+                "      main:\n",
+                "        database: {}\n",
+                "        username: {}\n",
+                "        password:\n",
+                "          file: .secrets/mariadb-user\n",
+                "        root_password:\n",
+                "          file: .secrets/mariadb-root\n",
+            ),
+            database, username,
+        )
+    };
+    fs::write(&config, mariadb_config("app", "app"))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+
+    let created = apply_workspace(&client, &config)
+        .await
+        .expect("initial MariaDB apply succeeds");
+    assert_eq!(created.applied(), 3);
+    fs::write(&config, mariadb_config("app_next", "app_next"))
+        .expect("updated configuration fixture is writable");
+    let updated = apply_workspace(&client, &config)
+        .await
+        .expect("MariaDB metadata update succeeds");
+    assert_eq!(updated.applied(), 1);
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mariadb: {}\n",
+            "removed:\n",
+            "  - from: mariadb.main\n",
+            "    destroy: true\n",
+        ),
+    )
+    .expect("removal configuration fixture is writable");
+    let deleted = apply_workspace(&client, &config)
+        .await
+        .expect("MariaDB delete succeeds");
+    assert_eq!(deleted.applied(), 1);
+
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert!(state.resource(&"mariadb.main".parse().unwrap()).is_none());
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 15);
+    assert!(requests[2].starts_with("POST /api/mariadb.create HTTP/1.1\r\n"));
+    assert!(requests[2].contains(r#""databasePassword":"mariadb-user-password-canary""#));
+    assert!(requests[2].contains(r#""databaseRootPassword":"mariadb-root-password-canary""#));
+    assert!(requests[8].starts_with("POST /api/mariadb.update HTTP/1.1\r\n"));
+    assert!(requests[8].contains(r#""databaseName":"app_next""#));
+    assert!(requests[8].contains(r#""databaseUser":"app_next""#));
+    assert!(!requests[8].contains("databasePassword"));
+    assert!(!requests[8].contains("databaseRootPassword"));
+    assert!(requests[14].starts_with("POST /api/mariadb.remove HTTP/1.1\r\n"));
+
+    let state_json = fs::read_to_string(directory.path().join(".dokploy/state.json"))
+        .expect("state is readable as text");
+    assert!(!state_json.contains("mariadb-user-password-canary"));
+    assert!(!state_json.contains("mariadb-root-password-canary"));
+    assert!(!format!("{created:?} {updated:?} {deleted:?}").contains("password-canary"));
+}
+
+#[tokio::test]
+async fn mariadb_unknown_create_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("mariadb-user"), "unknown-mariadb-user-canary")
+        .expect("MariaDB user secret fixture is writable");
+    fs::write(secrets.join("mariadb-root"), "unknown-mariadb-root-canary")
+        .expect("MariaDB root secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mariadb:\n",
+            "      main:\n",
+            "        database: app\n",
+            "        username: app\n",
+            "        password:\n",
+            "          file: .secrets/mariadb-user\n",
+            "        root_password:\n",
+            "          file: .secrets/mariadb-root\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace(&server.client(), &config)
+        .await
+        .expect_err("an interrupted create has an unknown outcome");
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
+        }
+    ));
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    match store.recovery_status().expect("journal scan succeeds") {
+        RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
+            summary.reason(),
+            &dokploy_state::RecoveryReason::StepInProgress
+        ),
+        RecoveryStatus::Clean => panic!("unknown create outcome must require recovery"),
+    }
+    let journal = fs::read_dir(directory.path().join(".dokploy/journal"))
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.ok()?.path();
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+                .then(|| fs::read_to_string(path).unwrap())
+        })
+        .expect("journal exists");
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("unknown-mariadb-user-canary"));
+    assert!(!journal.contains("unknown-mariadb-root-canary"));
+    assert_eq!(server.finish().len(), 3);
+}
+
+#[tokio::test]
 async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
     let server = TestServer::respond_then_drop(vec![
         ("200 OK", "[]"),
@@ -832,7 +1019,7 @@ impl ConcurrentDatabaseServer {
                 .expect("listener becomes nonblocking");
             let deadline = Instant::now() + Duration::from_secs(2);
             let mut database_requests = Vec::new();
-            while database_requests.len() < 2 && Instant::now() < deadline {
+            while database_requests.len() < 3 && Instant::now() < deadline {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let request = read_request(&mut stream);
@@ -844,7 +1031,9 @@ impl ConcurrentDatabaseServer {
                     Err(error) => panic!("test server accepts database request: {error}"),
                 }
             }
-            let overlapped = database_requests.len() == 2;
+            let overlapped = database_requests.len() == 3;
+            database_requests
+                .sort_by_key(|(_, request)| request.starts_with("POST /api/postgres.create "));
             for (mut stream, request) in database_requests {
                 if request.starts_with("POST /api/postgres.create ") {
                     write_response(
@@ -857,6 +1046,14 @@ impl ConcurrentDatabaseServer {
                         &mut stream,
                         "200 OK",
                         include_str!("../../../fixtures/api/live/v0.30.6/redis-create.owner.json"),
+                    );
+                } else if request.starts_with("POST /api/mariadb.create ") {
+                    write_response(
+                        &mut stream,
+                        "200 OK",
+                        include_str!(
+                            "../../../fixtures/api/live/v0.30.6/mariadb-create.owner.json"
+                        ),
                     );
                 } else {
                     write_response(&mut stream, "404 Not Found", r#"{"error":"unexpected"}"#);
@@ -1291,6 +1488,8 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
     fs::write(secrets.join("postgres"), "postgres-password")
         .expect("Postgres secret fixture is writable");
     fs::write(secrets.join("redis"), "redis-password").expect("Redis secret fixture is writable");
+    fs::write(secrets.join("mariadb"), "mariadb-password")
+        .expect("MariaDB secret fixture is writable");
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
@@ -1309,6 +1508,12 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
             "      cache:\n",
             "        password:\n",
             "          file: .secrets/redis\n",
+            "    mariadb:\n",
+            "      records:\n",
+            "        database: records\n",
+            "        username: records\n",
+            "        password:\n",
+            "          file: .secrets/mariadb\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1316,7 +1521,7 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
     let error = apply_workspace_with_approval(
         &server.client(),
         &config,
-        ApplyOptions::new(2).expect("parallelism is valid"),
+        ApplyOptions::new(3).expect("parallelism is valid"),
         |_| Ok(true),
     )
     .await
@@ -1336,6 +1541,7 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
         .expect("state was initialized");
     let postgres: ResourceAddress = "postgres.main".parse().expect("address is valid");
     let redis: ResourceAddress = "redis.cache".parse().expect("address is valid");
+    let mariadb: ResourceAddress = "mariadb.records".parse().expect("address is valid");
     assert!(state.resource(&postgres).is_none());
     assert_eq!(
         state
@@ -1344,6 +1550,14 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
             .remote_id()
             .as_str(),
         "redis-1"
+    );
+    assert_eq!(
+        state
+            .resource(&mariadb)
+            .expect("successful MariaDB sibling is checkpointed")
+            .remote_id()
+            .as_str(),
+        "mariadb-1"
     );
     match store.recovery_status().expect("journal scan succeeds") {
         RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
@@ -1356,7 +1570,7 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
     let (requests, overlapped) = server.finish();
     assert!(
         overlapped,
-        "both database requests must be in flight together"
+        "all database requests must be in flight together"
     );
     assert!(
         requests
@@ -1367,6 +1581,11 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
         requests
             .iter()
             .any(|request| request.starts_with("POST /api/redis.create "))
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.starts_with("POST /api/mariadb.create "))
     );
 }
 

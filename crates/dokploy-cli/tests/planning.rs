@@ -108,7 +108,7 @@ async fn absent_workspace_plan_is_deterministic_and_read_only() {
 }
 
 #[tokio::test]
-async fn remaining_databases_stay_fail_closed_until_remote_adapters_exist() {
+async fn unimplemented_database_adapters_stay_fail_closed_while_mariadb_is_observed() {
     let server = TestServer::empty_project_topology(1);
     let directory = tempfile::tempdir().expect("temporary workspace is available");
     let config = directory.path().join("dokploy.yaml");
@@ -131,7 +131,7 @@ environments:
 
     assert!(!plan.complete());
     assert!(!plan.applyable());
-    for address in ["mariadb.main", "mongo.documents", "libsql.edge"] {
+    for address in ["mongo.documents", "libsql.edge"] {
         assert!(plan.diagnostics().iter().any(|diagnostic| {
             diagnostic.code() == PlanDiagnosticCode::MissingObservation
                 && diagnostic
@@ -139,6 +139,18 @@ environments:
                     .is_some_and(|candidate| candidate.to_string() == address)
         }));
     }
+    assert!(plan.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == PlanDiagnosticCode::MissingCreateProperty
+            && diagnostic
+                .address()
+                .is_some_and(|candidate| candidate.to_string() == "mariadb.main")
+    }));
+    assert!(!plan.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == PlanDiagnosticCode::MissingObservation
+            && diagnostic
+                .address()
+                .is_some_and(|candidate| candidate.to_string() == "mariadb.main")
+    }));
     assert!(!directory.path().join(".dokploy").exists());
     assert_eq!(server.finish().len(), 1);
 }

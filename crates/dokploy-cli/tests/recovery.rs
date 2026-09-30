@@ -73,15 +73,57 @@ impl TestServer {
 
 #[tokio::test]
 async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state() {
-    exercise_uncertain_mysql_update_recovery(1, true).await;
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::MySql,
+        "mysql.main",
+        "mysql-1",
+        "mysql",
+        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"next","databaseUser":"next"}"#,
+        1,
+        true,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn uncertain_mysql_secret_rotation_requires_manual_intervention() {
-    exercise_uncertain_mysql_update_recovery(9, false).await;
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::MySql,
+        "mysql.main",
+        "mysql-1",
+        "mysql",
+        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"next","databaseUser":"next"}"#,
+        9,
+        false,
+    )
+    .await;
 }
 
-async fn exercise_uncertain_mysql_update_recovery(
+#[tokio::test]
+async fn uncertain_mariadb_metadata_update_is_recovered_from_readable_fresh_state() {
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::MariaDb,
+        "mariadb.main",
+        "mariadb-1",
+        "mariadb",
+        r#"{"items":[{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main","appName":"mariadb-main","dockerImage":"mariadb:11","databaseName":"next","databaseUser":"next"}"#,
+        1,
+        true,
+    )
+    .await;
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn exercise_uncertain_database_update_recovery(
+    kind: ResourceKind,
+    address_value: &str,
+    remote_id: &str,
+    collection_name: &str,
+    collection: &'static str,
+    details: &'static str,
     proposed_password_fingerprint: u8,
     expect_recovery: bool,
 ) {
@@ -89,24 +131,27 @@ async fn exercise_uncertain_mysql_update_recovery(
         r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
         r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
         r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
-        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
-        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"next","databaseUser":"next"}"#,
+        collection,
+        details,
     ]);
     let workspace = tempfile::tempdir().expect("temporary workspace is available");
     let config_file = workspace.path().join("dokploy.yaml");
     fs::write(
         &config_file,
-        concat!(
-            "version: 1\n",
-            "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mysql:\n",
-            "      main:\n",
-            "        database: next\n",
-            "        username: next\n",
-            "        password: null\n",
-            "        root_password: null\n",
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    {}:\n",
+                "      main:\n",
+                "        database: next\n",
+                "        username: next\n",
+                "        password: null\n",
+                "        root_password: null\n",
+            ),
+            collection_name,
         ),
     )
     .expect("configuration fixture is writable");
@@ -156,19 +201,19 @@ async fn exercise_uncertain_mysql_update_recovery(
         .unwrap()
         .checkpoint(ExpectedState::from_state(&before_environment), &state)
         .unwrap();
-    let before_mysql = state.clone();
+    let before_database = state.clone();
     state
         .upsert_resource(
-            address("mysql.main"),
+            address(address_value),
             ResourceState::try_new(
-                ResourceKind::MySql,
-                RemoteId::new("mysql-1").unwrap(),
+                kind,
+                RemoteId::new(remote_id).unwrap(),
                 false,
                 ManagedInputs::try_from_json(
                     serde_json::json!({"database":"old","username":"old"}),
                 )
                 .unwrap(),
-                mysql_sensitive_inputs(1, 2),
+                database_sensitive_inputs(1, 2),
                 Some(address("environment.production")),
                 Vec::new(),
             )
@@ -178,16 +223,16 @@ async fn exercise_uncertain_mysql_update_recovery(
     store
         .begin_write()
         .unwrap()
-        .checkpoint(ExpectedState::from_state(&before_mysql), &state)
+        .checkpoint(ExpectedState::from_state(&before_database), &state)
         .unwrap();
-    let before = state.resource(&address("mysql.main")).unwrap().clone();
+    let before = state.resource(&address(address_value)).unwrap().clone();
     let after = ResourceState::try_new(
-        ResourceKind::MySql,
-        RemoteId::new("mysql-1").unwrap(),
+        kind,
+        RemoteId::new(remote_id).unwrap(),
         false,
         ManagedInputs::try_from_json(serde_json::json!({"database":"next","username":"next"}))
             .unwrap(),
-        mysql_sensitive_inputs(proposed_password_fingerprint, 2),
+        database_sensitive_inputs(proposed_password_fingerprint, 2),
         Some(address("environment.production")),
         Vec::new(),
     )
@@ -197,7 +242,7 @@ async fn exercise_uncertain_mysql_update_recovery(
         OperationJournal::begin(&mut write, PlanDigest::parse("c".repeat(64)).unwrap()).unwrap();
     journal
         .start_recoverable_step(
-            address("mysql.main"),
+            address(address_value),
             JournalAction::Update,
             ExpectedCheckpoint::update(before, after).unwrap(),
         )
@@ -206,19 +251,19 @@ async fn exercise_uncertain_mysql_update_recovery(
     drop(write);
 
     let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
-        assert_eq!(preview.address(), Some(&address("mysql.main")));
+        assert_eq!(preview.address(), Some(&address(address_value)));
         assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
         Ok(true)
     })
     .await;
 
     if expect_recovery {
-        let result = result.expect("readable MySQL update recovery succeeds");
+        let result = result.expect("readable database update recovery succeeds");
         assert_eq!(result.recovered_steps(), 1);
         let recovered = store.inspect().unwrap().unwrap();
         assert_eq!(
             recovered
-                .resource(&address("mysql.main"))
+                .resource(&address(address_value))
                 .unwrap()
                 .last_applied()
                 .as_json(),
@@ -240,28 +285,63 @@ async fn exercise_uncertain_mysql_update_recovery(
 
 #[tokio::test]
 async fn uncertain_mysql_create_adopts_one_matching_resource_without_retrying_secrets() {
+    exercise_uncertain_database_create_recovery(
+        ResourceKind::MySql,
+        "mysql.main",
+        "mysql-1",
+        "mysql",
+        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"app","databaseUser":"app","databasePassword":"never-crosses-sdk","databaseRootPassword":"never-crosses-sdk"}"#,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn uncertain_mariadb_create_adopts_one_matching_resource_without_retrying_secrets() {
+    exercise_uncertain_database_create_recovery(
+        ResourceKind::MariaDb,
+        "mariadb.main",
+        "mariadb-1",
+        "mariadb",
+        r#"{"items":[{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"main","appName":"mariadb-main","dockerImage":"mariadb:11","databaseName":"app","databaseUser":"app","databasePassword":"never-crosses-sdk","databaseRootPassword":"never-crosses-sdk"}"#,
+    )
+    .await;
+}
+
+async fn exercise_uncertain_database_create_recovery(
+    kind: ResourceKind,
+    address_value: &str,
+    remote_id: &str,
+    collection_name: &str,
+    collection: &'static str,
+    details: &'static str,
+) {
     let server = TestServer::respond_in_sequence(vec![
         r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
         r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
         r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
-        r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
-        r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"app","databaseUser":"app","databasePassword":"never-crosses-sdk","databaseRootPassword":"never-crosses-sdk"}"#,
+        collection,
+        details,
     ]);
     let workspace = tempfile::tempdir().expect("temporary workspace is available");
     let config_file = workspace.path().join("dokploy.yaml");
     fs::write(
         &config_file,
-        concat!(
-            "version: 1\n",
-            "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mysql:\n",
-            "      main:\n",
-            "        database: app\n",
-            "        username: app\n",
-            "        password: null\n",
-            "        root_password: null\n",
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    {}:\n",
+                "      main:\n",
+                "        database: app\n",
+                "        username: app\n",
+                "        password: null\n",
+                "        root_password: null\n",
+            ),
+            collection_name,
         ),
     )
     .expect("configuration fixture is writable");
@@ -318,7 +398,7 @@ async fn uncertain_mysql_create_adopts_one_matching_resource_without_retrying_se
     ])
     .unwrap();
     let target = ResourceState::try_new(
-        ResourceKind::MySql,
+        kind,
         RemoteId::new("recovery-pending").unwrap(),
         false,
         ManagedInputs::try_from_json(serde_json::json!({"database":"app","username":"app"}))
@@ -333,7 +413,7 @@ async fn uncertain_mysql_create_adopts_one_matching_resource_without_retrying_se
         OperationJournal::begin(&mut write, PlanDigest::parse("d".repeat(64)).unwrap()).unwrap();
     journal
         .start_recoverable_step(
-            address("mysql.main"),
+            address(address_value),
             JournalAction::Create,
             ExpectedCheckpoint::create(target).unwrap(),
         )
@@ -342,22 +422,22 @@ async fn uncertain_mysql_create_adopts_one_matching_resource_without_retrying_se
     drop(write);
 
     let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
-        assert_eq!(preview.address(), Some(&address("mysql.main")));
+        assert_eq!(preview.address(), Some(&address(address_value)));
         assert_eq!(preview.action(), RecoveryAction::AdoptCreatedResource);
         Ok(true)
     })
     .await
-    .expect("matching MySQL create recovery succeeds");
+    .expect("matching database create recovery succeeds");
 
     assert_eq!(result.recovered_steps(), 1);
     let recovered = store.inspect().unwrap().unwrap();
     assert_eq!(
         recovered
-            .resource(&address("mysql.main"))
+            .resource(&address(address_value))
             .unwrap()
             .remote_id()
             .as_str(),
-        "mysql-1"
+        remote_id
     );
     assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
     let requests = server.finish();
@@ -735,7 +815,7 @@ fn address(value: &str) -> ResourceAddress {
     value.parse().expect("address is valid")
 }
 
-fn mysql_sensitive_inputs(password: u8, root_password: u8) -> SensitiveInputs {
+fn database_sensitive_inputs(password: u8, root_password: u8) -> SensitiveInputs {
     let key_id = FingerprintKeyId::new(
         uuid::Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").unwrap(),
     )

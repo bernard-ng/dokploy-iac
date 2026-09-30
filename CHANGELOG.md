@@ -22,6 +22,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative MariaDB reconciliation with authoritative
+  environment-scoped discovery, direct-read agreement, collision detection,
+  optional create-only root credentials, journaled batched mutations,
+  outcome-unknown recovery, protected secret-free import, and disposable live
+  apply-to-delete acceptance. Database and username update in place while all
+  post-create credential changes remain fail-closed.
 - Add the shared declarative vocabulary for environment-contained MariaDB,
   MongoDB, and LibSQL resources, including strict canonical configuration,
   descriptor-only secret fingerprints, kind-scoped properties, and an atomic

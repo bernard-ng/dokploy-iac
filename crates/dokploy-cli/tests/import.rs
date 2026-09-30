@@ -396,6 +396,90 @@ async fn mysql_import_is_protected_two_secret_free_and_immediately_convergent() 
 }
 
 #[tokio::test]
+async fn mariadb_import_is_protected_two_secret_free_and_immediately_convergent() {
+    let mariadb = r#"{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"Remote database","appName":"remote-db","dockerImage":"mariadb:11","databaseName":"app","databaseUser":"app","databasePassword":"user-canary","databaseRootPassword":"root-canary"}"#;
+    let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
+    let project =
+        r#"{"projectId":"project-1","name":"platform","description":"Platform","environments":[]}"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","description":"Platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection =
+        r#"[{"environmentId":"environment-1","name":"production","description":"Production"}]"#;
+    let mariadb_collection = r#"{"items":[{"mariadbId":"mariadb-1","environmentId":"environment-1","name":"Remote database"}],"total":1}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        mariadb,
+        environment,
+        project,
+        project_topology,
+        environment_collection,
+        environment,
+        mariadb_collection,
+        mariadb,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client is valid");
+    let workspace = tempfile::tempdir().expect("workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::MariaDb,
+            remote_id: "mariadb-1".to_owned(),
+            address: "mariadb.main".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("database imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 3);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).expect("config is readable");
+    assert!(!source.contains("password"));
+    assert!(!source.contains("user-canary"));
+    assert!(!source.contains("root-canary"));
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"mariadb.main".parse().unwrap()).unwrap();
+    let database = resource.as_mariadb().unwrap();
+    assert_eq!(database.password(), &Field::Unmanaged);
+    assert_eq!(database.root_password(), &Field::Unmanaged);
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    assert!(
+        state
+            .resource(&"mariadb.main".parse().unwrap())
+            .unwrap()
+            .is_protected()
+    );
+    assert_eq!(
+        state
+            .resource(&"mariadb.main".parse().unwrap())
+            .unwrap()
+            .sensitive_inputs()
+            .paths()
+            .count(),
+        0
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 8);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
 async fn redis_import_is_protected_secret_free_and_immediately_convergent() {
     let redis = r#"{"redisId":"redis-1","environmentId":"environment-1","name":"Remote cache","appName":"remote-cache","dockerImage":"redis:8"}"#;
     let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
