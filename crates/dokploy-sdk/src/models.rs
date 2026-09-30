@@ -36,6 +36,7 @@ macro_rules! identifier {
 
 identifier!(ApplicationId);
 identifier!(EnvironmentId);
+identifier!(LibSqlId);
 identifier!(MariaDbId);
 identifier!(MongoId);
 identifier!(MySqlId);
@@ -44,6 +45,40 @@ identifier!(ProjectId);
 identifier!(RedisId);
 identifier!(DomainId);
 identifier!(ServerId);
+
+const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32";
+
+/// The topology role of one LibSQL node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LibSqlNode {
+    /// A writable primary node.
+    Primary,
+    /// A replica attached to the supplied primary URL.
+    Replica { primary_url: String },
+}
+
+impl LibSqlNode {
+    fn wire_name(&self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Replica { .. } => "replica",
+        }
+    }
+
+    fn primary_url(&self) -> Option<&str> {
+        match self {
+            Self::Primary => None,
+            Self::Replica { primary_url } => Some(primary_url),
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        match self {
+            Self::Primary => true,
+            Self::Replica { primary_url } => !primary_url.is_empty(),
+        }
+    }
+}
 
 /// Inputs required to create one Dokploy project.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -618,6 +653,274 @@ impl Serialize for UpdatePostgres {
         if let Some(database_password) = &self.database_password {
             body.serialize_field("databasePassword", database_password.as_str())?;
         }
+        body.end()
+    }
+}
+
+/// Inputs required to create one Dokploy LibSQL database.
+///
+/// The project identity is retained only for authoritative topology discovery;
+/// it is never serialized into the `libsql.create` body.
+pub struct CreateLibSql {
+    name: String,
+    app_name: String,
+    project_id: ProjectId,
+    environment_id: EnvironmentId,
+    description: Option<String>,
+    database_user: String,
+    database_password: Zeroizing<String>,
+    node: LibSqlNode,
+    enable_namespaces: bool,
+    server_id: Option<ServerId>,
+}
+
+impl CreateLibSql {
+    /// Creates LibSQL input with a write-only authentication credential.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        app_name: impl Into<String>,
+        project_id: ProjectId,
+        environment_id: EnvironmentId,
+        database_user: impl Into<String>,
+        database_password: Zeroizing<String>,
+        node: LibSqlNode,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            app_name: app_name.into(),
+            project_id,
+            environment_id,
+            description: None,
+            database_user: database_user.into(),
+            database_password,
+            node,
+            enable_namespaces: false,
+            server_id: None,
+        }
+    }
+
+    /// Sets the initial description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Selects whether the database enables LibSQL namespaces at creation.
+    #[must_use]
+    pub const fn with_namespaces(mut self, enable_namespaces: bool) -> Self {
+        self.enable_namespaces = enable_namespaces;
+        self
+    }
+
+    /// Associates the database with one Dokploy server at creation.
+    #[must_use]
+    pub fn with_server(mut self, server_id: ServerId) -> Self {
+        self.server_id = Some(server_id);
+        self
+    }
+
+    pub(crate) fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+
+    pub(crate) fn environment_id(&self) -> &EnvironmentId {
+        &self.environment_id
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.app_name.is_empty()
+            && !self.project_id.as_str().is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.database_user.is_empty()
+            && !self.database_password.is_empty()
+            && self.node.is_valid()
+            && self
+                .server_id
+                .as_ref()
+                .is_none_or(|server_id| !server_id.as_str().is_empty())
+    }
+}
+
+impl fmt::Debug for CreateLibSql {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateLibSql")
+            .field("name", &self.name)
+            .field("app_name", &self.app_name)
+            .field("project_id", &self.project_id)
+            .field("environment_id", &self.environment_id)
+            .field("description", &self.description)
+            .field("database_user", &self.database_user)
+            .field("database_password", &"[REDACTED]")
+            .field("node", &self.node)
+            .field("enable_namespaces", &self.enable_namespaces)
+            .field("server_id", &self.server_id)
+            .finish()
+    }
+}
+
+impl Serialize for CreateLibSql {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreateLibSql", 11)?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("appName", &self.app_name)?;
+        body.serialize_field("dockerImage", LIBSQL_DEFAULT_IMAGE)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("description", &self.description)?;
+        body.serialize_field("databaseUser", &self.database_user)?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        body.serialize_field("sqldNode", self.node.wire_name())?;
+        body.serialize_field("sqldPrimaryUrl", &self.node.primary_url())?;
+        body.serialize_field("enableNamespaces", &self.enable_namespaces)?;
+        body.serialize_field("serverId", &self.server_id.as_ref().map(ServerId::as_str))?;
+        body.end()
+    }
+}
+
+/// Physical identity discovered after Dokploy creates a LibSQL database.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedLibSql {
+    libsql_id: LibSqlId,
+}
+
+impl CreatedLibSql {
+    pub(crate) fn new(libsql_id: LibSqlId) -> Self {
+        Self { libsql_id }
+    }
+
+    /// Returns the new LibSQL identity.
+    #[must_use]
+    pub const fn libsql_id(&self) -> &LibSqlId {
+        &self.libsql_id
+    }
+}
+
+/// Owned non-secret LibSQL fields written by one update.
+pub struct UpdateLibSql {
+    libsql_id: LibSqlId,
+    description: Option<String>,
+    database_user: Option<String>,
+}
+
+impl UpdateLibSql {
+    /// Starts a LibSQL update with no fields selected.
+    #[must_use]
+    pub fn new(libsql_id: LibSqlId) -> Self {
+        Self {
+            libsql_id,
+            description: None,
+            database_user: None,
+        }
+    }
+
+    /// Selects the description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Selects the database user.
+    #[must_use]
+    pub fn with_username(mut self, database_user: impl Into<String>) -> Self {
+        self.database_user = Some(database_user.into());
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.libsql_id.as_str().is_empty()
+            && (self.description.is_some()
+                || self
+                    .database_user
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty()))
+    }
+}
+
+impl fmt::Debug for UpdateLibSql {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateLibSql")
+            .field("libsql_id", &self.libsql_id)
+            .field("description", &self.description)
+            .field("database_user", &self.database_user)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateLibSql {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "UpdateLibSql",
+            1 + usize::from(self.description.is_some()) + usize::from(self.database_user.is_some()),
+        )?;
+        body.serialize_field("libsqlId", self.libsql_id.as_str())?;
+        if let Some(description) = &self.description {
+            body.serialize_field("description", description)?;
+        }
+        if let Some(database_user) = &self.database_user {
+            body.serialize_field("databaseUser", database_user)?;
+        }
+        body.end()
+    }
+}
+
+/// A write-only update of the LibSQL authentication credential.
+///
+/// Dokploy `v0.30.6` calls this field `databasePassword`; it is the credential
+/// used as the self-hosted LibSQL authentication token. There is no separate
+/// token rotation endpoint in the pinned contract.
+pub struct ChangeLibSqlPassword {
+    libsql_id: LibSqlId,
+    password: Zeroizing<String>,
+}
+
+impl ChangeLibSqlPassword {
+    /// Creates an explicit LibSQL credential rotation.
+    #[must_use]
+    pub fn new(libsql_id: LibSqlId, password: Zeroizing<String>) -> Self {
+        Self {
+            libsql_id,
+            password,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.libsql_id.as_str().is_empty() && !self.password.is_empty()
+    }
+}
+
+impl fmt::Debug for ChangeLibSqlPassword {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChangeLibSqlPassword")
+            .field("libsql_id", &self.libsql_id)
+            .field("password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for ChangeLibSqlPassword {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("ChangeLibSqlPassword", 2)?;
+        body.serialize_field("libsqlId", self.libsql_id.as_str())?;
+        body.serialize_field("databasePassword", self.password.as_str())?;
         body.end()
     }
 }
@@ -1740,6 +2043,70 @@ pub struct PostgresDetails {
     pub server_id: Option<ServerId>,
 }
 
+/// A safe subset of the response returned by `libsql.one`.
+///
+/// The database password/authentication token, environment document, mounts,
+/// and other secret-bearing runtime fields are deliberately absent. Unknown
+/// fields are ignored because the pinned success response schema is empty.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibSqlDetails {
+    pub libsql_id: LibSqlId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    pub app_name: String,
+    pub docker_image: String,
+    #[serde(default)]
+    pub database_user: ResponseField<String>,
+    #[serde(default)]
+    pub sqld_node: ResponseField<String>,
+    #[serde(default)]
+    pub sqld_primary_url: ResponseField<String>,
+    #[serde(default)]
+    pub enable_namespaces: ResponseField<bool>,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub external_port: Option<u16>,
+    #[serde(default)]
+    pub external_grpcport: Option<u16>,
+    #[serde(default)]
+    pub external_admin_port: Option<u16>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+/// One safe LibSQL entry embedded in an environment from `project.one`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibSqlSearchItem {
+    pub libsql_id: LibSqlId,
+    pub name: String,
+    pub app_name: String,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+/// The authoritative LibSQL collection nested under one exact environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LibSqlCollection {
+    pub(crate) libsql: Vec<LibSqlSearchItem>,
+}
+
+impl LibSqlCollection {
+    /// Returns all LibSQL databases discovered in the parent environment.
+    #[must_use]
+    pub fn libsql(&self) -> &[LibSqlSearchItem] {
+        &self.libsql
+    }
+}
+
 /// A safe subset of the response returned by `mariadb.one`.
 ///
 /// User and root passwords, environment variables, and other secret-bearing
@@ -2065,6 +2432,8 @@ pub struct EnvironmentTopology {
     pub postgres: Vec<PostgresSummary>,
     #[serde(default)]
     pub redis: Vec<RedisSummary>,
+    #[serde(default)]
+    pub libsql: Vec<LibSqlSearchItem>,
 }
 
 /// A safe subset of the response returned by `environment.one`.

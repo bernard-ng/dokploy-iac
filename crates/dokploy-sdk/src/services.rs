@@ -1,18 +1,18 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
     Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, MariaDbCollection, MariaDbDetails, MariaDbId, MongoCollection,
-    MongoDetails, MongoId, MySqlCollection, MySqlDetails, MySqlId, PostgresCollection,
-    PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology, RedisCollection,
-    RedisDetails, RedisId,
+    EnvironmentId, Error, LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection,
+    MariaDbDetails, MariaDbId, MongoCollection, MongoDetails, MongoId, MySqlCollection,
+    MySqlDetails, MySqlId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails,
+    ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
 };
 use crate::{
-    ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword, CreateApplication,
-    CreateDomain, CreateEnvironment, CreateMariaDb, CreateMongo, CreateMySql, CreatePostgres,
-    CreateProject, CreateRedis, CreatedApplication, CreatedDomain, CreatedEnvironment,
-    CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis,
-    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb, UpdateMongo, UpdateMySql,
-    UpdatePostgres, UpdateProject, UpdateRedis,
+    ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
+    CreateApplication, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo,
+    CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
+    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres,
+    CreatedProject, CreatedRedis, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateLibSql,
+    UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -140,6 +140,53 @@ impl<'a> Environments<'a> {
     /// Permanently removes one environment.
     pub async fn delete(&self, environment_id: EnvironmentId) -> Result<(), Error> {
         self.client.environment_delete(environment_id).await
+    }
+}
+
+/// Read and mutation operations for Dokploy LibSQL databases.
+pub struct LibSql<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> LibSql<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one LibSQL database from fresh remote state.
+    pub async fn get(&self, libsql_id: LibSqlId) -> Result<LibSqlDetails, Error> {
+        self.client.libsql_get(libsql_id.as_str()).await
+    }
+
+    /// Reads LibSQL databases from one exact project/environment topology.
+    pub async fn by_environment(
+        &self,
+        project_id: ProjectId,
+        environment_id: EnvironmentId,
+    ) -> Result<LibSqlCollection, Error> {
+        self.client
+            .libsql_by_environment(project_id.as_str(), environment_id.as_str())
+            .await
+    }
+
+    /// Creates a LibSQL database and authoritatively discovers its identity.
+    pub async fn create(&self, input: CreateLibSql) -> Result<CreatedLibSql, Error> {
+        self.client.libsql_create(input).await
+    }
+
+    /// Writes an explicit subset of owned non-secret LibSQL fields.
+    pub async fn update(&self, input: UpdateLibSql) -> Result<(), Error> {
+        self.client.libsql_update(input).await
+    }
+
+    /// Rotates the LibSQL database password/authentication token.
+    pub async fn change_password(&self, input: ChangeLibSqlPassword) -> Result<(), Error> {
+        self.client.libsql_change_password(input).await
+    }
+
+    /// Removes one LibSQL database by physical identity.
+    pub async fn delete(&self, libsql_id: LibSqlId) -> Result<(), Error> {
+        self.client.libsql_delete(libsql_id).await
     }
 }
 

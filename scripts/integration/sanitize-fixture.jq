@@ -9,6 +9,8 @@ def normalized_scalar:
     if .value == null then . else .value = "postgres-1" end
   elif .key == "redisId" then
     if .value == null then . else .value = "redis-1" end
+  elif .key == "libsqlId" then
+    if .value == null then . else .value = "libsql-1" end
   elif .key == "mariadbId" then
     if .value == null then . else .value = "mariadb-1" end
   elif .key == "mongoId" then
@@ -76,6 +78,14 @@ walk(
           else
             .
           end)
+      elif has("libsqlId") then
+        (if has("appName") then .appName = "libsql-contract-test" else . end)
+        | (if has("name") then .name = "LibSQL Contract Test" else . end)
+        | (if has("description") and .description != null then
+            .description = "Disposable LibSQL SDK contract"
+          else
+            .
+          end)
       elif has("mongoId") then
         (if has("appName") then .appName = "mongodb-contract-test" else . end)
         | (if has("name") then .name = "MongoDB Contract Test" else . end)
@@ -112,6 +122,10 @@ walk(
         and (.name | startswith("mysql-sdk-contract-"))
       then
         .name = "MySQL SDK Contract Test"
+      elif has("projectId") and has("name")
+        and (.name | startswith("libsql-sdk-contract-"))
+      then
+        .name = "LibSQL SDK Contract Test"
       else
         .
       end

@@ -156,6 +156,28 @@ error. Before publishing, the command proves cleanup through `mongo.one`,
 `mongo.search`, and `project.one`. An ownership-scoped cleanup trap removes the
 disposable database and project after interruption.
 
+## Disposable LibSQL contract capture
+
+Capture the LibSQL adapter contract against the pinned local instance with:
+
+```bash
+scripts/integration/capture-libsql-contract.sh
+```
+
+The command creates an undeployed LibSQL record, proves its identity through
+the exact environment nested in `project.one`, reads it through `libsql.one`,
+updates its username and authentication credential, and removes it. The
+capture fails closed unless the requested name is unique in that environment.
+This is required because `libsql.create` returns only a boolean and the pinned
+API has no LibSQL search operation. Dokploy also suffixes the requested
+application name, so it cannot serve as a stable recovery key.
+
+The raw password/authentication token remains only in ignored owner-only
+storage. The command privately verifies that credential rotation persisted,
+then publishes a redacted detail fixture. Cleanup is proven through both the
+404 from `libsql.one` and absence from the exact project environment. The
+database is never deployed.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

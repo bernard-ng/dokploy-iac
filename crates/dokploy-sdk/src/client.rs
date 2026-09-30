@@ -14,10 +14,12 @@ use dokploy_api::{
     ENVIRONMENT_UPDATE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
     EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
     EnvironmentIdRequestBody, EnvironmentOneRequest, EnvironmentOneRequestQuery,
-    EnvironmentRemoveRequest, MARIADB_CHANGE_PASSWORD, MARIADB_CREATE, MARIADB_ONE, MARIADB_REMOVE,
-    MARIADB_SEARCH, MARIADB_UPDATE, MONGO_CHANGE_PASSWORD, MONGO_CREATE, MONGO_ONE, MONGO_REMOVE,
-    MONGO_SEARCH, MONGO_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
-    MYSQL_SEARCH, MYSQL_UPDATE, MariadbIdRequestBody, MariadbOneRequest, MariadbOneRequestQuery,
+    EnvironmentRemoveRequest, LIBSQL_CREATE, LIBSQL_ONE, LIBSQL_REMOVE, LIBSQL_UPDATE,
+    LibsqlIdRequestBody, LibsqlOneRequest, LibsqlOneRequestQuery, LibsqlRemoveRequest,
+    MARIADB_CHANGE_PASSWORD, MARIADB_CREATE, MARIADB_ONE, MARIADB_REMOVE, MARIADB_SEARCH,
+    MARIADB_UPDATE, MONGO_CHANGE_PASSWORD, MONGO_CREATE, MONGO_ONE, MONGO_REMOVE, MONGO_SEARCH,
+    MONGO_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE, MYSQL_SEARCH,
+    MYSQL_UPDATE, MariadbIdRequestBody, MariadbOneRequest, MariadbOneRequestQuery,
     MariadbRemoveRequest, MariadbSearchRequest, MariadbSearchRequestQuery, MongoIdRequestBody,
     MongoOneRequest, MongoOneRequestQuery, MongoRemoveRequest, MongoSearchRequest,
     MongoSearchRequestQuery, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
@@ -46,24 +48,25 @@ use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse, ApplicationSearchPage,
     DomainCollection, DomainCreateResponse, DomainDetails, EnvironmentCollection,
-    EnvironmentCreateResponse, EnvironmentDetails, MariaDbCollection, MariaDbCreateResponse,
-    MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
-    MongoSearchPage, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
-    PostgresCollection, PostgresCreateResponse, PostgresDetails, PostgresSearchPage,
-    ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection, RedisCreateResponse,
-    RedisDetails, RedisSearchPage,
+    EnvironmentCreateResponse, EnvironmentDetails, LibSqlCollection, LibSqlDetails,
+    MariaDbCollection, MariaDbCreateResponse, MariaDbDetails, MariaDbSearchPage, MongoCollection,
+    MongoCreateResponse, MongoDetails, MongoSearchPage, MySqlCollection, MySqlCreateResponse,
+    MySqlDetails, MySqlSearchPage, PostgresCollection, PostgresCreateResponse, PostgresDetails,
+    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
+    RedisCreateResponse, RedisDetails, RedisSearchPage,
 };
 use crate::services::{
-    Applications, Domains, Environments, MariaDb, Mongo, MySql, Postgres, Projects, Redis,
+    Applications, Domains, Environments, LibSql, MariaDb, Mongo, MySql, Postgres, Projects, Redis,
 };
 use crate::{
-    ApplicationId, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
-    CreateApplication, CreateDomain, CreateEnvironment, CreateMariaDb, CreateMongo, CreateMySql,
-    CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
-    CreatedEnvironment, CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres,
-    CreatedProject, CreatedRedis, DomainId, EnvironmentId, MariaDbId, MongoId, MySqlId, PostgresId,
-    ProjectId, RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb,
-    UpdateMongo, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
+    ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
+    ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment, CreateLibSql,
+    CreateMariaDb, CreateMongo, CreateMySql, CreatePostgres, CreateProject, CreateRedis,
+    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb,
+    CreatedMongo, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, DomainId,
+    EnvironmentId, LibSqlId, MariaDbId, MongoId, MySqlId, PostgresId, ProjectId, RedisId,
+    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo,
+    UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -71,6 +74,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("dokploy-iac/", env!("CARGO_PKG_VERSION"));
 const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
+const LIBSQL_TOPOLOGY_ITEM_LIMIT: usize = 10_000;
 const MARIADB_SEARCH_PAGE_SIZE: usize = 100;
 const MARIADB_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MONGO_SEARCH_PAGE_SIZE: usize = 100;
@@ -125,6 +129,12 @@ impl Dokploy {
     #[must_use]
     pub fn environments(&self) -> Environments<'_> {
         Environments::new(self)
+    }
+
+    /// Returns access to LibSQL read and mutation operations.
+    #[must_use]
+    pub fn libsql(&self) -> LibSql<'_> {
+        LibSql::new(self)
     }
 
     /// Returns access to MariaDB read and mutation operations.
@@ -442,6 +452,134 @@ impl Dokploy {
         validate_generated_request(POSTGRES_ONE, &request)?;
 
         self.read_query_json(POSTGRES_ONE, &request.query).await
+    }
+
+    pub(crate) async fn libsql_get(&self, libsql_id: &str) -> Result<LibSqlDetails, Error> {
+        let request = LibsqlOneRequest {
+            query: LibsqlOneRequestQuery {
+                libsql_id: libsql_id.to_owned(),
+            },
+        };
+        validate_generated_request(LIBSQL_ONE, &request)?;
+
+        self.read_query_json(LIBSQL_ONE, &request.query).await
+    }
+
+    pub(crate) async fn libsql_by_environment(
+        &self,
+        project_id: &str,
+        environment_id: &str,
+    ) -> Result<LibSqlCollection, Error> {
+        if project_id.is_empty() || environment_id.is_empty() {
+            return Err(invalid_request(
+                PROJECT_ONE.operation(),
+                "project and environment IDs cannot be empty",
+            ));
+        }
+        let project = self.project_get(project_id).await?;
+        if project.project_id.as_str() != project_id {
+            return Err(Error::UnexpectedResponse {
+                operation: PROJECT_ONE.operation(),
+            });
+        }
+        let mut environments = project
+            .environments
+            .into_iter()
+            .filter(|environment| environment.environment_id.as_str() == environment_id);
+        let Some(environment) = environments.next() else {
+            return Err(Error::UnexpectedResponse {
+                operation: PROJECT_ONE.operation(),
+            });
+        };
+        if environments.next().is_some() || environment.libsql.len() > LIBSQL_TOPOLOGY_ITEM_LIMIT {
+            return Err(Error::UnexpectedResponse {
+                operation: PROJECT_ONE.operation(),
+            });
+        }
+
+        Ok(LibSqlCollection {
+            libsql: environment.libsql,
+        })
+    }
+
+    pub(crate) async fn libsql_create(&self, input: CreateLibSql) -> Result<CreatedLibSql, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                LIBSQL_CREATE.operation(),
+                "LibSQL create fields are invalid",
+            ));
+        }
+        let before = self
+            .libsql_by_environment(input.project_id().as_str(), input.environment_id().as_str())
+            .await?;
+        if before
+            .libsql()
+            .iter()
+            .any(|libsql| libsql.name == input.name())
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: LIBSQL_CREATE.operation(),
+            });
+        }
+
+        let created: bool = self.mutate_body_json(LIBSQL_CREATE, &input).await?;
+        if !created {
+            return Err(Error::UnexpectedResponse {
+                operation: LIBSQL_CREATE.operation(),
+            });
+        }
+
+        let after = self
+            .libsql_by_environment(input.project_id().as_str(), input.environment_id().as_str())
+            .await?;
+        let matches = after
+            .libsql()
+            .iter()
+            .filter(|libsql| libsql.name == input.name())
+            .collect::<Vec<_>>();
+        if let [created] = matches.as_slice() {
+            return Ok(CreatedLibSql::new(created.libsql_id.clone()));
+        }
+
+        Err(Error::UnexpectedResponse {
+            operation: LIBSQL_CREATE.operation(),
+        })
+    }
+
+    pub(crate) async fn libsql_update(&self, input: UpdateLibSql) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                LIBSQL_UPDATE.operation(),
+                "LibSQL update requires an identity and at least one non-empty field",
+            ));
+        }
+
+        self.mutate_body_ok(LIBSQL_UPDATE, &input).await
+    }
+
+    pub(crate) async fn libsql_change_password(
+        &self,
+        input: ChangeLibSqlPassword,
+    ) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                LIBSQL_UPDATE.operation(),
+                "LibSQL password change fields are invalid",
+            ));
+        }
+
+        self.mutate_body_ok(LIBSQL_UPDATE, &input).await
+    }
+
+    pub(crate) async fn libsql_delete(&self, libsql_id: LibSqlId) -> Result<(), Error> {
+        let request = LibsqlRemoveRequest {
+            body: LibsqlIdRequestBody {
+                libsql_id: libsql_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(LIBSQL_REMOVE, &request)?;
+
+        self.mutate_body_ok(LIBSQL_REMOVE, &request.body).await
     }
 
     pub(crate) async fn mysql_get(&self, mysql_id: &str) -> Result<MySqlDetails, Error> {

@@ -1,0 +1,10 @@
+{
+  "code": "NOT_FOUND",
+  "data": {
+    "code": "NOT_FOUND",
+    "httpStatus": 404,
+    "path": "libsql.one",
+    "zodError": null
+  },
+  "message": "Libsql not found"
+}

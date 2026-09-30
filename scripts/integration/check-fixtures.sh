@@ -83,6 +83,20 @@ required_mongo_fixtures=(
     "mongo-contract.metadata.json"
 )
 
+required_libsql_fixtures=(
+    "libsql-create.owner.json"
+    "project-one.libsql-created.owner.json"
+    "libsql-one.created.owner.json"
+    "libsql-update.owner.json"
+    "libsql-one.updated.owner.json"
+    "libsql-change-password.owner.json"
+    "libsql-one.password-updated.owner.json"
+    "libsql-remove.owner.json"
+    "libsql-one.removed.owner.json"
+    "project-one.libsql-removed.owner.json"
+    "libsql-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -114,6 +128,13 @@ done
 for fixture_name in "${required_mongo_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing MongoDB contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_libsql_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing LibSQL contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -675,6 +696,102 @@ if grep -R -E 'No running container found for mongo-' "$fixture_directory" \
     | grep -F -v -q 'mongodb-contract-test'
 then
     echo "Live fixtures contain an unsanitized generated MongoDB application name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '. == true' \
+    "$versioned_fixture_directory/libsql-create.owner.json" >/dev/null
+then
+    echo "LibSQL create fixture does not preserve the boolean response contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    [.environments[]? | select(.environmentId == "environment-1") | .libsql[]?
+        | select(
+            .libsqlId == "libsql-1"
+            and .name == "LibSQL Contract Test"
+            and .appName == "libsql-contract-test"
+        )]
+    | length == 1
+' "$versioned_fixture_directory/project-one.libsql-created.owner.json" >/dev/null; then
+    echo "LibSQL project topology fixture does not prove unique identity recovery." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .libsqlId == "libsql-1"
+    and .environmentId == "environment-1"
+    and .name == "LibSQL Contract Test"
+    and .appName == "libsql-contract-test"
+    and .dockerImage == "ghcr.io/tursodatabase/libsql-server:v0.24.32"
+    and .databaseUser == "contract"
+    and .databasePassword == "<redacted>"
+    and .sqldNode == "primary"
+    and .sqldPrimaryUrl == null
+    and .enableNamespaces == false
+    and .applicationStatus == "idle"
+    and .serverId == null
+    and .server == null
+' "$versioned_fixture_directory/libsql-one.created.owner.json" >/dev/null; then
+    echo "LibSQL detail fixture does not preserve the sanitized live contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .databaseUser == "contract_next"
+    and .databasePassword == "<redacted>"
+    and .applicationStatus == "idle"
+' "$versioned_fixture_directory/libsql-one.updated.owner.json" >/dev/null; then
+    echo "LibSQL updated detail fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .databaseUser == "contract_next"
+    and .databasePassword == "<redacted>"
+' "$versioned_fixture_directory/libsql-one.password-updated.owner.json" >/dev/null; then
+    echo "LibSQL credential update fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "libsql.one"
+' "$versioned_fixture_directory/libsql-one.removed.owner.json" >/dev/null; then
+    echo "LibSQL cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '[.environments[]?.libsql[]?] | length == 0' \
+    "$versioned_fixture_directory/project-one.libsql-removed.owner.json" >/dev/null
+then
+    echo "LibSQL cleanup project fixture still contains a LibSQL record." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .discovery.source == "project.one"
+    and .discovery.createResponse == "boolean"
+    and .discovery.exactEnvironment == true
+    and .discovery.preflightAbsenceRequired == true
+    and .discovery.uniqueNameRequired == true
+    and .discovery.createStatus == 200
+    and .credentialUpdateStatus == 200
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.projectOneAbsent == true
+' "$versioned_fixture_directory/libsql-contract.metadata.json" >/dev/null; then
+    echo "LibSQL metadata does not prove discovery, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'libsql-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable LibSQL project name." >&2
     exit 1
 fi
 
