@@ -119,8 +119,20 @@ environments, applications, PostgreSQL, Redis, and application domains.
 Adapter-owned contracts classify in-place changes, reparenting, and ordered
 replacement without admitting mutation code to the planner.
 
-The remaining MVP work is centered on the public `plan` workflow and the
-recoverable executor behind `apply`.
+Phase 5 is complete, including the public read-only `plan` workflow. The
+remaining MVP work is the recoverable executor behind `apply`.
+
+Preview a workspace without changing Dokploy or creating local state:
+
+```bash
+dokploy plan
+dokploy plan --json
+dokploy plan --json --detailed-exitcode
+```
+
+Detailed exit status follows the usual infrastructure-planning convention: 0
+for success, 1 for an error or blocked plan, and 2 for an applyable plan with
+changes.
 
 For delivery detail, see the [implementation phases](docs/implementation-phases.md).
 

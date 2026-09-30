@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::Path;
 
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const DEFAULT_CONFIG_FILE: &str = "dokploy.yaml";
@@ -11,6 +12,17 @@ const TEMPLATE: &str = include_str!("template.yaml");
 
 /// Loads one regular UTF-8 configuration file through a strict one-MiB read bound.
 pub fn load(path: impl AsRef<Path>) -> Result<crate::DokployConfig, ConfigFileError> {
+    load_with_digest(path).map(|loaded| loaded.config)
+}
+
+/// One parsed configuration and the SHA-256 digest of its exact source bytes.
+pub struct LoadedConfig {
+    pub config: crate::DokployConfig,
+    pub source_sha256: [u8; 32],
+}
+
+/// Loads and hashes one configuration through the same single bounded read.
+pub fn load_with_digest(path: impl AsRef<Path>) -> Result<LoadedConfig, ConfigFileError> {
     let path = path.as_ref();
     let file = open_for_bounded_read(path)?;
     let opened_metadata = file
@@ -38,10 +50,16 @@ pub fn load(path: impl AsRef<Path>) -> Result<crate::DokployConfig, ConfigFileEr
         ));
     }
 
+    let source_sha256 = Sha256::digest(&bytes).into();
     let source = String::from_utf8(bytes)
         .map_err(|_| ConfigFileError::Configuration(crate::ConfigError::ParseWithoutLocation))?;
 
-    crate::DokployConfig::parse(&source).map_err(ConfigFileError::Configuration)
+    let config = crate::DokployConfig::parse(&source).map_err(ConfigFileError::Configuration)?;
+
+    Ok(LoadedConfig {
+        config,
+        source_sha256,
+    })
 }
 
 #[cfg(unix)]
@@ -166,7 +184,7 @@ mod tests {
     use std::sync::{Arc, Barrier};
     use std::thread;
 
-    use super::{ConfigFileError, MAX_CONFIG_BYTES, TEMPLATE, initialize, load};
+    use super::{ConfigFileError, MAX_CONFIG_BYTES, TEMPLATE, initialize, load, load_with_digest};
     use crate::{ConfigError, DokployConfig};
 
     #[test]
@@ -196,6 +214,23 @@ mod tests {
         let config = load(&path).expect("canonical configuration loads");
 
         assert_eq!(config.version(), 1);
+    }
+
+    #[test]
+    fn load_with_digest_hashes_the_exact_bytes_from_the_single_read() {
+        use sha2::{Digest, Sha256};
+
+        let directory = tempfile::tempdir().expect("temporary directory is available");
+        let path = directory.path().join("dokploy.yaml");
+        fs::write(&path, TEMPLATE).expect("fixture is writable");
+
+        let loaded = load_with_digest(&path).expect("canonical configuration loads");
+
+        assert_eq!(loaded.config.version(), 1);
+        assert_eq!(
+            loaded.source_sha256,
+            Sha256::digest(TEMPLATE.as_bytes())[..]
+        );
     }
 
     #[test]

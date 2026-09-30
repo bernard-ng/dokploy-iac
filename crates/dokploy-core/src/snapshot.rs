@@ -512,6 +512,17 @@ pub struct StoredState {
 }
 
 impl StoredState {
+    /// Creates a deterministic ephemeral baseline for a workspace without state.
+    #[must_use]
+    pub fn absent(instance: InstanceIdentity) -> Self {
+        Self {
+            lineage: Uuid::nil(),
+            serial: 0,
+            instance,
+            resources: BTreeMap::new(),
+        }
+    }
+
     /// Projects a durable state file into typed planner properties.
     pub fn try_from_state(state: &StateFile) -> Result<Self, StoredStateError> {
         let mut resources = BTreeMap::new();

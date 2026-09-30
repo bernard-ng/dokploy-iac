@@ -84,6 +84,21 @@ pub struct DiscoveryAuthority {
     pub domains: DomainTopologyAuthority,
 }
 
+impl DiscoveryAuthority {
+    /// Full-instance visibility required by the public reconciliation workflow.
+    #[must_use]
+    pub const fn reconciliation() -> Self {
+        Self {
+            projects: ProjectTopologyAuthority::Authoritative,
+            environments: EnvironmentTopologyAuthority::Authoritative,
+            applications: ApplicationTopologyAuthority::Authoritative,
+            postgres: PostgresTopologyAuthority::Authoritative,
+            redis: RedisTopologyAuthority::Authoritative,
+            domains: DomainTopologyAuthority::Authoritative,
+        }
+    }
+}
+
 /// A redaction-safe combined discovery failure.
 #[derive(Debug, Error)]
 pub enum DiscoverRemoteError {

@@ -61,6 +61,25 @@ pub enum Command {
         file: PathBuf,
     },
 
+    /// Compare configuration, durable state, and fresh Dokploy state without mutating anything.
+    Plan {
+        /// Configuration file to plan.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+
+        /// Print the deterministic redaction-safe JSON plan.
+        #[arg(long)]
+        json: bool,
+
+        /// Return status 2 when a complete, applyable plan contains changes.
+        #[arg(long)]
+        detailed_exitcode: bool,
+    },
+
     /// Inspect or select local connection contexts.
     Context {
         #[command(subcommand)]
@@ -155,6 +174,28 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Validate { file } if file.as_path() == Path::new("dokploy.yaml")
+        ));
+    }
+
+    #[test]
+    fn plan_supports_json_and_detailed_exit_status() {
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "plan",
+            "--file",
+            "stack.yaml",
+            "--json",
+            "--detailed-exitcode",
+        ])
+        .expect("plan command line is valid");
+
+        assert!(matches!(
+            cli.command,
+            Command::Plan {
+                file,
+                json: true,
+                detailed_exitcode: true,
+            } if file.as_path() == Path::new("stack.yaml")
         ));
     }
 

@@ -32,7 +32,7 @@ pub fn execute(cli: Cli, output: &mut dyn Write, terminal_available: bool) -> Re
             Ok(())
         }
         Command::Validate { file } => validate_configuration(&file, output),
-        Command::Context { .. } | Command::Imperative(_) => {
+        Command::Plan { .. } | Command::Context { .. } | Command::Imperative(_) => {
             Err(miette::miette!("command requires connection dispatch"))
         }
     }

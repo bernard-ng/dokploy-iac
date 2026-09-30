@@ -51,7 +51,7 @@ durable state semantics.
 - Create configuration files without overwriting existing paths and load only
   bounded regular files.
 
-## Phase 5: planner
+## Phase 5: planner — complete
 
 - Complete the first pure planner checkpoint: typed path-level ownership across
   desired, stored, and remote snapshots; nested source and environment paths;
@@ -105,6 +105,9 @@ durable state semantics.
 - Build the remaining fresh remote state adapters.
 - Add adapter-projected mutability and ordered replacement behavior.
 - Keep mutation code unreachable from the planner.
+- Expose read-only `dokploy plan` with canonical JSON, human summaries,
+  authoritative fresh discovery, state/recovery revalidation, and detailed
+  exit status.
 
 ## Phase 6: executor MVP
 

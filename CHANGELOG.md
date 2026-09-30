@@ -18,6 +18,9 @@ All notable changes to this project will be documented in this file.
   and endpoint-consistency checks.
 - Add adapter-projected mutation contracts, explicit reparent actions, stable
   unsupported-transition diagnostics, and protected ordered replacements.
+- Add the public read-only `dokploy plan` workflow with single-read source
+  digests, deterministic absent-state planning, canonical JSON, human summaries,
+  recovery/state revalidation, and detailed exit status.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

@@ -7,6 +7,8 @@ mod declarative;
 pub mod desired;
 mod imperative;
 mod imperative_generated;
+mod plan_output;
+pub mod planning;
 mod redaction;
 pub mod remote;
 // This foundation becomes reachable when the desired compiler accepts sensitive inputs.
@@ -14,6 +16,14 @@ pub mod remote;
 mod sensitive;
 pub mod settings;
 pub mod telemetry;
+
+/// Process-level outcome selected by a successfully dispatched command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandStatus {
+    Success,
+    Failure,
+    ChangesPresent,
+}
 
 use std::io::Write;
 
@@ -35,9 +45,10 @@ pub async fn execute(
     config: &ConfigRepository,
     credentials: &dyn CredentialStore,
     output: &mut dyn Write,
-) -> Result<()> {
+) -> Result<CommandStatus> {
     if cli.is_offline() {
-        return execute_offline(cli, output, false);
+        execute_offline(cli, output, false)?;
+        return Ok(CommandStatus::Success);
     }
 
     let Cli {
@@ -50,13 +61,55 @@ pub async fn execute(
         Command::Init { .. } | Command::Schema | Command::Validate { .. } => {
             unreachable!("offline commands return before connection dispatch")
         }
-        Command::Context { command } => match command {
-            ContextCommand::List => list_contexts(config, output),
-            ContextCommand::Use { name } => use_context(config, &name, output),
-            ContextCommand::Show { name } => {
-                show_context(config, credentials, name.as_deref(), output)
+        Command::Context { command } => {
+            match command {
+                ContextCommand::List => list_contexts(config, output)?,
+                ContextCommand::Use { name } => use_context(config, &name, output)?,
+                ContextCommand::Show { name } => {
+                    show_context(config, credentials, name.as_deref(), output)?
+                }
             }
-        },
+            Ok(CommandStatus::Success)
+        }
+        Command::Plan {
+            file,
+            json,
+            detailed_exitcode,
+        } => {
+            let configuration = config.load()?;
+            let settings = resolve_connection(
+                ConnectionOptions {
+                    url,
+                    api_key: api_key.map(ApiKey::new),
+                },
+                &ProcessEnvironment,
+                &configuration,
+                credentials,
+            )?;
+            let client = Dokploy::builder()
+                .url(settings.url().as_str())
+                .api_key(settings.api_key().expose())
+                .build()
+                .into_diagnostic()?;
+            let plan = planning::plan_workspace(&client, &file)
+                .await
+                .into_diagnostic()?;
+
+            if json {
+                output.write_all(&plan.to_json_bytes()).into_diagnostic()?;
+                writeln!(output).into_diagnostic()?;
+            } else {
+                plan_output::render(&plan, output)?;
+            }
+
+            if !plan.complete() || !plan.applyable() {
+                Ok(CommandStatus::Failure)
+            } else if detailed_exitcode && !plan.changes().is_empty() {
+                Ok(CommandStatus::ChangesPresent)
+            } else {
+                Ok(CommandStatus::Success)
+            }
+        }
         Command::Imperative(command) => {
             let invocation = command.into_invocation()?;
             let configuration = config.load()?;
@@ -84,7 +137,7 @@ pub async fn execute(
             serde_json::to_writer_pretty(&mut *output, &response).into_diagnostic()?;
             writeln!(output).into_diagnostic()?;
 
-            Ok(())
+            Ok(CommandStatus::Success)
         }
     }
 }
