@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Require managed Postgres, MySQL, MariaDB, and Redis direct reads to agree
+  with a successful parent-scoped collection read before planning mutations,
+  and retain redaction-safe live-test evidence whenever cleanup is unproven.
 - Validate atomic LibSQL node values at both desired and stored planner seams,
   rejecting malformed tagged shapes and empty replica URLs.
 - Separate optional create-only mutation properties from required create

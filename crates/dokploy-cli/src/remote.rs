@@ -824,19 +824,23 @@ async fn discover_postgres_observations(
                     if postgres.environment_id.as_str() != expected_environment_id {
                         return Err(DiscoverRemoteError::PostgresContainment);
                     }
-                    validate_direct_postgres_against_collection(
-                        &postgres,
-                        &expected_environment_id,
-                        &collections,
-                        authority,
-                    )?;
-                    if !seen_direct_ids.insert(remote_id.clone()) {
-                        return Err(DiscoverRemoteError::DuplicatePostgresId);
+                    if let Some(Err(error)) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_postgres_against_collection(
+                            &postgres,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicatePostgresId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            postgres_properties(&address, compiled, &postgres),
+                        ))
                     }
-                    RemoteObservation::Present(RemoteResource::new(
-                        remote_id,
-                        postgres_properties(&address, compiled, &postgres),
-                    ))
                 }
                 Err(SdkError::Api(error)) if error.status() == 404 => {
                     if postgres_collections_contain_id(stored.remote_id(), &collections) {
@@ -953,19 +957,23 @@ async fn discover_mysql_observations(
                     if mysql.environment_id.as_str() != expected_environment_id {
                         return Err(DiscoverRemoteError::MySqlContainment);
                     }
-                    validate_direct_mysql_against_collection(
-                        &mysql,
-                        &expected_environment_id,
-                        &collections,
-                        authority,
-                    )?;
-                    if !seen_direct_ids.insert(remote_id.clone()) {
-                        return Err(DiscoverRemoteError::DuplicateMySqlId);
+                    if let Some(Err(error)) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_mysql_against_collection(
+                            &mysql,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicateMySqlId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            mysql_properties(&address, compiled, &mysql),
+                        ))
                     }
-                    RemoteObservation::Present(RemoteResource::new(
-                        remote_id,
-                        mysql_properties(&address, compiled, &mysql),
-                    ))
                 }
                 Err(SdkError::Api(error)) if error.status() == 404 => {
                     if mysql_collections_contain_id(stored.remote_id(), &collections) {
@@ -1086,19 +1094,23 @@ async fn discover_mariadb_observations(
                     if mariadb.environment_id.as_str() != expected_environment_id {
                         return Err(DiscoverRemoteError::MariaDbContainment);
                     }
-                    validate_direct_mariadb_against_collection(
-                        &mariadb,
-                        &expected_environment_id,
-                        &collections,
-                        authority,
-                    )?;
-                    if !seen_direct_ids.insert(remote_id.clone()) {
-                        return Err(DiscoverRemoteError::DuplicateMariaDbId);
+                    if let Some(Err(error)) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_mariadb_against_collection(
+                            &mariadb,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicateMariaDbId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            mariadb_properties(&address, compiled, &mariadb),
+                        ))
                     }
-                    RemoteObservation::Present(RemoteResource::new(
-                        remote_id,
-                        mariadb_properties(&address, compiled, &mariadb),
-                    ))
                 }
                 Err(SdkError::Api(error)) if error.status() == 404 => {
                     if mariadb_collections_contain_id(stored.remote_id(), &collections) {
@@ -1219,19 +1231,23 @@ async fn discover_redis_observations(
                     if redis.environment_id.as_str() != expected_environment_id {
                         return Err(DiscoverRemoteError::RedisContainment);
                     }
-                    validate_direct_redis_against_collection(
-                        &redis,
-                        &expected_environment_id,
-                        &collections,
-                        authority,
-                    )?;
-                    if !seen_direct_ids.insert(remote_id.clone()) {
-                        return Err(DiscoverRemoteError::DuplicateRedisId);
+                    if let Some(Err(error)) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_redis_against_collection(
+                            &redis,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicateRedisId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            redis_properties(&address, compiled),
+                        ))
                     }
-                    RemoteObservation::Present(RemoteResource::new(
-                        remote_id,
-                        redis_properties(&address, compiled),
-                    ))
                 }
                 Err(SdkError::Api(error)) if error.status() == 404 => {
                     if redis_collections_contain_id(stored.remote_id(), &collections) {
@@ -2136,7 +2152,7 @@ fn validate_direct_postgres_against_collection(
         return Err(DiscoverRemoteError::PostgresTopologyConflict);
     };
     let Ok(collection) = collection else {
-        return Ok(());
+        return Err(DiscoverRemoteError::PostgresTopologyConflict);
     };
     let matching = collection
         .postgres()
@@ -2413,7 +2429,7 @@ fn validate_direct_mysql_against_collection(
         return Err(DiscoverRemoteError::MySqlTopologyConflict);
     };
     let Ok(collection) = collection else {
-        return Ok(());
+        return Err(DiscoverRemoteError::MySqlTopologyConflict);
     };
     let matching = collection
         .mysql()
@@ -2690,7 +2706,7 @@ fn validate_direct_mariadb_against_collection(
         return Err(DiscoverRemoteError::MariaDbTopologyConflict);
     };
     let Ok(collection) = collection else {
-        return Ok(());
+        return Err(DiscoverRemoteError::MariaDbTopologyConflict);
     };
     let matching = collection
         .mariadb()
@@ -2928,7 +2944,7 @@ fn validate_direct_redis_against_collection(
         return Err(DiscoverRemoteError::RedisTopologyConflict);
     };
     let Ok(collection) = collection else {
-        return Ok(());
+        return Err(DiscoverRemoteError::RedisTopologyConflict);
     };
     let matching = collection
         .redis()

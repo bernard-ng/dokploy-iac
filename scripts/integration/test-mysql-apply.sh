@@ -37,7 +37,7 @@ config_file="$workspace/dokploy.yaml"
 api_header_file="$workspace/api-header"
 search_output="$workspace/mysql-search.removed.json"
 one_output="$workspace/mysql-one.removed.json"
-project_output="$workspace/projects.json"
+project_output="$workspace/cleanup-projects.json"
 mysql_user_password="$(openssl rand -hex 24)"
 mysql_root_password="$(openssl rand -hex 24)"
 rotated_mysql_user_password="$(openssl rand -hex 24)"
@@ -69,32 +69,87 @@ api_get() {
 }
 
 cleanup() {
+    local primary_status=$?
+    local cleanup_status=0
+    local lookup_status=0
+    local one_status=""
     local project_id=""
     local state_file="$workspace/.dokploy/state.json"
 
+    trap - EXIT
+    set +e
     unset PHASE8_MYSQL_PASSWORD PHASE8_MYSQL_ROOT_PASSWORD
     if [[ -s "$state_file" ]]; then
         project_id="$(jq -r --arg address "project.$project_name" '.resources[$address].remoteId // empty' "$state_file")"
     fi
     if [[ -z "$project_id" ]]; then
         DOKPLOY_URL="$base_url" DOKPLOY_API_KEY="$(<"$api_key_file")" \
-            "$repository_root/target/debug/dokploy" project all >"$project_output" 2>/dev/null || true
-        project_id="$(jq -r --arg name "$project_name" '[.[] | select(.name == $name)] | if length == 1 then .[0].projectId else empty end' "$project_output" 2>/dev/null || true)"
+            "$repository_root/target/debug/dokploy" project all \
+            >"$workspace/cleanup-projects-before.stdout" \
+            2>"$workspace/cleanup-projects-before.stderr"
+        lookup_status=$?
+        if [[ "$lookup_status" -eq 0 ]]; then
+            project_id="$(jq -r --arg name "$project_name" '[.[] | select(.name == $name)] | if length == 1 then .[0].projectId else empty end' "$workspace/cleanup-projects-before.stdout")"
+        else
+            cleanup_status=1
+        fi
     fi
     if [[ -n "$project_id" ]]; then
         DOKPLOY_URL="$base_url" DOKPLOY_API_KEY="$(<"$api_key_file")" \
             "$repository_root/target/debug/dokploy" project remove \
-            --body-project-id "$project_id" >/dev/null 2>&1 || true
+            --body-project-id "$project_id" \
+            >"$workspace/cleanup-project-remove.stdout" \
+            2>"$workspace/cleanup-project-remove.stderr"
+        if [[ "$?" -ne 0 ]]; then
+            cleanup_status=1
+        fi
     fi
 
-    case "$workspace" in
-        "$state_directory"/phase8-mysql-apply.*)
-            rm -rf -- "$workspace"
-            ;;
-        *)
-            echo "refusing to remove an unexpected integration workspace" >&2
-            ;;
-    esac
+    DOKPLOY_URL="$base_url" DOKPLOY_API_KEY="$(<"$api_key_file")" \
+        "$repository_root/target/debug/dokploy" project all \
+        >"$project_output" \
+        2>"$workspace/cleanup-projects.stderr"
+    if [[ "$?" -ne 0 ]] || ! jq -e --arg name "$project_name" '[.[] | select(.name == $name)] | length == 0' "$project_output" >/dev/null; then
+        echo "MySQL cleanup could not prove project absence" >&2
+        cleanup_status=1
+    fi
+
+    if [[ -n "$mysql_id" ]]; then
+        one_status="$(api_get "mysql.one?mysqlId=$(urlencode "$mysql_id")" "$workspace/cleanup-mysql-one.json")"
+        if [[ "$?" -ne 0 || "$one_status" != "404" ]]; then
+            echo "MySQL cleanup could not prove database absence" >&2
+            cleanup_status=1
+        fi
+    fi
+
+    for secret in \
+        "$mysql_user_password" \
+        "$mysql_root_password" \
+        "$rotated_mysql_user_password"; do
+        if grep -R -F -q -- "$secret" "$workspace"; then
+            echo "a MySQL secret appeared in an integration artifact" >&2
+            cleanup_status=1
+        fi
+    done
+
+    if [[ "$primary_status" -eq 0 && "$cleanup_status" -eq 0 ]]; then
+        case "$workspace" in
+            "$state_directory"/phase8-mysql-apply.*)
+                rm -rf -- "$workspace"
+                ;;
+            *)
+                echo "refusing to remove an unexpected integration workspace" >&2
+                cleanup_status=1
+                ;;
+        esac
+    else
+        echo "MySQL integration evidence retained at $workspace" >&2
+    fi
+
+    if [[ "$primary_status" -ne 0 ]]; then
+        exit "$primary_status"
+    fi
+    exit "$cleanup_status"
 }
 trap cleanup EXIT
 
@@ -129,6 +184,16 @@ require_noop_plan() {
         --file "$config_file" \
         --json \
         --detailed-exitcode \
+        >"$workspace/$label.stdout" \
+        2>"$workspace/$label.stderr"
+}
+
+run_apply() {
+    local label="$1"
+
+    "$repository_root/target/debug/dokploy" apply \
+        --file "$config_file" \
+        --auto-approve \
         >"$workspace/$label.stdout" \
         2>"$workspace/$label.stderr"
 }
@@ -188,7 +253,7 @@ export PHASE8_MYSQL_PASSWORD="$mysql_user_password"
 export PHASE8_MYSQL_ROOT_PASSWORD="$mysql_root_password"
 
 write_mysql_config phase8 phase8
-"$repository_root/target/debug/dokploy" apply --file "$config_file" --auto-approve
+run_apply create
 require_noop_plan after-create
 
 mysql_id="$(jq -er '.resources["mysql.main"].remoteId' "$workspace/.dokploy/state.json")"
@@ -198,7 +263,7 @@ reject_password_rotation_plan
 require_noop_plan after-password-restore
 
 write_mysql_config phase8_next phase8_next
-"$repository_root/target/debug/dokploy" apply --file "$config_file" --auto-approve
+run_apply metadata-update
 require_noop_plan after-metadata-update
 
 cat >"$config_file" <<EOF
@@ -215,7 +280,7 @@ removed:
     destroy: true
 EOF
 chmod 600 "$config_file"
-"$repository_root/target/debug/dokploy" apply --file "$config_file" --auto-approve
+run_apply delete
 
 encoded_mysql_id="$(urlencode "$mysql_id")"
 one_status="$(api_get "mysql.one?mysqlId=$encoded_mysql_id" "$one_output")"

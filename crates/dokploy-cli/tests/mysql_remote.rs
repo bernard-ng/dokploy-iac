@@ -280,6 +280,59 @@ async fn managed_mysql_projects_readable_fields_and_two_write_only_credentials()
 }
 
 #[tokio::test]
+async fn unavailable_mysql_collection_blocks_a_successful_direct_read_and_any_mutation() {
+    let unavailable = r#"{"code":"INTERNAL_SERVER_ERROR","message":"retry"}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", PROJECT),
+        ("200 OK", ENVIRONMENTS),
+        ("200 OK", ENVIRONMENT),
+        ("500 Internal Server Error", unavailable),
+        ("500 Internal Server Error", unavailable),
+        ("500 Internal Server Error", unavailable),
+        (
+            "200 OK",
+            r#"{"mysqlId":"mysql-1","environmentId":"environment-1","name":"main","appName":"mysql-main","dockerImage":"mysql:8","databaseName":"old","databaseUser":"old"}"#,
+        ),
+    ]);
+    let mut state = base_state(&server);
+    insert(
+        &mut state,
+        "mysql.main",
+        ResourceKind::MySql,
+        "mysql-1",
+        serde_json::json!({"database":"old","username":"old"}),
+        Some("environment.production"),
+    );
+    let desired = compile(&config(
+        r#"        database: next
+        username: next"#,
+    ));
+
+    let remote = discover_remote(&server.client(), &desired, &state, authoritative())
+        .await
+        .expect("collection failure is projected conservatively");
+
+    assert!(matches!(
+        remote.observation(&"mysql.main".parse().unwrap()),
+        Some(RemoteObservation::Unavailable(
+            RemoteFailureKind::Unavailable
+        ))
+    ));
+    let stored = StoredState::try_from_state(&state).unwrap();
+    let plan = plan(desired.desired_state(), &stored, &remote);
+    assert!(!plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert!(
+        plan.diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == PlanDiagnosticCode::RemoteUnavailable)
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 7);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
 async fn mysql_metadata_changes_update_in_place() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", PROJECT),

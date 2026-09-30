@@ -277,6 +277,59 @@ async fn managed_redis_projects_only_write_only_password_without_secret_bytes() 
 }
 
 #[tokio::test]
+async fn unavailable_redis_collection_blocks_a_successful_direct_read_and_any_mutation() {
+    let unavailable = r#"{"code":"INTERNAL_SERVER_ERROR","message":"retry"}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", PROJECT),
+        ("200 OK", ENVIRONMENTS),
+        ("200 OK", ENVIRONMENT),
+        ("500 Internal Server Error", unavailable),
+        ("500 Internal Server Error", unavailable),
+        ("500 Internal Server Error", unavailable),
+        (
+            "200 OK",
+            r#"{"redisId":"redis-1","environmentId":"environment-1","name":"cache","appName":"redis-cache","dockerImage":"redis:8"}"#,
+        ),
+    ]);
+    let mut state = base_state(&server);
+    insert(
+        &mut state,
+        "redis.cache",
+        ResourceKind::Redis,
+        "redis-1",
+        serde_json::json!({"password":null}),
+        &["environment.production"],
+    );
+    let desired = compile(&config("        password: null"));
+
+    let remote = discover_remote(&server.client(), &desired, &state, authoritative())
+        .await
+        .expect("collection failure is projected conservatively");
+
+    assert!(matches!(
+        remote.observation(&"redis.cache".parse().unwrap()),
+        Some(RemoteObservation::Unavailable(
+            RemoteFailureKind::Unavailable
+        ))
+    ));
+    let plan = plan(
+        desired.desired_state(),
+        &StoredState::try_from_state(&state).unwrap(),
+        &remote,
+    );
+    assert!(!plan.applyable());
+    assert!(plan.changes().is_empty());
+    assert!(
+        plan.diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == PlanDiagnosticCode::RemoteUnavailable)
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 7);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
 async fn missing_managed_redis_exposes_replacement_without_adopting_it() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", PROJECT),
