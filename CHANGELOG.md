@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Sanitize every owned secret-bearing SDK failure through one endpoint policy,
+  including shared reads and deletes, while preserving structured errors for
+  explicitly non-sensitive operations and documenting request-buffer limits.
 - Require Schedule update and delete to prove a supported authoritative target
   before mutation, reject rename collisions, compare exact executable response
   bytes in zeroizing private proofs, and verify create/delete identity deltas.

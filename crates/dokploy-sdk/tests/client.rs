@@ -631,10 +631,11 @@ async fn applications_by_environment_rejects_totals_that_change_between_pages() 
 }
 
 #[tokio::test]
-async fn dokploy_errors_preserve_status_code_message_and_issues() {
+async fn sensitive_reads_discard_remote_error_text_and_preserve_status() {
+    let secret = "project-error-secret-canary";
     let server = TestServer::respond(
         "404 Not Found",
-        r#"{"code":"NOT_FOUND","message":"Project not found","issues":[{"message":"Unknown projectId"}]}"#,
+        r#"{"code":"ECHO_project-error-secret-canary","message":"Project contains project-error-secret-canary","issues":[{"message":"project-error-secret-canary"}]}"#,
     );
     let client = Dokploy::builder()
         .url(server.url())
@@ -648,13 +649,13 @@ async fn dokploy_errors_preserve_status_code_message_and_issues() {
         .await
         .expect_err("missing project returns an error");
 
-    let details = error
-        .dokploy()
-        .expect("Dokploy error details are preserved");
+    let details = error.dokploy().expect("Dokploy status remains structured");
     assert_eq!(details.status(), 404);
     assert_eq!(details.code(), "NOT_FOUND");
-    assert_eq!(details.message(), "Project not found");
-    assert_eq!(details.issues(), ["Unknown projectId"]);
+    assert_eq!(details.message(), "Not Found");
+    assert!(details.issues().is_empty());
+    assert!(!format!("{error}").contains(secret));
+    assert!(!format!("{error:?}").contains(secret));
     server.finish();
 }
 

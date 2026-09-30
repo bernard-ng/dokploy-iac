@@ -124,6 +124,76 @@ const POSTGRES_SEARCH_ITEM_LIMIT: usize = 10_000;
 const REDIS_SEARCH_PAGE_SIZE: usize = 100;
 const REDIS_SEARCH_ITEM_LIMIT: usize = 10_000;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ErrorBodyPolicy {
+    Preserve,
+    Sanitize,
+}
+
+fn error_body_policy(endpoint: Endpoint) -> ErrorBodyPolicy {
+    if matches!(
+        endpoint,
+        PROJECT_ALL
+            | PROJECT_ONE
+            | PROJECT_REMOVE
+            | ENVIRONMENT_ONE
+            | ENVIRONMENT_BY_PROJECT_ID
+            | ENVIRONMENT_REMOVE
+            | APPLICATION_ONE
+            | APPLICATION_UPDATE
+            | APPLICATION_DELETE
+            | COMPOSE_ONE
+            | COMPOSE_CREATE
+            | COMPOSE_UPDATE
+            | COMPOSE_DELETE
+            | MOUNTS_ONE
+            | MOUNTS_LIST_BY_SERVICE_ID
+            | MOUNTS_CREATE
+            | MOUNTS_UPDATE
+            | MOUNTS_REMOVE
+            | SECURITY_ONE
+            | SECURITY_CREATE
+            | SECURITY_UPDATE
+            | SECURITY_DELETE
+            | SCHEDULE_ONE
+            | SCHEDULE_LIST
+            | SCHEDULE_CREATE
+            | SCHEDULE_UPDATE
+            | SCHEDULE_DELETE
+            | SERVER_ALL
+            | REGISTRY_ALL
+            | DESTINATION_ALL
+            | POSTGRES_ONE
+            | POSTGRES_CREATE
+            | POSTGRES_UPDATE
+            | POSTGRES_REMOVE
+            | LIBSQL_ONE
+            | LIBSQL_CREATE
+            | LIBSQL_UPDATE
+            | LIBSQL_REMOVE
+            | MYSQL_ONE
+            | MYSQL_CREATE
+            | MYSQL_CHANGE_PASSWORD
+            | MYSQL_REMOVE
+            | MARIADB_ONE
+            | MARIADB_CREATE
+            | MARIADB_CHANGE_PASSWORD
+            | MARIADB_REMOVE
+            | MONGO_ONE
+            | MONGO_CREATE
+            | MONGO_CHANGE_PASSWORD
+            | MONGO_REMOVE
+            | REDIS_ONE
+            | REDIS_CREATE
+            | REDIS_UPDATE
+            | REDIS_REMOVE
+    ) {
+        ErrorBodyPolicy::Sanitize
+    } else {
+        ErrorBodyPolicy::Preserve
+    }
+}
+
 /// A configured client for the Dokploy API.
 #[derive(Clone)]
 pub struct Dokploy {
@@ -2137,9 +2207,9 @@ impl Dokploy {
     where
         T: DeserializeOwned,
     {
-        let response = self.send(endpoint, self.request(endpoint)).await?;
+        debug_assert_eq!(error_body_policy(endpoint), ErrorBodyPolicy::Sanitize);
 
-        decode_json_response_secret(endpoint, response).await
+        self.read_json(endpoint).await
     }
 
     async fn read_query_json<T, Q>(&self, endpoint: Endpoint, query: &Q) -> Result<T, Error>
@@ -2158,10 +2228,9 @@ impl Dokploy {
         T: DeserializeOwned,
         Q: Serialize + ?Sized,
     {
-        let builder = self.request(endpoint).query(query);
-        let response = self.send(endpoint, builder).await?;
+        debug_assert_eq!(error_body_policy(endpoint), ErrorBodyPolicy::Sanitize);
 
-        decode_json_response_secret(endpoint, response).await
+        self.read_query_json(endpoint, query).await
     }
 
     async fn mutate_body_json<T, B>(&self, endpoint: Endpoint, body: &B) -> Result<T, Error>
@@ -2188,6 +2257,9 @@ impl Dokploy {
             return Ok(());
         }
         let (_, bytes) = read_bounded_response_body(endpoint, response).await?;
+        if error_body_policy(endpoint) == ErrorBodyPolicy::Sanitize {
+            return Err(Error::Api(sanitized_dokploy_error(status)));
+        }
 
         Err(Error::Api(decode_dokploy_error(status, &bytes)))
     }
@@ -2197,31 +2269,18 @@ impl Dokploy {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
-        let response = self
-            .send(endpoint, self.request(endpoint).json(body))
-            .await?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(Error::Api(sanitized_dokploy_error(status)));
-        }
-        let (_, bytes) = read_bounded_response_body(endpoint, response).await?;
+        debug_assert_eq!(error_body_policy(endpoint), ErrorBodyPolicy::Sanitize);
 
-        decode_success_json(endpoint, &bytes)
+        self.mutate_body_json(endpoint, body).await
     }
 
     async fn mutate_body_ok_secret<B>(&self, endpoint: Endpoint, body: &B) -> Result<(), Error>
     where
         B: Serialize + ?Sized,
     {
-        let response = self
-            .send(endpoint, self.request(endpoint).json(body))
-            .await?;
-        let status = response.status();
-        if status.is_success() {
-            return Ok(());
-        }
+        debug_assert_eq!(error_body_policy(endpoint), ErrorBodyPolicy::Sanitize);
 
-        Err(Error::Api(sanitized_dokploy_error(status)))
+        self.mutate_body_ok(endpoint, body).await
     }
 
     pub(crate) async fn execute_imperative(
@@ -2378,21 +2437,11 @@ where
     if status.is_success() {
         return decode_success_json(endpoint, &bytes);
     }
-
-    Err(Error::Api(decode_dokploy_error(status, &bytes)))
-}
-
-async fn decode_json_response_secret<T>(endpoint: Endpoint, response: Response) -> Result<T, Error>
-where
-    T: DeserializeOwned,
-{
-    let status = response.status();
-    if !status.is_success() {
+    if error_body_policy(endpoint) == ErrorBodyPolicy::Sanitize {
         return Err(Error::Api(sanitized_dokploy_error(status)));
     }
-    let (_, bytes) = read_bounded_response_body(endpoint, response).await?;
 
-    decode_success_json(endpoint, &bytes)
+    Err(Error::Api(decode_dokploy_error(status, &bytes)))
 }
 
 async fn decode_raw_response(
@@ -2402,6 +2451,9 @@ async fn decode_raw_response(
     let (status, bytes) = read_bounded_response_body(endpoint, response).await?;
 
     if !status.is_success() {
+        if error_body_policy(endpoint) == ErrorBodyPolicy::Sanitize {
+            return Err(Error::Api(sanitized_dokploy_error(status)));
+        }
         return Err(Error::Api(decode_dokploy_error(status, &bytes)));
     }
     if bytes.is_empty() {

@@ -99,10 +99,11 @@ impl TestServer {
         }
     }
 
-    fn respond(status: &'static str, body: &'static str) -> Self {
+    fn respond(status: &'static str, body: impl Into<String>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
         let address = listener.local_addr().expect("test server has an address");
         let (sender, requests) = mpsc::channel();
+        let body = body.into();
         let thread = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("test server accepts a request");
             let bytes = read_request(&mut stream);
@@ -456,24 +457,29 @@ async fn libsql_invalid_inputs_are_rejected_before_transport() {
 }
 
 #[tokio::test]
-async fn libsql_preserves_structured_rejections_and_unknown_transport_outcomes() {
+async fn libsql_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes() {
+    let password = "next-password";
     let rejected_server = TestServer::respond(
         "400 Bad Request",
-        r#"{"code":"BAD_REQUEST","message":"Invalid database password"}"#,
+        format!(
+            r#"{{"code":"ECHO_{password}","message":"Invalid password {password}","issues":[{{"message":"{password}"}}]}}"#
+        ),
     );
     let error = client(&rejected_server.url)
         .libsql()
         .change_password(ChangeLibSqlPassword::new(
             LibSqlId::new("libsql-1"),
-            Zeroizing::new("next-password".to_owned()),
+            Zeroizing::new(password.to_owned()),
         ))
         .await
-        .expect_err("Dokploy rejection must stay structured");
-    let details = error
-        .dokploy()
-        .expect("Dokploy error details are preserved");
+        .expect_err("Dokploy rejection must be sanitized");
+    let details = error.dokploy().expect("Dokploy status remains available");
     assert_eq!(details.status(), 400);
     assert_eq!(details.code(), "BAD_REQUEST");
+    assert_eq!(details.message(), "Bad Request");
+    assert!(details.issues().is_empty());
+    assert!(!format!("{error}").contains(password));
+    assert!(!format!("{error:?}").contains(password));
     rejected_server.finish();
 
     let unknown_server = TestServer::close_after_request();
