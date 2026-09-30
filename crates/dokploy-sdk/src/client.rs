@@ -96,6 +96,11 @@ use crate::{
 const API_KEY_HEADER: &str = "x-api-key";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("dokploy-iac/", env!("CARGO_PKG_VERSION"));
+/// Maximum decoded JSON response body accepted by the SDK.
+///
+/// Sixteen MiB leaves headroom for large Dokploy topology and imperative
+/// responses while bounding memory consumed at the untrusted HTTP seam.
+pub const MAX_JSON_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
 const COMPOSE_SEARCH_PAGE_SIZE: usize = 100;
@@ -1131,8 +1136,7 @@ impl Dokploy {
 
         let created: ScheduleDetails = self
             .mutate_body_json_secret(SCHEDULE_CREATE, &input)
-            .await
-            .map_err(|error| mutation_decode_unknown(SCHEDULE_CREATE, error))?;
+            .await?;
         if !input.matches(&created) {
             return Err(post_mutation_proof_unknown(SCHEDULE_CREATE));
         }
@@ -1159,8 +1163,7 @@ impl Dokploy {
         }
         let updated: ScheduleDetails = self
             .mutate_body_json_secret(SCHEDULE_UPDATE, &input)
-            .await
-            .map_err(|error| mutation_decode_unknown(SCHEDULE_UPDATE, error))?;
+            .await?;
         if !input.matches(&updated) {
             return Err(post_mutation_proof_unknown(SCHEDULE_UPDATE));
         }
@@ -2049,10 +2052,7 @@ impl Dokploy {
         if status.is_success() {
             return Ok(());
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|source| transport_error(endpoint, source))?;
+        let (_, bytes) = read_bounded_response_body(endpoint, response).await?;
 
         Err(Error::Api(decode_dokploy_error(status, &bytes)))
     }
@@ -2069,16 +2069,9 @@ impl Dokploy {
         if !status.is_success() {
             return Err(Error::Api(sanitized_dokploy_error(status)));
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|source| transport_error(endpoint, source))?;
-        let bytes = Zeroizing::new(bytes.to_vec());
+        let (_, bytes) = read_bounded_response_body(endpoint, response).await?;
 
-        serde_json::from_slice(&bytes).map_err(|source| Error::Decode {
-            operation: endpoint.operation(),
-            source,
-        })
+        decode_success_json(endpoint, &bytes)
     }
 
     async fn mutate_body_ok_secret<B>(&self, endpoint: Endpoint, body: &B) -> Result<(), Error>
@@ -2200,14 +2193,6 @@ fn post_mutation_proof_unknown(endpoint: Endpoint) -> Error {
     }
 }
 
-fn mutation_decode_unknown(endpoint: Endpoint, error: Error) -> Error {
-    if matches!(error, Error::Decode { .. }) {
-        return post_mutation_proof_unknown(endpoint);
-    }
-
-    error
-}
-
 fn operation_url(base_url: &Url, endpoint: Endpoint) -> Url {
     let mut url = base_url.clone();
     url.path_segments_mut()
@@ -2253,17 +2238,10 @@ async fn decode_json_response<T>(endpoint: Endpoint, response: Response) -> Resu
 where
     T: DeserializeOwned,
 {
-    let status = response.status();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|source| transport_error(endpoint, source))?;
+    let (status, bytes) = read_bounded_response_body(endpoint, response).await?;
 
     if status.is_success() {
-        return serde_json::from_slice(&bytes).map_err(|source| Error::Decode {
-            operation: endpoint.operation(),
-            source,
-        });
+        return decode_success_json(endpoint, &bytes);
     }
 
     Err(Error::Api(decode_dokploy_error(status, &bytes)))
@@ -2277,27 +2255,16 @@ where
     if !status.is_success() {
         return Err(Error::Api(sanitized_dokploy_error(status)));
     }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|source| transport_error(endpoint, source))?;
-    let bytes = Zeroizing::new(bytes.to_vec());
+    let (_, bytes) = read_bounded_response_body(endpoint, response).await?;
 
-    serde_json::from_slice(&bytes).map_err(|source| Error::Decode {
-        operation: endpoint.operation(),
-        source,
-    })
+    decode_success_json(endpoint, &bytes)
 }
 
 async fn decode_raw_response(
     endpoint: Endpoint,
     response: Response,
 ) -> Result<serde_json::Value, Error> {
-    let status = response.status();
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|source| transport_error(endpoint, source))?;
+    let (status, bytes) = read_bounded_response_body(endpoint, response).await?;
 
     if !status.is_success() {
         return Err(Error::Api(decode_dokploy_error(status, &bytes)));
@@ -2306,10 +2273,89 @@ async fn decode_raw_response(
         return Ok(serde_json::Value::Null);
     }
 
-    serde_json::from_slice(&bytes).map_err(|source| Error::Decode {
-        operation: endpoint.operation(),
-        source,
+    decode_success_json(endpoint, &bytes)
+}
+
+async fn read_bounded_response_body(
+    endpoint: Endpoint,
+    mut response: Response,
+) -> Result<(StatusCode, Zeroizing<Vec<u8>>), Error> {
+    let status = response.status();
+    let declared_length = response.content_length();
+    if declared_length.is_some_and(|length| length > MAX_JSON_RESPONSE_BYTES as u64) {
+        return Err(response_body_too_large(endpoint, status));
+    }
+    let capacity = declared_length
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or_default()
+        .min(MAX_JSON_RESPONSE_BYTES);
+    let mut bytes = Zeroizing::new(Vec::with_capacity(capacity));
+
+    loop {
+        let chunk = response.chunk().await.map_err(|source| {
+            if status.is_success() {
+                transport_error(endpoint, source)
+            } else {
+                Error::Api(sanitized_dokploy_error(status))
+            }
+        })?;
+        let Some(chunk) = chunk else {
+            break;
+        };
+        let Some(length) = bytes.len().checked_add(chunk.len()) else {
+            return Err(response_body_too_large(endpoint, status));
+        };
+        if length > MAX_JSON_RESPONSE_BYTES {
+            return Err(response_body_too_large(endpoint, status));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+
+    Ok((status, bytes))
+}
+
+fn decode_success_json<T>(endpoint: Endpoint, bytes: &[u8]) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_slice(bytes).map_err(|source| match endpoint.method() {
+        EndpointMethod::Delete
+        | EndpointMethod::Patch
+        | EndpointMethod::Post
+        | EndpointMethod::Put => Error::OutcomeUnknown {
+            operation: endpoint.operation(),
+            source: source.into(),
+        },
+        EndpointMethod::Get
+        | EndpointMethod::Head
+        | EndpointMethod::Options
+        | EndpointMethod::Trace => Error::Decode {
+            operation: endpoint.operation(),
+            source,
+        },
     })
+}
+
+fn response_body_too_large(endpoint: Endpoint, status: StatusCode) -> Error {
+    if !status.is_success() {
+        return Error::Api(sanitized_dokploy_error(status));
+    }
+
+    match endpoint.method() {
+        EndpointMethod::Delete
+        | EndpointMethod::Patch
+        | EndpointMethod::Post
+        | EndpointMethod::Put => Error::OutcomeUnknown {
+            operation: endpoint.operation(),
+            source: anyhow::anyhow!("successful response body exceeded the SDK byte limit"),
+        },
+        EndpointMethod::Get
+        | EndpointMethod::Head
+        | EndpointMethod::Options
+        | EndpointMethod::Trace => Error::UnexpectedResponse {
+            operation: endpoint.operation(),
+        },
+    }
 }
 
 #[derive(Debug, Deserialize)]

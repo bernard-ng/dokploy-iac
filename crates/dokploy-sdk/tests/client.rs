@@ -4,7 +4,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 
 use dokploy_sdk::{
-    ApplicationId, Dokploy, EnvironmentId, Error, ImperativeRequest, ProjectId, ResponseField,
+    ApplicationId, CreateProject, Dokploy, EnvironmentId, Error, ImperativeRequest,
+    MAX_JSON_RESPONSE_BYTES, ProjectId, ResponseField,
 };
 
 struct TestServer {
@@ -96,6 +97,37 @@ impl TestServer {
         }
     }
 
+    fn respond_raw(response: Vec<u8>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+        let address = listener.local_addr().expect("test server has an address");
+        let (request_sender, requests) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test server accepts a request");
+            let mut bytes = Vec::new();
+            let mut buffer = [0_u8; 1024];
+
+            loop {
+                let count = stream.read(&mut buffer).expect("request is readable");
+                bytes.extend_from_slice(&buffer[..count]);
+
+                if count == 0 || request_is_complete(&bytes) {
+                    break;
+                }
+            }
+
+            let _ = stream.write_all(&response);
+            request_sender
+                .send(vec![String::from_utf8(bytes).expect("request is UTF-8")])
+                .expect("test receives the request");
+        });
+
+        Self {
+            url: format!("http://{address}"),
+            requests,
+            thread,
+        }
+    }
+
     fn url(&self) -> &str {
         &self.url
     }
@@ -113,6 +145,29 @@ impl TestServer {
 
         requests
     }
+}
+
+fn content_length_response(status: &str, declared_length: usize, body: Vec<u8>) -> Vec<u8> {
+    let mut response = format!(
+        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {declared_length}\r\nconnection: close\r\n\r\n"
+    )
+    .into_bytes();
+    response.extend_from_slice(&body);
+    response
+}
+
+fn chunked_response(status: &str, chunks: Vec<Vec<u8>>) -> Vec<u8> {
+    let mut response = format!(
+        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n"
+    )
+    .into_bytes();
+    for chunk in chunks {
+        response.extend_from_slice(format!("{:x}\r\n", chunk.len()).as_bytes());
+        response.extend_from_slice(&chunk);
+        response.extend_from_slice(b"\r\n");
+    }
+    response.extend_from_slice(b"0\r\n\r\n");
+    response
 }
 
 fn request_is_complete(bytes: &[u8]) -> bool {
@@ -743,6 +798,190 @@ async fn mutation_transport_failure_after_dispatch_has_an_unknown_outcome() {
     let requests = server.finish_all();
     assert_eq!(requests.len(), 1, "mutation must not be retried");
     assert!(requests[0].starts_with("POST /api/application.create HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn json_responses_reject_declared_and_streamed_bodies_over_the_byte_limit() {
+    let declared = TestServer::respond_raw(content_length_response(
+        "200 OK",
+        MAX_JSON_RESPONSE_BYTES + 1,
+        Vec::new(),
+    ));
+    let error = Dokploy::builder()
+        .url(declared.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
+        .await
+        .expect_err("a declared oversized body is rejected before reading it");
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "project.all"
+        }
+    ));
+    declared.finish();
+
+    let streamed = TestServer::respond_raw(chunked_response(
+        "200 OK",
+        vec![vec![b' '; MAX_JSON_RESPONSE_BYTES], vec![b' '; 1]],
+    ));
+    let error = Dokploy::builder()
+        .url(streamed.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
+        .await
+        .expect_err("a chunked body cannot grow past the limit");
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "project.all"
+        }
+    ));
+    streamed.finish();
+}
+
+#[tokio::test]
+async fn json_responses_accept_exact_and_under_limit_bodies() {
+    let mut exact_body = Vec::with_capacity(MAX_JSON_RESPONSE_BYTES);
+    exact_body.push(b'"');
+    exact_body.resize(MAX_JSON_RESPONSE_BYTES - 1, b'a');
+    exact_body.push(b'"');
+    let exact = TestServer::respond_raw(content_length_response(
+        "200 OK",
+        exact_body.len(),
+        exact_body,
+    ));
+    let response = Dokploy::builder()
+        .url(exact.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
+        .await
+        .expect("a JSON body exactly at the limit is accepted");
+    assert_eq!(
+        response.as_str().expect("response is a string").len(),
+        MAX_JSON_RESPONSE_BYTES - 2
+    );
+    exact.finish();
+
+    let under = TestServer::respond_raw(content_length_response(
+        "200 OK",
+        11,
+        br#"{"ok":true}"#.to_vec(),
+    ));
+    let response = Dokploy::builder()
+        .url(under.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
+        .await
+        .expect("a JSON body under the limit is accepted");
+    assert_eq!(response, serde_json::json!({"ok": true}));
+    under.finish();
+}
+
+#[tokio::test]
+async fn oversized_non_success_responses_preserve_only_safe_status_details() {
+    const CANARY: &str = "oversized-response-body-canary-do-not-retain";
+    let mut body = format!(r#"{{"message":"{CANARY}","padding":""#).into_bytes();
+    body.resize(MAX_JSON_RESPONSE_BYTES + 1, b'x');
+    let server = TestServer::respond_raw(chunked_response("422 Unprocessable Entity", vec![body]));
+    let error = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .projects()
+        .delete(ProjectId::new("project-1"))
+        .await
+        .expect_err("an oversized rejection is represented without its body");
+    let dokploy = error.dokploy().expect("HTTP status remains structured");
+    assert_eq!(dokploy.status(), 422);
+    assert_eq!(dokploy.code(), "UNPROCESSABLE_ENTITY");
+    assert_eq!(dokploy.message(), "Unprocessable Entity");
+    assert!(dokploy.issues().is_empty());
+    assert!(!error.to_string().contains(CANARY));
+    assert!(!format!("{error:?}").contains(CANARY));
+    server.finish();
+}
+
+#[tokio::test]
+async fn malformed_and_oversized_successful_mutation_responses_are_outcome_unknown() {
+    let malformed =
+        TestServer::respond_raw(content_length_response("200 OK", 9, b"{not-json".to_vec()));
+    let error = Dokploy::builder()
+        .url(malformed.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .projects()
+        .create(CreateProject::new("response-bound-test"))
+        .await
+        .expect_err("a malformed accepted mutation response is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "project.create",
+            ..
+        }
+    ));
+    malformed.finish();
+
+    let oversized = TestServer::respond_raw(content_length_response(
+        "200 OK",
+        MAX_JSON_RESPONSE_BYTES + 1,
+        Vec::new(),
+    ));
+    let error = Dokploy::builder()
+        .url(oversized.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .projects()
+        .create(CreateProject::new("response-bound-test"))
+        .await
+        .expect_err("an oversized accepted mutation response is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "project.create",
+            ..
+        }
+    ));
+    oversized.finish();
+}
+
+#[tokio::test]
+async fn malformed_successful_reads_remain_decode_errors() {
+    let server =
+        TestServer::respond_raw(content_length_response("200 OK", 9, b"{not-json".to_vec()));
+    let error = Dokploy::builder()
+        .url(server.url())
+        .api_key("test-api-key")
+        .build()
+        .unwrap()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
+        .await
+        .expect_err("a malformed read response remains a decode error");
+    assert!(matches!(
+        error,
+        Error::Decode {
+            operation: "project.all",
+            ..
+        }
+    ));
+    server.finish();
 }
 
 #[tokio::test]

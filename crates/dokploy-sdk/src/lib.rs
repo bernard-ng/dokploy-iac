@@ -6,7 +6,7 @@ mod imperative;
 mod models;
 mod services;
 
-pub use client::{Dokploy, DokployBuilder};
+pub use client::{Dokploy, DokployBuilder, MAX_JSON_RESPONSE_BYTES};
 pub use error::{BuildError, DokployError, Error};
 pub use imperative::{Imperative, ImperativeMethod, ImperativeRequest};
 pub use models::{

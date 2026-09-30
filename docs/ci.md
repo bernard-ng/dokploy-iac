@@ -27,6 +27,13 @@ disposable stack, runs `scripts/integration/test-apply.sh`, and always invokes
 `scripts/integration/reset.sh` so containers, volumes, generated credentials,
 and local integration state do not survive the job.
 
+SDK transport tests enforce the 16 MiB `MAX_JSON_RESPONSE_BYTES` boundary for
+typed and imperative JSON responses. They cover declared lengths rejected
+before body reads, chunked responses that cross the limit, exact-limit and
+under-limit successes, redaction-safe oversized HTTP errors, and uncertain
+malformed or oversized mutation successes. This is a transport memory bound;
+resource adapters still apply their stricter collection and model invariants.
+
 GitHub Actions are referenced by immutable commit hashes. The independently
 installed security and release tools are pinned to versions published by their
 official upstream projects. Dependency policy is deliberately narrow: the

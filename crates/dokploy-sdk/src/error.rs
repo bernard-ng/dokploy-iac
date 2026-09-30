@@ -89,7 +89,7 @@ pub enum Error {
         source: anyhow::Error,
     },
     #[error(
-        "the outcome of Dokploy mutation `{operation}` is unknown because its response was not received"
+        "the outcome of Dokploy mutation `{operation}` is unknown because completion could not be proven"
     )]
     OutcomeUnknown {
         operation: &'static str,

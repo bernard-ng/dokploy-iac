@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Bound every buffered SDK JSON response to 16 MiB with incremental zeroizing
+  reads, redaction-safe oversized remote errors, and outcome-unknown
+  classification when an accepted mutation response is malformed or too large.
 - Require managed Postgres, MySQL, MariaDB, and Redis direct reads to agree
   with a successful parent-scoped collection read before planning mutations,
   and retain redaction-safe live-test evidence whenever cleanup is unproven.
