@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add a typed Compose SDK contract with safe reads, bounded environment
+  discovery, redacted raw-document mutations, explicit volume deletion policy,
+  sanitized live fixtures, and an undeployed create-update-delete proof.
 - Add read-only interactive and non-interactive resource import with canonical
   configuration generation, durable identity adoption, unmanaged secrets,
   protected databases, and immediate plan convergence.

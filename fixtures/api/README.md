@@ -16,3 +16,9 @@ the live API contract.
 
 Live fixtures are grouped by tested Dokploy version under `live/` and include
 capture metadata. Model tests use these sanitized runtime contracts directly.
+
+Phase 8 contract captures additionally cover MySQL, MariaDB, MongoDB, LibSQL,
+and raw Compose create/read/update/delete behavior. Compose fixture publication
+redacts both the opaque Compose document and the Dokploy refresh token. Its
+capture metadata records that no deployment occurred and that detail, search,
+and project-topology reads all proved cleanup.

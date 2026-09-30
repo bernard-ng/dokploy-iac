@@ -35,6 +35,7 @@ macro_rules! identifier {
 }
 
 identifier!(ApplicationId);
+identifier!(ComposeId);
 identifier!(EnvironmentId);
 identifier!(LibSqlId);
 identifier!(MariaDbId);
@@ -47,6 +48,307 @@ identifier!(DomainId);
 identifier!(ServerId);
 
 const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32";
+
+/// Runtime mode used by one Dokploy Compose record.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ComposeType {
+    /// Manage the document through Docker Compose.
+    #[default]
+    DockerCompose,
+    /// Manage the document as a Docker Swarm stack.
+    Stack,
+}
+
+impl ComposeType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::DockerCompose => "docker-compose",
+            Self::Stack => "stack",
+        }
+    }
+}
+
+/// Whether deleting a Compose record should also delete its Docker volumes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComposeVolumePolicy {
+    /// Keep volumes after deleting the Compose record.
+    Preserve,
+    /// Delete volumes with the Compose record.
+    Delete,
+}
+
+impl ComposeVolumePolicy {
+    pub(crate) const fn delete_volumes(self) -> bool {
+        matches!(self, Self::Delete)
+    }
+}
+
+/// Inputs required to create one raw Dokploy Compose record.
+///
+/// The Compose document can contain credentials and is therefore retained in
+/// zeroizing memory and omitted from debug output.
+pub struct CreateCompose {
+    name: String,
+    environment_id: EnvironmentId,
+    compose_file: Zeroizing<String>,
+    description: Option<String>,
+    compose_type: ComposeType,
+    app_name: Option<String>,
+    server_id: Option<ServerId>,
+}
+
+impl CreateCompose {
+    /// Creates raw Compose input with Docker Compose as its runtime mode.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        environment_id: EnvironmentId,
+        compose_file: Zeroizing<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            environment_id,
+            compose_file,
+            description: None,
+            compose_type: ComposeType::DockerCompose,
+            app_name: None,
+            server_id: None,
+        }
+    }
+
+    /// Sets an initial description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Sets the stable application name used by Dokploy.
+    #[must_use]
+    pub fn with_app_name(mut self, app_name: impl Into<String>) -> Self {
+        self.app_name = Some(app_name.into());
+        self
+    }
+
+    /// Selects the Compose runtime mode.
+    #[must_use]
+    pub const fn with_compose_type(mut self, compose_type: ComposeType) -> Self {
+        self.compose_type = compose_type;
+        self
+    }
+
+    /// Associates the Compose record with a specific Dokploy server.
+    #[must_use]
+    pub fn with_server(mut self, server_id: ServerId) -> Self {
+        self.server_id = Some(server_id);
+        self
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) const fn environment_id(&self) -> &EnvironmentId {
+        &self.environment_id
+    }
+
+    pub(crate) const fn server_id(&self) -> Option<&ServerId> {
+        self.server_id.as_ref()
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && !self.compose_file.is_empty()
+            && self
+                .app_name
+                .as_ref()
+                .is_none_or(|value| valid_application_name(value))
+            && self
+                .server_id
+                .as_ref()
+                .is_none_or(|value| !value.as_str().is_empty())
+    }
+}
+
+impl fmt::Debug for CreateCompose {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CreateCompose")
+            .field("name", &self.name)
+            .field("environment_id", &self.environment_id)
+            .field("compose_file", &"[REDACTED]")
+            .field("description", &self.description)
+            .field("compose_type", &self.compose_type)
+            .field("app_name", &self.app_name)
+            .field("server_id", &self.server_id)
+            .finish()
+    }
+}
+
+impl Serialize for CreateCompose {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "CreateCompose",
+            5 + usize::from(self.description.is_some())
+                + usize::from(self.app_name.is_some())
+                + usize::from(self.server_id.is_some()),
+        )?;
+        body.serialize_field("name", &self.name)?;
+        if let Some(description) = &self.description {
+            body.serialize_field("description", description)?;
+        }
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        body.serialize_field("composeType", self.compose_type.as_str())?;
+        if let Some(app_name) = &self.app_name {
+            body.serialize_field("appName", app_name)?;
+        }
+        if let Some(server_id) = &self.server_id {
+            body.serialize_field("serverId", server_id.as_str())?;
+        }
+        body.serialize_field("composeFile", self.compose_file.as_str())?;
+        body.serialize_field("sourceType", "raw")?;
+        body.end()
+    }
+}
+
+/// Physical identity returned by Dokploy when a Compose record is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedCompose {
+    compose_id: ComposeId,
+}
+
+impl CreatedCompose {
+    pub(crate) fn new(compose_id: ComposeId) -> Self {
+        Self { compose_id }
+    }
+
+    /// Returns the new Compose identity.
+    #[must_use]
+    pub const fn compose_id(&self) -> &ComposeId {
+        &self.compose_id
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ComposeCreateResponse {
+    pub(crate) compose_id: ComposeId,
+    pub(crate) environment_id: EnvironmentId,
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
+}
+
+/// Owned Compose fields written by one update.
+pub struct UpdateCompose {
+    compose_id: ComposeId,
+    name: Option<String>,
+    description: Option<Nullable<String>>,
+    compose_file: Option<Zeroizing<String>>,
+}
+
+impl UpdateCompose {
+    /// Starts a Compose update with no fields selected.
+    #[must_use]
+    pub fn new(compose_id: ComposeId) -> Self {
+        Self {
+            compose_id,
+            name: None,
+            description: None,
+            compose_file: None,
+        }
+    }
+
+    /// Selects the human-readable name.
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Selects a concrete description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(Nullable::Value(description.into()));
+        self
+    }
+
+    /// Explicitly clears the description.
+    #[must_use]
+    pub fn clear_description(mut self) -> Self {
+        self.description = Some(Nullable::Null);
+        self
+    }
+
+    /// Replaces the opaque Compose document.
+    #[must_use]
+    pub fn with_compose_file(mut self, compose_file: Zeroizing<String>) -> Self {
+        self.compose_file = Some(compose_file);
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.compose_id.as_str().is_empty()
+            && (self.name.as_ref().is_some_and(|value| !value.is_empty())
+                || self.description.is_some()
+                || self
+                    .compose_file
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty()))
+    }
+}
+
+impl fmt::Debug for UpdateCompose {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateCompose")
+            .field("compose_id", &self.compose_id)
+            .field("name", &self.name)
+            .field("description", &self.description)
+            .field(
+                "compose_file",
+                &self.compose_file.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
+impl Serialize for UpdateCompose {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "UpdateCompose",
+            1 + usize::from(self.name.is_some())
+                + usize::from(self.description.is_some())
+                + usize::from(self.compose_file.is_some()),
+        )?;
+        body.serialize_field("composeId", self.compose_id.as_str())?;
+        if let Some(name) = &self.name {
+            body.serialize_field("name", name)?;
+        }
+        if let Some(description) = &self.description {
+            body.serialize_field("description", description)?;
+        }
+        if let Some(compose_file) = &self.compose_file {
+            body.serialize_field("composeFile", compose_file.as_str())?;
+        }
+        body.end()
+    }
+}
+
+fn valid_application_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 63
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
 
 /// The topology role of one LibSQL node.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2012,6 +2314,73 @@ impl ApplicationCollection {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationSearchPage {
     pub(crate) items: Vec<ApplicationSearchItem>,
+    pub(crate) total: u64,
+}
+
+/// A safe subset of the response returned by `compose.one`.
+///
+/// The Compose document, environment document, refresh token, nested provider
+/// records, and other unowned runtime fields are deliberately absent. Unknown
+/// fields are ignored because the pinned success response schema is empty.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposeDetails {
+    pub compose_id: ComposeId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    pub app_name: String,
+    #[serde(default)]
+    pub description: ResponseField<String>,
+    #[serde(default)]
+    pub source_type: ResponseField<String>,
+    #[serde(default)]
+    pub compose_type: ResponseField<String>,
+    #[serde(default)]
+    pub auto_deploy: ResponseField<bool>,
+    #[serde(default)]
+    pub compose_path: ResponseField<String>,
+    #[serde(default)]
+    pub compose_status: Option<String>,
+    #[serde(default)]
+    pub server_id: ResponseField<ServerId>,
+}
+
+/// One safe Compose entry returned by `compose.search`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposeSearchItem {
+    pub compose_id: ComposeId,
+    pub environment_id: EnvironmentId,
+    pub name: String,
+    #[serde(default)]
+    pub app_name: ResponseField<String>,
+    #[serde(default)]
+    pub description: ResponseField<String>,
+    #[serde(default)]
+    pub source_type: ResponseField<String>,
+    #[serde(default)]
+    pub compose_status: Option<String>,
+}
+
+/// The fully collected Compose search result for one environment.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComposeCollection {
+    pub(crate) composes: Vec<ComposeSearchItem>,
+}
+
+impl ComposeCollection {
+    /// Returns all Compose records discovered in the parent environment.
+    #[must_use]
+    pub fn composes(&self) -> &[ComposeSearchItem] {
+        &self.composes
+    }
+}
+
+/// One page returned by the runtime `compose.search` operation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ComposeSearchPage {
+    pub(crate) items: Vec<ComposeSearchItem>,
     pub(crate) total: u64,
 }
 

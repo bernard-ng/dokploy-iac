@@ -1,18 +1,20 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
-    Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection,
-    MariaDbDetails, MariaDbId, MongoCollection, MongoDetails, MongoId, MySqlCollection,
-    MySqlDetails, MySqlId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails,
-    ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
+    ComposeCollection, ComposeDetails, ComposeId, ComposeVolumePolicy, Dokploy, DomainCollection,
+    DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
+    LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection, MariaDbDetails, MariaDbId,
+    MongoCollection, MongoDetails, MongoId, MySqlCollection, MySqlDetails, MySqlId,
+    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
+    RedisCollection, RedisDetails, RedisId,
 };
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
-    CreateApplication, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo,
-    CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedDomain,
-    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres,
-    CreatedProject, CreatedRedis, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateLibSql,
-    UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
+    CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
+    CreateMongo, CreateMySql, CreatePostgres, CreateProject, CreateRedis, CreatedApplication,
+    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
+    CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, UpdateApplication, UpdateCompose,
+    UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql,
+    UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -140,6 +142,51 @@ impl<'a> Environments<'a> {
     /// Permanently removes one environment.
     pub async fn delete(&self, environment_id: EnvironmentId) -> Result<(), Error> {
         self.client.environment_delete(environment_id).await
+    }
+}
+
+/// Read and mutation operations for Dokploy Compose records.
+pub struct Composes<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Composes<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Compose record from fresh remote state.
+    pub async fn get(&self, compose_id: ComposeId) -> Result<ComposeDetails, Error> {
+        self.client.compose_get(compose_id.as_str()).await
+    }
+
+    /// Reads every Compose record in one environment from fresh paginated state.
+    pub async fn by_environment(
+        &self,
+        environment_id: EnvironmentId,
+    ) -> Result<ComposeCollection, Error> {
+        self.client
+            .composes_by_environment(environment_id.as_str())
+            .await
+    }
+
+    /// Creates an undeployed raw Compose record and validates its returned identity.
+    pub async fn create(&self, input: CreateCompose) -> Result<CreatedCompose, Error> {
+        self.client.compose_create(input).await
+    }
+
+    /// Writes the selected owned Compose fields without deploying the record.
+    pub async fn update(&self, input: UpdateCompose) -> Result<(), Error> {
+        self.client.compose_update(input).await
+    }
+
+    /// Permanently removes one Compose record with an explicit volume policy.
+    pub async fn delete(
+        &self,
+        compose_id: ComposeId,
+        volume_policy: ComposeVolumePolicy,
+    ) -> Result<(), Error> {
+        self.client.compose_delete(compose_id, volume_policy).await
     }
 }
 

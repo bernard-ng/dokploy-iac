@@ -178,6 +178,29 @@ then publishes a redacted detail fixture. Cleanup is proven through both the
 404 from `libsql.one` and absence from the exact project environment. The
 database is never deployed.
 
+## Disposable Compose contract capture
+
+Capture the raw Compose adapter contract against the pinned local instance
+with:
+
+```bash
+scripts/integration/capture-compose-contract.sh
+```
+
+The command creates a disposable project and raw Compose record, verifies the
+direct create identity against its requested environment and name, reads the
+record through `compose.one` and bounded `compose.search`, updates its metadata
+and opaque document, and deletes it while preserving volumes. The record must
+remain idle with an empty deployment history throughout; the script never
+calls a deploy operation.
+
+Raw Compose content and Dokploy's generated refresh token remain only in the
+ignored owner-only capture workspace. Published fixtures redact both fields.
+Cleanup is proven through the 404 from `compose.one`, an empty scoped search,
+and absence from `project.one`; the disposable project is then removed. An
+interruption trap recovers only a unique name match in the dedicated
+environment and refuses ambiguous deletion.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

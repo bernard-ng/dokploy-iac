@@ -5,6 +5,8 @@ def normalized_scalar:
     if .value == null then . else .value = "environment-1" end
   elif .key == "applicationId" then
     if .value == null then . else .value = "application-1" end
+  elif .key == "composeId" then
+    if .value == null then . else .value = "compose-1" end
   elif .key == "postgresId" then
     if .value == null then . else .value = "postgres-1" end
   elif .key == "redisId" then
@@ -51,6 +53,7 @@ def normalized_scalar:
     .value = "No running container found for mongodb-contract-test"
   elif .key == "env"
     or .key == "previewEnv"
+    or .key == "composeFile"
     or .key == "buildArgs"
     or .key == "previewBuildArgs"
     or .key == "buildSecrets"
@@ -70,6 +73,26 @@ walk(
         .appName = "application-contract-test"
       elif has("postgresId") and has("appName") then
         .appName = "postgres-contract-test"
+      elif has("composeId") then
+        (if has("appName") then .appName = "compose-contract-test" else . end)
+        | (if has("name") and (.name | startswith("Compose Contract")) then
+            .name = (if (.name | contains("Updated")) then
+                "Compose Contract Updated"
+              else
+                "Compose Contract Test"
+              end)
+          else
+            .
+          end)
+        | (if has("description") and .description != null then
+            .description = (if (.description | startswith("Updated")) then
+                "Updated Compose SDK contract"
+              else
+                "Disposable Compose SDK contract"
+              end)
+          else
+            .
+          end)
       elif has("redisId") then
         (if has("appName") then .appName = "redis-contract-test" else . end)
         | (if has("name") then .name = "Redis Contract Test" else . end)
@@ -126,6 +149,10 @@ walk(
         and (.name | startswith("libsql-sdk-contract-"))
       then
         .name = "LibSQL SDK Contract Test"
+      elif has("projectId") and has("name")
+        and (.name | startswith("compose-sdk-contract-"))
+      then
+        .name = "Compose SDK Contract Test"
       else
         .
       end

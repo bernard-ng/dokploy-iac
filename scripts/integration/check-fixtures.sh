@@ -97,6 +97,19 @@ required_libsql_fixtures=(
     "libsql-contract.metadata.json"
 )
 
+required_compose_fixtures=(
+    "compose-create.owner.json"
+    "compose-one.created.owner.json"
+    "compose-search.created.owner.json"
+    "compose-update.owner.json"
+    "compose-one.updated.owner.json"
+    "compose-delete.owner.json"
+    "compose-one.deleted.owner.json"
+    "compose-search.deleted.owner.json"
+    "project-one.compose-deleted.owner.json"
+    "compose-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -135,6 +148,13 @@ done
 for fixture_name in "${required_libsql_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing LibSQL contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_compose_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Compose contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -795,6 +815,88 @@ if grep -R -E -q 'libsql-sdk-contract-[0-9]' "$fixture_directory"; then
     exit 1
 fi
 
+if ! jq --exit-status '
+    .composeId == "compose-1"
+    and .environmentId == "environment-1"
+    and .name == "Compose Contract Test"
+    and .appName == "compose-contract-test"
+    and .composeFile == "<redacted>"
+    and .refreshToken == "<redacted>"
+    and .sourceType == "raw"
+    and .composeType == "docker-compose"
+    and .composeStatus == "idle"
+    and .serverId == null
+    and (.deployments | length) == 0
+' "$versioned_fixture_directory/compose-one.created.owner.json" >/dev/null; then
+    echo "Compose detail fixture does not preserve the sanitized undeployed contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .total == 1
+    and (.items | length) == 1
+    and .items[0].composeId == "compose-1"
+    and .items[0].environmentId == "environment-1"
+' "$versioned_fixture_directory/compose-search.created.owner.json" >/dev/null; then
+    echo "Compose populated search fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .name == "Compose Contract Updated"
+    and .description == "Updated Compose SDK contract"
+    and .composeFile == "<redacted>"
+    and .composeStatus == "idle"
+    and (.deployments | length) == 0
+' "$versioned_fixture_directory/compose-one.updated.owner.json" >/dev/null; then
+    echo "Compose updated detail fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "compose.one"
+' "$versioned_fixture_directory/compose-one.deleted.owner.json" >/dev/null; then
+    echo "Compose cleanup lookup fixture is not a 404 response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '.items == [] and .total == 0' \
+    "$versioned_fixture_directory/compose-search.deleted.owner.json" >/dev/null
+then
+    echo "Compose cleanup search fixture is not empty." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '[.environments[]?.compose[]?] | length == 0' \
+    "$versioned_fixture_directory/project-one.compose-deleted.owner.json" >/dev/null
+then
+    echo "Compose cleanup project fixture still contains a Compose record." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .createIdentity.direct == true
+    and .createIdentity.parentVerified == true
+    and .update.composeFilePersisted == true
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.searchEmpty == true
+    and .cleanupEvidence.projectOneAbsent == true
+' "$versioned_fixture_directory/compose-contract.metadata.json" >/dev/null; then
+    echo "Compose metadata does not prove identity, non-deployment, update, and cleanup." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'compose-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Compose project name." >&2
+    exit 1
+fi
+
 unsafe_values="$(
     find "$fixture_directory" -type f -name '*.json' -print0 \
     | xargs -0 jq -r '
@@ -804,6 +906,7 @@ unsafe_values="$(
         | select(
             $key == "env"
             or $key == "previewEnv"
+            or $key == "composeFile"
             or $key == "buildArgs"
             or $key == "previewBuildArgs"
             or $key == "buildSecrets"

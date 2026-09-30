@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,20 +7,22 @@ use dokploy_api::{
     APPLICATION_SEARCH, APPLICATION_UPDATE, ApplicationCreateRequest, ApplicationCreateRequestBody,
     ApplicationDeleteRequest, ApplicationIdRequestBody, ApplicationOneRequest,
     ApplicationOneRequestQuery, ApplicationRedeployRequestBody, ApplicationSearchRequest,
-    ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID, DOMAIN_CREATE, DOMAIN_DELETE,
-    DOMAIN_ONE, DOMAIN_UPDATE, DokployApiClient, DomainByApplicationIdRequest,
-    DomainByApplicationIdRequestQuery, DomainCreateRequest, DomainCreateRequestBody,
-    DomainDeleteRequest, DomainIdRequestBody, DomainOneRequest, DomainOneRequestQuery,
-    ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE, ENVIRONMENT_ONE, ENVIRONMENT_REMOVE,
-    ENVIRONMENT_UPDATE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
-    EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
-    EnvironmentIdRequestBody, EnvironmentOneRequest, EnvironmentOneRequestQuery,
-    EnvironmentRemoveRequest, LIBSQL_CREATE, LIBSQL_ONE, LIBSQL_REMOVE, LIBSQL_UPDATE,
-    LibsqlIdRequestBody, LibsqlOneRequest, LibsqlOneRequestQuery, LibsqlRemoveRequest,
-    MARIADB_CHANGE_PASSWORD, MARIADB_CREATE, MARIADB_ONE, MARIADB_REMOVE, MARIADB_SEARCH,
-    MARIADB_UPDATE, MONGO_CHANGE_PASSWORD, MONGO_CREATE, MONGO_ONE, MONGO_REMOVE, MONGO_SEARCH,
-    MONGO_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE, MYSQL_SEARCH,
-    MYSQL_UPDATE, MariadbIdRequestBody, MariadbOneRequest, MariadbOneRequestQuery,
+    ApplicationSearchRequestQuery, COMPOSE_CREATE, COMPOSE_DELETE, COMPOSE_ONE, COMPOSE_SEARCH,
+    COMPOSE_UPDATE, ComposeDeleteRequest, ComposeDeleteRequestBody, ComposeOneRequest,
+    ComposeOneRequestQuery, ComposeSearchRequest, ComposeSearchRequestQuery,
+    DOMAIN_BY_APPLICATION_ID, DOMAIN_CREATE, DOMAIN_DELETE, DOMAIN_ONE, DOMAIN_UPDATE,
+    DokployApiClient, DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery,
+    DomainCreateRequest, DomainCreateRequestBody, DomainDeleteRequest, DomainIdRequestBody,
+    DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE,
+    ENVIRONMENT_ONE, ENVIRONMENT_REMOVE, ENVIRONMENT_UPDATE, Endpoint, EndpointMethod,
+    EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest,
+    EnvironmentCreateRequestBody, EnvironmentIdRequestBody, EnvironmentOneRequest,
+    EnvironmentOneRequestQuery, EnvironmentRemoveRequest, LIBSQL_CREATE, LIBSQL_ONE, LIBSQL_REMOVE,
+    LIBSQL_UPDATE, LibsqlIdRequestBody, LibsqlOneRequest, LibsqlOneRequestQuery,
+    LibsqlRemoveRequest, MARIADB_CHANGE_PASSWORD, MARIADB_CREATE, MARIADB_ONE, MARIADB_REMOVE,
+    MARIADB_SEARCH, MARIADB_UPDATE, MONGO_CHANGE_PASSWORD, MONGO_CREATE, MONGO_ONE, MONGO_REMOVE,
+    MONGO_SEARCH, MONGO_UPDATE, MYSQL_CHANGE_PASSWORD, MYSQL_CREATE, MYSQL_ONE, MYSQL_REMOVE,
+    MYSQL_SEARCH, MYSQL_UPDATE, MariadbIdRequestBody, MariadbOneRequest, MariadbOneRequestQuery,
     MariadbRemoveRequest, MariadbSearchRequest, MariadbSearchRequestQuery, MongoIdRequestBody,
     MongoOneRequest, MongoOneRequestQuery, MongoRemoveRequest, MongoSearchRequest,
     MongoSearchRequestQuery, MysqlIdRequestBody, MysqlOneRequest, MysqlOneRequestQuery,
@@ -47,26 +50,29 @@ use crate::imperative::{
 use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse, ApplicationSearchPage,
-    DomainCollection, DomainCreateResponse, DomainDetails, EnvironmentCollection,
-    EnvironmentCreateResponse, EnvironmentDetails, LibSqlCollection, LibSqlDetails,
-    MariaDbCollection, MariaDbCreateResponse, MariaDbDetails, MariaDbSearchPage, MongoCollection,
-    MongoCreateResponse, MongoDetails, MongoSearchPage, MySqlCollection, MySqlCreateResponse,
-    MySqlDetails, MySqlSearchPage, PostgresCollection, PostgresCreateResponse, PostgresDetails,
-    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection,
-    RedisCreateResponse, RedisDetails, RedisSearchPage,
+    ComposeCollection, ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DomainCollection,
+    DomainCreateResponse, DomainDetails, EnvironmentCollection, EnvironmentCreateResponse,
+    EnvironmentDetails, LibSqlCollection, LibSqlDetails, MariaDbCollection, MariaDbCreateResponse,
+    MariaDbDetails, MariaDbSearchPage, MongoCollection, MongoCreateResponse, MongoDetails,
+    MongoSearchPage, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
+    PostgresCollection, PostgresCreateResponse, PostgresDetails, PostgresSearchPage,
+    ProjectCreateResponse, ProjectDetails, ProjectTopology, RedisCollection, RedisCreateResponse,
+    RedisDetails, RedisSearchPage,
 };
 use crate::services::{
-    Applications, Domains, Environments, LibSql, MariaDb, Mongo, MySql, Postgres, Projects, Redis,
+    Applications, Composes, Domains, Environments, LibSql, MariaDb, Mongo, MySql, Postgres,
+    Projects, Redis,
 };
 use crate::{
     ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
-    ChangeMySqlPassword, CreateApplication, CreateDomain, CreateEnvironment, CreateLibSql,
-    CreateMariaDb, CreateMongo, CreateMySql, CreatePostgres, CreateProject, CreateRedis,
-    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb,
-    CreatedMongo, CreatedMySql, CreatedPostgres, CreatedProject, CreatedRedis, DomainId,
-    EnvironmentId, LibSqlId, MariaDbId, MongoId, MySqlId, PostgresId, ProjectId, RedisId,
-    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo,
-    UpdateMySql, UpdatePostgres, UpdateProject, UpdateRedis,
+    ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
+    CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMySql,
+    CreatePostgres, CreateProject, CreateRedis, CreatedApplication, CreatedCompose, CreatedDomain,
+    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMySql, CreatedPostgres,
+    CreatedProject, CreatedRedis, DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MySqlId,
+    PostgresId, ProjectId, RedisId, UpdateApplication, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePostgres,
+    UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -74,6 +80,8 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const USER_AGENT: &str = concat!("dokploy-iac/", env!("CARGO_PKG_VERSION"));
 const APPLICATION_SEARCH_PAGE_SIZE: usize = 100;
 const APPLICATION_SEARCH_ITEM_LIMIT: usize = 10_000;
+const COMPOSE_SEARCH_PAGE_SIZE: usize = 100;
+const COMPOSE_SEARCH_ITEM_LIMIT: usize = 10_000;
 const LIBSQL_TOPOLOGY_ITEM_LIMIT: usize = 10_000;
 const MARIADB_SEARCH_PAGE_SIZE: usize = 100;
 const MARIADB_SEARCH_ITEM_LIMIT: usize = 10_000;
@@ -123,6 +131,12 @@ impl Dokploy {
     #[must_use]
     pub fn applications(&self) -> Applications<'_> {
         Applications::new(self)
+    }
+
+    /// Returns access to Compose read and mutation operations.
+    #[must_use]
+    pub fn composes(&self) -> Composes<'_> {
+        Composes::new(self)
     }
 
     /// Returns access to environment read operations.
@@ -373,6 +387,139 @@ impl Dokploy {
             applications.extend(page.items);
             if applications.len() == expected {
                 return Ok(ApplicationCollection { applications });
+            }
+        }
+    }
+
+    pub(crate) async fn compose_get(&self, compose_id: &str) -> Result<ComposeDetails, Error> {
+        let request = ComposeOneRequest {
+            query: ComposeOneRequestQuery {
+                compose_id: compose_id.to_owned(),
+            },
+        };
+        validate_generated_request(COMPOSE_ONE, &request)?;
+
+        self.read_query_json(COMPOSE_ONE, &request.query).await
+    }
+
+    pub(crate) async fn compose_create(
+        &self,
+        input: CreateCompose,
+    ) -> Result<CreatedCompose, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                COMPOSE_CREATE.operation(),
+                "Compose create fields are invalid",
+            ));
+        }
+        let expected_environment_id = input.environment_id().clone();
+        let expected_name = input.name().to_owned();
+        let expected_server_id = input.server_id().cloned();
+        let response: ComposeCreateResponse = self.mutate_body_json(COMPOSE_CREATE, &input).await?;
+        let server_matches = match expected_server_id {
+            Some(expected) => response.server_id == crate::ResponseField::Value(expected),
+            None => matches!(
+                response.server_id,
+                crate::ResponseField::NotReturned | crate::ResponseField::Null
+            ),
+        };
+        if response.compose_id.as_str().is_empty()
+            || response.environment_id != expected_environment_id
+            || response.name != expected_name
+            || !server_matches
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: COMPOSE_CREATE.operation(),
+            });
+        }
+
+        Ok(CreatedCompose::new(response.compose_id))
+    }
+
+    pub(crate) async fn compose_update(&self, input: UpdateCompose) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                COMPOSE_UPDATE.operation(),
+                "Compose update requires an identity and at least one valid field",
+            ));
+        }
+
+        self.mutate_body_ok(COMPOSE_UPDATE, &input).await
+    }
+
+    pub(crate) async fn compose_delete(
+        &self,
+        compose_id: ComposeId,
+        volume_policy: ComposeVolumePolicy,
+    ) -> Result<(), Error> {
+        let request = ComposeDeleteRequest {
+            body: ComposeDeleteRequestBody {
+                compose_id: compose_id.as_str().to_owned(),
+                delete_volumes: volume_policy.delete_volumes(),
+            },
+        };
+        validate_generated_request(COMPOSE_DELETE, &request)?;
+
+        self.mutate_body_ok(COMPOSE_DELETE, &request.body).await
+    }
+
+    pub(crate) async fn composes_by_environment(
+        &self,
+        environment_id: &str,
+    ) -> Result<ComposeCollection, Error> {
+        if environment_id.is_empty() {
+            return Err(invalid_request(
+                COMPOSE_SEARCH.operation(),
+                "environment ID cannot be empty",
+            ));
+        }
+        let mut composes = Vec::new();
+        let mut seen_ids = HashSet::new();
+        let mut expected_total = None;
+
+        loop {
+            let request = ComposeSearchRequest {
+                query: ComposeSearchRequestQuery {
+                    environment_id: Some(environment_id.to_owned()),
+                    limit: Some(COMPOSE_SEARCH_PAGE_SIZE as f64),
+                    offset: Some(composes.len() as f64),
+                    ..ComposeSearchRequestQuery::default()
+                },
+            };
+            validate_generated_request(COMPOSE_SEARCH, &request)?;
+            let page: ComposeSearchPage =
+                self.read_query_json(COMPOSE_SEARCH, &request.query).await?;
+
+            let expected = *expected_total.get_or_insert(page.total);
+            let has_conflicting_identity = page.items.iter().any(|item| {
+                item.environment_id.as_str() != environment_id
+                    || !seen_ids.insert(item.compose_id.as_str().to_owned())
+            });
+            if page.total != expected
+                || expected > COMPOSE_SEARCH_ITEM_LIMIT as u64
+                || page.items.len() > COMPOSE_SEARCH_PAGE_SIZE
+                || has_conflicting_identity
+            {
+                return Err(Error::UnexpectedResponse {
+                    operation: COMPOSE_SEARCH.operation(),
+                });
+            }
+            let expected = usize::try_from(expected).map_err(|_| Error::UnexpectedResponse {
+                operation: COMPOSE_SEARCH.operation(),
+            })?;
+            let page_would_exceed_total = composes
+                .len()
+                .checked_add(page.items.len())
+                .is_none_or(|count| count > expected);
+            if page_would_exceed_total || (page.items.is_empty() && composes.len() < expected) {
+                return Err(Error::UnexpectedResponse {
+                    operation: COMPOSE_SEARCH.operation(),
+                });
+            }
+
+            composes.extend(page.items);
+            if composes.len() == expected {
+                return Ok(ComposeCollection { composes });
             }
         }
     }
