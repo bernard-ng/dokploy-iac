@@ -686,6 +686,7 @@ pub enum ValidationIssue {
     DuplicateRemoval,
     RemovedResourceConfigured,
     MoveRemovalConflict,
+    InvalidLibSqlPrimaryUrl,
 }
 
 impl ValidationIssue {
@@ -714,6 +715,7 @@ impl ValidationIssue {
             Self::DuplicateRemoval => "DOKCFG019",
             Self::RemovedResourceConfigured => "DOKCFG020",
             Self::MoveRemovalConflict => "DOKCFG021",
+            Self::InvalidLibSqlPrimaryUrl => "DOKCFG022",
         }
     }
 
@@ -742,6 +744,7 @@ impl ValidationIssue {
             Self::DuplicateRemoval => "removal is duplicated",
             Self::RemovedResourceConfigured => "removed resource is still configured",
             Self::MoveRemovalConflict => "move and removal declarations conflict",
+            Self::InvalidLibSqlPrimaryUrl => "LibSQL replica primary URL is empty",
         }
     }
 }

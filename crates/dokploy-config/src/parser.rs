@@ -190,7 +190,10 @@ struct RawMongo {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum RawLibSqlNode {
     Primary {},
-    Replica { primary_url: String },
+    Replica {
+        #[schemars(schema_with = "non_empty_string_schema")]
+        primary_url: String,
+    },
 }
 
 impl From<RawLibSqlNode> for LibSqlNodeConfig {
@@ -695,6 +698,19 @@ fn validate_resources(
             );
         }
 
+        if let ResourceConfig::LibSql(libsql) = config
+            && matches!(
+                &libsql.node,
+                Field::Set(LibSqlNodeConfig::Replica { primary_url }) if primary_url.is_empty()
+            )
+        {
+            emit(
+                diagnostics,
+                ValidationIssue::InvalidLibSqlPrimaryUrl,
+                location,
+            );
+        }
+
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
     }
@@ -824,6 +840,13 @@ fn version_schema(_generator: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "type": "integer",
         "const": 1
+    })
+}
+
+fn non_empty_string_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "minLength": 1
     })
 }
 

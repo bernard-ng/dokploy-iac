@@ -823,6 +823,138 @@ fn remaining_database_property_paths_are_kind_scoped() {
 }
 
 #[test]
+fn libsql_node_rejects_non_object_desired_values() {
+    let address = address("libsql.edge");
+    let resource = DesiredResource::new(BTreeMap::from([(
+        PropertyPath::Node,
+        OwnedValue::Value(value(json!("primary"))),
+    )]))
+    .with_containment(containment_for(&address, &[]));
+
+    let error = DesiredState::try_new(digest(), BTreeMap::from([(address, resource)]))
+        .expect_err("a LibSQL node must be a structured atomic value");
+
+    assert!(matches!(
+        error,
+        DesiredStateError::InvalidPropertyValue { .. }
+    ));
+}
+
+#[test]
+fn libsql_node_rejects_noncanonical_desired_object_shapes() {
+    for node in [
+        json!({}),
+        json!({"type": "unknown"}),
+        json!({"type": "primary", "primary_url": "https://primary.example.test"}),
+        json!({"type": "replica"}),
+        json!({"type": "replica", "primary_url": ""}),
+        json!({"type": "replica", "primary_url": 1}),
+        json!({
+            "type": "replica",
+            "primary_url": "https://primary.example.test",
+            "unexpected": true
+        }),
+    ] {
+        let address = address("libsql.edge");
+        let resource = DesiredResource::new(BTreeMap::from([(
+            PropertyPath::Node,
+            OwnedValue::Value(value(node)),
+        )]))
+        .with_containment(containment_for(&address, &[]));
+
+        let error = DesiredState::try_new(digest(), BTreeMap::from([(address, resource)]))
+            .expect_err("a LibSQL node must use one exact canonical shape");
+
+        assert!(matches!(
+            error,
+            DesiredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+}
+
+#[test]
+fn libsql_node_accepts_canonical_desired_shapes() {
+    for node in [
+        OwnedValue::Null,
+        OwnedValue::Value(value(json!({"type": "primary"}))),
+        OwnedValue::Value(value(json!({
+            "type": "replica",
+            "primary_url": "https://primary.example.test"
+        }))),
+    ] {
+        let address = address("libsql.edge");
+        let resource = DesiredResource::new(BTreeMap::from([(PropertyPath::Node, node)]))
+            .with_containment(containment_for(&address, &[]));
+
+        DesiredState::try_new(digest(), BTreeMap::from([(address, resource)]))
+            .expect("canonical LibSQL node shapes must be valid");
+    }
+}
+
+#[test]
+fn stored_state_rejects_noncanonical_libsql_node_shapes() {
+    for node in [
+        json!("primary"),
+        json!({}),
+        json!({"type": "unknown"}),
+        json!({"type": "primary", "primary_url": "https://primary.example.test"}),
+        json!({"type": "replica"}),
+        json!({"type": "replica", "primary_url": ""}),
+        json!({"type": "replica", "primary_url": 1}),
+        json!({
+            "type": "replica",
+            "primary_url": "https://primary.example.test",
+            "unexpected": true
+        }),
+    ] {
+        let address = address("libsql.edge");
+        let state = state_with_resource_details(
+            &address,
+            &instance(),
+            ResourceKind::LibSql,
+            "libsql-1",
+            json!({"node": node}),
+            false,
+            Vec::new(),
+        );
+
+        let error = StoredState::try_from_state(&state)
+            .expect_err("stored LibSQL nodes must use one exact canonical shape");
+
+        assert!(matches!(
+            error,
+            StoredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+}
+
+#[test]
+fn stored_state_accepts_canonical_libsql_node_shapes() {
+    for node in [
+        serde_json::Value::Null,
+        json!({"type": "primary"}),
+        json!({
+            "type": "replica",
+            "primary_url": "https://primary.example.test"
+        }),
+    ] {
+        let address = address("libsql.edge");
+        let state = state_with_resource_details(
+            &address,
+            &instance(),
+            ResourceKind::LibSql,
+            "libsql-1",
+            json!({"node": node}),
+            false,
+            Vec::new(),
+        );
+
+        StoredState::try_from_state(&state)
+            .expect("canonical stored LibSQL node shapes must project");
+    }
+}
+
+#[test]
 fn desired_state_requires_explicit_kind_correct_containment() {
     let project = address("project.platform");
     let environment = address("environment.production");

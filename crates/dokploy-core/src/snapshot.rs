@@ -456,7 +456,29 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
         PropertyPath::Environment => {
             matches!(value, OwnedValue::Null | OwnedValue::EmptyCollection)
         }
+        PropertyPath::Node => libsql_node_value_valid(value),
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
+    }
+}
+
+fn libsql_node_value_valid(value: &OwnedValue) -> bool {
+    let OwnedValue::Value(value) = value else {
+        return matches!(value, OwnedValue::Null);
+    };
+    let Some(node) = value.as_json().as_object() else {
+        return false;
+    };
+
+    match node.get("type").and_then(serde_json::Value::as_str) {
+        Some("primary") => node.len() == 1,
+        Some("replica") => {
+            node.len() == 2
+                && node
+                    .get("primary_url")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|primary_url| !primary_url.is_empty())
+        }
+        _ => false,
     }
 }
 

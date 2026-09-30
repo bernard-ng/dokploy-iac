@@ -229,6 +229,31 @@ fn remaining_database_shapes_reject_explicitly_unsupported_fields() {
 }
 
 #[test]
+fn rejects_empty_libsql_replica_primary_url() {
+    let error = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    libsql:
+      edge:
+        node:
+          type: replica
+          primary_url: ""
+"#,
+    )
+    .expect_err("an empty replica primary URL must fail");
+
+    assert!(
+        error
+            .issues()
+            .contains(&ValidationIssue::InvalidLibSqlPrimaryUrl)
+    );
+}
+
+#[test]
 fn rejects_unknown_fields_duplicate_keys_and_multiple_documents() {
     let cases = [
         r#"
@@ -524,6 +549,16 @@ fn generated_schema_is_strict_and_models_nullable_owned_fields() {
     assert_eq!(
         schema["$defs"]["RawProject"]["required"],
         serde_json::json!(["name"])
+    );
+    let replica = schema["$defs"]["RawLibSqlNode"]["oneOf"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|variant| variant["properties"]["type"]["const"] == "replica")
+        .expect("LibSQL replica schema must be present");
+    assert_eq!(
+        replica["properties"]["primary_url"]["minLength"],
+        serde_json::json!(1)
     );
 }
 
