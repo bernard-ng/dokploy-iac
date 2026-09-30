@@ -11,7 +11,7 @@ about ownership, drift, secrets, remote identity, and recovery.
 > [!IMPORTANT]
 > This project is pre-release. The imperative CLI and offline configuration
 > commands are usable today. Declarative `plan` and confirmed `apply` cover
-> seven resource types. Explicit interrupted-operation recovery and
+> nine resource types. Explicit interrupted-operation recovery and
 > workspace-wide tracked-resource destruction are available.
 
 ## What it offers
@@ -29,7 +29,7 @@ about ownership, drift, secrets, remote identity, and recovery.
 ### A declarative engine built for safe reconciliation
 
 - A strict, versioned `dokploy.yaml` format for projects, environments,
-  applications, PostgreSQL, MySQL, MariaDB, Redis, and domains.
+  applications, PostgreSQL, MySQL, MariaDB, MongoDB, Redis, and domains.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
 - Dedicated containment separate from general dependency ordering, persisted
@@ -125,8 +125,8 @@ the context workflow without exposing stored API keys.
 
 The foundation, API/SDK, durable state, configuration language, and core
 planner are implemented. Fresh remote projection covers projects,
-environments, applications, PostgreSQL, MySQL, MariaDB, Redis, and application
-domains.
+environments, applications, PostgreSQL, MySQL, MariaDB, MongoDB, Redis, and
+application domains.
 Adapter-owned contracts classify in-place changes, reparenting, and ordered
 replacement without admitting mutation code to the planner.
 
@@ -174,7 +174,7 @@ It rejects the artifact before approval or mutation if its instance, lineage,
 serial, configuration digest, actions, or keyed remote evidence changed.
 
 The execution bound accepts values from 1 through 64. Independent Postgres,
-MySQL, MariaDB, and Redis mutations may overlap; hierarchy-dependent and
+MySQL, MariaDB, MongoDB, and Redis mutations may overlap; hierarchy-dependent and
 multi-step operations stay ordered. Each successful remote step is
 checkpointed before dependent work continues. A failed operation is never
 rolled back automatically, and already running successful siblings are still

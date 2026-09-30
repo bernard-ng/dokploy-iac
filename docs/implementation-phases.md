@@ -147,11 +147,15 @@ durable state semantics.
   password, journaled batched mutations, outcome-unknown recovery, protected
   import, and disposable live acceptance. Database and username changes update
   in place; post-create user or root password changes remain blocked.
-- MongoDB and LibSQL now share the central declarative vocabulary:
-  environment containment, strict canonical configuration, descriptor-only
-  secret fingerprints, and kind-scoped desired properties. LibSQL records the
-  primary-or-replica node choice as one atomic property. Planning, apply,
-  recovery, and import remain unavailable until each remote adapter is proven.
+- MongoDB is declarative end to end with authoritative bounded discovery,
+  collision and endpoint-consistency checks, journaled batched mutations,
+  outcome-unknown recovery, protected import, and disposable live acceptance.
+  Username and replica-set mode update in place; post-create password changes
+  remain blocked.
+- LibSQL shares the central declarative vocabulary: environment containment,
+  strict canonical configuration, descriptor-only secret fingerprints, and an
+  atomic primary-or-replica node property. Planning, apply, recovery, and
+  import remain unavailable until its remote adapter is proven.
 - Mounts, ports, redirects, security entries, backups, and schedules use the
   shared typed-target and external-selector model in ADR 0026.
 - Completion still requires declarative reconciliation plus unit, sanitized

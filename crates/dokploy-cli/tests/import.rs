@@ -480,6 +480,90 @@ async fn mariadb_import_is_protected_two_secret_free_and_immediately_convergent(
 }
 
 #[tokio::test]
+async fn mongo_import_is_protected_secret_free_and_immediately_convergent() {
+    let mongo = r#"{"mongoId":"mongo-1","environmentId":"environment-1","name":"Remote database","appName":"remote-db","dockerImage":"mongo:8","databaseUser":"app","databasePassword":"password-canary","replicaSets":true}"#;
+    let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
+    let project =
+        r#"{"projectId":"project-1","name":"platform","description":"Platform","environments":[]}"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","description":"Platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection =
+        r#"[{"environmentId":"environment-1","name":"production","description":"Production"}]"#;
+    let mongo_collection = r#"{"items":[{"mongoId":"mongo-1","environmentId":"environment-1","name":"Remote database"}],"total":1}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        mongo,
+        environment,
+        project,
+        project_topology,
+        environment_collection,
+        environment,
+        mongo_collection,
+        mongo,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client is valid");
+    let workspace = tempfile::tempdir().expect("workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Mongo,
+            remote_id: "mongo-1".to_owned(),
+            address: "mongo.main".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("database imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 3);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).expect("config is readable");
+    assert!(!source.contains("password"));
+    assert!(!source.contains("password-canary"));
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"mongo.main".parse().unwrap()).unwrap();
+    let database = resource.as_mongo().unwrap();
+    assert_eq!(database.username(), &Field::Set("app".to_owned()));
+    assert_eq!(database.password(), &Field::Unmanaged);
+    assert_eq!(database.replica_sets(), &Field::Set(true));
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    assert!(
+        state
+            .resource(&"mongo.main".parse().unwrap())
+            .unwrap()
+            .is_protected()
+    );
+    assert_eq!(
+        state
+            .resource(&"mongo.main".parse().unwrap())
+            .unwrap()
+            .sensitive_inputs()
+            .paths()
+            .count(),
+        0
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 8);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
 async fn redis_import_is_protected_secret_free_and_immediately_convergent() {
     let redis = r#"{"redisId":"redis-1","environmentId":"environment-1","name":"Remote cache","appName":"remote-cache","dockerImage":"redis:8"}"#;
     let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;

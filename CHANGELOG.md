@@ -25,6 +25,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative MongoDB reconciliation with authoritative
+  environment-scoped discovery, direct-read agreement, collision detection,
+  journaled batched mutations, outcome-unknown recovery, protected secret-free
+  import, and disposable live acceptance. Username and replica-set mode update
+  in place while post-create password changes remain fail-closed.
 - Add end-to-end declarative MariaDB reconciliation with authoritative
   environment-scoped discovery, direct-read agreement, collision detection,
   optional create-only root credentials, journaled batched mutations,

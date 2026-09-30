@@ -116,6 +116,21 @@ async fn uncertain_mariadb_metadata_update_is_recovered_from_readable_fresh_stat
     .await;
 }
 
+#[tokio::test]
+async fn uncertain_mongo_metadata_update_is_recovered_from_readable_fresh_state() {
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::Mongo,
+        "mongo.main",
+        "mongo-1",
+        "mongo",
+        r#"{"items":[{"mongoId":"mongo-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mongoId":"mongo-1","environmentId":"environment-1","name":"main","appName":"mongo-main","dockerImage":"mongo:8","databaseUser":"next","replicaSets":true}"#,
+        1,
+        true,
+    )
+    .await;
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn exercise_uncertain_database_update_recovery(
     kind: ResourceKind,
@@ -136,6 +151,26 @@ async fn exercise_uncertain_database_update_recovery(
     ]);
     let workspace = tempfile::tempdir().expect("temporary workspace is available");
     let config_file = workspace.path().join("dokploy.yaml");
+    let (configured_fields, before_inputs, after_inputs, before_sensitive, after_sensitive) =
+        if kind == ResourceKind::Mongo {
+            (
+                "        username: next\n        password: null\n        replica_sets: true\n"
+                    .to_owned(),
+                serde_json::json!({"username":"old","replica_sets":false}),
+                serde_json::json!({"username":"next","replica_sets":true}),
+                mongo_sensitive_inputs(1),
+                mongo_sensitive_inputs(proposed_password_fingerprint),
+            )
+        } else {
+            (
+                "        database: next\n        username: next\n        password: null\n        root_password: null\n"
+                    .to_owned(),
+                serde_json::json!({"database":"old","username":"old"}),
+                serde_json::json!({"database":"next","username":"next"}),
+                database_sensitive_inputs(1, 2),
+                database_sensitive_inputs(proposed_password_fingerprint, 2),
+            )
+        };
     fs::write(
         &config_file,
         format!(
@@ -146,12 +181,9 @@ async fn exercise_uncertain_database_update_recovery(
                 "  production:\n",
                 "    {}:\n",
                 "      main:\n",
-                "        database: next\n",
-                "        username: next\n",
-                "        password: null\n",
-                "        root_password: null\n",
+                "{}",
             ),
-            collection_name,
+            collection_name, configured_fields,
         ),
     )
     .expect("configuration fixture is writable");
@@ -209,11 +241,8 @@ async fn exercise_uncertain_database_update_recovery(
                 kind,
                 RemoteId::new(remote_id).unwrap(),
                 false,
-                ManagedInputs::try_from_json(
-                    serde_json::json!({"database":"old","username":"old"}),
-                )
-                .unwrap(),
-                database_sensitive_inputs(1, 2),
+                ManagedInputs::try_from_json(before_inputs).unwrap(),
+                before_sensitive,
                 Some(address("environment.production")),
                 Vec::new(),
             )
@@ -230,9 +259,8 @@ async fn exercise_uncertain_database_update_recovery(
         kind,
         RemoteId::new(remote_id).unwrap(),
         false,
-        ManagedInputs::try_from_json(serde_json::json!({"database":"next","username":"next"}))
-            .unwrap(),
-        database_sensitive_inputs(proposed_password_fingerprint, 2),
+        ManagedInputs::try_from_json(after_inputs.clone()).unwrap(),
+        after_sensitive,
         Some(address("environment.production")),
         Vec::new(),
     )
@@ -267,7 +295,7 @@ async fn exercise_uncertain_database_update_recovery(
                 .unwrap()
                 .last_applied()
                 .as_json(),
-            &serde_json::json!({"database":"next","username":"next"})
+            &after_inputs
         );
         assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
     } else {
@@ -309,6 +337,19 @@ async fn uncertain_mariadb_create_adopts_one_matching_resource_without_retrying_
     .await;
 }
 
+#[tokio::test]
+async fn uncertain_mongo_create_adopts_one_matching_resource_without_retrying_secrets() {
+    exercise_uncertain_database_create_recovery(
+        ResourceKind::Mongo,
+        "mongo.main",
+        "mongo-1",
+        "mongo",
+        r#"{"items":[{"mongoId":"mongo-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        r#"{"mongoId":"mongo-1","environmentId":"environment-1","name":"main","appName":"mongo-main","dockerImage":"mongo:8","databaseUser":"app","replicaSets":false,"databasePassword":"never-crosses-sdk"}"#,
+    )
+    .await;
+}
+
 async fn exercise_uncertain_database_create_recovery(
     kind: ResourceKind,
     address_value: &str,
@@ -326,6 +367,21 @@ async fn exercise_uncertain_database_create_recovery(
     ]);
     let workspace = tempfile::tempdir().expect("temporary workspace is available");
     let config_file = workspace.path().join("dokploy.yaml");
+    let (configured_fields, managed_inputs, sensitive) = if kind == ResourceKind::Mongo {
+        (
+            "        username: app\n        password: null\n        replica_sets: false\n"
+                .to_owned(),
+            serde_json::json!({"username":"app","replica_sets":false}),
+            mongo_sensitive_inputs(1),
+        )
+    } else {
+        (
+            "        database: app\n        username: app\n        password: null\n        root_password: null\n"
+                .to_owned(),
+            serde_json::json!({"database":"app","username":"app"}),
+            database_sensitive_inputs(1, 2),
+        )
+    };
     fs::write(
         &config_file,
         format!(
@@ -336,12 +392,9 @@ async fn exercise_uncertain_database_create_recovery(
                 "  production:\n",
                 "    {}:\n",
                 "      main:\n",
-                "        database: app\n",
-                "        username: app\n",
-                "        password: null\n",
-                "        root_password: null\n",
+                "{}",
             ),
-            collection_name,
+            collection_name, configured_fields,
         ),
     )
     .expect("configuration fixture is writable");
@@ -382,27 +435,11 @@ async fn exercise_uncertain_database_create_recovery(
             .checkpoint(ExpectedState::from_state(&before), &state)
             .unwrap();
     }
-    let key_id = FingerprintKeyId::new(
-        uuid::Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").unwrap(),
-    )
-    .unwrap();
-    let sensitive = SensitiveInputs::try_from_entries([
-        (
-            SensitivePropertyPath::parse("password").unwrap(),
-            SensitiveFingerprint::new_v1(key_id.clone(), [1; 32]),
-        ),
-        (
-            SensitivePropertyPath::parse("root_password").unwrap(),
-            SensitiveFingerprint::new_v1(key_id, [2; 32]),
-        ),
-    ])
-    .unwrap();
     let target = ResourceState::try_new(
         kind,
         RemoteId::new("recovery-pending").unwrap(),
         false,
-        ManagedInputs::try_from_json(serde_json::json!({"database":"app","username":"app"}))
-            .unwrap(),
+        ManagedInputs::try_from_json(managed_inputs).unwrap(),
         sensitive,
         Some(address("environment.production")),
         Vec::new(),
@@ -830,5 +867,17 @@ fn database_sensitive_inputs(password: u8, root_password: u8) -> SensitiveInputs
             SensitiveFingerprint::new_v1(key_id, [root_password; 32]),
         ),
     ])
+    .unwrap()
+}
+
+fn mongo_sensitive_inputs(password: u8) -> SensitiveInputs {
+    let key_id = FingerprintKeyId::new(
+        uuid::Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").unwrap(),
+    )
+    .unwrap();
+    SensitiveInputs::try_from_entries([(
+        SensitivePropertyPath::parse("password").unwrap(),
+        SensitiveFingerprint::new_v1(key_id, [password; 32]),
+    )])
     .unwrap()
 }

@@ -477,6 +477,175 @@ async fn mariadb_unknown_create_outcome_keeps_the_journal_step_recoverable() {
 }
 
 #[tokio::test]
+async fn mongo_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let search = r#"{"items":[{"mongoId":"mongo-1","environmentId":"environment-1","name":"main"}],"total":1}"#;
+    let old = r#"{"mongoId":"mongo-1","environmentId":"environment-1","name":"main","appName":"mongo-main","dockerImage":"mongo:8","databaseUser":"app","replicaSets":false}"#;
+    let updated = r#"{"mongoId":"mongo-1","environmentId":"environment-1","name":"main","appName":"mongo-main","dockerImage":"mongo:8","databaseUser":"app_next","replicaSets":true}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", r#"{"mongoId":"mongo-1"}"#),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", old),
+        ("200 OK", "true"),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", updated),
+        ("200 OK", "true"),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("mongo"), "mongo-password-canary")
+        .expect("MongoDB secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    let mongo_config = |username: &str, replica_sets: bool| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    mongo:\n",
+                "      main:\n",
+                "        username: {}\n",
+                "        password:\n",
+                "          file: .secrets/mongo\n",
+                "        replica_sets: {}\n",
+            ),
+            username, replica_sets,
+        )
+    };
+    fs::write(&config, mongo_config("app", false))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+
+    let created = apply_workspace(&client, &config)
+        .await
+        .expect("initial MongoDB apply succeeds");
+    assert_eq!(created.applied(), 3);
+    fs::write(&config, mongo_config("app_next", true))
+        .expect("updated configuration fixture is writable");
+    let updated = apply_workspace(&client, &config)
+        .await
+        .expect("MongoDB metadata update succeeds");
+    assert_eq!(updated.applied(), 1);
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mongo: {}\n",
+            "removed:\n",
+            "  - from: mongo.main\n",
+            "    destroy: true\n",
+        ),
+    )
+    .expect("removal configuration fixture is writable");
+    let deleted = apply_workspace(&client, &config)
+        .await
+        .expect("MongoDB delete succeeds");
+    assert_eq!(deleted.applied(), 1);
+
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert!(state.resource(&"mongo.main".parse().unwrap()).is_none());
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 15);
+    assert!(requests[2].starts_with("POST /api/mongo.create HTTP/1.1\r\n"));
+    assert!(requests[2].contains(r#""databasePassword":"mongo-password-canary""#));
+    assert!(requests[2].contains(r#""databaseUser":"app""#));
+    assert!(requests[2].contains(r#""replicaSets":false"#));
+    assert!(requests[8].starts_with("POST /api/mongo.update HTTP/1.1\r\n"));
+    assert!(requests[8].contains(r#""databaseUser":"app_next""#));
+    assert!(requests[8].contains(r#""replicaSets":true"#));
+    assert!(!requests[8].contains("databasePassword"));
+    assert!(requests[14].starts_with("POST /api/mongo.remove HTTP/1.1\r\n"));
+
+    let state_json = fs::read_to_string(directory.path().join(".dokploy/state.json"))
+        .expect("state is readable as text");
+    assert!(!state_json.contains("mongo-password-canary"));
+    assert!(!format!("{created:?} {updated:?} {deleted:?}").contains("password-canary"));
+}
+
+#[tokio::test]
+async fn mongo_unknown_create_outcome_keeps_the_journal_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("mongo"), "unknown-mongo-canary")
+        .expect("MongoDB secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    mongo:\n",
+            "      main:\n",
+            "        username: app\n",
+            "        password:\n",
+            "          file: .secrets/mongo\n",
+            "        replica_sets: false\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace(&server.client(), &config)
+        .await
+        .expect_err("an interrupted create has an unknown outcome");
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
+        }
+    ));
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    let journal = fs::read_dir(directory.path().join(".dokploy/journal"))
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.ok()?.path();
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+                .then(|| fs::read_to_string(path).unwrap())
+        })
+        .expect("journal exists");
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("unknown-mongo-canary"));
+    assert_eq!(server.finish().len(), 3);
+}
+
+#[tokio::test]
 async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
     let server = TestServer::respond_then_drop(vec![
         ("200 OK", "[]"),
@@ -1019,7 +1188,7 @@ impl ConcurrentDatabaseServer {
                 .expect("listener becomes nonblocking");
             let deadline = Instant::now() + Duration::from_secs(2);
             let mut database_requests = Vec::new();
-            while database_requests.len() < 3 && Instant::now() < deadline {
+            while database_requests.len() < 4 && Instant::now() < deadline {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let request = read_request(&mut stream);
@@ -1031,7 +1200,7 @@ impl ConcurrentDatabaseServer {
                     Err(error) => panic!("test server accepts database request: {error}"),
                 }
             }
-            let overlapped = database_requests.len() == 3;
+            let overlapped = database_requests.len() == 4;
             database_requests
                 .sort_by_key(|(_, request)| request.starts_with("POST /api/postgres.create "));
             for (mut stream, request) in database_requests {
@@ -1054,6 +1223,12 @@ impl ConcurrentDatabaseServer {
                         include_str!(
                             "../../../fixtures/api/live/v0.30.6/mariadb-create.owner.json"
                         ),
+                    );
+                } else if request.starts_with("POST /api/mongo.create ") {
+                    write_response(
+                        &mut stream,
+                        "200 OK",
+                        include_str!("../../../fixtures/api/live/v0.30.6/mongo-create.owner.json"),
                     );
                 } else {
                     write_response(&mut stream, "404 Not Found", r#"{"error":"unexpected"}"#);
@@ -1490,6 +1665,7 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
     fs::write(secrets.join("redis"), "redis-password").expect("Redis secret fixture is writable");
     fs::write(secrets.join("mariadb"), "mariadb-password")
         .expect("MariaDB secret fixture is writable");
+    fs::write(secrets.join("mongo"), "mongo-password").expect("MongoDB secret fixture is writable");
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
@@ -1514,6 +1690,12 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
             "        username: records\n",
             "        password:\n",
             "          file: .secrets/mariadb\n",
+            "    mongo:\n",
+            "      documents:\n",
+            "        username: documents\n",
+            "        password:\n",
+            "          file: .secrets/mongo\n",
+            "        replica_sets: false\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1521,7 +1703,7 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
     let error = apply_workspace_with_approval(
         &server.client(),
         &config,
-        ApplyOptions::new(3).expect("parallelism is valid"),
+        ApplyOptions::new(4).expect("parallelism is valid"),
         |_| Ok(true),
     )
     .await
@@ -1542,6 +1724,7 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
     let postgres: ResourceAddress = "postgres.main".parse().expect("address is valid");
     let redis: ResourceAddress = "redis.cache".parse().expect("address is valid");
     let mariadb: ResourceAddress = "mariadb.records".parse().expect("address is valid");
+    let mongo: ResourceAddress = "mongo.documents".parse().expect("address is valid");
     assert!(state.resource(&postgres).is_none());
     assert_eq!(
         state
@@ -1558,6 +1741,14 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
             .remote_id()
             .as_str(),
         "mariadb-1"
+    );
+    assert_eq!(
+        state
+            .resource(&mongo)
+            .expect("successful MongoDB sibling is checkpointed")
+            .remote_id()
+            .as_str(),
+        "mongo-1"
     );
     match store.recovery_status().expect("journal scan succeeds") {
         RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
@@ -1586,6 +1777,11 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
         requests
             .iter()
             .any(|request| request.starts_with("POST /api/mariadb.create "))
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|request| request.starts_with("POST /api/mongo.create "))
     );
 }
 

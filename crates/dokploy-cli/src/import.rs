@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 
 use dokploy_config::{
     ApplicationDocument, ConfigDocument, ConfigWriteError, DomainDocument, EnvironmentDocument,
-    Field, LifecycleDocument, MariaDbDocument, MySqlDocument, PostgresDocument, RedisDocument,
-    SourceDocument,
+    Field, LifecycleDocument, MariaDbDocument, MongoDocument, MySqlDocument, PostgresDocument,
+    RedisDocument, SourceDocument,
 };
 use dokploy_sdk::{
     ApplicationDetails, ApplicationId, Dokploy, DomainId, EnvironmentDetails, EnvironmentId,
-    Error as SdkError, MariaDbId, MySqlId, PostgresId, ProjectDetails, ProjectId, RedisId,
+    Error as SdkError, MariaDbId, MongoId, MySqlId, PostgresId, ProjectDetails, ProjectId, RedisId,
     ResponseField,
 };
 use dokploy_state::{
@@ -136,6 +136,18 @@ pub async fn select_with_prompter(
                     &database.name,
                 ));
             }
+            for database in client
+                .mongo()
+                .by_environment(environment.environment_id.clone())
+                .await?
+                .mongo()
+            {
+                choices.push(ImportChoice::new(
+                    ImportKind::Mongo,
+                    database.mongo_id.as_str(),
+                    &database.name,
+                ));
+            }
             for database in &environment.redis {
                 choices.push(ImportChoice::new(
                     ImportKind::Redis,
@@ -207,6 +219,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Postgres => "postgres",
         ImportKind::MySql => "mysql",
         ImportKind::MariaDb => "mariadb",
+        ImportKind::Mongo => "mongo",
         ImportKind::Redis => "redis",
         ImportKind::Domain => "domain",
     }
@@ -352,6 +365,18 @@ async fn discover(
                 .get(environment.project_id.clone())
                 .await?;
             build_mariadb(project, environment, database, target)
+        }
+        ImportKind::Mongo => {
+            let database = client.mongo().get(MongoId::new(remote_id)).await?;
+            let environment = client
+                .environments()
+                .get(database.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_mongo(project, environment, database, target)
         }
         ImportKind::Redis => {
             let database = client.redis().get(RedisId::new(remote_id)).await?;
@@ -655,6 +680,53 @@ fn build_mariadb(
     Ok(imported)
 }
 
+fn build_mongo(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    database: dokploy_sdk::MongoDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    let config = MongoDocument {
+        username: response_field(&database.database_user),
+        replica_sets: response_field(&database.replica_sets),
+        lifecycle: LifecycleDocument {
+            protect: Field::Set(true),
+            ..LifecycleDocument::default()
+        },
+        ..MongoDocument::default()
+    };
+    environment_config.add_mongo(target.name().clone(), config)?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    let mut inputs = serde_json::Map::new();
+    insert_response(&mut inputs, "username", &database.database_user);
+    insert_response(&mut inputs, "replica_sets", &database.replica_sets);
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            database.mongo_id.as_str(),
+            true,
+            inputs,
+            Some(environment_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
 fn build_domain(
     project: ProjectDetails,
     environment: EnvironmentDetails,
@@ -853,6 +925,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Postgres => ResourceKind::Postgres,
         ImportKind::MySql => ResourceKind::MySql,
         ImportKind::MariaDb => ResourceKind::MariaDb,
+        ImportKind::Mongo => ResourceKind::Mongo,
         ImportKind::Redis => ResourceKind::Redis,
         ImportKind::Domain => ResourceKind::Domain,
     }

@@ -205,6 +205,8 @@ pub enum ImportKind {
     MySql,
     #[value(name = "mariadb")]
     MariaDb,
+    #[value(name = "mongo")]
+    Mongo,
     Redis,
     Domain,
 }
@@ -331,6 +333,25 @@ mod tests {
                 address: Some(ref address),
                 ..
             } if id == "mariadb-1" && address == "mariadb.main"
+        ));
+
+        let mongo = Cli::try_parse_from([
+            "dokploy",
+            "import",
+            "mongo",
+            "mongo-1",
+            "--as",
+            "mongo.main",
+        ])
+        .expect("MongoDB import is valid");
+        assert!(matches!(
+            mongo.command,
+            Command::Import {
+                kind: Some(ImportKind::Mongo),
+                remote_id: Some(ref id),
+                address: Some(ref address),
+                ..
+            } if id == "mongo-1" && address == "mongo.main"
         ));
 
         let interactive =

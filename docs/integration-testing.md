@@ -455,3 +455,25 @@ configuration, plans, diagnostics, state, and journals for the original user
 password and both rejected secret values. The script verifies the exact
 Dokploy `v0.30.6` image digest, never deploys the database, and removes only its
 collision-resistant project and owner-only temporary workspace.
+
+## Live MongoDB declarative apply test
+
+Verify MongoDB reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-mongo-apply.sh
+```
+
+The check creates a disposable project, environment, and undeployed MongoDB
+record from an environment-backed one-shot password. It requires a fresh no-op
+plan, changes the password source, and proves that read-only planning blocks
+the unsupported mutation without contacting a mutation endpoint. After
+restoring the source, it updates username and replica-set mode in place and
+proves convergence again.
+
+The final apply removes the MongoDB record. The check confirms absence through
+both `mongo.one` and the environment-scoped `mongo.search`, removes the durable
+state entry, and requires a final no-op plan. It scans all captured command
+streams, configuration, state, and journals for the original and rejected
+passwords. Cleanup verifies project and database absence, retains owner-only
+evidence if any proof fails, and never deploys the database.

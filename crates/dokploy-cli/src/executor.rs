@@ -10,11 +10,11 @@ use dokploy_core::{
     PropertyPath, StoredState,
 };
 use dokploy_sdk::{
-    ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreateMariaDb, CreateMySql,
-    CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId,
-    Error as SdkError, MariaDbId, MySqlId, Nullable, PostgresId, ProjectId, RedisId,
-    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb, UpdateMySql, UpdatePostgres,
-    UpdateProject, UpdateRedis,
+    ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreateMariaDb, CreateMongo,
+    CreateMySql, CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId,
+    Error as SdkError, MariaDbId, MongoId, MySqlId, Nullable, PostgresId, ProjectId, RedisId,
+    UpdateApplication, UpdateDomain, UpdateEnvironment, UpdateMariaDb, UpdateMongo, UpdateMySql,
+    UpdatePostgres, UpdateProject, UpdateRedis,
 };
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
@@ -600,7 +600,35 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.mariadb_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
-            ResourceKind::Mongo | ResourceKind::LibSql => {
+            ResourceKind::Mongo => {
+                let environment_id = checkpoint_environment_id(checkpoint, &state)?;
+                let username = required_string(checkpoint, &PropertyPath::Username)?;
+                let password = take_sensitive_string(
+                    &mut compiled,
+                    change.address(),
+                    &PropertyPath::Password,
+                )?;
+                let mut input = CreateMongo::new(
+                    change.address().name().as_str(),
+                    environment_id,
+                    username,
+                    password,
+                );
+                if let Some(replica_sets) = optional_bool(checkpoint, &PropertyPath::ReplicaSets)? {
+                    input = input.with_replica_sets(replica_sets);
+                }
+                let created = match client.mongo().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        fail_if_definitive(&mut journal, token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.mongo_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
+            ResourceKind::LibSql => {
                 return Err(ApplyWorkspaceError::UnsupportedChange);
             }
             ResourceKind::Redis => {
@@ -669,6 +697,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Postgres
                     | ResourceKind::MySql
                     | ResourceKind::MariaDb
+                    | ResourceKind::Mongo
                     | ResourceKind::Redis
                     | ResourceKind::Domain
             )
@@ -901,7 +930,25 @@ async fn prepare_move_mutation(
             }
             Ok(ExistingMutation::MariaDb(input))
         }
-        ResourceKind::Mongo | ResourceKind::LibSql => Err(ApplyWorkspaceError::UnsupportedChange),
+        ResourceKind::Mongo => {
+            let mut input = UpdateMongo::new(MongoId::new(remote_id.as_str()));
+            for path in selected_paths {
+                match path {
+                    PropertyPath::Username => {
+                        input = input.with_username(required_string(checkpoint, path)?);
+                    }
+                    PropertyPath::ReplicaSets => {
+                        input = input.with_replica_sets(required_bool(checkpoint, path)?);
+                    }
+                    PropertyPath::Password => {
+                        return Err(ApplyWorkspaceError::UnsupportedChange);
+                    }
+                    _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+                }
+            }
+            Ok(ExistingMutation::Mongo(input))
+        }
+        ResourceKind::LibSql => Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Redis => {
             if selected_paths != [PropertyPath::Password] {
                 return Err(ApplyWorkspaceError::InvalidCheckpoint);
@@ -935,9 +982,7 @@ async fn execute_removal_change(
         .resource(change.address())
         .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
         .clone();
-    if change.kind() == ChangeKind::Delete
-        && matches!(before.kind(), ResourceKind::Mongo | ResourceKind::LibSql)
-    {
+    if change.kind() == ChangeKind::Delete && matches!(before.kind(), ResourceKind::LibSql) {
         return Err(ApplyWorkspaceError::UnsupportedChange);
     }
     let action = match change.kind() {
@@ -1013,7 +1058,13 @@ async fn delete_remote_resource(
                 .delete(MariaDbId::new(remote_id.as_str()))
                 .await,
         ),
-        ResourceKind::Mongo | ResourceKind::LibSql => None,
+        ResourceKind::Mongo => Some(
+            client
+                .mongo()
+                .delete(MongoId::new(remote_id.as_str()))
+                .await,
+        ),
+        ResourceKind::LibSql => None,
         ResourceKind::Redis => Some(
             client
                 .redis()
@@ -1063,6 +1114,39 @@ fn required_string(
             | CheckpointValueRef::EmptyCollection
             | CheckpointValueRef::Sensitive,
         ) => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
+}
+
+fn required_bool(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    path: &PropertyPath,
+) -> Result<bool, ApplyWorkspaceError> {
+    match checkpoint.property(path) {
+        Some(CheckpointValueRef::NonSensitive(value)) => value
+            .as_bool()
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint),
+        None
+        | Some(
+            CheckpointValueRef::Null
+            | CheckpointValueRef::EmptyCollection
+            | CheckpointValueRef::Sensitive,
+        ) => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
+}
+
+fn optional_bool(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    path: &PropertyPath,
+) -> Result<Option<bool>, ApplyWorkspaceError> {
+    match checkpoint.property(path) {
+        None | Some(CheckpointValueRef::Null) => Ok(None),
+        Some(CheckpointValueRef::NonSensitive(value)) => value
+            .as_bool()
+            .map(Some)
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint),
+        Some(CheckpointValueRef::EmptyCollection | CheckpointValueRef::Sensitive) => {
+            Err(ApplyWorkspaceError::InvalidCheckpoint)
+        }
     }
 }
 
@@ -1356,6 +1440,7 @@ fn database_batch_len(changes: &[dokploy_core::PlannedChange], parallelism: usiz
                     ResourceKind::Postgres
                         | ResourceKind::MySql
                         | ResourceKind::MariaDb
+                        | ResourceKind::Mongo
                         | ResourceKind::Redis
                 )
         })
@@ -1496,6 +1581,18 @@ fn prepare_database_mutation(
                 DatabaseMutation::CreateMariaDb(input),
             )
         }
+        (ChangeKind::Create, ResourceKind::Mongo) => {
+            let environment_id = checkpoint_environment_id(&checkpoint, state)?;
+            let username = required_string(&checkpoint, &PropertyPath::Username)?;
+            let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
+            let mut input =
+                CreateMongo::new(address.name().as_str(), environment_id, username, password);
+            if let Some(replica_sets) = optional_bool(&checkpoint, &PropertyPath::ReplicaSets)? {
+                input = input.with_replica_sets(replica_sets);
+            }
+
+            (JournalAction::Create, DatabaseMutation::CreateMongo(input))
+        }
         (ChangeKind::Create, ResourceKind::Redis) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
             let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
@@ -1585,6 +1682,33 @@ fn prepare_database_mutation(
                 DatabaseMutation::UpdateMariaDb(input, remote_id),
             )
         }
+        (ChangeKind::Update, ResourceKind::Mongo) => {
+            let remote_id = state
+                .resource(&address)
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                .remote_id()
+                .clone();
+            let mut input = UpdateMongo::new(MongoId::new(remote_id.as_str()));
+            for path in change.fields().iter().map(|field| field.key()) {
+                match path {
+                    PropertyPath::Username => {
+                        input = input.with_username(required_string(&checkpoint, path)?);
+                    }
+                    PropertyPath::ReplicaSets => {
+                        input = input.with_replica_sets(required_bool(&checkpoint, path)?);
+                    }
+                    PropertyPath::Password => {
+                        return Err(ApplyWorkspaceError::UnsupportedChange);
+                    }
+                    _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+                }
+            }
+
+            (
+                JournalAction::Update,
+                DatabaseMutation::UpdateMongo(input, remote_id),
+            )
+        }
         (ChangeKind::Update, ResourceKind::Redis) => {
             if change.fields().len() != 1 || change.fields()[0].key() != &PropertyPath::Password {
                 return Err(ApplyWorkspaceError::InvalidCheckpoint);
@@ -1649,10 +1773,12 @@ enum DatabaseMutation {
     CreatePostgres(CreatePostgres),
     CreateMySql(CreateMySql),
     CreateMariaDb(CreateMariaDb),
+    CreateMongo(CreateMongo),
     CreateRedis(CreateRedis),
     UpdatePostgres(UpdatePostgres, RemoteId),
     UpdateMySql(UpdateMySql, RemoteId),
     UpdateMariaDb(UpdateMariaDb, RemoteId),
+    UpdateMongo(UpdateMongo, RemoteId),
     UpdateRedis(UpdateRedis, RemoteId),
 }
 
@@ -1686,6 +1812,15 @@ impl DatabaseMutation {
                 RemoteId::new(created.mariadb_id().as_str())
                     .map_err(|_| DatabaseMutationFailure::InvalidIdentity)
             }
+            Self::CreateMongo(input) => {
+                let created = client
+                    .mongo()
+                    .create(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                RemoteId::new(created.mongo_id().as_str())
+                    .map_err(|_| DatabaseMutationFailure::InvalidIdentity)
+            }
             Self::CreateRedis(input) => {
                 let created = client
                     .redis()
@@ -1714,6 +1849,14 @@ impl DatabaseMutation {
             Self::UpdateMariaDb(input, remote_id) => {
                 client
                     .mariadb()
+                    .update(input)
+                    .await
+                    .map_err(DatabaseMutationFailure::Sdk)?;
+                Ok(remote_id)
+            }
+            Self::UpdateMongo(input, remote_id) => {
+                client
+                    .mongo()
                     .update(input)
                     .await
                     .map_err(DatabaseMutationFailure::Sdk)?;
@@ -1900,7 +2043,25 @@ async fn execute_existing_change(
             }
             ExistingMutation::MariaDb(input)
         }
-        ResourceKind::Mongo | ResourceKind::LibSql => {
+        ResourceKind::Mongo => {
+            let mut input = UpdateMongo::new(MongoId::new(remote_id.as_str()));
+            for path in &selected_paths {
+                match path {
+                    PropertyPath::Username => {
+                        input = input.with_username(required_string(checkpoint, path)?);
+                    }
+                    PropertyPath::ReplicaSets => {
+                        input = input.with_replica_sets(required_bool(checkpoint, path)?);
+                    }
+                    PropertyPath::Password => {
+                        return Err(ApplyWorkspaceError::UnsupportedChange);
+                    }
+                    _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+                }
+            }
+            ExistingMutation::Mongo(input)
+        }
+        ResourceKind::LibSql => {
             return Err(ApplyWorkspaceError::UnsupportedChange);
         }
         ResourceKind::Redis => {
@@ -1961,6 +2122,7 @@ enum ExistingMutation {
     Postgres(UpdatePostgres),
     MySql(UpdateMySql),
     MariaDb(UpdateMariaDb),
+    Mongo(UpdateMongo),
     Redis(UpdateRedis),
     Domain(UpdateDomain),
 }
@@ -1974,6 +2136,7 @@ impl ExistingMutation {
             Self::Postgres(input) => client.postgres().update(input).await,
             Self::MySql(input) => client.mysql().update(input).await,
             Self::MariaDb(input) => client.mariadb().update(input).await,
+            Self::Mongo(input) => client.mongo().update(input).await,
             Self::Redis(input) => client.redis().update(input).await,
             Self::Domain(input) => client.domains().update(input).await,
         }

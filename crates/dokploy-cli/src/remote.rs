@@ -67,6 +67,15 @@ pub enum MariaDbTopologyAuthority {
     Partial,
 }
 
+/// Whether a fully paginated parent-scoped MongoDB search is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MongoTopologyAuthority {
+    /// Exhaustive absence below a proven environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Whether a fully paginated parent-scoped Redis search is complete.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RedisTopologyAuthority {
@@ -100,6 +109,8 @@ pub struct DiscoveryAuthority {
     pub mysql: MySqlTopologyAuthority,
     /// Completeness of each fully paginated `mariadb.search` collection.
     pub mariadb: MariaDbTopologyAuthority,
+    /// Completeness of each fully paginated `mongo.search` collection.
+    pub mongo: MongoTopologyAuthority,
     /// Completeness of each fully paginated `redis.search` collection.
     pub redis: RedisTopologyAuthority,
     /// Completeness of each `domain.byApplicationId` collection.
@@ -117,6 +128,7 @@ impl DiscoveryAuthority {
             postgres: PostgresTopologyAuthority::Authoritative,
             mysql: MySqlTopologyAuthority::Authoritative,
             mariadb: MariaDbTopologyAuthority::Authoritative,
+            mongo: MongoTopologyAuthority::Authoritative,
             redis: RedisTopologyAuthority::Authoritative,
             domains: DomainTopologyAuthority::Authoritative,
         }
@@ -246,6 +258,24 @@ pub enum DiscoverRemoteError {
     /// Direct and collection MariaDB reads contradict each other.
     #[error("DOKREM044: MariaDB read endpoints returned conflicting topology")]
     MariaDbTopologyConflict,
+    /// A MongoDB database has no unambiguous containing environment.
+    #[error("DOKREM045: MongoDB containment is unavailable")]
+    MongoContainment,
+    /// A MongoDB physical identity does not satisfy the state contract.
+    #[error("DOKREM046: MongoDB topology contains an invalid remote identity")]
+    InvalidMongoId,
+    /// More than one MongoDB database has the same name within one environment.
+    #[error("DOKREM047: MongoDB topology contains a duplicate scoped name")]
+    DuplicateMongoName,
+    /// More than one MongoDB database has the same physical identity.
+    #[error("DOKREM048: MongoDB topology contains a duplicate remote identity")]
+    DuplicateMongoId,
+    /// A MongoDB containment change would require an unsupported remote reparent.
+    #[error("DOKREM049: MongoDB reparenting is not supported")]
+    MongoReparentUnsupported,
+    /// Direct and collection MongoDB reads contradict each other.
+    #[error("DOKREM050: MongoDB read endpoints returned conflicting topology")]
+    MongoTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -334,6 +364,10 @@ pub async fn discover_remote(
         discover_mariadb_observations(client, compiled, state, &observations, authority.mariadb)
             .await?;
     observations.extend(mariadb);
+    let mongo =
+        discover_mongo_observations(client, compiled, state, &observations, authority.mongo)
+            .await?;
+    observations.extend(mongo);
     let redis =
         discover_redis_observations(client, compiled, state, &observations, authority.redis)
             .await?;
@@ -398,9 +432,13 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
             .with_containment(MutationMode::StateOnly),
-        ResourceKind::Mongo | ResourceKind::LibSql => {
-            MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
-        }
+        ResourceKind::Mongo => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Username)
+            .requiring(PropertyPath::Password)
+            .with_property(PropertyPath::Username, set_only)
+            .with_property(PropertyPath::ReplicaSets, set_only)
+            .with_containment(MutationMode::StateOnly),
+        ResourceKind::LibSql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate),
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
@@ -1135,6 +1173,143 @@ async fn discover_mariadb_observations(
         } else {
             let parent = mariadb_parent_from_desired(&address, compiled, state)?;
             observe_mariadb_under_parent(
+                client,
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )
+            .await?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+async fn discover_mongo_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: MongoTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::Mongo)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![mongo_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = mongo_parent_from_state(address, state)?;
+            validate_mongo_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(environment_id) = trusted_environment_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .mongo()
+                .by_environment(dokploy_sdk::EnvironmentId::new(&environment_id))
+                .await;
+            collections.insert(environment_id, collection);
+        }
+    }
+    validate_mongo_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = mongo_parent_from_state(&address, state)?;
+            match client
+                .mongo()
+                .get(dokploy_sdk::MongoId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(mongo) => {
+                    let remote_id = RemoteId::new(mongo.mongo_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidMongoId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidMongoId);
+                    }
+                    let expected_environment_id =
+                        trusted_environment_id(&current_parent, compiled, state, topology)
+                            .ok_or(DiscoverRemoteError::MongoContainment)?;
+                    if mongo.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::MongoContainment);
+                    }
+                    if let Some(Err(error)) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_mongo_against_collection(
+                            &mongo,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicateMongoId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            mongo_properties(&address, compiled, &mongo),
+                        ))
+                    }
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if mongo_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_mongo_under_parent(
+                            client,
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )
+                        .await?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = mongo_parent_from_desired(&address, compiled, state)?;
+            observe_mongo_under_parent(
                 client,
                 &address,
                 &parent,
@@ -2816,6 +2991,284 @@ fn mariadb_parent_from_desired(
     mariadb_parent_from_state(address, state)
 }
 
+fn mongo_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    mongo: &dokploy_sdk::MongoDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let observed = match path {
+            PropertyPath::Username => observe_string_field(&mongo.database_user),
+            PropertyPath::ReplicaSets => observe_bool_field(&mongo.replica_sets),
+            PropertyPath::Password => {
+                PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+            }
+            PropertyPath::Description
+            | PropertyPath::Database
+            | PropertyPath::RootPassword
+            | PropertyPath::Replicas
+            | PropertyPath::Source
+            | PropertyPath::SourceRepository
+            | PropertyPath::SourceBranch
+            | PropertyPath::Environment
+            | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::Node
+            | PropertyPath::Host
+            | PropertyPath::Application
+            | PropertyPath::DeploymentStatus => continue,
+        };
+        properties.insert(path.clone(), observed);
+    }
+
+    properties
+}
+
+fn validate_mongo_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::MongoCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (environment_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_names = BTreeSet::new();
+        for mongo in collection.mongo() {
+            let remote_id = RemoteId::new(mongo.mongo_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidMongoId)?;
+            if mongo.environment_id.as_str() != environment_id {
+                return Err(DiscoverRemoteError::MongoContainment);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateMongoId);
+            }
+            if !scoped_names.insert(mongo.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateMongoName);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn observe_mongo_under_parent(
+    client: &Dokploy,
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::MongoCollection, dokploy_sdk::Error>>,
+    authority: MongoTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some(Ok(collection)) => {
+            if let Some(mongo) = collection
+                .mongo()
+                .iter()
+                .find(|mongo| mongo.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(mongo.mongo_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidMongoId)?;
+                return match client.mongo().get(mongo.mongo_id.clone()).await {
+                    Ok(details) => {
+                        if details.mongo_id != mongo.mongo_id
+                            || details.environment_id.as_str() != environment_id
+                            || details.name != mongo.name
+                        {
+                            return Err(DiscoverRemoteError::MongoTopologyConflict);
+                        }
+                        validate_direct_mongo_against_collection(
+                            &details,
+                            &environment_id,
+                            collections,
+                            authority,
+                        )?;
+                        Ok(RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            mongo_properties(address, compiled, &details),
+                        )))
+                    }
+                    Err(SdkError::Api(error)) if error.status() == 404 => Ok(
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse),
+                    ),
+                    Err(error) => Ok(RemoteObservation::Unavailable(classify_sdk_error(&error))),
+                };
+            }
+            if authority == MongoTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_mongo_against_collection(
+    mongo: &dokploy_sdk::MongoDetails,
+    environment_id: &str,
+    collections: &BTreeMap<String, Result<dokploy_sdk::MongoCollection, dokploy_sdk::Error>>,
+    authority: MongoTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, result)| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .mongo()
+                        .iter()
+                        .any(|item| item.mongo_id == mongo.mongo_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::MongoTopologyConflict);
+    }
+    let Some(collection) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::MongoTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Err(DiscoverRemoteError::MongoTopologyConflict);
+    };
+    let matching = collection
+        .mongo()
+        .iter()
+        .find(|item| item.mongo_id == mongo.mongo_id);
+    match matching {
+        Some(item) if item.name == mongo.name => Ok(()),
+        Some(_) => Err(DiscoverRemoteError::MongoTopologyConflict),
+        None if authority == MongoTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::MongoTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn mongo_collections_contain_id(
+    remote_id: &RemoteId,
+    collections: &BTreeMap<String, Result<dokploy_sdk::MongoCollection, dokploy_sdk::Error>>,
+) -> bool {
+    collections.values().any(|result| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .mongo()
+                .iter()
+                .any(|mongo| mongo.mongo_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_mongo_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+
+    Err(DiscoverRemoteError::MongoReparentUnsupported)
+}
+
+fn mongo_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::MongoContainment)?;
+    let parent = resource
+        .containment()
+        .ok_or(DiscoverRemoteError::MongoContainment)?;
+    if parent.kind() != ResourceKind::Environment {
+        return Err(DiscoverRemoteError::MongoContainment);
+    }
+
+    Ok(parent.clone())
+}
+
+fn mongo_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::MongoContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::MongoContainment);
+        }
+        if state.resource(target).is_some() {
+            return mongo_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return mongo_parent_from_state(source, state);
+    }
+    mongo_parent_from_state(address, state)
+}
+
 fn redis_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
@@ -3089,6 +3542,19 @@ fn observe_u32_field(field: &ResponseField<u32>) -> PropertyObservation {
         ResponseField::Value(value) => PropertyObservation::Known(
             ComparableValue::try_from_json(serde_json::json!(value))
                 .expect("a concrete integer response field is comparable"),
+        ),
+    }
+}
+
+fn observe_bool_field(field: &ResponseField<bool>) -> PropertyObservation {
+    match field {
+        ResponseField::NotReturned => {
+            PropertyObservation::Unknown(PropertyUnknownReason::NotReturned)
+        }
+        ResponseField::Null => PropertyObservation::KnownAbsent,
+        ResponseField::Value(value) => PropertyObservation::Known(
+            ComparableValue::try_from_json(serde_json::json!(value))
+                .expect("a concrete boolean response field is comparable"),
         ),
     }
 }
