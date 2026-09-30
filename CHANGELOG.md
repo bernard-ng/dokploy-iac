@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Define typed containment, polymorphic-target, external-selector, sensitive
+  input, collision, and create-identity boundaries for the remaining Phase 8
+  leaf resource adapters.
 - Add a typed Compose SDK contract with safe reads, bounded environment
   discovery, redacted raw-document mutations, explicit volume deletion policy,
   sanitized live fixtures, and an undeployed create-update-delete proof.
