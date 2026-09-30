@@ -177,14 +177,18 @@ pub struct SensitivePropertyPath(SensitivePropertyPathKind);
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum SensitivePropertyPathKind {
     Password,
+    RootPassword,
     EnvironmentVariable(String),
 }
 
 impl SensitivePropertyPath {
-    /// Parses `password` or an uppercase `environment.NAME` path.
+    /// Parses a canonical database password or uppercase `environment.NAME` path.
     pub fn parse(value: &str) -> Result<Self, SensitivePropertyPathError> {
         if value == "password" {
             return Ok(Self(SensitivePropertyPathKind::Password));
+        }
+        if value == "root_password" {
+            return Ok(Self(SensitivePropertyPathKind::RootPassword));
         }
 
         let name = value
@@ -203,9 +207,14 @@ impl SensitivePropertyPath {
         matches!(self.0, SensitivePropertyPathKind::Password)
     }
 
+    pub(crate) const fn is_root_password(&self) -> bool {
+        matches!(self.0, SensitivePropertyPathKind::RootPassword)
+    }
+
     pub(crate) fn environment_name(&self) -> Option<&str> {
         match &self.0 {
             SensitivePropertyPathKind::Password => None,
+            SensitivePropertyPathKind::RootPassword => None,
             SensitivePropertyPathKind::EnvironmentVariable(name) => Some(name),
         }
     }
@@ -215,6 +224,7 @@ impl fmt::Display for SensitivePropertyPath {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             SensitivePropertyPathKind::Password => formatter.write_str("password"),
+            SensitivePropertyPathKind::RootPassword => formatter.write_str("root_password"),
             SensitivePropertyPathKind::EnvironmentVariable(name) => {
                 write!(formatter, "environment.{name}")
             }
@@ -249,7 +259,9 @@ impl<'de> Deserialize<'de> for SensitivePropertyPath {
 
 /// A path outside the durable sensitive-input vocabulary.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
-#[error("sensitive input path must be `password` or a canonical uppercase `environment.NAME`")]
+#[error(
+    "sensitive input path must be `password`, `root_password`, or a canonical uppercase `environment.NAME`"
+)]
 pub struct SensitivePropertyPathError;
 
 /// Durable sensitive intent receipts in canonical property-path order.

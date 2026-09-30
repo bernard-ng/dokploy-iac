@@ -69,6 +69,8 @@ pub enum PropertyPath {
     Username,
     /// Write-only database password.
     Password,
+    /// Write-only database root password.
+    RootPassword,
     /// Domain host name.
     Host,
     /// Domain application reference.
@@ -90,7 +92,10 @@ impl PropertyPath {
     /// Returns whether values at this path are sensitive or write-only.
     #[must_use]
     pub const fn is_sensitive(&self) -> bool {
-        matches!(self, Self::Password | Self::EnvironmentVariable(_))
+        matches!(
+            self,
+            Self::Password | Self::RootPassword | Self::EnvironmentVariable(_)
+        )
     }
 
     /// Returns whether this path is lifecycle-only.
@@ -126,6 +131,10 @@ impl PropertyPath {
             ResourceKind::Postgres => {
                 matches!(self, Self::Database | Self::Username | Self::Password)
             }
+            ResourceKind::MySql => matches!(
+                self,
+                Self::Database | Self::Username | Self::Password | Self::RootPassword
+            ),
             ResourceKind::Redis => matches!(self, Self::Password),
             ResourceKind::Domain => matches!(self, Self::Host | Self::Application),
         }
@@ -147,6 +156,7 @@ impl fmt::Display for PropertyPath {
             Self::Database => formatter.write_str("database"),
             Self::Username => formatter.write_str("username"),
             Self::Password => formatter.write_str("password"),
+            Self::RootPassword => formatter.write_str("root_password"),
             Self::Host => formatter.write_str("host"),
             Self::Application => formatter.write_str("application"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
@@ -168,6 +178,7 @@ impl FromStr for PropertyPath {
             "database" => Ok(Self::Database),
             "username" => Ok(Self::Username),
             "password" => Ok(Self::Password),
+            "root_password" => Ok(Self::RootPassword),
             "host" => Ok(Self::Host),
             "application" => Ok(Self::Application),
             "deployment.status" => Ok(Self::DeploymentStatus),

@@ -17,6 +17,10 @@ All notable changes to this project will be documented in this file.
 - Add read-only interactive and non-interactive resource import with canonical
   configuration generation, durable identity adoption, unmanaged secrets,
   protected databases, and immediate plan convergence.
+- Add the declarative MySQL substrate with strict environment containment,
+  canonical configuration writing, and independently fingerprinted user and
+  root-password intent; remote reconciliation remains fail-closed until its
+  adapter mutation contract is implemented.
 - Enforce independent generated-SDK compilation, explicit RustSec auditing,
   cargo-dist workflow drift checks, release-plan validation, and a disposable
   live Dokploy apply-and-converge job in pull-request CI.

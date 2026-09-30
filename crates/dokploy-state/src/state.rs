@@ -249,7 +249,7 @@ fn validate_managed_input_object(
     for (key, value) in fields {
         let path = format!("$.{key}");
         match key.as_str() {
-            "password" => {
+            "password" | "root_password" => {
                 if !value.is_null() {
                     return Err(ManagedInputsError::NonNullSensitiveValue { path });
                 }
@@ -556,6 +556,8 @@ fn ensure_disjoint_inputs(
     for path in sensitive.paths() {
         let overlaps = if path.is_password() {
             managed.contains_key("password")
+        } else if path.is_root_password() {
+            managed.contains_key("root_password")
         } else if let Some(name) = path.environment_name() {
             match environment {
                 Some(serde_json::Value::Null) => true,

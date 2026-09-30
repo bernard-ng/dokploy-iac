@@ -51,6 +51,77 @@ environments:
 }
 
 #[test]
+fn parses_mysql_with_independent_secret_descriptors_and_strict_fields() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    mysql:
+      primary:
+        database: app
+        username: app
+        password:
+          env: MYSQL_PASSWORD
+        root_password:
+          file: .secrets/mysql-root-password
+        depends_on: [application.api]
+        lifecycle:
+          protect: true
+    applications:
+      api:
+        environment:
+          DATABASE_URL:
+            from: mysql.primary.connection_url
+"#,
+    )
+    .expect("valid MySQL configuration");
+
+    let mysql = config
+        .resource(&"mysql.primary".parse().unwrap())
+        .expect("MySQL resource exists")
+        .as_mysql()
+        .expect("resource is MySQL");
+
+    assert_eq!(mysql.database(), &Field::Set("app".to_owned()));
+    assert_eq!(mysql.username(), &Field::Set("app".to_owned()));
+    assert!(
+        matches!(mysql.password(), Field::Set(source) if source.env_name() == Some("MYSQL_PASSWORD"))
+    );
+    assert!(
+        matches!(mysql.root_password(), Field::Set(source) if source.file_path() == Some(".secrets/mysql-root-password"))
+    );
+    assert_eq!(
+        config
+            .parent_of(&"mysql.primary".parse().unwrap())
+            .expect("MySQL has an environment parent")
+            .to_string(),
+        "environment.production"
+    );
+
+    let unknown = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    mysql:
+      primary:
+        root_password:
+          env: MYSQL_ROOT_PASSWORD
+        server_id: raw-server-id
+"#,
+    );
+    assert!(matches!(
+        unknown,
+        Err(ConfigError::Parse { .. } | ConfigError::ParseWithoutLocation)
+    ));
+}
+
+#[test]
 fn rejects_unknown_fields_duplicate_keys_and_multiple_documents() {
     let cases = [
         r#"
@@ -323,6 +394,8 @@ fn generated_schema_is_strict_and_models_nullable_owned_fields() {
     assert!(rendered.contains("ignore_changes"));
     assert!(rendered.contains("moves"));
     assert!(rendered.contains("removed"));
+    assert!(rendered.contains("mysql"));
+    assert!(rendered.contains("root_password"));
     assert_eq!(
         schema["$defs"]["ConfigValue"]["oneOf"]
             .as_array()

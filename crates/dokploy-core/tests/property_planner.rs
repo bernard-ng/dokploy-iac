@@ -253,6 +253,7 @@ fn property_paths_use_config_compatible_stable_strings() {
         (PropertyPath::SourceRepository, "source.repository"),
         (PropertyPath::SourceBranch, "source.branch"),
         (environment, "environment.FEATURE_FLAG"),
+        (PropertyPath::RootPassword, "root_password"),
         (PropertyPath::DeploymentStatus, "deployment.status"),
     ];
 
@@ -600,6 +601,36 @@ fn durable_sensitive_receipts_project_as_opaque_owned_properties() {
     assert!(matches!(
         stored.property(&address, &path),
         Some(OwnedValue::Sensitive(_))
+    ));
+    assert!(!format!("{state:?}{stored:?}").contains("a5a5"));
+}
+
+#[test]
+fn durable_mysql_receipts_project_as_two_disjoint_sensitive_properties() {
+    let address = address("mysql.primary");
+    let state = state_with_sensitive_resource_details(
+        &address,
+        &instance(),
+        ResourceKind::MySql,
+        "mysql-1",
+        json!({ "database": "app", "username": "app" }),
+        ["password", "root_password"],
+        false,
+    );
+
+    let stored = StoredState::try_from_state(&state).expect("MySQL state must project");
+
+    assert!(matches!(
+        stored.property(&address, &PropertyPath::Password),
+        Some(OwnedValue::Sensitive(_))
+    ));
+    assert!(matches!(
+        stored.property(&address, &PropertyPath::RootPassword),
+        Some(OwnedValue::Sensitive(_))
+    ));
+    assert!(matches!(
+        stored.property(&address, &PropertyPath::Database),
+        Some(OwnedValue::Value(_))
     ));
     assert!(!format!("{state:?}{stored:?}").contains("a5a5"));
 }

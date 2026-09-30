@@ -262,6 +262,24 @@ fn compile_desired_with_fingerprints(
                     fingerprints,
                 )?;
             }
+            ResourceConfig::MySql(mysql) => {
+                compile_string_field(&mut properties, PropertyPath::Database, mysql.database());
+                compile_string_field(&mut properties, PropertyPath::Username, mysql.username());
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Password,
+                    mysql.password(),
+                    fingerprints,
+                )?;
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::RootPassword,
+                    mysql.root_password(),
+                    fingerprints,
+                )?;
+            }
             ResourceConfig::Redis(redis) => compile_sensitive_field(
                 &mut properties,
                 address,
@@ -373,6 +391,7 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
             | ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
             | ResourceConfig::Postgres(_)
+            | ResourceConfig::MySql(_)
             | ResourceConfig::Redis(_) => {}
         }
     }

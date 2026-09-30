@@ -314,6 +314,7 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::Password, set_only)
             .with_containment(MutationMode::StateOnly),
+        ResourceKind::MySql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate),
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
@@ -1623,6 +1624,7 @@ fn application_properties(
             PropertyPath::Database
             | PropertyPath::Username
             | PropertyPath::Password
+            | PropertyPath::RootPassword
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::DeploymentStatus => continue,
@@ -1660,6 +1662,7 @@ fn postgres_properties(
             | PropertyPath::SourceBranch
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::RootPassword
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::DeploymentStatus => continue,

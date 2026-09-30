@@ -11,6 +11,8 @@ pub enum ResourceKind {
     Environment,
     Application,
     Postgres,
+    #[serde(rename = "mysql")]
+    MySql,
     Redis,
     Domain,
 }
@@ -24,6 +26,7 @@ impl ResourceKind {
             Self::Environment => "environment",
             Self::Application => "application",
             Self::Postgres => "postgres",
+            Self::MySql => "mysql",
             Self::Redis => "redis",
             Self::Domain => "domain",
         }
@@ -35,7 +38,7 @@ impl ResourceKind {
         match self {
             Self::Project => None,
             Self::Environment => Some(Self::Project),
-            Self::Application | Self::Postgres | Self::Redis | Self::Domain => {
+            Self::Application | Self::Postgres | Self::MySql | Self::Redis | Self::Domain => {
                 Some(Self::Environment)
             }
         }
@@ -69,6 +72,7 @@ impl FromStr for ResourceKind {
             "environment" => Ok(Self::Environment),
             "application" => Ok(Self::Application),
             "postgres" => Ok(Self::Postgres),
+            "mysql" => Ok(Self::MySql),
             "redis" => Ok(Self::Redis),
             "domain" => Ok(Self::Domain),
             _ => Err(ResourceKindParseError {

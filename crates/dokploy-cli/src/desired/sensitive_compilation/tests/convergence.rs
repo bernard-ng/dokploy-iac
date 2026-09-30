@@ -1,6 +1,122 @@
 use super::*;
 
 #[test]
+fn mysql_passwords_have_independent_receipts_and_digest_identity() {
+    let user_canary = b"mysql-user-secret-canary";
+    let root_canary = b"mysql-root-secret-canary";
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    mysql:
+      primary:
+        database: app
+        username: app
+        password:
+          env: MYSQL_PASSWORD
+        root_password:
+          env: MYSQL_ROOT_PASSWORD
+"#,
+    )
+    .unwrap();
+    let resolver = |user: &[u8], root: &[u8]| RecordingSourceResolver {
+        environment: BTreeMap::from([
+            ("MYSQL_PASSWORD".to_owned(), Ok(user.to_vec())),
+            ("MYSQL_ROOT_PASSWORD".to_owned(), Ok(root.to_vec())),
+        ]),
+        ..RecordingSourceResolver::default()
+    };
+    let stable = resolver(user_canary, root_canary);
+    let user_rotated = resolver(b"mysql-user-secret-rotated", root_canary);
+    let root_rotated = resolver(user_canary, b"mysql-root-secret-rotated");
+    let workspace = tempfile::tempdir().unwrap();
+    let loader = existing_fingerprinter_loader();
+    let compile = |resolver: &RecordingSourceResolver| {
+        compile_for_instance_with(
+            &config,
+            digest('a'),
+            instance(),
+            workspace.path(),
+            &loader,
+            resolver,
+        )
+        .unwrap()
+    };
+    let mut before = compile(&stable);
+    let mut changed_user = compile(&user_rotated);
+    let mut changed_root = compile(&root_rotated);
+    let address: ResourceAddress = "mysql.primary".parse().unwrap();
+    let public_plan = plan(
+        before.desired_state(),
+        &StoredState::absent(instance()),
+        &RemoteState::try_new(
+            instance(),
+            [
+                (
+                    "project.platform".parse().unwrap(),
+                    RemoteObservation::Missing,
+                ),
+                (
+                    "environment.production".parse().unwrap(),
+                    RemoteObservation::Missing,
+                ),
+                (address.clone(), RemoteObservation::Missing),
+            ],
+        )
+        .unwrap(),
+    );
+    let public_plan = String::from_utf8(public_plan.to_json_bytes()).unwrap();
+    assert!(!public_plan.contains("mysql-user-secret"));
+    assert!(!public_plan.contains("mysql-root-secret"));
+    let take_receipt = |compiled: &mut CompiledDesired, path: PropertyPath| {
+        let (bytes, receipt) = compiled
+            .take_sensitive(&address, &path)
+            .expect("each MySQL secret has a one-shot binding")
+            .into_parts();
+        let receipt = serde_json::to_string(&receipt).unwrap();
+
+        (bytes, receipt)
+    };
+    let (before_user_bytes, before_user) = take_receipt(&mut before, PropertyPath::Password);
+    let (before_root_bytes, before_root) = take_receipt(&mut before, PropertyPath::RootPassword);
+    let (_, changed_user_receipt) = take_receipt(&mut changed_user, PropertyPath::Password);
+    let (_, unchanged_root_receipt) = take_receipt(&mut changed_user, PropertyPath::RootPassword);
+    let (_, unchanged_user_receipt) = take_receipt(&mut changed_root, PropertyPath::Password);
+    let (_, changed_root_receipt) = take_receipt(&mut changed_root, PropertyPath::RootPassword);
+
+    assert_eq!(before_user_bytes.as_slice(), user_canary);
+    assert_eq!(before_root_bytes.as_slice(), root_canary);
+    assert_ne!(before_user, before_root);
+    assert_ne!(before_user, changed_user_receipt);
+    assert_eq!(before_root, unchanged_root_receipt);
+    assert_eq!(before_user, unchanged_user_receipt);
+    assert_ne!(before_root, changed_root_receipt);
+    assert_ne!(
+        before.desired_state().digest(),
+        changed_user.desired_state().digest()
+    );
+    assert_ne!(
+        before.desired_state().digest(),
+        changed_root.desired_state().digest()
+    );
+    for serialized in [
+        before_user,
+        before_root,
+        changed_user_receipt,
+        changed_root_receipt,
+    ] {
+        assert!(!serialized.contains("mysql-user-secret"));
+        assert!(!serialized.contains("mysql-root-secret"));
+    }
+    let debug = format!("{before:?} {changed_user:?} {changed_root:?}");
+    assert!(!debug.contains("mysql-user-secret"));
+    assert!(!debug.contains("mysql-root-secret"));
+}
+
+#[test]
 fn content_key_and_descriptor_rotation_have_the_required_digest_effects() {
     let parse = |environment_name: &str| {
         DokployConfig::parse(&format!(

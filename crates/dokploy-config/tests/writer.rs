@@ -2,8 +2,8 @@ use std::fs;
 
 use dokploy_config::{
     ApplicationDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError, DokployConfig,
-    DomainDocument, EnvironmentDocument, Field, PostgresDocument, RedisDocument, SourceDocument,
-    render, write,
+    DomainDocument, EnvironmentDocument, Field, MySqlDocument, PostgresDocument, RedisDocument,
+    SourceDocument, render, write,
 };
 use dokploy_state::{ResourceKind, ResourceName};
 
@@ -23,6 +23,14 @@ environments:
         username: app
         password:
           env: DATABASE_PASSWORD
+    mysql:
+      analytics:
+        database: analytics
+        username: analytics
+        password:
+          env: MYSQL_PASSWORD
+        root_password:
+          file: .secrets/mysql-root-password
     redis:
       cache:
         password:
@@ -72,6 +80,8 @@ fn renders_the_complete_mvp_model_as_deterministic_nested_yaml() {
     assert!(first.starts_with("version: 1\nproject:\n"));
     assert!(first.contains("\nenvironments:\n  production:\n"));
     assert!(first.contains("\n    applications:\n      api:\n"));
+    assert!(first.contains("\n    mysql:\n      analytics:\n"));
+    assert!(first.contains("        root_password:\n"));
     assert!(!first.contains("resources:"));
 }
 
@@ -224,6 +234,16 @@ fn typed_import_document_builds_all_mvp_resources_with_secrets_unmanaged_by_defa
         )
         .expect("postgres is unique");
     production
+        .add_mysql(
+            name("analytics"),
+            MySqlDocument {
+                database: Field::Set("analytics".to_owned()),
+                username: Field::Set("analytics".to_owned()),
+                ..MySqlDocument::default()
+            },
+        )
+        .expect("MySQL is unique");
+    production
         .add_redis(name("cache"), RedisDocument::default())
         .expect("redis is unique");
     production
@@ -253,6 +273,7 @@ fn typed_import_document_builds_all_mvp_resources_with_secrets_unmanaged_by_defa
     assert_eq!(DokployConfig::parse(&rendered).unwrap(), config);
     assert!(rendered.contains("    applications:\n      api:\n"));
     assert!(rendered.contains("    postgres:\n      main:\n"));
+    assert!(rendered.contains("    mysql:\n      analytics:\n"));
     assert!(rendered.contains("    redis:\n      cache: {}\n"));
     assert!(rendered.contains("    domains:\n      public:\n"));
     assert!(!rendered.contains("password:"));

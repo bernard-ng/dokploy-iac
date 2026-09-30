@@ -193,6 +193,20 @@ fn preflight_sensitive_inputs(
                     );
                 }
             }
+            ResourceConfig::MySql(mysql) => {
+                if let Field::Set(source) = mysql.password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Password),
+                        pending_secret_source(source),
+                    );
+                }
+                if let Field::Set(source) = mysql.root_password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::RootPassword),
+                        pending_secret_source(source),
+                    );
+                }
+            }
             ResourceConfig::Redis(redis) => {
                 if let Field::Set(source) = redis.password() {
                     inputs.insert(

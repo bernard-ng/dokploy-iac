@@ -102,6 +102,7 @@ pub enum ResourceConfig {
     Environment(EnvironmentConfig),
     Application(ApplicationConfig),
     Postgres(PostgresConfig),
+    MySql(MySqlConfig),
     Redis(RedisConfig),
     Domain(DomainConfig),
 }
@@ -114,6 +115,7 @@ impl ResourceConfig {
             Self::Environment(_) => ResourceKind::Environment,
             Self::Application(_) => ResourceKind::Application,
             Self::Postgres(_) => ResourceKind::Postgres,
+            Self::MySql(_) => ResourceKind::MySql,
             Self::Redis(_) => ResourceKind::Redis,
             Self::Domain(_) => ResourceKind::Domain,
         }
@@ -152,6 +154,14 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_mysql(&self) -> Option<&MySqlConfig> {
+        match self {
+            Self::MySql(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub const fn as_redis(&self) -> Option<&RedisConfig> {
         match self {
             Self::Redis(config) => Some(config),
@@ -174,6 +184,7 @@ impl ResourceConfig {
             Self::Environment(config) => &config.depends_on,
             Self::Application(config) => &config.depends_on,
             Self::Postgres(config) => &config.depends_on,
+            Self::MySql(config) => &config.depends_on,
             Self::Redis(config) => &config.depends_on,
             Self::Domain(config) => &config.depends_on,
         }
@@ -186,6 +197,7 @@ impl ResourceConfig {
             Self::Environment(config) => &config.lifecycle,
             Self::Application(config) => &config.lifecycle,
             Self::Postgres(config) => &config.lifecycle,
+            Self::MySql(config) => &config.lifecycle,
             Self::Redis(config) => &config.lifecycle,
             Self::Domain(config) => &config.lifecycle,
         }
@@ -197,6 +209,7 @@ impl ResourceConfig {
             Self::Environment(config) => &mut config.lifecycle,
             Self::Application(config) => &mut config.lifecycle,
             Self::Postgres(config) => &mut config.lifecycle,
+            Self::MySql(config) => &mut config.lifecycle,
             Self::Redis(config) => &mut config.lifecycle,
             Self::Domain(config) => &mut config.lifecycle,
         }
@@ -208,6 +221,7 @@ impl ResourceConfig {
             Self::Environment(config) => &mut config.depends_on,
             Self::Application(config) => &mut config.depends_on,
             Self::Postgres(config) => &mut config.depends_on,
+            Self::MySql(config) => &mut config.depends_on,
             Self::Redis(config) => &mut config.depends_on,
             Self::Domain(config) => &mut config.depends_on,
         }
@@ -246,6 +260,14 @@ impl ResourceConfig {
             }
             Self::Postgres(config) => {
                 if let Field::Set(secret) = &config.password {
+                    secrets.push(secret);
+                }
+            }
+            Self::MySql(config) => {
+                if let Field::Set(secret) = &config.password {
+                    secrets.push(secret);
+                }
+                if let Field::Set(secret) = &config.root_password {
                     secrets.push(secret);
                 }
             }
@@ -413,6 +435,40 @@ impl PostgresConfig {
 }
 
 redacted_debug!(PostgresConfig, "PostgresConfig");
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct MySqlConfig {
+    pub(crate) database: Field<String>,
+    pub(crate) username: Field<String>,
+    pub(crate) password: Field<SecretSource>,
+    pub(crate) root_password: Field<SecretSource>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl MySqlConfig {
+    #[must_use]
+    pub const fn database(&self) -> &Field<String> {
+        &self.database
+    }
+
+    #[must_use]
+    pub const fn username(&self) -> &Field<String> {
+        &self.username
+    }
+
+    #[must_use]
+    pub const fn password(&self) -> &Field<SecretSource> {
+        &self.password
+    }
+
+    #[must_use]
+    pub const fn root_password(&self) -> &Field<SecretSource> {
+        &self.root_password
+    }
+}
+
+redacted_debug!(MySqlConfig, "MySqlConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct RedisConfig {

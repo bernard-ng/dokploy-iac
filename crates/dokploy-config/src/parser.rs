@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 
 use crate::model::{
-    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, PostgresConfig,
+    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, MySqlConfig, PostgresConfig,
     ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
     ValidationIssue, address,
 };
@@ -69,6 +69,9 @@ struct RawEnvironment {
     #[schemars(with = "BTreeMap<String, RawPostgres>")]
     postgres: BTreeMap<String, Spanned<RawPostgres>>,
     #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawMySql>")]
+    mysql: BTreeMap<String, Spanned<RawMySql>>,
+    #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawRedis>")]
     redis: BTreeMap<String, Spanned<RawRedis>>,
     #[serde(default)]
@@ -103,6 +106,24 @@ struct RawPostgres {
     username: Field<String>,
     #[serde(default)]
     password: Field<SecretSource>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawMySql {
+    #[serde(default)]
+    database: Field<String>,
+    #[serde(default)]
+    username: Field<String>,
+    #[serde(default)]
+    password: Field<SecretSource>,
+    #[serde(default)]
+    root_password: Field<SecretSource>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -278,6 +299,27 @@ impl DokployConfig {
                         database: raw_config.database,
                         username: raw_config.username,
                         password: raw_config.password,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
+
+            for (name, raw_config) in environment.mysql {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address = address(ResourceKind::MySql, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::MySql(MySqlConfig {
+                        database: raw_config.database,
+                        username: raw_config.username,
+                        password: raw_config.password,
+                        root_password: raw_config.root_password,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -592,7 +634,7 @@ fn detect_duplicates<T>(
 fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bool {
     let value = property.to_string();
     match kind {
-        ResourceKind::Postgres => matches!(
+        ResourceKind::Postgres | ResourceKind::MySql => matches!(
             value.as_str(),
             "connection_url" | "host" | "port" | "database" | "username"
         ),
@@ -614,7 +656,9 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
                 | "source.branch"
                 | "deployment.status"
         ),
-        ResourceKind::Postgres => matches!(value.as_str(), "database" | "username"),
+        ResourceKind::Postgres | ResourceKind::MySql => {
+            matches!(value.as_str(), "database" | "username")
+        }
         ResourceKind::Redis => false,
         ResourceKind::Domain => matches!(value.as_str(), "host" | "application"),
     }

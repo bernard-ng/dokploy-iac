@@ -531,6 +531,7 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.postgres_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
+            ResourceKind::MySql => return Err(ApplyWorkspaceError::UnsupportedChange),
             ResourceKind::Redis => {
                 let environment_id = checkpoint_environment_id(checkpoint, &state)?;
                 let password = take_sensitive_string(
@@ -588,7 +589,7 @@ async fn apply_workspace_with_expectation(
 
 fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
     if plan.changes().iter().all(|change| match change.kind() {
-        ChangeKind::Create | ChangeKind::NoOp => {
+        ChangeKind::Create => {
             matches!(
                 change.address().kind(),
                 ResourceKind::Project
@@ -599,9 +600,11 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Domain
             )
         }
-        ChangeKind::Update => true,
+        ChangeKind::NoOp | ChangeKind::Forget => true,
+        ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => {
+            change.address().kind() != ResourceKind::MySql
+        }
         ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
-        ChangeKind::Delete | ChangeKind::Forget | ChangeKind::Move => true,
         ChangeKind::Replace => false,
     }) {
         Ok(())
@@ -794,6 +797,7 @@ async fn prepare_move_mutation(
             }
             Ok(ExistingMutation::Postgres(input))
         }
+        ResourceKind::MySql => Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Redis => {
             if selected_paths != [PropertyPath::Password] {
                 return Err(ApplyWorkspaceError::InvalidCheckpoint);
@@ -838,13 +842,18 @@ async fn execute_removal_change(
         ExpectedCheckpoint::remove(before.clone()),
     )?;
 
-    if change.kind() == ChangeKind::Delete
-        && let Err(error) = delete_remote_resource(client, before.kind(), before.remote_id()).await
-        && !is_already_missing(&error)
-    {
-        let code = failure_code(&error);
-        journal.fail(token, code)?;
-        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    if change.kind() == ChangeKind::Delete {
+        let Some(result) = delete_remote_resource(client, before.kind(), before.remote_id()).await
+        else {
+            return Err(ApplyWorkspaceError::UnsupportedChange);
+        };
+        if let Err(error) = result
+            && !is_already_missing(&error)
+        {
+            let code = failure_code(&error);
+            journal.fail(token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
     }
 
     state.remove_resource(change.address())?;
@@ -857,44 +866,45 @@ async fn delete_remote_resource(
     client: &Dokploy,
     kind: ResourceKind,
     remote_id: &RemoteId,
-) -> Result<(), SdkError> {
+) -> Option<Result<(), SdkError>> {
     match kind {
-        ResourceKind::Project => {
+        ResourceKind::Project => Some(
             client
                 .projects()
                 .delete(ProjectId::new(remote_id.as_str()))
-                .await
-        }
-        ResourceKind::Environment => {
+                .await,
+        ),
+        ResourceKind::Environment => Some(
             client
                 .environments()
                 .delete(EnvironmentId::new(remote_id.as_str()))
-                .await
-        }
-        ResourceKind::Application => {
+                .await,
+        ),
+        ResourceKind::Application => Some(
             client
                 .applications()
                 .delete(ApplicationId::new(remote_id.as_str()))
-                .await
-        }
-        ResourceKind::Postgres => {
+                .await,
+        ),
+        ResourceKind::Postgres => Some(
             client
                 .postgres()
                 .delete(PostgresId::new(remote_id.as_str()))
-                .await
-        }
-        ResourceKind::Redis => {
+                .await,
+        ),
+        ResourceKind::MySql => None,
+        ResourceKind::Redis => Some(
             client
                 .redis()
                 .delete(RedisId::new(remote_id.as_str()))
-                .await
-        }
-        ResourceKind::Domain => {
+                .await,
+        ),
+        ResourceKind::Domain => Some(
             client
                 .domains()
                 .delete(DomainId::new(remote_id.as_str()))
-                .await
-        }
+                .await,
+        ),
     }
 }
 
@@ -1571,6 +1581,7 @@ async fn execute_existing_change(
             }
             ExistingMutation::Postgres(input)
         }
+        ResourceKind::MySql => return Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Redis => {
             if selected_paths.as_slice() != [PropertyPath::Password] {
                 return Err(ApplyWorkspaceError::InvalidCheckpoint);

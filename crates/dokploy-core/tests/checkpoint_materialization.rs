@@ -152,6 +152,132 @@ fn planned_sensitive_create_materializes_only_an_opaque_receipt() {
     );
 }
 
+#[test]
+fn planned_mysql_create_materializes_distinct_password_receipts() {
+    let project: ResourceAddress = "project.platform".parse().expect("address is valid");
+    let environment: ResourceAddress = "environment.production".parse().expect("address is valid");
+    let mysql: ResourceAddress = "mysql.primary".parse().expect("address is valid");
+    let instance =
+        InstanceIdentity::parse("https://deploy.example.com").expect("instance is valid");
+    let user_fingerprint = SensitiveFingerprint::new_v1(
+        FingerprintKeyId::new(
+            Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea7").expect("key ID is valid"),
+        )
+        .expect("key ID is non-nil"),
+        [0x31; 32],
+    );
+    let root_fingerprint = SensitiveFingerprint::new_v1(
+        FingerprintKeyId::new(
+            Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea7").expect("key ID is valid"),
+        )
+        .expect("key ID is non-nil"),
+        [0x32; 32],
+    );
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    state
+        .upsert_resource(
+            project.clone(),
+            resource_state(ResourceKind::Project, "project-1", None),
+        )
+        .expect("project state is valid");
+    state
+        .upsert_resource(
+            environment.clone(),
+            resource_state(
+                ResourceKind::Environment,
+                "environment-1",
+                Some(project.clone()),
+            ),
+        )
+        .expect("environment state is valid");
+    let desired = DesiredState::try_new(
+        ConfigDigest::parse("c".repeat(64)).expect("digest is valid"),
+        BTreeMap::from([
+            (project.clone(), DesiredResource::new(BTreeMap::new())),
+            (
+                environment.clone(),
+                DesiredResource::new(BTreeMap::new()).with_containment(Some(project.clone())),
+            ),
+            (
+                mysql.clone(),
+                DesiredResource::new(BTreeMap::from([
+                    (
+                        PropertyPath::Password,
+                        OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(
+                            user_fingerprint.clone(),
+                        )),
+                    ),
+                    (
+                        PropertyPath::RootPassword,
+                        OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(
+                            root_fingerprint.clone(),
+                        )),
+                    ),
+                ]))
+                .with_containment(Some(environment.clone())),
+            ),
+        ]),
+    )
+    .expect("MySQL desired state is valid");
+    let stored = StoredState::try_from_state(&state).expect("stored state projects");
+    let remote = RemoteState::try_new(
+        instance,
+        [
+            (
+                project,
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("project-1").expect("remote ID is valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (
+                environment,
+                RemoteObservation::Present(RemoteResource::new(
+                    RemoteId::new("environment-1").expect("remote ID is valid"),
+                    BTreeMap::new(),
+                )),
+            ),
+            (mysql.clone(), RemoteObservation::Missing),
+        ],
+    )
+    .expect("remote state is valid");
+    let plan = plan(&desired, &stored, &remote);
+    let checkpoint = plan
+        .changes()
+        .iter()
+        .find(|change| change.address() == &mysql)
+        .expect("MySQL change is planned")
+        .checkpoint()
+        .present()
+        .expect("create has a present checkpoint");
+
+    let materialized = checkpoint
+        .materialize(
+            &mysql,
+            RemoteId::new("mysql-1").expect("remote ID is valid"),
+        )
+        .expect("checkpoint materializes");
+
+    assert_eq!(
+        materialized.last_applied().as_json(),
+        &serde_json::json!({})
+    );
+    assert_eq!(
+        materialized
+            .sensitive_inputs()
+            .fingerprint(&SensitivePropertyPath::parse("password").expect("path is valid")),
+        Some(&user_fingerprint)
+    );
+    assert_eq!(
+        materialized
+            .sensitive_inputs()
+            .fingerprint(&SensitivePropertyPath::parse("root_password").expect("path is valid")),
+        Some(&root_fingerprint)
+    );
+    assert!(!format!("{checkpoint:?}").contains("31313131"));
+    assert!(!format!("{checkpoint:?}").contains("32323232"));
+}
+
 fn resource_state(
     kind: ResourceKind,
     remote_id: &str,

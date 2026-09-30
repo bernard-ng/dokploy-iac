@@ -71,6 +71,11 @@ fn resource_addresses_have_one_canonical_text_form() {
     assert!(ResourceAddress::from_str("application.Api").is_err());
     assert!(ResourceAddress::from_str("application.api.extra").is_err());
     assert!(ResourceAddress::from_str("unknown.api").is_err());
+
+    let mysql =
+        ResourceAddress::from_str("mysql.primary").expect("a MySQL logical address must parse");
+    assert_eq!(mysql.kind(), ResourceKind::MySql);
+    assert_eq!(mysql.to_string(), "mysql.primary");
 }
 
 #[test]
@@ -132,6 +137,7 @@ fn managed_inputs_accept_objects_and_reject_secret_bearing_fields() {
 fn managed_inputs_store_only_canonical_sensitive_clears() {
     for allowed in [
         json!({ "password": null }),
+        json!({ "root_password": null }),
         json!({ "environment": null }),
         json!({ "environment": {} }),
         json!({ "environment": { "API_TOKEN": null, "_INTERNAL": null } }),
@@ -143,6 +149,7 @@ fn managed_inputs_store_only_canonical_sensitive_clears() {
 
     for rejected in [
         json!({ "password": "raw-password-canary" }),
+        json!({ "root_password": "raw-root-password-canary" }),
         json!({ "environment": "raw-environment-canary" }),
         json!({ "environment": { "API_TOKEN": "raw-env-canary" } }),
         json!({ "environment": { "lowercase": null } }),
@@ -154,6 +161,7 @@ fn managed_inputs_store_only_canonical_sensitive_clears() {
                 .expect_err("raw or noncanonical sensitive input must fail closed")
         );
         assert!(!debug.contains("raw-password-canary"));
+        assert!(!debug.contains("raw-root-password-canary"));
         assert!(!debug.contains("raw-environment-canary"));
         assert!(!debug.contains("raw-env-canary"));
     }
@@ -163,15 +171,19 @@ fn managed_inputs_store_only_canonical_sensitive_clears() {
 fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap() {
     let receipt = fingerprint(0x5a);
     let password = SensitivePropertyPath::parse("password").expect("password path must parse");
+    let root_password =
+        SensitivePropertyPath::parse("root_password").expect("root password path must parse");
     let environment =
         SensitivePropertyPath::parse("environment.API_TOKEN").expect("environment path must parse");
     let sensitive = SensitiveInputs::try_from_entries([
         (environment.clone(), receipt.clone()),
-        (password.clone(), receipt),
+        (password.clone(), receipt.clone()),
+        (root_password.clone(), receipt),
     ])
     .expect("unique sensitive paths must be accepted");
 
     assert!(sensitive.fingerprint(&password).is_some());
+    assert!(sensitive.fingerprint(&root_password).is_some());
     assert!(sensitive.fingerprint(&environment).is_some());
     assert!(
         SensitiveInputs::try_from_entries([
@@ -186,12 +198,14 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
         "environment.API-TOKEN",
         "description",
         "password.extra",
+        "root_password.extra",
     ] {
         assert!(SensitivePropertyPath::parse(invalid).is_err());
     }
 
     for managed in [
         json!({ "password": null }),
+        json!({ "root_password": null }),
         json!({ "environment": null }),
         json!({ "environment": {} }),
         json!({ "environment": { "API_TOKEN": null } }),
@@ -232,6 +246,78 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
         Vec::new(),
     )
     .expect("different environment paths may own clear and receipt intents");
+
+    ResourceState::try_new(
+        ResourceKind::MySql,
+        RemoteId::new("mysql-1").expect("remote ID must be valid"),
+        false,
+        ManagedInputs::try_from_json(json!({ "password": null }))
+            .expect("password clear must be valid"),
+        SensitiveInputs::try_from_entries([(
+            SensitivePropertyPath::parse("root_password").expect("path must parse"),
+            fingerprint(0x7c),
+        )])
+        .expect("root password receipt must be valid"),
+        Some(
+            "environment.production"
+                .parse()
+                .expect("address must parse"),
+        ),
+        Vec::new(),
+    )
+    .expect("user and root password ownership are disjoint");
+}
+
+#[test]
+fn mysql_state_requires_environment_containment_and_round_trips() {
+    let mysql = ResourceState::try_new(
+        ResourceKind::MySql,
+        RemoteId::new("mysql-1").expect("remote ID must be valid"),
+        true,
+        ManagedInputs::try_from_json(json!({ "database": "app", "username": "app" }))
+            .expect("managed inputs must be valid"),
+        SensitiveInputs::try_from_entries([
+            (
+                SensitivePropertyPath::parse("password").expect("path must parse"),
+                fingerprint(0x81),
+            ),
+            (
+                SensitivePropertyPath::parse("root_password").expect("path must parse"),
+                fingerprint(0x82),
+            ),
+        ])
+        .expect("distinct password receipts must be valid"),
+        Some(
+            "environment.production"
+                .parse()
+                .expect("address must parse"),
+        ),
+        Vec::new(),
+    )
+    .expect("MySQL state must accept environment containment");
+
+    let encoded = serde_json::to_vec(&mysql).expect("MySQL state must serialize");
+    assert!(
+        String::from_utf8(encoded.clone())
+            .expect("state JSON is UTF-8")
+            .contains(r#""kind":"mysql""#)
+    );
+    let decoded: ResourceState =
+        serde_json::from_slice(&encoded).expect("MySQL state must deserialize");
+
+    assert_eq!(decoded, mysql);
+    assert!(
+        ResourceState::try_new(
+            ResourceKind::MySql,
+            RemoteId::new("mysql-2").expect("remote ID must be valid"),
+            false,
+            ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
+            SensitiveInputs::default(),
+            None,
+            Vec::new(),
+        )
+        .is_err()
+    );
 }
 
 #[test]

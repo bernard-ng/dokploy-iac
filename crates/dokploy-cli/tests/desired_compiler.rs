@@ -116,6 +116,13 @@ environments:
         username: null
         password: null
       unmanaged: {}
+    mysql:
+      primary:
+        database: app
+        username: app
+        password: null
+        root_password: null
+      unmanaged: {}
     redis:
       cache:
         password: null
@@ -131,7 +138,7 @@ environments:
     let compiled = compile_desired(&config, digest()).expect("configuration compiles");
     let resources = compiled.desired_state().resources();
 
-    assert_eq!(resources.len(), 10);
+    assert_eq!(resources.len(), 12);
     assert_eq!(
         resources[&"environment.production".parse().unwrap()]
             .properties()
@@ -195,6 +202,33 @@ environments:
         !resources[&"postgres.unmanaged".parse().unwrap()]
             .properties()
             .contains_key(&PropertyPath::Password)
+    );
+    let mysql = &resources[&"mysql.primary".parse().unwrap()];
+    assert_eq!(
+        mysql.properties().get(&PropertyPath::Database),
+        Some(&value(serde_json::json!("app")))
+    );
+    assert_eq!(
+        mysql.properties().get(&PropertyPath::Username),
+        Some(&value(serde_json::json!("app")))
+    );
+    assert_eq!(
+        mysql.properties().get(&PropertyPath::Password),
+        Some(&OwnedValue::Null)
+    );
+    assert_eq!(
+        mysql.properties().get(&PropertyPath::RootPassword),
+        Some(&OwnedValue::Null)
+    );
+    assert!(
+        !resources[&"mysql.unmanaged".parse().unwrap()]
+            .properties()
+            .contains_key(&PropertyPath::Password)
+    );
+    assert!(
+        !resources[&"mysql.unmanaged".parse().unwrap()]
+            .properties()
+            .contains_key(&PropertyPath::RootPassword)
     );
     assert_eq!(
         resources[&"redis.cache".parse().unwrap()]
@@ -397,6 +431,21 @@ environments:
         environment:
           VALUE:
             value: {canary}
+"#
+        ),
+        format!(
+            r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    mysql:
+      main:
+        password:
+          env: {canary}
+        root_password:
+          env: {canary}_ROOT
 "#
         ),
         r#"

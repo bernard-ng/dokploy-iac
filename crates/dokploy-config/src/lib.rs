@@ -28,7 +28,7 @@ pub use file::{
     load_with_digest,
 };
 pub use model::{
-    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, PostgresConfig,
+    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, MySqlConfig, PostgresConfig,
     ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
     ValidationIssue,
 };
@@ -38,6 +38,6 @@ pub use types::{
 };
 pub use writer::{
     ApplicationDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError, DomainDocument,
-    EnvironmentDocument, LifecycleDocument, PostgresDocument, ProjectDocument, RedisDocument,
-    SourceDocument, render, write,
+    EnvironmentDocument, LifecycleDocument, MySqlDocument, PostgresDocument, ProjectDocument,
+    RedisDocument, SourceDocument, render, write,
 };

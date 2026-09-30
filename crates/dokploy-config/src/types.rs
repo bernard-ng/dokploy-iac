@@ -131,7 +131,7 @@ impl JsonSchema for ResourceReference {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^(project|environment|application|postgres|redis|domain)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+            "pattern": "^(project|environment|application|postgres|mysql|redis|domain)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
         })
     }
 }

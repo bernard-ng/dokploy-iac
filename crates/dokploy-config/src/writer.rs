@@ -157,6 +157,19 @@ impl ConfigDocument {
                         },
                     );
                 }
+                ResourceConfig::MySql(config) => {
+                    environment.mysql.insert(
+                        address.name().clone(),
+                        MySqlDocument {
+                            database: config.database.clone(),
+                            username: config.username.clone(),
+                            password: config.password.clone(),
+                            root_password: config.root_password.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
                 ResourceConfig::Redis(config) => {
                     environment.redis.insert(
                         address.name().clone(),
@@ -244,6 +257,7 @@ pub struct EnvironmentDocument {
     pub lifecycle: LifecycleDocument,
     applications: BTreeMap<ResourceName, ApplicationDocument>,
     postgres: BTreeMap<ResourceName, PostgresDocument>,
+    mysql: BTreeMap<ResourceName, MySqlDocument>,
     redis: BTreeMap<ResourceName, RedisDocument>,
     domains: BTreeMap<ResourceName, DomainDocument>,
 }
@@ -268,6 +282,14 @@ impl EnvironmentDocument {
         postgres: PostgresDocument,
     ) -> Result<(), ConfigDocumentError> {
         insert_resource(&mut self.postgres, name, postgres, ResourceKind::Postgres)
+    }
+
+    pub fn add_mysql(
+        &mut self,
+        name: ResourceName,
+        mysql: MySqlDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.mysql, name, mysql, ResourceKind::MySql)
     }
 
     pub fn add_redis(
@@ -304,6 +326,17 @@ pub struct PostgresDocument {
     pub database: Field<String>,
     pub username: Field<String>,
     pub password: Field<SecretSource>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// MySQL properties accepted by an imported document.
+#[derive(Clone, Default)]
+pub struct MySqlDocument {
+    pub database: Field<String>,
+    pub username: Field<String>,
+    pub password: Field<SecretSource>,
+    pub root_password: Field<SecretSource>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -454,6 +487,12 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
         );
         render_document_children(
             &mut output,
+            "mysql",
+            &environment.mysql,
+            render_mysql_document,
+        );
+        render_document_children(
+            &mut output,
             "redis",
             &environment.redis,
             render_redis_document,
@@ -522,6 +561,14 @@ fn render_postgres_document(output: &mut String, indent: usize, config: &Postgre
     string_field(output, indent, "database", &config.database);
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+fn render_mysql_document(output: &mut String, indent: usize, config: &MySqlDocument) {
+    string_field(output, indent, "database", &config.database);
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    secret_field(output, indent, "root_password", &config.root_password);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -638,6 +685,14 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             ResourceKind::Postgres,
             "postgres",
             render_postgres,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::MySql,
+            "mysql",
+            render_mysql,
         )?;
         render_children(
             &mut output,
@@ -764,6 +819,24 @@ fn render_postgres(
     string_field(output, indent, "database", &config.database);
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_mysql(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::MySql(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    string_field(output, indent, "database", &config.database);
+    string_field(output, indent, "username", &config.username);
+    secret_field(output, indent, "password", &config.password);
+    secret_field(output, indent, "root_password", &config.root_password);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
