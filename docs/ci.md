@@ -5,24 +5,35 @@ The CI workflow uses Rust 1.97.1, the version that compiled the selected
 toolchain file gives contributors and CI the same compiler, formatter, and
 linter.
 
-Every push and pull request runs three independent jobs:
+Every push and pull request runs six independent jobs:
 
 - Rust formatting, Clippy with warnings denied, and workspace tests;
+- independent compilation of the generated `dokploy-api` crate;
 - byte-stable regeneration of all OpenAPI bindings with pinned `oas3-gen`, the
   vendored contract audit, and static validation of the local Dokploy Compose
   configuration;
 - dependency advisory, license, duplicate-version, wildcard, and source
-  checks through `cargo-deny`.
+  checks through `cargo-deny`, plus an explicit advisory scan with RustSec
+  `cargo-audit` 0.22.2;
+- cargo-dist workflow drift detection and release-plan validation with
+  cargo-dist 0.33.0;
+- a live apply-and-converge check against the digest-pinned local Dokploy
+  environment.
 
-The Compose check only renders and validates `compose.integration.yaml`. It
+The contracts job only renders and validates `compose.integration.yaml`. It
 does not pull images, create secrets, access the Docker socket, or start the
-Dokploy integration environment.
+Dokploy integration environment. The separate integration job starts the
+disposable stack, runs `scripts/integration/test-apply.sh`, and always invokes
+`scripts/integration/reset.sh` so containers, volumes, generated credentials,
+and local integration state do not survive the job.
 
-GitHub Actions are referenced by immutable commit hashes. Dependency policy is
-deliberately narrow: the workspace currently accepts Apache-2.0, MIT, and
-Unicode-3.0 licensed code from crates.io. Exact transitive crates have narrow
-ISC and MPL-2.0 exceptions where their dependency paths require them. New
-sources or broader licenses require an explicit policy review.
+GitHub Actions are referenced by immutable commit hashes. The independently
+installed security and release tools are pinned to versions published by their
+official upstream projects. Dependency policy is deliberately narrow: the
+workspace currently accepts Apache-2.0, MIT, and Unicode-3.0 licensed code from
+crates.io. Exact transitive crates have narrow ISC and MPL-2.0 exceptions where
+their dependency paths require them. New sources or broader licenses require
+an explicit policy review.
 
 Headless reconciliation that resolves sensitive values must set
 `DOKPLOY_FINGERPRINT_KEY` from a masked secret. The value format is
@@ -38,7 +49,9 @@ saved-plan envelope. The example
 plan workflow run ID, downloads that run's envelope, waits for a protected
 GitHub Environment, then invokes `dokploy apply PLAN --auto-approve`. The
 envelope is not blindly executed: apply rebuilds and compares the plan under
-the workspace writer lock using fresh remote reads.
+the workspace writer lock using fresh remote reads. The plan artifact also
+records the exact source commit, and the apply workflow validates and checks
+out that revision before rebuilding the CLI.
 
 Both examples intentionally select the same self-hosted runner label, fixed
 workspace path, and concurrency group. The runner storage must preserve the
@@ -63,10 +76,20 @@ Run the equivalent checks locally with:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked
+cargo check --package dokploy-api --all-targets --all-features --locked
 cargo xtask codegen --check
 scripts/audit-openapi.sh
 docker compose --file compose.integration.yaml config --quiet
 cargo deny --all-features --locked check
+cargo audit
 dist generate --mode=ci --check
 dist plan
+scripts/integration/up.sh
+scripts/integration/test-apply.sh
+scripts/integration/reset.sh
 ```
+
+Run the three integration commands as one disposable sequence and invoke
+`reset.sh` even when startup or testing fails. The integration stack mounts the
+Docker socket and is intended only for an isolated local or ephemeral CI
+engine.

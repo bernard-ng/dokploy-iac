@@ -33,6 +33,17 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets --all-features --locked
 
+  generated-sdk:
+    name: Generated SDK compilation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Compile generated API bindings independently
+        run: cargo check --package dokploy-api --all-targets --all-features --locked
+
   contracts:
     name: Static contract validation
     runs-on: ubuntu-24.04
@@ -56,7 +67,7 @@ jobs:
   dependencies:
     name: Dependency policy
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -67,3 +78,54 @@ jobs:
           arguments: --all-features --locked
           command: check
           rust-version: "1.97.1"
+
+      - name: Install pinned RustSec cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Audit locked dependencies against RustSec advisories
+        run: cargo audit
+
+  distribution:
+    name: Distribution contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install pinned cargo-dist
+        shell: bash
+        run: |
+          curl --proto '=https' --tlsv1.2 --location --silent --show-error --fail \
+            https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-installer.sh \
+            | sh
+
+      - name: Verify generated release workflow
+        run: dist generate --mode=ci --check
+
+      - name: Validate release plan
+        run: dist plan
+
+  integration:
+    name: Dokploy apply and convergence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Start digest-pinned Dokploy
+        run: scripts/integration/up.sh
+
+      - name: Create an ephemeral fingerprint key
+        shell: bash
+        run: |
+          printf 'DOKPLOY_FINGERPRINT_KEY=0199a0c8-2351-7c31-8899-2c8f81983ea5:%s\n' \
+            "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Apply and verify convergence
+        run: scripts/integration/test-apply.sh
+
+      - name: Reset disposable Dokploy stack
+        if: ${{ always() }}
+        run: scripts/integration/reset.sh

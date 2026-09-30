@@ -80,9 +80,10 @@ export DOKPLOY_API_KEY="$(<"$api_key_file")"
 export PHASE6_POSTGRES_PASSWORD="$postgres_password"
 export PHASE6_REDIS_PASSWORD="$redis_password"
 
-printf 'yes\n' | "$repository_root/target/debug/dokploy" apply \
+"$repository_root/target/debug/dokploy" apply \
     --file "$config_file" \
-    --parallelism 2
+    --parallelism 2 \
+    --auto-approve
 "$repository_root/target/debug/dokploy" plan \
     --file "$config_file" \
     --detailed-exitcode
