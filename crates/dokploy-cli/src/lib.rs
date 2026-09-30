@@ -5,6 +5,7 @@ pub mod config;
 pub mod credentials;
 mod declarative;
 pub mod desired;
+pub mod executor;
 mod imperative;
 mod imperative_generated;
 mod plan_output;

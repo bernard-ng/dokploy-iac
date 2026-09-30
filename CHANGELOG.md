@@ -25,6 +25,9 @@ All notable changes to this project will be documented in this file.
   the project and Dokploy-created default-environment identities.
 - Add planner-selected checkpoint materialization into validated durable
   resource state without exposing non-null sensitive input receipts.
+- Add the first journaled executor slice for fresh project creation, including
+  exclusive locking, initial lineage creation, per-step checkpoints, and
+  apply-then-plan convergence coverage.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid
