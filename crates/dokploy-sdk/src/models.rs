@@ -3,9 +3,19 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStru
 use std::fmt;
 use zeroize::Zeroizing;
 
+/// A mutation value that distinguishes omission from an explicit JSON null.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Nullable<T> {
+    /// Explicitly clear the remote field.
+    Null,
+    /// Set the remote field to a concrete value.
+    Value(T),
+}
+
 macro_rules! identifier {
     ($name:ident) => {
-        #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
         #[serde(transparent)]
         pub struct $name(String);
 
@@ -166,6 +176,44 @@ pub(crate) struct EnvironmentCreateResponse {
     environment_id: EnvironmentId,
 }
 
+/// The managed project description written by one update.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProject {
+    project_id: ProjectId,
+    description: Nullable<String>,
+}
+
+impl UpdateProject {
+    /// Selects the exact project description state.
+    #[must_use]
+    pub fn new(project_id: ProjectId, description: Nullable<String>) -> Self {
+        Self {
+            project_id,
+            description,
+        }
+    }
+}
+
+/// The managed environment description written by one update.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateEnvironment {
+    environment_id: EnvironmentId,
+    description: Nullable<String>,
+}
+
+impl UpdateEnvironment {
+    /// Selects the exact environment description state.
+    #[must_use]
+    pub fn new(environment_id: EnvironmentId, description: Nullable<String>) -> Self {
+        Self {
+            environment_id,
+            description,
+        }
+    }
+}
+
 /// Inputs required to create one Dokploy application record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateApplication {
@@ -208,6 +256,187 @@ impl CreatedApplication {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationCreateResponse {
     application_id: ApplicationId,
+}
+
+/// A transient application environment document used only to preserve unowned entries.
+pub struct ApplicationEnvironmentDocument(Zeroizing<String>);
+
+impl ApplicationEnvironmentDocument {
+    pub(crate) fn from_response(response: ApplicationEnvironmentResponse) -> Self {
+        Self(Zeroizing::new(response.environment.unwrap_or_default()))
+    }
+
+    /// Transfers the transient environment document to the mutation composer.
+    #[must_use]
+    pub fn into_document(self) -> Zeroizing<String> {
+        self.0
+    }
+}
+
+impl fmt::Debug for ApplicationEnvironmentDocument {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ApplicationEnvironmentDocument([REDACTED])")
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ApplicationEnvironmentResponse {
+    #[serde(default, rename = "env")]
+    environment: Option<String>,
+}
+
+/// Owned application fields written by one `application.update` request.
+pub struct UpdateApplication {
+    application_id: ApplicationId,
+    description: Option<Nullable<String>>,
+    replicas: Option<Nullable<u32>>,
+    source_type: Option<Nullable<String>>,
+    repository: Option<Nullable<String>>,
+    branch: Option<Nullable<String>>,
+    environment: Option<Nullable<Zeroizing<String>>>,
+    environment_id: Option<EnvironmentId>,
+}
+
+impl UpdateApplication {
+    /// Starts an application update with no fields selected.
+    #[must_use]
+    pub fn new(application_id: ApplicationId) -> Self {
+        Self {
+            application_id,
+            description: None,
+            replicas: None,
+            source_type: None,
+            repository: None,
+            branch: None,
+            environment: None,
+            environment_id: None,
+        }
+    }
+
+    /// Selects the application description.
+    #[must_use]
+    pub fn with_description(mut self, description: Nullable<String>) -> Self {
+        self.description = Some(description);
+        self
+    }
+
+    /// Selects the replica count.
+    #[must_use]
+    pub fn with_replicas(mut self, replicas: Nullable<u32>) -> Self {
+        self.replicas = Some(replicas);
+        self
+    }
+
+    /// Clears the complete source configuration.
+    #[must_use]
+    pub fn clearing_source(mut self) -> Self {
+        self.source_type = Some(Nullable::Null);
+        self.repository = Some(Nullable::Null);
+        self.branch = Some(Nullable::Null);
+        self
+    }
+
+    /// Selects a GitHub repository while leaving branch ownership unchanged.
+    #[must_use]
+    pub fn with_github_repository(mut self, repository: impl Into<String>) -> Self {
+        self.source_type = Some(Nullable::Value("github".to_owned()));
+        self.repository = Some(Nullable::Value(repository.into()));
+        self
+    }
+
+    /// Selects the GitHub branch independently from the repository.
+    #[must_use]
+    pub fn with_branch(mut self, branch: Nullable<String>) -> Self {
+        self.branch = Some(branch);
+        self
+    }
+
+    /// Replaces or clears the complete Dokploy environment document.
+    #[must_use]
+    pub fn with_environment(mut self, environment: Nullable<Zeroizing<String>>) -> Self {
+        self.environment = Some(environment);
+        self
+    }
+
+    /// Moves the application to another physical environment.
+    #[must_use]
+    pub fn with_environment_id(mut self, environment_id: EnvironmentId) -> Self {
+        self.environment_id = Some(environment_id);
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.application_id.as_str().is_empty()
+            && (self.description.is_some()
+                || self.replicas.is_some()
+                || self.source_type.is_some()
+                || self.repository.is_some()
+                || self.branch.is_some()
+                || self.environment.is_some()
+                || self.environment_id.is_some())
+    }
+}
+
+impl fmt::Debug for UpdateApplication {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateApplication")
+            .field("application_id", &self.application_id)
+            .field("description", &self.description)
+            .field("replicas", &self.replicas)
+            .field("source_type", &self.source_type)
+            .field("repository", &self.repository)
+            .field("branch", &self.branch)
+            .field(
+                "environment",
+                &self.environment.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("environment_id", &self.environment_id)
+            .finish()
+    }
+}
+
+impl Serialize for UpdateApplication {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut fields = 1;
+        fields += usize::from(self.description.is_some());
+        fields += usize::from(self.replicas.is_some());
+        fields += usize::from(self.source_type.is_some());
+        fields += usize::from(self.repository.is_some());
+        fields += usize::from(self.branch.is_some());
+        fields += usize::from(self.environment.is_some());
+        fields += usize::from(self.environment_id.is_some());
+        let mut body = serializer.serialize_struct("UpdateApplication", fields)?;
+        body.serialize_field("applicationId", self.application_id.as_str())?;
+        if let Some(description) = &self.description {
+            body.serialize_field("description", description)?;
+        }
+        if let Some(replicas) = &self.replicas {
+            body.serialize_field("replicas", replicas)?;
+        }
+        if let Some(source_type) = &self.source_type {
+            body.serialize_field("sourceType", source_type)?;
+        }
+        if let Some(repository) = &self.repository {
+            body.serialize_field("repository", repository)?;
+        }
+        if let Some(branch) = &self.branch {
+            body.serialize_field("branch", branch)?;
+        }
+        if let Some(environment) = &self.environment {
+            match environment {
+                Nullable::Null => body.serialize_field("env", &Option::<&str>::None)?,
+                Nullable::Value(value) => body.serialize_field("env", value.as_str())?,
+            }
+        }
+        if let Some(environment_id) = &self.environment_id {
+            body.serialize_field("environmentId", environment_id.as_str())?;
+        }
+        body.end()
+    }
 }
 
 /// Inputs required to create one Dokploy Postgres database.
@@ -301,6 +530,95 @@ pub(crate) struct PostgresCreateResponse {
     postgres_id: PostgresId,
 }
 
+/// Owned Postgres fields written by one update.
+pub struct UpdatePostgres {
+    postgres_id: PostgresId,
+    database_name: Option<String>,
+    database_user: Option<String>,
+    database_password: Option<Zeroizing<String>>,
+}
+
+impl UpdatePostgres {
+    /// Starts a Postgres update with no fields selected.
+    #[must_use]
+    pub fn new(postgres_id: PostgresId) -> Self {
+        Self {
+            postgres_id,
+            database_name: None,
+            database_user: None,
+            database_password: None,
+        }
+    }
+
+    /// Selects the database name.
+    #[must_use]
+    pub fn with_database(mut self, database_name: impl Into<String>) -> Self {
+        self.database_name = Some(database_name.into());
+        self
+    }
+
+    /// Selects the database user.
+    #[must_use]
+    pub fn with_username(mut self, database_user: impl Into<String>) -> Self {
+        self.database_user = Some(database_user.into());
+        self
+    }
+
+    /// Selects the write-only database password.
+    #[must_use]
+    pub fn with_password(mut self, database_password: Zeroizing<String>) -> Self {
+        self.database_password = Some(database_password);
+        self
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.postgres_id.as_str().is_empty()
+            && (self.database_name.is_some()
+                || self.database_user.is_some()
+                || self.database_password.is_some())
+    }
+}
+
+impl fmt::Debug for UpdatePostgres {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdatePostgres")
+            .field("postgres_id", &self.postgres_id)
+            .field("database_name", &self.database_name)
+            .field("database_user", &self.database_user)
+            .field(
+                "database_password",
+                &self.database_password.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
+}
+
+impl Serialize for UpdatePostgres {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "UpdatePostgres",
+            1 + usize::from(self.database_name.is_some())
+                + usize::from(self.database_user.is_some())
+                + usize::from(self.database_password.is_some()),
+        )?;
+        body.serialize_field("postgresId", self.postgres_id.as_str())?;
+        if let Some(database_name) = &self.database_name {
+            body.serialize_field("databaseName", database_name)?;
+        }
+        if let Some(database_user) = &self.database_user {
+            body.serialize_field("databaseUser", database_user)?;
+        }
+        if let Some(database_password) = &self.database_password {
+            body.serialize_field("databasePassword", database_password.as_str())?;
+        }
+        body.end()
+    }
+}
+
 /// Inputs required to create one Dokploy Redis database.
 pub struct CreateRedis {
     name: String,
@@ -380,6 +698,49 @@ pub(crate) struct RedisCreateResponse {
     redis_id: RedisId,
 }
 
+/// A write-only Redis password update.
+pub struct UpdateRedis {
+    redis_id: RedisId,
+    database_password: Zeroizing<String>,
+}
+
+impl UpdateRedis {
+    /// Selects the exact Redis password intent.
+    #[must_use]
+    pub fn new(redis_id: RedisId, database_password: Zeroizing<String>) -> Self {
+        Self {
+            redis_id,
+            database_password,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.redis_id.as_str().is_empty() && !self.database_password.is_empty()
+    }
+}
+
+impl fmt::Debug for UpdateRedis {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpdateRedis")
+            .field("redis_id", &self.redis_id)
+            .field("database_password", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl Serialize for UpdateRedis {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("UpdateRedis", 2)?;
+        body.serialize_field("redisId", self.redis_id.as_str())?;
+        body.serialize_field("databasePassword", self.database_password.as_str())?;
+        body.end()
+    }
+}
+
 /// Inputs required to attach one domain to a Dokploy application.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreateDomain {
@@ -422,6 +783,29 @@ impl CreatedDomain {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DomainCreateResponse {
     domain_id: DomainId,
+}
+
+/// The required host pair written by one Domain update.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDomain {
+    domain_id: DomainId,
+    host: String,
+}
+
+impl UpdateDomain {
+    /// Selects the exact Domain host.
+    #[must_use]
+    pub fn new(domain_id: DomainId, host: impl Into<String>) -> Self {
+        Self {
+            domain_id,
+            host: host.into(),
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.domain_id.as_str().is_empty() && !self.host.is_empty()
+    }
 }
 
 /// Presence-aware value returned by a tolerant Dokploy response model.

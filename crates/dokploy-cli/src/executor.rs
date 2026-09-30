@@ -10,12 +10,14 @@ use dokploy_core::{
 };
 use dokploy_sdk::{
     ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
-    CreateProject, CreateRedis, Dokploy, EnvironmentId, Error as SdkError, ProjectId,
+    CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId, Error as SdkError, Nullable,
+    PostgresId, ProjectId, RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment,
+    UpdatePostgres, UpdateProject, UpdateRedis,
 };
 use dokploy_state::{
-    ExpectedState, FailureCode, InstanceIdentity, JournalAction, JournalError, OperationJournal,
-    PlanDigest, RemoteId, ResourceAddress, ResourceKind, StateError, StateFile, StateStore,
-    StateStoreError,
+    ExpectedState, FailureCode, InstanceIdentity, JournalAction, JournalError, ManagedInputs,
+    OperationJournal, PlanDigest, RemoteId, ResourceAddress, ResourceKind, ResourceState,
+    StateError, StateFile, StateStore, StateStoreError,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -89,6 +91,13 @@ pub async fn apply_workspace(
     let mut default_environments = BTreeMap::new();
 
     for change in plan.changes() {
+        if change.kind() != ChangeKind::Create {
+            execute_existing_change(client, &mut compiled, change, &mut state, &mut journal)
+                .await?;
+            applied += 1;
+            continue;
+        }
+
         let token = journal.start_step(change.address().clone(), JournalAction::Create)?;
         let checkpoint = change
             .checkpoint()
@@ -126,10 +135,38 @@ pub async fn apply_workspace(
                     .get(parent)
                     .is_some_and(|default| default.name == change.address().name().as_str())
                 {
-                    default_environments
+                    let remote_id = default_environments
                         .remove(parent)
                         .expect("matching default environment exists")
-                        .remote_id
+                        .remote_id;
+                    if let Some(description) = checkpoint.property(&PropertyPath::Description) {
+                        let interim = minimal_resource_state(
+                            ResourceKind::Environment,
+                            checkpoint,
+                            remote_id.clone(),
+                        )?;
+                        state.upsert_resource(change.address().clone(), interim)?;
+                        journal.succeed(token, Some(remote_id.clone()), &state)?;
+
+                        let update_token =
+                            journal.start_step(change.address().clone(), JournalAction::Update)?;
+                        let input = UpdateEnvironment::new(
+                            EnvironmentId::new(remote_id.as_str()),
+                            nullable_string(description)?,
+                        );
+                        if let Err(error) = client.environments().update(input).await {
+                            let code = failure_code(&error);
+                            journal.fail(update_token, code)?;
+                            return Err(ApplyWorkspaceError::RemoteMutation { code });
+                        }
+                        let resource =
+                            checkpoint.materialize(change.address(), remote_id.clone())?;
+                        state.upsert_resource(change.address().clone(), resource)?;
+                        journal.succeed(update_token, Some(remote_id), &state)?;
+                        applied += 1;
+                        continue;
+                    }
+                    remote_id
                 } else {
                     let parent_id = state
                         .resource(parent)
@@ -172,8 +209,62 @@ pub async fn apply_workspace(
                         return Err(ApplyWorkspaceError::RemoteMutation { code });
                     }
                 };
-                RemoteId::new(created.application_id().as_str())
-                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+                let remote_id = RemoteId::new(created.application_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+                let property_paths = checkpoint
+                    .property_paths()
+                    .into_iter()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if property_paths.is_empty() {
+                    remote_id
+                } else {
+                    let interim = minimal_resource_state(
+                        ResourceKind::Application,
+                        checkpoint,
+                        remote_id.clone(),
+                    )?;
+                    state.upsert_resource(change.address().clone(), interim)?;
+                    journal.succeed(token, Some(remote_id.clone()), &state)?;
+
+                    let update = application_update_input(
+                        &mut compiled,
+                        change.address(),
+                        checkpoint,
+                        created.application_id().clone(),
+                        &property_paths,
+                        None,
+                    )?;
+                    let update_token =
+                        journal.start_step(change.address().clone(), JournalAction::Update)?;
+                    if let Err(error) = client.applications().update(update).await {
+                        let code = failure_code(&error);
+                        journal.fail(update_token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+                    state.upsert_resource(change.address().clone(), resource.clone())?;
+                    journal.succeed(update_token, Some(remote_id.clone()), &state)?;
+
+                    if application_requires_deploy(property_paths.iter()) {
+                        let deploy_token =
+                            journal.start_step(change.address().clone(), JournalAction::Deploy)?;
+                        if let Err(error) = client
+                            .applications()
+                            .deploy(created.application_id().clone())
+                            .await
+                        {
+                            let code = failure_code(&error);
+                            journal.fail(deploy_token, code)?;
+                            return Err(ApplyWorkspaceError::RemoteMutation { code });
+                        }
+                        state.upsert_resource(change.address().clone(), resource)?;
+                        journal.succeed(deploy_token, Some(remote_id), &state)?;
+                    }
+
+                    applied += 1;
+                    continue;
+                }
             }
             ResourceKind::Postgres => {
                 let environment_id = checkpoint_environment_id(checkpoint, &state)?;
@@ -257,9 +348,9 @@ pub async fn apply_workspace(
 }
 
 fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
-    if plan.changes().iter().all(|change| {
-        change.kind() == ChangeKind::Create
-            && matches!(
+    if plan.changes().iter().all(|change| match change.kind() {
+        ChangeKind::Create | ChangeKind::NoOp => {
+            matches!(
                 change.address().kind(),
                 ResourceKind::Project
                     | ResourceKind::Environment
@@ -268,6 +359,10 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Redis
                     | ResourceKind::Domain
             )
+        }
+        ChangeKind::Update => true,
+        ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
+        ChangeKind::Replace | ChangeKind::Delete | ChangeKind::Move | ChangeKind::Forget => false,
     }) {
         Ok(())
     } else {
@@ -325,6 +420,423 @@ fn take_sensitive_string(
             let mut bytes = error.into_bytes();
             bytes.zeroize();
             Err(ApplyWorkspaceError::InvalidCheckpoint)
+        }
+    }
+}
+
+fn minimal_resource_state(
+    kind: ResourceKind,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    remote_id: RemoteId,
+) -> Result<ResourceState, ApplyWorkspaceError> {
+    let empty = ManagedInputs::try_from_json(serde_json::json!({}))
+        .expect("the empty managed input object is valid");
+
+    ResourceState::try_new(
+        kind,
+        remote_id,
+        checkpoint.protected(),
+        empty,
+        dokploy_state::SensitiveInputs::default(),
+        checkpoint.containment().cloned(),
+        checkpoint.dependencies().to_vec(),
+    )
+    .map_err(|_| ApplyWorkspaceError::InvalidCheckpoint)
+}
+
+fn application_update_input(
+    compiled: &mut crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    application_id: ApplicationId,
+    selected_paths: &[PropertyPath],
+    current_environment: Option<Zeroizing<String>>,
+) -> Result<UpdateApplication, ApplyWorkspaceError> {
+    let mut input = UpdateApplication::new(application_id);
+    if selected_paths.contains(&PropertyPath::Description)
+        && let Some(value) = checkpoint.property(&PropertyPath::Description)
+    {
+        input = input.with_description(nullable_string(value)?);
+    }
+    if selected_paths.contains(&PropertyPath::Replicas)
+        && let Some(value) = checkpoint.property(&PropertyPath::Replicas)
+    {
+        let replicas = match value {
+            CheckpointValueRef::Null => Nullable::Null,
+            CheckpointValueRef::NonSensitive(value) => {
+                let replicas = value
+                    .as_u64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+                Nullable::Value(replicas)
+            }
+            CheckpointValueRef::EmptyCollection | CheckpointValueRef::Sensitive => {
+                return Err(ApplyWorkspaceError::InvalidCheckpoint);
+            }
+        };
+        input = input.with_replicas(replicas);
+    }
+    let source_selected = selected_paths.iter().any(|path| {
+        matches!(
+            path,
+            PropertyPath::Source | PropertyPath::SourceRepository | PropertyPath::SourceBranch
+        )
+    });
+    if source_selected {
+        if matches!(
+            checkpoint.property(&PropertyPath::Source),
+            Some(CheckpointValueRef::Null)
+        ) {
+            input = input.clearing_source();
+        } else if let Some(repository) = checkpoint.property(&PropertyPath::SourceRepository) {
+            let repository = required_checkpoint_string(repository)?;
+            input = input.with_github_repository(repository);
+            if let Some(branch) = checkpoint.property(&PropertyPath::SourceBranch) {
+                input = input.with_branch(nullable_string(branch)?);
+            }
+        }
+    }
+
+    let environment_selected = selected_paths.iter().any(|path| {
+        matches!(
+            path,
+            PropertyPath::Environment | PropertyPath::EnvironmentVariable(_)
+        )
+    });
+    if environment_selected {
+        let environment =
+            application_environment(compiled, address, checkpoint, current_environment)?;
+        input = input.with_environment(environment);
+    }
+
+    Ok(input)
+}
+
+fn nullable_string(value: CheckpointValueRef<'_>) -> Result<Nullable<String>, ApplyWorkspaceError> {
+    match value {
+        CheckpointValueRef::Null => Ok(Nullable::Null),
+        CheckpointValueRef::NonSensitive(value) => Ok(Nullable::Value(
+            value
+                .as_str()
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+                .to_owned(),
+        )),
+        CheckpointValueRef::EmptyCollection | CheckpointValueRef::Sensitive => {
+            Err(ApplyWorkspaceError::InvalidCheckpoint)
+        }
+    }
+}
+
+fn required_checkpoint_string(
+    value: CheckpointValueRef<'_>,
+) -> Result<String, ApplyWorkspaceError> {
+    match value {
+        CheckpointValueRef::NonSensitive(value) => value
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint),
+        CheckpointValueRef::Null
+        | CheckpointValueRef::EmptyCollection
+        | CheckpointValueRef::Sensitive => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
+}
+
+fn application_environment(
+    compiled: &mut crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    current: Option<Zeroizing<String>>,
+) -> Result<Nullable<Zeroizing<String>>, ApplyWorkspaceError> {
+    match checkpoint.property(&PropertyPath::Environment) {
+        Some(CheckpointValueRef::Null) => return Ok(Nullable::Null),
+        Some(CheckpointValueRef::EmptyCollection) => {
+            return Ok(Nullable::Value(Zeroizing::new(String::new())));
+        }
+        None => {}
+        Some(CheckpointValueRef::NonSensitive(_) | CheckpointValueRef::Sensitive) => {
+            return Err(ApplyWorkspaceError::InvalidCheckpoint);
+        }
+    }
+
+    let managed_names = checkpoint
+        .property_paths()
+        .into_iter()
+        .filter_map(|path| match path {
+            PropertyPath::EnvironmentVariable(name) => Some(name.as_str().to_owned()),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut document = Zeroizing::new(String::new());
+    if let Some(current) = current {
+        for line in current.split('\n') {
+            let is_managed =
+                environment_line_name(line).is_some_and(|name| managed_names.contains(name));
+            if !is_managed {
+                append_environment_line(&mut document, line);
+            }
+        }
+    }
+
+    for path in checkpoint.property_paths() {
+        let PropertyPath::EnvironmentVariable(name) = path else {
+            continue;
+        };
+        match checkpoint.property(path) {
+            Some(CheckpointValueRef::Null) => {}
+            Some(CheckpointValueRef::Sensitive) => {
+                let value = take_sensitive_string(compiled, address, path)?;
+                let encoded = encode_environment_value(&value);
+                let mut line = Zeroizing::new(String::with_capacity(
+                    name.as_str().len() + encoded.len() + 1,
+                ));
+                line.push_str(name.as_str());
+                line.push('=');
+                line.push_str(&encoded);
+                append_environment_line(&mut document, &line);
+            }
+            None
+            | Some(CheckpointValueRef::EmptyCollection | CheckpointValueRef::NonSensitive(_)) => {
+                return Err(ApplyWorkspaceError::InvalidCheckpoint);
+            }
+        }
+    }
+
+    Ok(Nullable::Value(document))
+}
+
+fn environment_line_name(line: &str) -> Option<&str> {
+    let line = line.trim_start();
+    let line = line.strip_prefix("export ").unwrap_or(line);
+    let (name, _) = line.split_once('=')?;
+    let name = name.trim();
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return None;
+    }
+
+    Some(name)
+}
+
+fn append_environment_line(document: &mut String, line: &str) {
+    if !document.is_empty() {
+        document.push('\n');
+    }
+    document.push_str(line);
+}
+
+fn encode_environment_value(value: &str) -> Zeroizing<String> {
+    if !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'/' | b':' | b'-')
+        })
+    {
+        return Zeroizing::new(value.to_owned());
+    }
+
+    let mut encoded = Zeroizing::new(String::with_capacity(value.len().saturating_add(2)));
+    encoded.push('"');
+    for character in value.chars() {
+        match character {
+            '\\' => encoded.push_str("\\\\"),
+            '"' => encoded.push_str("\\\""),
+            '\n' => encoded.push_str("\\n"),
+            '\r' => encoded.push_str("\\r"),
+            _ => encoded.push(character),
+        }
+    }
+    encoded.push('"');
+    encoded
+}
+
+fn application_requires_deploy<'a>(mut paths: impl Iterator<Item = &'a PropertyPath>) -> bool {
+    paths.any(|path| {
+        matches!(
+            path,
+            PropertyPath::Replicas
+                | PropertyPath::Source
+                | PropertyPath::SourceRepository
+                | PropertyPath::SourceBranch
+                | PropertyPath::Environment
+                | PropertyPath::EnvironmentVariable(_)
+        )
+    })
+}
+
+async fn execute_existing_change(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let remote_id = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .remote_id()
+        .clone();
+
+    if change.kind() == ChangeKind::NoOp {
+        let token = journal.start_step(change.address().clone(), JournalAction::Update)?;
+        let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+        state.upsert_resource(change.address().clone(), resource)?;
+        journal.succeed(token, Some(remote_id), state)?;
+        return Ok(());
+    }
+
+    if !matches!(change.kind(), ChangeKind::Update | ChangeKind::Reparent) {
+        return Err(ApplyWorkspaceError::UnsupportedChange);
+    }
+
+    let selected_paths = change
+        .fields()
+        .iter()
+        .map(|field| field.key().clone())
+        .collect::<Vec<_>>();
+    let mutation = match change.address().kind() {
+        ResourceKind::Project => {
+            let description = checkpoint
+                .property(&PropertyPath::Description)
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)
+                .and_then(nullable_string)?;
+            ExistingMutation::Project(UpdateProject::new(
+                ProjectId::new(remote_id.as_str()),
+                description,
+            ))
+        }
+        ResourceKind::Environment => {
+            let description = checkpoint
+                .property(&PropertyPath::Description)
+                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)
+                .and_then(nullable_string)?;
+            ExistingMutation::Environment(UpdateEnvironment::new(
+                EnvironmentId::new(remote_id.as_str()),
+                description,
+            ))
+        }
+        ResourceKind::Application => {
+            let current_environment = if selected_paths.iter().any(|path| {
+                matches!(
+                    path,
+                    PropertyPath::Environment | PropertyPath::EnvironmentVariable(_)
+                )
+            }) {
+                Some(
+                    client
+                        .applications()
+                        .environment(ApplicationId::new(remote_id.as_str()))
+                        .await
+                        .map_err(|error| ApplyWorkspaceError::RemotePreparation {
+                            code: failure_code(&error),
+                        })?
+                        .into_document(),
+                )
+            } else {
+                None
+            };
+            let mut input = application_update_input(
+                compiled,
+                change.address(),
+                checkpoint,
+                ApplicationId::new(remote_id.as_str()),
+                &selected_paths,
+                current_environment,
+            )?;
+            if change.kind() == ChangeKind::Reparent {
+                input = input.with_environment_id(checkpoint_environment_id(checkpoint, state)?);
+            }
+            ExistingMutation::Application(input)
+        }
+        ResourceKind::Postgres => {
+            let mut input = UpdatePostgres::new(PostgresId::new(remote_id.as_str()));
+            for path in &selected_paths {
+                match path {
+                    PropertyPath::Database => {
+                        input = input.with_database(required_string(checkpoint, path)?);
+                    }
+                    PropertyPath::Username => {
+                        input = input.with_username(required_string(checkpoint, path)?);
+                    }
+                    PropertyPath::Password => {
+                        input = input.with_password(take_sensitive_string(
+                            compiled,
+                            change.address(),
+                            path,
+                        )?);
+                    }
+                    _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+                }
+            }
+            ExistingMutation::Postgres(input)
+        }
+        ResourceKind::Redis => {
+            if selected_paths.as_slice() != [PropertyPath::Password] {
+                return Err(ApplyWorkspaceError::InvalidCheckpoint);
+            }
+            let password =
+                take_sensitive_string(compiled, change.address(), &PropertyPath::Password)?;
+            ExistingMutation::Redis(UpdateRedis::new(RedisId::new(remote_id.as_str()), password))
+        }
+        ResourceKind::Domain => {
+            let host = required_string(checkpoint, &PropertyPath::Host)?;
+            ExistingMutation::Domain(UpdateDomain::new(DomainId::new(remote_id.as_str()), host))
+        }
+    };
+
+    let token = journal.start_step(change.address().clone(), JournalAction::Update)?;
+    if let Err(error) = mutation.execute(client).await {
+        let code = failure_code(&error);
+        journal.fail(token, code)?;
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+    state.upsert_resource(change.address().clone(), resource.clone())?;
+    journal.succeed(token, Some(remote_id.clone()), state)?;
+
+    if change.address().kind() == ResourceKind::Application
+        && application_requires_deploy(selected_paths.iter())
+    {
+        let token = journal.start_step(change.address().clone(), JournalAction::Deploy)?;
+        if let Err(error) = client
+            .applications()
+            .deploy(ApplicationId::new(remote_id.as_str()))
+            .await
+        {
+            let code = failure_code(&error);
+            journal.fail(token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+        state.upsert_resource(change.address().clone(), resource)?;
+        journal.succeed(token, Some(remote_id), state)?;
+    }
+
+    Ok(())
+}
+
+enum ExistingMutation {
+    Project(UpdateProject),
+    Environment(UpdateEnvironment),
+    Application(UpdateApplication),
+    Postgres(UpdatePostgres),
+    Redis(UpdateRedis),
+    Domain(UpdateDomain),
+}
+
+impl ExistingMutation {
+    async fn execute(self, client: &Dokploy) -> Result<(), SdkError> {
+        match self {
+            Self::Project(input) => client.projects().update(input).await,
+            Self::Environment(input) => client.environments().update(input).await,
+            Self::Application(input) => client.applications().update(input).await,
+            Self::Postgres(input) => client.postgres().update(input).await,
+            Self::Redis(input) => client.redis().update(input).await,
+            Self::Domain(input) => client.domains().update(input).await,
         }
     }
 }
@@ -445,6 +957,8 @@ pub enum ApplyWorkspaceError {
     InvalidRemoteIdentity,
     #[error("the remote mutation failed with {code:?}")]
     RemoteMutation { code: FailureCode },
+    #[error("remote mutation preparation failed with {code:?}")]
+    RemotePreparation { code: FailureCode },
     #[error("the operation journal failed")]
     Journal(#[from] JournalError),
     #[error("the planned checkpoint cannot become durable state")]

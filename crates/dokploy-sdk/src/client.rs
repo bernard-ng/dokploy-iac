@@ -2,20 +2,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dokploy_api::{
-    APPLICATION_CREATE, APPLICATION_ONE, APPLICATION_SEARCH, ApplicationCreateRequest,
-    ApplicationCreateRequestBody, ApplicationOneRequest, ApplicationOneRequestQuery,
+    APPLICATION_CREATE, APPLICATION_DEPLOY, APPLICATION_ONE, APPLICATION_SEARCH,
+    APPLICATION_UPDATE, ApplicationCreateRequest, ApplicationCreateRequestBody,
+    ApplicationOneRequest, ApplicationOneRequestQuery, ApplicationRedeployRequestBody,
     ApplicationSearchRequest, ApplicationSearchRequestQuery, DOMAIN_BY_APPLICATION_ID,
-    DOMAIN_CREATE, DOMAIN_ONE, DokployApiClient, DomainByApplicationIdRequest,
+    DOMAIN_CREATE, DOMAIN_ONE, DOMAIN_UPDATE, DokployApiClient, DomainByApplicationIdRequest,
     DomainByApplicationIdRequestQuery, DomainCreateRequest, DomainCreateRequestBody,
     DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE,
-    ENVIRONMENT_ONE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
+    ENVIRONMENT_ONE, ENVIRONMENT_UPDATE, Endpoint, EndpointMethod, EnvironmentByProjectIdRequest,
     EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest, EnvironmentCreateRequestBody,
     EnvironmentOneRequest, EnvironmentOneRequestQuery, POSTGRES_CREATE, POSTGRES_ONE,
-    POSTGRES_SEARCH, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PostgresOneRequest,
-    PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery, ProjectAllRequest,
-    ProjectCreateRequest, ProjectCreateRequestBody, ProjectOneRequest, ProjectOneRequestQuery,
-    REDIS_CREATE, REDIS_ONE, REDIS_SEARCH, RedisOneRequest, RedisOneRequestQuery,
-    RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation, validate_request,
+    POSTGRES_SEARCH, POSTGRES_UPDATE, PROJECT_ALL, PROJECT_CREATE, PROJECT_ONE, PROJECT_UPDATE,
+    PostgresOneRequest, PostgresOneRequestQuery, PostgresSearchRequest, PostgresSearchRequestQuery,
+    ProjectAllRequest, ProjectCreateRequest, ProjectCreateRequestBody, ProjectOneRequest,
+    ProjectOneRequestQuery, REDIS_CREATE, REDIS_ONE, REDIS_SEARCH, REDIS_UPDATE, RedisOneRequest,
+    RedisOneRequestQuery, RedisSearchRequest, RedisSearchRequestQuery, endpoint_by_operation,
+    validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -29,7 +31,8 @@ use crate::imperative::{
     Imperative, ImperativeBody, ImperativeMethod, ImperativeRequest, MultipartField,
 };
 use crate::models::{
-    ApplicationCollection, ApplicationCreateResponse, ApplicationDetails, ApplicationSearchPage,
+    ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
+    ApplicationEnvironmentDocument, ApplicationEnvironmentResponse, ApplicationSearchPage,
     DomainCollection, DomainCreateResponse, DomainDetails, EnvironmentCollection,
     EnvironmentCreateResponse, EnvironmentDetails, PostgresCollection, PostgresCreateResponse,
     PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology,
@@ -37,9 +40,10 @@ use crate::models::{
 };
 use crate::services::{Applications, Domains, Environments, Postgres, Projects, Redis};
 use crate::{
-    CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres, CreateProject, CreateRedis,
-    CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedPostgres, CreatedProject,
-    CreatedRedis,
+    ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
+    CreateProject, CreateRedis, CreatedApplication, CreatedDomain, CreatedEnvironment,
+    CreatedPostgres, CreatedProject, CreatedRedis, UpdateApplication, UpdateDomain,
+    UpdateEnvironment, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -157,6 +161,10 @@ impl Dokploy {
         Ok(CreatedProject::from_response(response))
     }
 
+    pub(crate) async fn project_update(&self, input: UpdateProject) -> Result<(), Error> {
+        self.mutate_body_ok(PROJECT_UPDATE, &input).await
+    }
+
     pub(crate) async fn application_get(
         &self,
         application_id: &str,
@@ -191,6 +199,47 @@ impl Dokploy {
             .await?;
 
         Ok(CreatedApplication::from_response(response))
+    }
+
+    pub(crate) async fn application_update(&self, input: UpdateApplication) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                APPLICATION_UPDATE.operation(),
+                "application update requires an identity and at least one field",
+            ));
+        }
+
+        self.mutate_body_ok(APPLICATION_UPDATE, &input).await
+    }
+
+    pub(crate) async fn application_deploy(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<(), Error> {
+        let body = ApplicationRedeployRequestBody {
+            application_id: application_id.as_str().to_owned(),
+            title: None,
+            description: None,
+        };
+
+        self.mutate_body_ok(APPLICATION_DEPLOY, &body).await
+    }
+
+    pub(crate) async fn application_environment(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<ApplicationEnvironmentDocument, Error> {
+        let request = ApplicationOneRequest {
+            query: ApplicationOneRequestQuery {
+                application_id: application_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(APPLICATION_ONE, &request)?;
+        let response: ApplicationEnvironmentResponse = self
+            .read_query_json(APPLICATION_ONE, &request.query)
+            .await?;
+
+        Ok(ApplicationEnvironmentDocument::from_response(response))
     }
 
     pub(crate) async fn applications_by_environment(
@@ -297,6 +346,10 @@ impl Dokploy {
         Ok(CreatedEnvironment::from_response(response))
     }
 
+    pub(crate) async fn environment_update(&self, input: UpdateEnvironment) -> Result<(), Error> {
+        self.mutate_body_ok(ENVIRONMENT_UPDATE, &input).await
+    }
+
     pub(crate) async fn postgres_get(&self, postgres_id: &str) -> Result<PostgresDetails, Error> {
         let request = PostgresOneRequest {
             query: PostgresOneRequestQuery {
@@ -322,6 +375,17 @@ impl Dokploy {
             self.mutate_body_json(POSTGRES_CREATE, &input).await?;
 
         Ok(CreatedPostgres::from_response(response))
+    }
+
+    pub(crate) async fn postgres_update(&self, input: UpdatePostgres) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                POSTGRES_UPDATE.operation(),
+                "Postgres update requires an identity and at least one field",
+            ));
+        }
+
+        self.mutate_body_ok(POSTGRES_UPDATE, &input).await
     }
 
     pub(crate) async fn postgres_by_environment(
@@ -401,6 +465,17 @@ impl Dokploy {
         let response: RedisCreateResponse = self.mutate_body_json(REDIS_CREATE, &input).await?;
 
         Ok(CreatedRedis::from_response(response))
+    }
+
+    pub(crate) async fn redis_update(&self, input: UpdateRedis) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                REDIS_UPDATE.operation(),
+                "Redis update fields cannot be empty",
+            ));
+        }
+
+        self.mutate_body_ok(REDIS_UPDATE, &input).await
     }
 
     pub(crate) async fn redis_by_environment(
@@ -484,6 +559,17 @@ impl Dokploy {
         Ok(CreatedDomain::from_response(response))
     }
 
+    pub(crate) async fn domain_update(&self, input: UpdateDomain) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                DOMAIN_UPDATE.operation(),
+                "Domain update fields cannot be empty",
+            ));
+        }
+
+        self.mutate_body_ok(DOMAIN_UPDATE, &input).await
+    }
+
     pub(crate) async fn domains_by_application(
         &self,
         application_id: &str,
@@ -529,6 +615,25 @@ impl Dokploy {
             .await?;
 
         decode_json_response(endpoint, response).await
+    }
+
+    async fn mutate_body_ok<B>(&self, endpoint: Endpoint, body: &B) -> Result<(), Error>
+    where
+        B: Serialize + ?Sized,
+    {
+        let response = self
+            .send(endpoint, self.request(endpoint).json(body))
+            .await?;
+        let status = response.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|source| transport_error(endpoint, source))?;
+
+        Err(Error::Api(decode_dokploy_error(status, &bytes)))
     }
 
     pub(crate) async fn execute_imperative(

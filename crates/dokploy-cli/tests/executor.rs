@@ -15,6 +15,247 @@ struct TestServer {
     thread: JoinHandle<()>,
 }
 
+#[tokio::test]
+async fn postgres_owned_fields_update_in_place() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/postgres-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"items":[{"postgresId":"postgres-1","environmentId":"environment-1","name":"main"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"postgresId":"postgres-1","environmentId":"environment-1","name":"main","appName":"postgres-main","dockerImage":"postgres:16","databaseName":"app","databaseUser":"app"}"#,
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("postgres"), "postgres-password")
+        .expect("Postgres secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    let postgres_config = |database: &str, username: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    postgres:\n",
+                "      main:\n",
+                "        database: {}\n",
+                "        username: {}\n",
+                "        password:\n",
+                "          file: .secrets/postgres\n",
+            ),
+            database, username,
+        )
+    };
+    fs::write(&config, postgres_config("app", "app"))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Postgres apply succeeds");
+    fs::write(&config, postgres_config("app_next", "app_next"))
+        .expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Postgres update succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 9);
+    assert!(requests[8].starts_with("POST /api/postgres.update HTTP/1.1\r\n"));
+    assert!(requests[8].contains(r#""databaseName":"app_next""#));
+    assert!(requests[8].contains(r#""databaseUser":"app_next""#));
+    assert!(!requests[8].contains("databasePassword"));
+}
+
+#[tokio::test]
+async fn redis_password_rotation_uses_the_new_one_shot_secret_value() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/redis-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"items":[{"redisId":"redis-1","environmentId":"environment-1","name":"cache"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"redisId":"redis-1","environmentId":"environment-1","name":"cache","appName":"redis-cache","dockerImage":"redis:8"}"#,
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    let password = secrets.join("redis");
+    fs::write(&password, "old-password-canary").expect("Redis secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    redis:\n",
+            "      cache:\n",
+            "        password:\n",
+            "          file: .secrets/redis\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Redis apply succeeds");
+    fs::write(&password, "new-password-canary").expect("Redis secret rotation is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Redis password rotation succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 9);
+    assert!(requests[8].starts_with("POST /api/redis.update HTTP/1.1\r\n"));
+    assert!(requests[8].contains(r#""databasePassword":"new-password-canary""#));
+    assert!(!format!("{summary:?}").contains("new-password-canary"));
+}
+
+#[tokio::test]
+async fn application_environment_rotation_preserves_unowned_remote_entries() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", r#"{"ok":true}"#),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api","env":"TOKEN=old-password-canary"}"#,
+        ),
+        (
+            "200 OK",
+            "{\"applicationId\":\"application-1\",\"env\":\"UNMANAGED=keep\\nTOKEN=old-password-canary\"}",
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    let token = secrets.join("token");
+    fs::write(&token, "old-password-canary").expect("application secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        environment:\n",
+            "          TOKEN:\n",
+            "            secret:\n",
+            "              file: .secrets/token\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial application environment apply succeeds");
+    fs::write(&token, "new-password-canary").expect("application secret rotation is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("application environment rotation succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 13);
+    assert!(requests[10].starts_with("GET /api/application.one?applicationId=application-1"));
+    assert!(requests[11].starts_with("POST /api/application.update HTTP/1.1\r\n"));
+    let body: serde_json::Value = serde_json::from_str(
+        requests[11]
+            .split_once("\r\n\r\n")
+            .expect("request contains a body")
+            .1,
+    )
+    .expect("request body is JSON");
+    assert_eq!(body["env"], "UNMANAGED=keep\nTOKEN=new-password-canary");
+    assert!(requests[12].starts_with("POST /api/application.deploy HTTP/1.1\r\n"));
+    assert!(!format!("{summary:?}").contains("new-password-canary"));
+}
+
 impl TestServer {
     fn respond_in_sequence(responses: Vec<(&'static str, &'static str)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
@@ -188,6 +429,48 @@ async fn project_default_environment_is_checkpointed_without_a_duplicate_create(
     assert_eq!(requests.len(), 2);
     assert!(requests[0].starts_with("GET /api/project.all HTTP/1.1\r\n"));
     assert!(requests[1].starts_with("POST /api/project.create HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn project_default_environment_is_configured_after_adoption() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    description: Managed\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("default environment configuration succeeds");
+
+    assert_eq!(summary.applied(), 2);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert_eq!(state.serial(), 3);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[2].starts_with("POST /api/environment.update HTTP/1.1\r\n"));
+    assert!(requests[2].contains(r#""description":"Managed""#));
 }
 
 #[tokio::test]
@@ -424,4 +707,274 @@ async fn database_create_without_required_inputs_is_blocked_before_mutation() {
     let requests = server.finish();
     assert_eq!(requests.len(), 1);
     assert!(requests[0].starts_with("GET /api/project.all HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn configured_application_is_checkpointed_then_configured_and_deployed() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let secrets = directory.path().join(".secrets");
+    fs::create_dir(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("token"), "secret-canary")
+        .expect("application secret fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        description: API\n",
+            "        replicas: 2\n",
+            "        source:\n",
+            "          type: github\n",
+            "          repository: legalterlaw/platform\n",
+            "          branch: main\n",
+            "        environment:\n",
+            "          TOKEN:\n",
+            "            secret:\n",
+            "              file: .secrets/token\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("configured application apply succeeds");
+
+    assert_eq!(summary.applied(), 3);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert_eq!(state.serial(), 5);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 5);
+    assert!(requests[2].starts_with("POST /api/application.create HTTP/1.1\r\n"));
+    assert!(requests[3].starts_with("POST /api/application.update HTTP/1.1\r\n"));
+    assert!(requests[3].contains(r#""description":"API""#));
+    assert!(requests[3].contains(r#""replicas":2"#));
+    assert!(requests[3].contains(r#""repository":"legalterlaw/platform""#));
+    assert!(requests[3].contains(r#""branch":"main""#));
+    assert!(requests[3].contains(r#""env":"TOKEN=secret-canary""#));
+    assert!(requests[4].starts_with("POST /api/application.deploy HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn changed_application_configuration_updates_then_deploys_without_recreating() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", r#"{"ok":true}"#),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api","replicas":1,"sourceType":"github","repository":"legalterlaw/platform","branch":"main"}"#,
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    let application_config = |replicas: u32, branch: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    applications:\n",
+                "      api:\n",
+                "        replicas: {}\n",
+                "        source:\n",
+                "          type: github\n",
+                "          repository: legalterlaw/platform\n",
+                "          branch: {}\n",
+            ),
+            replicas, branch,
+        )
+    };
+    fs::write(&config, application_config(1, "main"))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial application apply succeeds");
+    fs::write(&config, application_config(2, "next"))
+        .expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("application update succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert_eq!(state.serial(), 7);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 12);
+    assert!(requests[10].starts_with("POST /api/application.update HTTP/1.1\r\n"));
+    assert!(requests[10].contains(r#""replicas":2"#));
+    assert!(requests[10].contains(r#""branch":"next""#));
+    assert!(!requests[10].contains("application.create"));
+    assert!(requests[11].starts_with("POST /api/application.deploy HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn project_update_checkpoints_and_the_next_plan_converges() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","description":"Old","environments":[]}]"#,
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","description":"New","environments":[]}]"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        "version: 1\nproject:\n  name: platform\n  description: Old\nenvironments: {}\n",
+    )
+    .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial project apply succeeds");
+    fs::write(
+        &config,
+        "version: 1\nproject:\n  name: platform\n  description: New\nenvironments: {}\n",
+    )
+    .expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("project update succeeds");
+    let converged = plan_workspace(&client, &config)
+        .await
+        .expect("post-update plan succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    assert!(converged.changes().is_empty());
+    let requests = server.finish();
+    assert_eq!(requests.len(), 5);
+    assert!(requests[3].starts_with("POST /api/project.update HTTP/1.1\r\n"));
+    assert!(requests[3].contains(r#""description":"New""#));
+}
+
+#[tokio::test]
+async fn protection_change_is_a_state_only_checkpoint_without_remote_mutation() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[]}]"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+    )
+    .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial project apply succeeds");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n",
+            "  name: platform\n",
+            "  lifecycle:\n",
+            "    protect: true\n",
+            "environments: {}\n",
+        ),
+    )
+    .expect("protected configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("protection checkpoint succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    let project: ResourceAddress = "project.platform".parse().expect("address is valid");
+    assert!(
+        state
+            .resource(&project)
+            .expect("project is checkpointed")
+            .is_protected()
+    );
+    assert_eq!(state.serial(), 2);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 3);
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("project.update"))
+    );
 }

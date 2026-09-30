@@ -5,7 +5,9 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_sdk::{
     ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
-    CreateProject, CreateRedis, Dokploy, EnvironmentId, ProjectId,
+    CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId, Nullable, PostgresId, ProjectId,
+    RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres, UpdateProject,
+    UpdateRedis,
 };
 use zeroize::Zeroizing;
 
@@ -266,4 +268,135 @@ async fn domain_create_returns_its_physical_identity() {
     assert!(request.starts_with("POST /api/domain.create HTTP/1.1\r\n"));
     assert!(request.contains(r#""host":"api.example.test""#));
     assert!(request.contains(r#""applicationId":"application-1""#));
+}
+
+#[tokio::test]
+async fn application_update_and_deploy_use_narrow_typed_requests() {
+    let update_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    let environment = Zeroizing::new("TOKEN=secret-canary".to_owned());
+    let input = UpdateApplication::new(ApplicationId::new("application-1"))
+        .with_description(Nullable::Null)
+        .with_replicas(Nullable::Value(3))
+        .with_github_repository("legalterlaw/platform")
+        .with_branch(Nullable::Value("main".to_owned()))
+        .with_environment(Nullable::Value(environment));
+
+    assert!(!format!("{input:?}").contains("secret-canary"));
+    update_server
+        .client()
+        .applications()
+        .update(input)
+        .await
+        .expect("application update succeeds");
+
+    let request = update_server.finish();
+    assert!(request.starts_with("POST /api/application.update HTTP/1.1\r\n"));
+    let body: serde_json::Value = serde_json::from_str(
+        request
+            .split_once("\r\n\r\n")
+            .expect("request contains a body")
+            .1,
+    )
+    .expect("request body is JSON");
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "applicationId": "application-1",
+            "description": null,
+            "replicas": 3,
+            "sourceType": "github",
+            "repository": "legalterlaw/platform",
+            "branch": "main",
+            "env": "TOKEN=secret-canary"
+        })
+    );
+
+    let deploy_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    deploy_server
+        .client()
+        .applications()
+        .deploy(ApplicationId::new("application-1"))
+        .await
+        .expect("application deployment succeeds");
+    let request = deploy_server.finish();
+    assert!(request.starts_with("POST /api/application.deploy HTTP/1.1\r\n"));
+    assert!(request.contains(r#""applicationId":"application-1""#));
+}
+
+#[tokio::test]
+async fn resource_updates_send_only_the_owned_fields() {
+    let project_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    project_server
+        .client()
+        .projects()
+        .update(UpdateProject::new(
+            ProjectId::new("project-1"),
+            Nullable::Null,
+        ))
+        .await
+        .expect("project update succeeds");
+    let request = project_server.finish();
+    assert!(request.starts_with("POST /api/project.update HTTP/1.1\r\n"));
+    assert!(request.contains(r#""projectId":"project-1","description":null"#));
+
+    let environment_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    environment_server
+        .client()
+        .environments()
+        .update(UpdateEnvironment::new(
+            EnvironmentId::new("environment-1"),
+            Nullable::Value("Production".to_owned()),
+        ))
+        .await
+        .expect("environment update succeeds");
+    let request = environment_server.finish();
+    assert!(request.starts_with("POST /api/environment.update HTTP/1.1\r\n"));
+    assert!(request.contains(r#""description":"Production""#));
+
+    let postgres_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    let postgres = UpdatePostgres::new(PostgresId::new("postgres-1"))
+        .with_database("app_next")
+        .with_username("app")
+        .with_password(Zeroizing::new("postgres-secret-canary".to_owned()));
+    assert!(!format!("{postgres:?}").contains("postgres-secret-canary"));
+    postgres_server
+        .client()
+        .postgres()
+        .update(postgres)
+        .await
+        .expect("Postgres update succeeds");
+    let request = postgres_server.finish();
+    assert!(request.starts_with("POST /api/postgres.update HTTP/1.1\r\n"));
+    assert!(request.contains(r#""databaseName":"app_next""#));
+    assert!(request.contains(r#""databasePassword":"postgres-secret-canary""#));
+
+    let redis_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    let redis = UpdateRedis::new(
+        RedisId::new("redis-1"),
+        Zeroizing::new("redis-secret-canary".to_owned()),
+    );
+    assert!(!format!("{redis:?}").contains("redis-secret-canary"));
+    redis_server
+        .client()
+        .redis()
+        .update(redis)
+        .await
+        .expect("Redis update succeeds");
+    let request = redis_server.finish();
+    assert!(request.starts_with("POST /api/redis.update HTTP/1.1\r\n"));
+    assert!(request.contains(r#""databasePassword":"redis-secret-canary""#));
+
+    let domain_server = TestServer::respond_with_json(r#"{"ok":true}"#);
+    domain_server
+        .client()
+        .domains()
+        .update(UpdateDomain::new(
+            DomainId::new("domain-1"),
+            "next.example.test",
+        ))
+        .await
+        .expect("Domain update succeeds");
+    let request = domain_server.finish();
+    assert!(request.starts_with("POST /api/domain.update HTTP/1.1\r\n"));
+    assert!(request.contains(r#""domainId":"domain-1","host":"next.example.test""#));
 }

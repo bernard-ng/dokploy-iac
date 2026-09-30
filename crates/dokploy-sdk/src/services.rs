@@ -1,13 +1,14 @@
 use crate::{
-    ApplicationCollection, ApplicationDetails, ApplicationId, Dokploy, DomainCollection,
-    DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
-    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
-    RedisCollection, RedisDetails, RedisId,
+    ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
+    Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
+    EnvironmentId, Error, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails,
+    ProjectId, ProjectTopology, RedisCollection, RedisDetails, RedisId,
 };
 use crate::{
     CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres, CreateProject, CreateRedis,
     CreatedApplication, CreatedDomain, CreatedEnvironment, CreatedPostgres, CreatedProject,
-    CreatedRedis,
+    CreatedRedis, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres,
+    UpdateProject, UpdateRedis,
 };
 
 /// Read operations for Dokploy projects.
@@ -33,6 +34,11 @@ impl<'a> Projects<'a> {
     /// Creates a project and returns both identities created by Dokploy.
     pub async fn create(&self, input: CreateProject) -> Result<CreatedProject, Error> {
         self.client.project_create(input).await
+    }
+
+    /// Updates the owned project description.
+    pub async fn update(&self, input: UpdateProject) -> Result<(), Error> {
+        self.client.project_update(input).await
     }
 }
 
@@ -65,6 +71,24 @@ impl<'a> Applications<'a> {
     pub async fn create(&self, input: CreateApplication) -> Result<CreatedApplication, Error> {
         self.client.application_create(input).await
     }
+
+    /// Writes an explicit subset of owned application configuration.
+    pub async fn update(&self, input: UpdateApplication) -> Result<(), Error> {
+        self.client.application_update(input).await
+    }
+
+    /// Requests deployment of the current application configuration.
+    pub async fn deploy(&self, application_id: ApplicationId) -> Result<(), Error> {
+        self.client.application_deploy(application_id).await
+    }
+
+    /// Reads the transient raw environment document for a preservation merge.
+    pub async fn environment(
+        &self,
+        application_id: ApplicationId,
+    ) -> Result<ApplicationEnvironmentDocument, Error> {
+        self.client.application_environment(application_id).await
+    }
 }
 
 /// Read operations for Dokploy environments.
@@ -92,6 +116,11 @@ impl<'a> Environments<'a> {
     /// Creates an environment under one project.
     pub async fn create(&self, input: CreateEnvironment) -> Result<CreatedEnvironment, Error> {
         self.client.environment_create(input).await
+    }
+
+    /// Updates the owned environment description.
+    pub async fn update(&self, input: UpdateEnvironment) -> Result<(), Error> {
+        self.client.environment_update(input).await
     }
 }
 
@@ -124,6 +153,11 @@ impl<'a> Postgres<'a> {
     pub async fn create(&self, input: CreatePostgres) -> Result<CreatedPostgres, Error> {
         self.client.postgres_create(input).await
     }
+
+    /// Updates an explicit subset of owned Postgres fields.
+    pub async fn update(&self, input: UpdatePostgres) -> Result<(), Error> {
+        self.client.postgres_update(input).await
+    }
 }
 
 /// Read operations for Dokploy Redis databases.
@@ -155,6 +189,11 @@ impl<'a> Redis<'a> {
     pub async fn create(&self, input: CreateRedis) -> Result<CreatedRedis, Error> {
         self.client.redis_create(input).await
     }
+
+    /// Rotates the write-only Redis password.
+    pub async fn update(&self, input: UpdateRedis) -> Result<(), Error> {
+        self.client.redis_update(input).await
+    }
 }
 
 /// Read operations for Dokploy application domains.
@@ -185,5 +224,10 @@ impl<'a> Domains<'a> {
     /// Attaches a domain to an application.
     pub async fn create(&self, input: CreateDomain) -> Result<CreatedDomain, Error> {
         self.client.domain_create(input).await
+    }
+
+    /// Updates the Domain host while preserving its application attachment.
+    pub async fn update(&self, input: UpdateDomain) -> Result<(), Error> {
+        self.client.domain_update(input).await
     }
 }

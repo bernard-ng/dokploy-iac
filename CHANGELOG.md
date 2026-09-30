@@ -34,6 +34,9 @@ All notable changes to this project will be documented in this file.
 - Add typed application, Postgres, Redis, and Domain creation with redacted
   secret-bearing inputs, required-create contracts, dependency-ordered
   execution, and a durable checkpoint after every successful resource.
+- Add typed in-place updates across all MVP resources, multi-step application
+  configuration, deploy-on-runtime-change, state-only lifecycle checkpoints,
+  and redacted environment merging that preserves unowned remote variables.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid
