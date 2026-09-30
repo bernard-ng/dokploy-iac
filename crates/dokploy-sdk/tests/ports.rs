@@ -291,6 +291,21 @@ async fn application_one_is_the_authoritative_bounded_port_collection() {
         ));
         server.finish();
     }
+
+    let server = TestServer::respond_with_json(r#"{"applicationId":"application-1"}"#);
+    let error = client(&server)
+        .ports()
+        .by_application(ApplicationId::new("application-1"))
+        .await
+        .expect_err("an omitted authoritative Port relation must fail closed");
+    assert!(matches!(
+        error,
+        Error::Decode {
+            operation: "application.one",
+            ..
+        }
+    ));
+    server.finish();
 }
 
 #[tokio::test]

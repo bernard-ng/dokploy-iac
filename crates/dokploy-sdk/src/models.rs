@@ -3175,7 +3175,6 @@ impl PortCollection {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationPortCollectionResponse {
     pub(crate) application_id: ApplicationId,
-    #[serde(default)]
     pub(crate) ports: Vec<PortDetails>,
 }
 
@@ -3235,7 +3234,6 @@ impl RedirectCollection {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationRedirectCollectionResponse {
     pub(crate) application_id: ApplicationId,
-    #[serde(default)]
     pub(crate) redirects: Vec<RedirectDetails>,
 }
 
@@ -3294,7 +3292,7 @@ impl SecurityCollection {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationSecurityCollectionResponse {
     pub(crate) application_id: ApplicationId,
-    #[serde(default, rename = "security")]
+    #[serde(rename = "security")]
     pub(crate) entries: Vec<SecurityDetails>,
 }
 

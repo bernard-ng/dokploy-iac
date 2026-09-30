@@ -337,6 +337,22 @@ async fn application_one_is_authoritative_and_rejects_duplicate_ids_or_usernames
         assert_no_canary(&error);
         server.finish();
     }
+
+    let server = TestServer::respond_with_json(r#"{"applicationId":"application-1"}"#);
+    let error = client(&server)
+        .security()
+        .by_application(ApplicationId::new("application-1"))
+        .await
+        .expect_err("an omitted authoritative Security relation must fail closed");
+    assert!(matches!(
+        error,
+        Error::Decode {
+            operation: "application.one",
+            ..
+        }
+    ));
+    assert_no_canary(&error);
+    server.finish();
 }
 
 #[tokio::test]
@@ -412,15 +428,132 @@ async fn security_create_rejects_collisions_and_ambiguous_evidence() {
             .create(input())
             .await
             .unwrap_err();
-        assert!(matches!(
-            error,
-            Error::UnexpectedResponse {
-                operation: "security.create"
-            }
-        ));
+        if accepted == "true" {
+            assert!(matches!(
+                error,
+                Error::OutcomeUnknown {
+                    operation: "security.create",
+                    ..
+                }
+            ));
+        } else {
+            assert!(matches!(
+                error,
+                Error::UnexpectedResponse {
+                    operation: "security.create"
+                }
+            ));
+        }
         assert_no_canary(&error);
         assert_eq!(server.finish_all().len(), expected);
     }
+}
+
+#[tokio::test]
+async fn security_create_postflight_failures_are_secret_safe_outcome_unknown() {
+    let closed =
+        TestServer::close_after_requests(vec![("200 OK", EMPTY_PARENT), ("200 OK", "true")]);
+    let error = client(&closed)
+        .security()
+        .create(input())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "security.create",
+            ..
+        }
+    ));
+    assert_no_canary(&error);
+    assert_eq!(closed.finish_all().len(), 3);
+
+    for (status, body) in [
+        ("200 OK", r#"{"applicationId":"application-1"}"#),
+        (
+            "500 Internal Server Error",
+            r#"{"message":"request-password-canary-do-not-leak","issues":["response-password-canary-do-not-leak"]}"#,
+        ),
+    ] {
+        let server = TestServer::respond_in_sequence(vec![
+            ("200 OK", EMPTY_PARENT),
+            ("200 OK", "true"),
+            (status, body),
+        ]);
+        let error = client(&server)
+            .security()
+            .create(input())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::OutcomeUnknown {
+                operation: "security.create",
+                ..
+            }
+        ));
+        assert_no_canary(&error);
+        assert_eq!(server.finish_all().len(), 3);
+    }
+
+    let preflight = TestServer::respond_with_json(r#"{"applicationId":"application-1"}"#);
+    let error = client(&preflight)
+        .security()
+        .create(input())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Decode {
+            operation: "application.one",
+            ..
+        }
+    ));
+    assert_no_canary(&error);
+    assert_eq!(preflight.finish_all().len(), 1);
+}
+
+#[tokio::test]
+async fn security_mutation_rejections_never_retain_echoed_passwords() {
+    let echoed = r#"{
+        "code":"ECHOED_PASSWORD",
+        "message":"request-password-canary-do-not-leak",
+        "issues":[{"message":"response-password-canary-do-not-leak"}]
+    }"#;
+    let create_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", EMPTY_PARENT),
+        ("400 Bad Request", echoed),
+    ]);
+    let error = client(&create_server)
+        .security()
+        .create(input())
+        .await
+        .unwrap_err();
+    let dokploy = error.dokploy().expect("HTTP status remains structured");
+    assert_eq!(dokploy.status(), 400);
+    assert_eq!(dokploy.code(), "BAD_REQUEST");
+    assert_eq!(dokploy.message(), "Bad Request");
+    assert!(dokploy.issues().is_empty());
+    assert_no_canary(&error);
+    assert_eq!(create_server.finish_all().len(), 2);
+
+    let update_server = TestServer::respond_in_sequence(vec![("422 Unprocessable Entity", echoed)]);
+    let error = client(&update_server)
+        .security()
+        .update(UpdateSecurity::new(
+            SecurityId::new("security-1"),
+            "operator",
+            Zeroizing::new(REQUEST_PASSWORD_CANARY.to_owned()),
+        ))
+        .await
+        .unwrap_err();
+    let dokploy = error.dokploy().expect("HTTP status remains structured");
+    assert_eq!(dokploy.status(), 422);
+    assert_eq!(dokploy.code(), "UNPROCESSABLE_ENTITY");
+    assert_eq!(dokploy.message(), "Unprocessable Entity");
+    assert!(dokploy.issues().is_empty());
+    assert_no_canary(&error);
+    assert_eq!(update_server.finish_all().len(), 1);
 }
 
 #[tokio::test]

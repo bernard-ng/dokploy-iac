@@ -315,6 +315,21 @@ async fn application_one_is_the_authoritative_bounded_redirect_collection() {
         ));
         server.finish();
     }
+
+    let server = TestServer::respond_with_json(r#"{"applicationId":"application-1"}"#);
+    let error = client(&server)
+        .redirects()
+        .by_application(ApplicationId::new("application-1"))
+        .await
+        .expect_err("an omitted authoritative Redirect relation must fail closed");
+    assert!(matches!(
+        error,
+        Error::Decode {
+            operation: "application.one",
+            ..
+        }
+    ));
+    server.finish();
 }
 
 #[tokio::test]
@@ -399,14 +414,86 @@ async fn redirect_create_rejects_collisions_and_ambiguous_identity_evidence() {
             .create(input())
             .await
             .expect_err("unproven create identity must fail closed");
-        assert!(matches!(
-            error,
-            Error::UnexpectedResponse {
-                operation: "redirects.create"
-            }
-        ));
+        if accepted == "true" {
+            assert!(matches!(
+                error,
+                Error::OutcomeUnknown {
+                    operation: "redirects.create",
+                    ..
+                }
+            ));
+        } else {
+            assert!(matches!(
+                error,
+                Error::UnexpectedResponse {
+                    operation: "redirects.create"
+                }
+            ));
+        }
         assert_eq!(server.finish_all().len(), response_count);
     }
+}
+
+#[tokio::test]
+async fn redirect_create_postflight_failures_are_always_outcome_unknown() {
+    let closed =
+        TestServer::close_after_requests(vec![("200 OK", EMPTY_PARENT), ("200 OK", "true")]);
+    let error = client(&closed)
+        .redirects()
+        .create(input())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "redirects.create",
+            ..
+        }
+    ));
+    assert_eq!(closed.finish_all().len(), 3);
+
+    for (status, body) in [
+        ("200 OK", r#"{"applicationId":"application-1"}"#),
+        (
+            "500 Internal Server Error",
+            r#"{"message":"postflight-canary"}"#,
+        ),
+    ] {
+        let server = TestServer::respond_in_sequence(vec![
+            ("200 OK", EMPTY_PARENT),
+            ("200 OK", "true"),
+            (status, body),
+        ]);
+        let error = client(&server)
+            .redirects()
+            .create(input())
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::OutcomeUnknown {
+                operation: "redirects.create",
+                ..
+            }
+        ));
+        assert!(!format!("{error:?}").contains("postflight-canary"));
+        assert_eq!(server.finish_all().len(), 3);
+    }
+
+    let preflight = TestServer::respond_with_json(r#"{"applicationId":"application-1"}"#);
+    let error = client(&preflight)
+        .redirects()
+        .create(input())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Decode {
+            operation: "application.one",
+            ..
+        }
+    ));
+    assert_eq!(preflight.finish_all().len(), 1);
 }
 
 #[tokio::test]

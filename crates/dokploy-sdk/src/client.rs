@@ -836,7 +836,8 @@ impl Dokploy {
 
         let after = self
             .redirects_by_application(input.application_id())
-            .await?;
+            .await
+            .map_err(|_| post_mutation_proof_unknown(REDIRECTS_CREATE))?;
         let after_ids = after
             .redirects()
             .iter()
@@ -854,9 +855,7 @@ impl Dokploy {
             return Ok(CreatedRedirect::new(created.redirect_id.clone()));
         }
 
-        Err(Error::UnexpectedResponse {
-            operation: REDIRECTS_CREATE.operation(),
-        })
+        Err(post_mutation_proof_unknown(REDIRECTS_CREATE))
     }
 
     pub(crate) async fn redirect_update(&self, input: UpdateRedirect) -> Result<(), Error> {
@@ -971,14 +970,19 @@ impl Dokploy {
             .map(|entry| entry.security_id.as_str().to_owned())
             .collect::<HashSet<_>>();
 
-        let accepted: bool = self.mutate_body_json(SECURITY_CREATE, &input).await?;
+        let accepted: bool = self
+            .mutate_body_json_secret(SECURITY_CREATE, &input)
+            .await?;
         if !accepted {
             return Err(Error::UnexpectedResponse {
                 operation: SECURITY_CREATE.operation(),
             });
         }
 
-        let after = self.security_by_application(input.application_id()).await?;
+        let after = self
+            .security_by_application(input.application_id())
+            .await
+            .map_err(|_| post_mutation_proof_unknown(SECURITY_CREATE))?;
         let after_ids = after
             .entries()
             .iter()
@@ -996,9 +1000,7 @@ impl Dokploy {
             return Ok(CreatedSecurity::new(created.security_id.clone()));
         }
 
-        Err(Error::UnexpectedResponse {
-            operation: SECURITY_CREATE.operation(),
-        })
+        Err(post_mutation_proof_unknown(SECURITY_CREATE))
     }
 
     pub(crate) async fn security_update(&self, input: UpdateSecurity) -> Result<(), Error> {
@@ -1009,7 +1011,7 @@ impl Dokploy {
             ));
         }
 
-        self.mutate_body_ok(SECURITY_UPDATE, &input).await
+        self.mutate_body_ok_secret(SECURITY_UPDATE, &input).await
     }
 
     pub(crate) async fn security_delete(&self, security_id: SecurityId) -> Result<(), Error> {
@@ -1879,6 +1881,45 @@ impl Dokploy {
         Err(Error::Api(decode_dokploy_error(status, &bytes)))
     }
 
+    async fn mutate_body_json_secret<T, B>(&self, endpoint: Endpoint, body: &B) -> Result<T, Error>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
+        let response = self
+            .send(endpoint, self.request(endpoint).json(body))
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(Error::Api(sanitized_dokploy_error(status)));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|source| transport_error(endpoint, source))?;
+        let bytes = Zeroizing::new(bytes.to_vec());
+
+        serde_json::from_slice(&bytes).map_err(|source| Error::Decode {
+            operation: endpoint.operation(),
+            source,
+        })
+    }
+
+    async fn mutate_body_ok_secret<B>(&self, endpoint: Endpoint, body: &B) -> Result<(), Error>
+    where
+        B: Serialize + ?Sized,
+    {
+        let response = self
+            .send(endpoint, self.request(endpoint).json(body))
+            .await?;
+        let status = response.status();
+        if status.is_success() {
+            return Ok(());
+        }
+
+        Err(Error::Api(sanitized_dokploy_error(status)))
+    }
+
     pub(crate) async fn execute_imperative(
         &self,
         request: ImperativeRequest,
@@ -1973,6 +2014,13 @@ fn invalid_request(operation: &'static str, message: &'static str) -> Error {
     Error::InvalidRequest {
         operation,
         source: anyhow::anyhow!(message),
+    }
+}
+
+fn post_mutation_proof_unknown(endpoint: Endpoint) -> Error {
+    Error::OutcomeUnknown {
+        operation: endpoint.operation(),
+        source: anyhow::anyhow!("post-mutation identity proof failed"),
     }
 }
 
@@ -2106,6 +2154,20 @@ fn decode_dokploy_error(status: StatusCode, bytes: &[u8]) -> DokployError {
         .unwrap_or_default();
 
     DokployError::new(status.as_u16(), code, message, issues)
+}
+
+fn sanitized_dokploy_error(status: StatusCode) -> DokployError {
+    let message = status
+        .canonical_reason()
+        .unwrap_or("Dokploy request failed")
+        .to_owned();
+
+    DokployError::new(
+        status.as_u16(),
+        fallback_error_code(status).to_owned(),
+        message,
+        Vec::new(),
+    )
 }
 
 fn fallback_error_code(status: StatusCode) -> &'static str {
