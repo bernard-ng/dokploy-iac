@@ -196,6 +196,9 @@ jq -n \
     }
 ' >"$candidate_versioned_fixture_directory/external-selector-contract.metadata.json"
 
+find "$candidate_fixture_root" -type d -exec chmod 0755 {} +
+find "$candidate_fixture_root" -type f -exec chmod 0644 {} +
+
 DOKPLOY_FIXTURE_DIRECTORY="$candidate_fixture_root" \
     "$script_directory/check-fixtures.sh"
 

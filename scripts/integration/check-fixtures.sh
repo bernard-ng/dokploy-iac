@@ -11,6 +11,18 @@ if [[ ! -d "$fixture_directory" ]]; then
     exit 1
 fi
 
+unsafe_directory_mode="$(find "$fixture_directory" -type d ! -perm 0755 -print -quit)"
+if [[ -n "$unsafe_directory_mode" ]]; then
+    echo "Live fixture directories must use mode 0755: $unsafe_directory_mode" >&2
+    exit 1
+fi
+
+unsafe_file_mode="$(find "$fixture_directory" -type f ! -perm 0644 -print -quit)"
+if [[ -n "$unsafe_file_mode" ]]; then
+    echo "Live fixture files must use mode 0644: $unsafe_file_mode" >&2
+    exit 1
+fi
+
 required_redis_fixtures=(
     "redis-create.owner.json"
     "redis-one.owner.json"
