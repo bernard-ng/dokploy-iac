@@ -117,3 +117,18 @@ scripts/integration/test-cli-redaction.sh
 The wrapper resolves the ignored local API key and a disposable Postgres
 fixture, invokes the public CLI, and fails if the known fixture secret appears
 in either standard output or diagnostics.
+
+## Live declarative apply test
+
+Verify the Phase 6 executor against a disposable project containing an
+environment, application, domain, Postgres database, and Redis database:
+
+```bash
+scripts/integration/test-apply.sh
+```
+
+The check uses environment-backed one-shot secrets, confirms the rendered plan,
+executes with a parallelism bound of two, and requires the next fresh plan to
+contain zero changes. It does not deploy the empty application and therefore
+does not require Docker Swarm. Cleanup removes only the collision-resistant
+project created by that run and deletes its ignored temporary workspace.

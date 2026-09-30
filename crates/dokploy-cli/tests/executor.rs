@@ -1101,6 +1101,95 @@ async fn project_update_checkpoints_and_the_next_plan_converges() {
 }
 
 #[tokio::test]
+async fn domain_host_update_uses_the_typed_in_place_mutation() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/domain-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
+        ),
+        (
+            "200 OK",
+            r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        ),
+        (
+            "200 OK",
+            r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        ),
+        (
+            "200 OK",
+            r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+        ),
+        (
+            "200 OK",
+            include_str!(
+                "../../../fixtures/api/live/v0.30.6/application-one.domain-created.owner.json"
+            ),
+        ),
+        (
+            "200 OK",
+            include_str!(
+                "../../../fixtures/api/live/v0.30.6/domain-by-application.created.owner.json"
+            ),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/domain-one.created.owner.json"),
+        ),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    let domain_config = |host: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    applications:\n",
+                "      api: {}\n",
+                "    domains:\n",
+                "      public:\n",
+                "        host: {}\n",
+                "        application: application.api\n",
+            ),
+            "{}", host,
+        )
+    };
+    fs::write(&config, domain_config("api.example.test"))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial domain apply succeeds");
+    fs::write(&config, domain_config("next.example.test"))
+        .expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("domain update succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 12);
+    assert!(requests[11].starts_with("POST /api/domain.update HTTP/1.1\r\n"));
+    assert!(requests[11].contains(r#""host":"next.example.test""#));
+}
+
+#[tokio::test]
 async fn protection_change_is_a_state_only_checkpoint_without_remote_mutation() {
     let server = TestServer::respond_in_sequence(vec![
         ("200 OK", "[]"),

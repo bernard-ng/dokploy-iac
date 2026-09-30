@@ -109,12 +109,19 @@ durable state semantics.
   authoritative fresh discovery, state/recovery revalidation, and detailed
   exit status.
 
-## Phase 6: executor MVP
+## Phase 6: executor MVP — complete
 
 - Reconcile projects, environments, applications, Postgres, Redis, and domains.
 - Add bounded execution, checkpoints, partial-failure behavior, protection,
   ignored changes, multi-step configuration, and deploy-on-change.
 - Require `apply` followed by `plan` to converge to no changes.
+- Expose a fresh-plan `dokploy apply` workflow with exact interactive approval
+  and a validated parallelism bound.
+- Journal concurrent independent database mutations before dispatch, stop
+  scheduling after the first failure, allow already-running work to finish,
+  and checkpoint every successful sibling without automatic rollback.
+- Verify all six resource types and apply-then-plan convergence against the
+  digest-pinned local Dokploy `v0.30.6` environment.
 
 ## Later phases
 

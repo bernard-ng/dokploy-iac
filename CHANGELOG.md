@@ -40,6 +40,10 @@ All notable changes to this project will be documented in this file.
 - Add the public `dokploy apply` workflow with fresh plan rendering, exact
   interactive confirmation, a validated execution-bound option, and a concise
   applied-change summary.
+- Add durable multi-step execution for all six MVP resource types, bounded
+  overlap for independent Postgres and Redis mutations, and partial-failure
+  journaling that checkpoints successful in-flight siblings without rollback.
+- Add a disposable live apply-and-converge check against Dokploy `v0.30.6`.
 
 - Add first-class containment across desired, stored, checkpoint, ordering, and
   remote-discovery seams. State format version 3 rejects missing or invalid

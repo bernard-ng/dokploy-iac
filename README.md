@@ -10,8 +10,8 @@ about ownership, drift, secrets, remote identity, and recovery.
 
 > [!IMPORTANT]
 > This project is pre-release. The imperative CLI and offline configuration
-> commands are usable today. Declarative planning is under active development;
-> `plan` and `apply` are not yet public commands.
+> commands are usable today. Declarative `plan` and confirmed `apply` cover the
+> six MVP resource types; recovery and destructive workflows remain later work.
 
 ## What it offers
 
@@ -119,8 +119,9 @@ environments, applications, PostgreSQL, Redis, and application domains.
 Adapter-owned contracts classify in-place changes, reparenting, and ordered
 replacement without admitting mutation code to the planner.
 
-Phase 5 is complete, including the public read-only `plan` workflow. The
-remaining MVP work is the recoverable executor behind `apply`.
+Phase 6 is complete, including the public confirmed `apply` workflow, durable
+per-mutation checkpoints, bounded independent database mutations, multi-step
+application configuration, and apply-then-plan convergence.
 
 Preview a workspace without changing Dokploy or creating local state:
 
@@ -133,6 +134,20 @@ dokploy plan --json --detailed-exitcode
 Detailed exit status follows the usual infrastructure-planning convention: 0
 for success, 1 for an error or blocked plan, and 2 for an applyable plan with
 changes.
+
+Apply always builds and displays a fresh plan under the workspace writer lock.
+It proceeds only after the operator types exactly `yes`:
+
+```bash
+dokploy apply
+dokploy apply --parallelism 4
+```
+
+The execution bound accepts values from 1 through 64. Independent Postgres and
+Redis mutations may overlap; hierarchy-dependent and multi-step operations stay
+ordered. Each successful remote step is checkpointed before dependent work
+continues. A failed operation is never rolled back automatically, and already
+running successful siblings are still checkpointed before apply returns.
 
 For delivery detail, see the [implementation phases](docs/implementation-phases.md).
 
