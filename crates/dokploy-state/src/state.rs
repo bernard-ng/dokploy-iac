@@ -756,6 +756,115 @@ impl StateFile {
         Ok(removed)
     }
 
+    /// Moves one logical address atomically and rewrites every stored reference.
+    pub fn move_resource(
+        &mut self,
+        source: &ResourceAddress,
+        target: ResourceAddress,
+    ) -> Result<(), StateError> {
+        let source_resource =
+            self.resources
+                .get(source)
+                .ok_or_else(|| StateError::ResourceNotFound {
+                    address: source.clone(),
+                })?;
+        if source.kind() != target.kind() {
+            return Err(StateError::MoveKindMismatch {
+                from: source.clone(),
+                to: target,
+            });
+        }
+        if source == &target {
+            return Ok(());
+        }
+        if self.resources.contains_key(&target) {
+            return Err(StateError::ResourceAlreadyExists { address: target });
+        }
+        debug_assert_eq!(source_resource.kind(), source.kind());
+
+        let next_serial = self.next_serial()?;
+        let mut resources = self.resources.clone();
+        let resource = resources
+            .remove(source)
+            .expect("the move source was checked as present");
+        resources.insert(target.clone(), resource);
+        for resource in resources.values_mut() {
+            if resource.containment.as_ref() == Some(source) {
+                resource.containment = Some(target.clone());
+            }
+            for dependency in &mut resource.dependencies {
+                if dependency == source {
+                    *dependency = target.clone();
+                }
+            }
+            resource.dependencies.sort();
+            resource.dependencies.dedup();
+        }
+
+        self.resources = resources;
+        self.serial = next_serial;
+
+        Ok(())
+    }
+
+    /// Sets effective deletion protection and advances only when it changes.
+    pub fn set_resource_protection(
+        &mut self,
+        address: &ResourceAddress,
+        protected: bool,
+    ) -> Result<bool, StateError> {
+        let resource = self
+            .resources
+            .get(address)
+            .ok_or_else(|| StateError::ResourceNotFound {
+                address: address.clone(),
+            })?;
+        if resource.protected == protected {
+            return Ok(false);
+        }
+
+        let next_serial = self.next_serial()?;
+        self.resources
+            .get_mut(address)
+            .expect("the protected resource was checked as present")
+            .protected = protected;
+        self.serial = next_serial;
+
+        Ok(true)
+    }
+
+    /// Forgets local ownership without a remote mutation when no resource depends on it.
+    pub fn forget_resource(
+        &mut self,
+        address: &ResourceAddress,
+    ) -> Result<Option<ResourceState>, StateError> {
+        if !self.resources.contains_key(address) {
+            return Ok(None);
+        }
+        let dependents = self
+            .resources
+            .iter()
+            .filter_map(|(candidate, resource)| {
+                (candidate != address
+                    && (resource.containment.as_ref() == Some(address)
+                        || resource.dependencies.contains(address)))
+                .then_some(candidate.clone())
+            })
+            .collect::<Vec<_>>();
+        if !dependents.is_empty() {
+            return Err(StateError::ResourceHasDependents {
+                address: address.clone(),
+                dependents,
+            });
+        }
+
+        let next_serial = self.next_serial()?;
+        let removed = self.resources.remove(address);
+        self.serial = next_serial;
+
+        Ok(removed)
+    }
+
     fn next_serial(&self) -> Result<u64, StateError> {
         self.serial.checked_add(1).ok_or(StateError::SerialOverflow)
     }
@@ -811,6 +920,20 @@ pub enum StateError {
     ResourceKindMismatch {
         address: ResourceAddress,
         state_kind: ResourceKind,
+    },
+    #[error("resource `{address}` does not exist in state")]
+    ResourceNotFound { address: ResourceAddress },
+    #[error("resource `{address}` already exists in state")]
+    ResourceAlreadyExists { address: ResourceAddress },
+    #[error("cannot move `{from}` to different resource kind `{to}`")]
+    MoveKindMismatch {
+        from: ResourceAddress,
+        to: ResourceAddress,
+    },
+    #[error("resource `{address}` is still referenced by {dependents:?}")]
+    ResourceHasDependents {
+        address: ResourceAddress,
+        dependents: Vec<ResourceAddress>,
     },
     #[error("unsupported state format version {found}; this CLI supports version {supported}")]
     UnsupportedFormatVersion { found: u32, supported: u32 },

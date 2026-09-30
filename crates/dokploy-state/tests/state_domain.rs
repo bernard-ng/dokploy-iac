@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use dokploy_state::{
     FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
-    ResourceState, SensitiveFingerprint, SensitiveInputs, SensitivePropertyPath, StateFile,
+    ResourceState, SensitiveFingerprint, SensitiveInputs, SensitivePropertyPath, StateError,
+    StateFile,
 };
 use semver::Version;
 use serde_json::json;
@@ -336,6 +337,217 @@ fn state_mutations_advance_one_lineage_serial() {
     );
     assert_eq!(state.serial(), 2);
     assert_eq!(state.lineage(), lineage);
+}
+
+#[test]
+fn state_move_is_atomic_and_rewrites_all_logical_references() {
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let source: ResourceAddress = "project.legacy".parse().unwrap();
+    let target: ResourceAddress = "project.main".parse().unwrap();
+    let environment: ResourceAddress = "environment.production".parse().unwrap();
+    let application: ResourceAddress = "application.api".parse().unwrap();
+    let project = resource_state(ResourceKind::Project, "project-remote");
+    let environment_state = ResourceState::new(
+        ResourceKind::Environment,
+        RemoteId::new("environment-remote").unwrap(),
+        false,
+        ManagedInputs::try_from_json(json!({})).unwrap(),
+        Some(source.clone()),
+        vec![source.clone(), target.clone()],
+    );
+    let application_state = ResourceState::new(
+        ResourceKind::Application,
+        RemoteId::new("application-remote").unwrap(),
+        false,
+        ManagedInputs::try_from_json(json!({})).unwrap(),
+        Some(environment.clone()),
+        vec![source.clone()],
+    );
+    state
+        .upsert_resource(source.clone(), project.clone())
+        .unwrap();
+    state
+        .upsert_resource(environment.clone(), environment_state)
+        .unwrap();
+    state
+        .upsert_resource(application.clone(), application_state)
+        .unwrap();
+    let serial = state.serial();
+
+    state
+        .move_resource(&source, target.clone())
+        .expect("one logical move must succeed atomically");
+
+    assert_eq!(state.serial(), serial + 1);
+    assert_eq!(state.resource(&source), None);
+    assert_eq!(state.resource(&target), Some(&project));
+    assert_eq!(
+        state.resource(&environment).unwrap().containment(),
+        Some(&target)
+    );
+    assert_eq!(
+        state.resource(&environment).unwrap().dependencies(),
+        std::slice::from_ref(&target)
+    );
+    assert_eq!(
+        state.resource(&application).unwrap().dependencies(),
+        std::slice::from_ref(&target)
+    );
+}
+
+#[test]
+fn state_move_rejects_missing_cross_kind_and_occupied_targets_without_mutation() {
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let source: ResourceAddress = "project.legacy".parse().unwrap();
+    let occupied: ResourceAddress = "project.main".parse().unwrap();
+    state
+        .upsert_resource(
+            source.clone(),
+            resource_state(ResourceKind::Project, "legacy-remote"),
+        )
+        .unwrap();
+    state
+        .upsert_resource(
+            occupied.clone(),
+            resource_state(ResourceKind::Project, "main-remote"),
+        )
+        .unwrap();
+    let original = state.clone();
+
+    state
+        .move_resource(&source, source.clone())
+        .expect("an identical address is already satisfied");
+    assert_eq!(state, original);
+    assert!(matches!(
+        state.move_resource(
+            &"project.missing".parse().unwrap(),
+            "project.new".parse().unwrap()
+        ),
+        Err(StateError::ResourceNotFound { .. })
+    ));
+    assert!(matches!(
+        state.move_resource(&source, "application.api".parse().unwrap()),
+        Err(StateError::MoveKindMismatch { .. })
+    ));
+    assert!(matches!(
+        state.move_resource(&source, occupied),
+        Err(StateError::ResourceAlreadyExists { .. })
+    ));
+    assert_eq!(state, original);
+}
+
+#[test]
+fn protection_changes_advance_once_and_identical_values_are_noops() {
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let address: ResourceAddress = "postgres.main".parse().unwrap();
+    state
+        .upsert_resource(
+            address.clone(),
+            resource_state(ResourceKind::Postgres, "postgres-remote"),
+        )
+        .unwrap();
+    let serial = state.serial();
+
+    assert!(state.set_resource_protection(&address, true).unwrap());
+    assert_eq!(state.serial(), serial + 1);
+    assert!(state.resource(&address).unwrap().is_protected());
+    assert!(!state.set_resource_protection(&address, true).unwrap());
+    assert_eq!(state.serial(), serial + 1);
+    assert!(matches!(
+        state.set_resource_protection(&"postgres.missing".parse().unwrap(), true),
+        Err(StateError::ResourceNotFound { .. })
+    ));
+}
+
+#[test]
+fn forget_is_state_only_idempotent_and_refuses_managed_dependents() {
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let project: ResourceAddress = "project.main".parse().unwrap();
+    let environment: ResourceAddress = "environment.production".parse().unwrap();
+    let application: ResourceAddress = "application.api".parse().unwrap();
+    state
+        .upsert_resource(
+            project.clone(),
+            resource_state(ResourceKind::Project, "project-remote"),
+        )
+        .unwrap();
+    state
+        .upsert_resource(
+            environment.clone(),
+            resource_state(ResourceKind::Environment, "environment-remote"),
+        )
+        .unwrap();
+    state
+        .upsert_resource(
+            application.clone(),
+            ResourceState::new(
+                ResourceKind::Application,
+                RemoteId::new("application-remote").unwrap(),
+                false,
+                ManagedInputs::try_from_json(json!({})).unwrap(),
+                Some(environment.clone()),
+                vec![project.clone()],
+            ),
+        )
+        .unwrap();
+    let original = state.clone();
+
+    let error = state
+        .forget_resource(&project)
+        .expect_err("containment and dependency references must guard forget");
+    assert_eq!(
+        error,
+        StateError::ResourceHasDependents {
+            address: project.clone(),
+            dependents: vec![application.clone(), environment.clone()],
+        }
+    );
+    assert_eq!(state, original);
+
+    state
+        .set_resource_protection(&application, true)
+        .expect("protection must not prevent state-only forget");
+    state.forget_resource(&application).unwrap();
+    let serial = state.serial();
+    assert!(state.forget_resource(&application).unwrap().is_none());
+    assert_eq!(state.serial(), serial);
+    assert!(state.resource(&application).is_none());
+}
+
+#[test]
+fn state_only_mutations_are_atomic_at_serial_overflow() {
+    let address: ResourceAddress = "project.main".parse().unwrap();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    state
+        .upsert_resource(
+            address.clone(),
+            resource_state(ResourceKind::Project, "project-remote"),
+        )
+        .unwrap();
+    let mut encoded = serde_json::to_value(&state).unwrap();
+    encoded["serial"] = json!(u64::MAX);
+    let saturated = StateFile::from_json_slice(&serde_json::to_vec(&encoded).unwrap()).unwrap();
+
+    let mut moved = saturated.clone();
+    assert_eq!(
+        moved.move_resource(&address, "project.renamed".parse().unwrap()),
+        Err(StateError::SerialOverflow)
+    );
+    assert_eq!(moved, saturated);
+
+    let mut protected = saturated.clone();
+    assert_eq!(
+        protected.set_resource_protection(&address, true),
+        Err(StateError::SerialOverflow)
+    );
+    assert_eq!(protected, saturated);
+
+    let mut forgotten = saturated.clone();
+    assert_eq!(
+        forgotten.forget_resource(&address),
+        Err(StateError::SerialOverflow)
+    );
+    assert_eq!(forgotten, saturated);
 }
 
 #[test]
