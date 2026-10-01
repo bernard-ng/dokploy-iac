@@ -187,6 +187,15 @@ durable state semantics.
   complete-replacement updates, delete-before-create replacement on target or
   storage-type change, explicit recovery, and protected import (ADR 0044). The
   disposable live acceptance never deploys a target.
+- External selector resolution is implemented for application server,
+  build-server, and registry associations (ADR 0045): typed local-or-named
+  selectors, fresh minimal collection reads with exact-name matching that
+  blocks zero or multiple matches, keyed saved-plan receipts that bind the
+  resolved identities, create-time placement with in-place nullable
+  associations and delete-before-create replacement on a changed placement, and
+  name-selector import. The resolver seam is kind-agnostic and already reads
+  backup destinations; wiring Backup destinations and Schedule server scopes
+  onto it remains.
 - Backups and schedules use the shared typed-target and external-selector
   model in ADR 0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,

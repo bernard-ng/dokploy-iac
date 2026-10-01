@@ -669,6 +669,42 @@ journals, and plan output. Cleanup proves the project and every observed Mount
 identity absent. The sanitization self-test proves the scanner fails on a
 seeded content canary and API key.
 
+## Live external selector resolution test
+
+Verify selector resolution and saved-plan binding against the pinned local
+instance:
+
+```bash
+scripts/integration/test-external-selectors-apply.sh
+```
+
+The Dokploy instance is shared, so serialize runs that share it with
+`.integration/live.lock`. Set `DOKPLOY_CARGO_CONFIG` to a Cargo configuration
+file to keep workspace artifacts private when several worktrees share one
+`target` directory.
+
+The check creates disposable servers (deploy and build), registries (including
+two with one name), and a backup destination. Servers and the destination point
+at a connection tripwire. `registry.create` runs `docker login` before it stores
+a registry, so registries point at a loopback `/v2/` responder; the run asserts
+that it saw only `GET /v2/` login probes and that the probe count never changes
+after the records exist. It then resolves the local selector and the named
+server, registry, and destination records, exact-name mismatches, and the
+ambiguous name through the real selector seam, and drives the declarative
+engine: an application created with a resolved server and build-server, registry
+associations updated and cleared in place, unmatched and ambiguous selectors
+blocking the plan and apply, a saved plan that applies while its resolution is
+unchanged and is refused after the selected registry is re-created under the
+same name, delete-before-create replacement on a changed server, the explicit
+local selector, and import that writes name selectors and fails closed on an
+ambiguous association. Every touched application must stay idle with zero
+deployments and the tripwire must record no connection. Saved-plan envelopes
+and imported workspaces must contain no external identity or selector name.
+Raw responses stay in a private directory that cleanup discards; cleanup removes
+the project and every record carrying the run prefix and proves their absence.
+Retained evidence is scanned for the API key, the fingerprint key, and every
+secret and identity canary.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector

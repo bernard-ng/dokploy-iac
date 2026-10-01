@@ -32,7 +32,9 @@ about ownership, drift, secrets, remote identity, and recovery.
   applications, application ports, redirects, and basic-auth security
   entries, Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL,
   Redis, domains, and mounts on applications, Compose services, and
-  databases.
+  databases. Application server, build-server, and registry associations select
+  external infrastructure by stable local-or-named selectors that are resolved
+  against fresh server and registry collections and bound into saved plans.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
 - Dedicated containment separate from general dependency ordering, persisted

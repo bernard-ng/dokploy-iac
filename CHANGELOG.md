@@ -43,6 +43,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add external selector resolution for application server, build-server, and
+  runtime, build, and rollback registry associations: a typed local-or-named
+  selector vocabulary with strict parsing, `DOKCFG029`-`DOKCFG031`, canonical
+  writing, and schema support; fresh minimal `server.all` and `registry.all`
+  reads with exact-name matching where zero or multiple matches block the plan
+  with `DOKPLAN019`; keyed saved-plan receipts that bind the resolved external
+  identities so a removed, renamed, duplicated, or re-created record invalidates
+  a saved plan; create-time server placement with in-place nullable registry
+  and build-server updates and delete-before-create replacement on a changed
+  placement; manual recovery when a selector stops resolving uniquely;
+  name-selector import; and a live acceptance with inert, tripwired external
+  records (ADR 0045).
 - Add end-to-end declarative Mount reconciliation for application, Compose,
   and database targets with a typed target union, bind, volume, and file
   sources, descriptor-only fingerprinted file content, target-scoped
