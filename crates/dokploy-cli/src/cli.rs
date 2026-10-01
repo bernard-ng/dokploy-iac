@@ -217,6 +217,7 @@ pub enum ImportKind {
     Security,
     Mount,
     Schedule,
+    Backup,
 }
 
 #[derive(Subcommand)]

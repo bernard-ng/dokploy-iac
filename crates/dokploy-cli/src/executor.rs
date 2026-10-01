@@ -33,6 +33,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::desired::{CompileDesiredError, ExternalExecutionId, compile_desired_for_instance};
 
+mod backup;
 mod mount;
 mod schedule;
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
@@ -330,6 +331,13 @@ async fn apply_workspace_with_expectation(
                 &mut journal,
             )
             .await?;
+            applied += 1;
+            change_index += 1;
+            continue;
+        }
+        if change.address().kind() == ResourceKind::Backup {
+            backup::execute_backup_create(client, &compiled, change, &mut state, &mut journal)
+                .await?;
             applied += 1;
             change_index += 1;
             continue;
@@ -745,6 +753,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Security
                     | ResourceKind::Mount
                     | ResourceKind::Schedule
+                    | ResourceKind::Backup
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
@@ -759,6 +768,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Security
                     | ResourceKind::Mount
                     | ResourceKind::Schedule
+                    | ResourceKind::Backup
                     | ResourceKind::Application
             ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
         }
@@ -1302,6 +1312,9 @@ async fn execute_removal_change(
     }
     if change.address().kind() == ResourceKind::Schedule && change.kind() == ChangeKind::Delete {
         return schedule::execute_schedule_delete(client, change, state, journal).await;
+    }
+    if change.kind() == ChangeKind::Delete && change.address().kind() == ResourceKind::Backup {
+        return backup::execute_backup_delete(client, change, state, journal).await;
     }
     let before = state
         .resource(change.address())
@@ -2592,6 +2605,11 @@ async fn execute_delete_before_create_replacement(
         return schedule::execute_schedule_replacement(client, compiled, change, state, journal)
             .await;
     }
+    if change.address().kind() == ResourceKind::Backup
+        && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return backup::execute_backup_replacement(client, compiled, change, state, journal).await;
+    }
     if change.address().kind() == ResourceKind::Application
         && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
     {
@@ -3094,6 +3112,9 @@ async fn execute_existing_change(
     }
     if change.address().kind() == ResourceKind::Schedule && change.kind() == ChangeKind::Update {
         return schedule::execute_schedule_update(client, compiled, change, state, journal).await;
+    }
+    if change.address().kind() == ResourceKind::Backup && change.kind() == ChangeKind::Update {
+        return backup::execute_backup_update(client, compiled, change, state, journal).await;
     }
 
     if !matches!(change.kind(), ChangeKind::Update | ChangeKind::Reparent) {

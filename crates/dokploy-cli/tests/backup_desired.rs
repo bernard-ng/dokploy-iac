@@ -183,8 +183,9 @@ fn ignored_in_place_properties_are_recorded_for_the_planner() {
     let compiled = compile_desired(&config, digest()).unwrap();
     let resource = &compiled.desired_state().resources()[&"backup.nightly".parse().unwrap()];
 
-    assert_eq!(
-        resource.ignored_changes(),
-        &[PropertyPath::Schedule, PropertyPath::Enabled]
-    );
+    let mut ignored = resource.ignored_changes().to_vec();
+    ignored.sort();
+    let mut expected = vec![PropertyPath::Schedule, PropertyPath::Enabled];
+    expected.sort();
+    assert_eq!(ignored, expected);
 }

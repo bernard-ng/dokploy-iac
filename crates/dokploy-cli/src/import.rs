@@ -25,6 +25,7 @@ use thiserror::Error;
 use crate::cli::ImportKind;
 use crate::external::ExternalDirectory;
 
+mod backup;
 mod mount;
 mod schedule;
 
@@ -321,6 +322,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Security => "security",
         ImportKind::Mount => "mount",
         ImportKind::Schedule => "schedule",
+        ImportKind::Backup => "backup",
     }
 }
 
@@ -649,6 +651,7 @@ async fn discover(
         }
         ImportKind::Mount => mount::discover_mount(client, remote_id, target).await,
         ImportKind::Schedule => schedule::discover_schedule(client, remote_id, target).await,
+        ImportKind::Backup => backup::discover_backup(client, remote_id, target).await,
     }
 }
 
@@ -1731,6 +1734,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Security => ResourceKind::Security,
         ImportKind::Mount => ResourceKind::Mount,
         ImportKind::Schedule => ResourceKind::Schedule,
+        ImportKind::Backup => ResourceKind::Backup,
     }
 }
 
@@ -1774,7 +1778,7 @@ pub enum ImportError {
     #[error("the remote resource topology is invalid")]
     InvalidRemoteTopology,
     #[error(
-        "an external server or registry association is unknown, unreadable, or has a name shared by another record"
+        "an external server, registry, or destination association is unknown, unreadable, or has a name shared by another record"
     )]
     ExternalAssociation,
     #[error("no importable resources are visible")]

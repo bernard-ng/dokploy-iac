@@ -2,7 +2,8 @@ mod support;
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    DiscoverRemoteError, DiscoveryAuthority, MountTopologyAuthority, discover_remote,
+    BackupTopologyAuthority, DiscoverRemoteError, DiscoveryAuthority, MountTopologyAuthority,
+    discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -206,6 +207,7 @@ async fn partial_authority_downgrades_absence_to_an_unavailable_observation() {
     let desired = desired("application.api", "/data", "api-data");
     let authority = DiscoveryAuthority {
         mounts: MountTopologyAuthority::Partial,
+        backups: BackupTopologyAuthority::Partial,
         ..DiscoveryAuthority::reconciliation()
     };
 
@@ -368,6 +370,7 @@ async fn direct_404_proves_absence_only_from_an_authoritative_collection() {
         &desired_value,
         DiscoveryAuthority {
             mounts: MountTopologyAuthority::Partial,
+            backups: BackupTopologyAuthority::Partial,
             ..DiscoveryAuthority::reconciliation()
         },
     )

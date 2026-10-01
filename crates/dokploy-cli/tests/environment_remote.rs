@@ -5,8 +5,8 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    ApplicationTopologyAuthority, ComposeTopologyAuthority, DiscoverRemoteError,
-    DiscoveryAuthority, DomainTopologyAuthority, EnvironmentTopologyAuthority,
+    ApplicationTopologyAuthority, BackupTopologyAuthority, ComposeTopologyAuthority,
+    DiscoverRemoteError, DiscoveryAuthority, DomainTopologyAuthority, EnvironmentTopologyAuthority,
     LibSqlTopologyAuthority, MariaDbTopologyAuthority, MongoTopologyAuthority,
     MountTopologyAuthority, MySqlTopologyAuthority, PortTopologyAuthority,
     PostgresTopologyAuthority, ProjectTopologyAuthority, RedisTopologyAuthority,
@@ -122,6 +122,7 @@ fn authoritative() -> DiscoveryAuthority {
         security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
         schedules: ScheduleTopologyAuthority::Authoritative,
         mounts: MountTopologyAuthority::Authoritative,
+        backups: BackupTopologyAuthority::Authoritative,
     }
 }
 
@@ -457,6 +458,7 @@ environments:
         security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
         schedules: ScheduleTopologyAuthority::Authoritative,
         mounts: MountTopologyAuthority::Authoritative,
+        backups: BackupTopologyAuthority::Authoritative,
     };
 
     let remote = discover_remote(&client, &desired, &state, authority)

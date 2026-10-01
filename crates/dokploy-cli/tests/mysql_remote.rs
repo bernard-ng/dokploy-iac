@@ -5,11 +5,12 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    ApplicationTopologyAuthority, ComposeTopologyAuthority, DiscoveryAuthority,
-    DomainTopologyAuthority, EnvironmentTopologyAuthority, LibSqlTopologyAuthority,
-    MariaDbTopologyAuthority, MongoTopologyAuthority, MountTopologyAuthority,
-    MySqlTopologyAuthority, PortTopologyAuthority, PostgresTopologyAuthority,
-    ProjectTopologyAuthority, RedisTopologyAuthority, ScheduleTopologyAuthority, discover_remote,
+    ApplicationTopologyAuthority, BackupTopologyAuthority, ComposeTopologyAuthority,
+    DiscoveryAuthority, DomainTopologyAuthority, EnvironmentTopologyAuthority,
+    LibSqlTopologyAuthority, MariaDbTopologyAuthority, MongoTopologyAuthority,
+    MountTopologyAuthority, MySqlTopologyAuthority, PortTopologyAuthority,
+    PostgresTopologyAuthority, ProjectTopologyAuthority, RedisTopologyAuthority,
+    ScheduleTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -113,6 +114,7 @@ fn authoritative() -> DiscoveryAuthority {
         security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
         schedules: ScheduleTopologyAuthority::Authoritative,
         mounts: MountTopologyAuthority::Authoritative,
+        backups: BackupTopologyAuthority::Authoritative,
     }
 }
 

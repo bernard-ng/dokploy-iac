@@ -15,9 +15,11 @@ use thiserror::Error;
 use crate::desired::CompiledDesired;
 use crate::external::ExternalDirectory;
 
+mod backup;
 mod leaf;
 mod mount;
 mod schedule;
+pub(crate) use backup::backup_target;
 pub(crate) use mount::{mount_service_target, mount_type_label};
 pub(crate) use schedule::{schedule_sdk_target, shell_label, stored_schedule_target};
 
@@ -165,6 +167,15 @@ pub enum ScheduleTopologyAuthority {
     Partial,
 }
 
+/// Whether an exact target's Backup collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackupTopologyAuthority {
+    /// Absence from the target's `backups` relation proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -200,6 +211,8 @@ pub struct DiscoveryAuthority {
     pub mounts: MountTopologyAuthority,
     /// Completeness of each exact target's Schedule collection.
     pub schedules: ScheduleTopologyAuthority,
+    /// Completeness of each exact database target's Backup collection.
+    pub backups: BackupTopologyAuthority,
 }
 
 impl DiscoveryAuthority {
@@ -223,6 +236,7 @@ impl DiscoveryAuthority {
             security: SecurityTopologyAuthority::Authoritative,
             mounts: MountTopologyAuthority::Authoritative,
             schedules: ScheduleTopologyAuthority::Authoritative,
+            backups: BackupTopologyAuthority::Authoritative,
         }
     }
 }
@@ -479,6 +493,21 @@ pub enum DiscoverRemoteError {
     /// Direct and authoritative target Schedule reads contradict each other.
     #[error("DOKREM094: Schedule read endpoints returned conflicting topology")]
     ScheduleTopologyConflict,
+    /// A Backup has no valid typed database target binding.
+    #[error("DOKREM100: Backup target binding is unavailable")]
+    BackupTarget,
+    /// A Backup physical identity does not satisfy the state contract.
+    #[error("DOKREM101: Backup topology contains an invalid remote identity")]
+    InvalidBackupId,
+    /// More than one Backup occupies one target-scoped collision key.
+    #[error("DOKREM102: Backup topology contains a duplicate target-scoped collision key")]
+    DuplicateBackupCollision,
+    /// More than one logical address resolves to the same Backup identity.
+    #[error("DOKREM103: Backup topology contains a duplicate remote identity")]
+    DuplicateBackupId,
+    /// Direct and authoritative target Backup reads contradict each other.
+    #[error("DOKREM104: Backup read endpoints returned conflicting topology")]
+    BackupTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -630,6 +659,16 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(schedules);
+    let backups = backup::discover_backup_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.backups,
+        &externals,
+    )
+    .await?;
+    observations.extend(backups);
 
     let resolutions = external_resolutions(compiled, &externals, &observations);
     remote_state_with_contracts(state.instance().clone(), observations)
