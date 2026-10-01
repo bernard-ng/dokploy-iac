@@ -433,20 +433,42 @@ impl Dokploy {
         &self,
         input: CreateApplication,
     ) -> Result<CreatedApplication, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                APPLICATION_CREATE.operation(),
+                "application create fields are invalid",
+            ));
+        }
+        let expected_server_placement = input.server_placement().cloned();
         let request = ApplicationCreateRequest {
             body: ApplicationCreateRequestBody {
-                name: input.name,
+                name: input.name.clone(),
                 app_name: None,
                 description: None,
                 environment_id: input.environment_id.as_str().to_owned(),
-                server_id: None,
+                server_id: expected_server_placement.as_ref().and_then(
+                    |placement| match placement {
+                        crate::ServerPlacement::Local => None,
+                        crate::ServerPlacement::Server(server_id) => {
+                            Some(server_id.as_str().to_owned())
+                        }
+                    },
+                ),
                 source_type: None,
             },
         };
         validate_generated_request(APPLICATION_CREATE, &request)?;
-        let response: ApplicationCreateResponse = self
-            .mutate_body_json(APPLICATION_CREATE, &request.body)
-            .await?;
+        let response: ApplicationCreateResponse =
+            self.mutate_body_json(APPLICATION_CREATE, &input).await?;
+        if response.application_id.as_str().is_empty()
+            || expected_server_placement
+                .as_ref()
+                .is_some_and(|placement| !placement.matches_response(&response.server_id))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: APPLICATION_CREATE.operation(),
+            });
+        }
 
         Ok(CreatedApplication::from_response(response))
     }
@@ -585,15 +607,11 @@ impl Dokploy {
         }
         let expected_environment_id = input.environment_id().clone();
         let expected_name = input.name().to_owned();
-        let expected_server_id = input.server_id().cloned();
+        let expected_server_placement = input.server_placement().cloned();
         let response: ComposeCreateResponse = self.mutate_body_json(COMPOSE_CREATE, &input).await?;
-        let server_matches = match expected_server_id {
-            Some(expected) => response.server_id == crate::ResponseField::Value(expected),
-            None => matches!(
-                response.server_id,
-                crate::ResponseField::NotReturned | crate::ResponseField::Null
-            ),
-        };
+        let server_matches = expected_server_placement
+            .as_ref()
+            .is_none_or(|placement| placement.matches_response(&response.server_id));
         if response.compose_id.as_str().is_empty()
             || response.environment_id != expected_environment_id
             || response.name != expected_name
@@ -1815,6 +1833,7 @@ impl Dokploy {
                 operation: LIBSQL_CREATE.operation(),
             });
         }
+        let expected_server_placement = input.server_placement().cloned();
 
         let created: bool = self.mutate_body_json(LIBSQL_CREATE, &input).await?;
         if !created {
@@ -1828,7 +1847,12 @@ impl Dokploy {
         let matches = after
             .libsql()
             .iter()
-            .filter(|libsql| libsql.name == input.name())
+            .filter(|libsql| {
+                libsql.name == input.name()
+                    && expected_server_placement
+                        .as_ref()
+                        .is_none_or(|placement| placement.matches_response(&libsql.server_id))
+            })
             .collect::<Vec<_>>();
         if let [created] = matches.as_slice() {
             return Ok(CreatedLibSql::new(created.libsql_id.clone()));
@@ -1913,7 +1937,17 @@ impl Dokploy {
                 "MongoDB create fields are invalid",
             ));
         }
+        let expected_server_placement = input.server_placement().cloned();
         let response: MongoCreateResponse = self.mutate_body_json(MONGO_CREATE, &input).await?;
+        if response.mongo_id.as_str().is_empty()
+            || expected_server_placement
+                .as_ref()
+                .is_some_and(|placement| !placement.matches_response(&response.server_id))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: MONGO_CREATE.operation(),
+            });
+        }
 
         Ok(CreatedMongo::from_response(response))
     }
@@ -2018,7 +2052,17 @@ impl Dokploy {
                 "MariaDB create fields are invalid",
             ));
         }
+        let expected_server_placement = input.server_placement().cloned();
         let response: MariaDbCreateResponse = self.mutate_body_json(MARIADB_CREATE, &input).await?;
+        if response.mariadb_id.as_str().is_empty()
+            || expected_server_placement
+                .as_ref()
+                .is_some_and(|placement| !placement.matches_response(&response.server_id))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: MARIADB_CREATE.operation(),
+            });
+        }
 
         Ok(CreatedMariaDb::from_response(response))
     }
@@ -2121,7 +2165,17 @@ impl Dokploy {
                 "MySQL create fields cannot be empty",
             ));
         }
+        let expected_server_placement = input.server_placement().cloned();
         let response: MySqlCreateResponse = self.mutate_body_json(MYSQL_CREATE, &input).await?;
+        if response.mysql_id.as_str().is_empty()
+            || expected_server_placement
+                .as_ref()
+                .is_some_and(|placement| !placement.matches_response(&response.server_id))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: MYSQL_CREATE.operation(),
+            });
+        }
 
         Ok(CreatedMySql::from_response(response))
     }
@@ -2226,8 +2280,18 @@ impl Dokploy {
                 "Postgres create fields cannot be empty",
             ));
         }
+        let expected_server_placement = input.server_placement().cloned();
         let response: PostgresCreateResponse =
             self.mutate_body_json(POSTGRES_CREATE, &input).await?;
+        if response.postgres_id.as_str().is_empty()
+            || expected_server_placement
+                .as_ref()
+                .is_some_and(|placement| !placement.matches_response(&response.server_id))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: POSTGRES_CREATE.operation(),
+            });
+        }
 
         Ok(CreatedPostgres::from_response(response))
     }
@@ -2328,7 +2392,17 @@ impl Dokploy {
                 "Redis create fields cannot be empty",
             ));
         }
+        let expected_server_placement = input.server_placement().cloned();
         let response: RedisCreateResponse = self.mutate_body_json(REDIS_CREATE, &input).await?;
+        if response.redis_id.as_str().is_empty()
+            || expected_server_placement
+                .as_ref()
+                .is_some_and(|placement| !placement.matches_response(&response.server_id))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: REDIS_CREATE.operation(),
+            });
+        }
 
         Ok(CreatedRedis::from_response(response))
     }

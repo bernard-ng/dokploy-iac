@@ -6,8 +6,8 @@ use std::thread::{self, JoinHandle};
 use dokploy_sdk::{
     ApplicationId, CreateApplication, CreateDomain, CreateEnvironment, CreatePostgres,
     CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId, Nullable, PostgresId, ProjectId,
-    RedisId, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres, UpdateProject,
-    UpdateRedis,
+    RedisId, ServerPlacement, UpdateApplication, UpdateDomain, UpdateEnvironment, UpdatePostgres,
+    UpdateProject, UpdateRedis,
 };
 use zeroize::Zeroizing;
 
@@ -193,10 +193,10 @@ async fn application_create_returns_its_physical_identity() {
     let created = server
         .client()
         .applications()
-        .create(CreateApplication::new(
-            "api",
-            EnvironmentId::new("environment-1"),
-        ))
+        .create(
+            CreateApplication::new("api", EnvironmentId::new("environment-1"))
+                .with_server_placement(ServerPlacement::Local),
+        )
         .await
         .expect("application creation succeeds");
 
@@ -212,9 +212,28 @@ async fn application_create_returns_its_physical_identity() {
         serde_json::from_str::<serde_json::Value>(body).expect("request body is JSON"),
         serde_json::json!({
             "name": "api",
-            "environmentId": "environment-1"
+            "environmentId": "environment-1",
+            "serverId": null
         })
     );
+
+    let missing_placement = TestServer::respond_with_json(r#"{"applicationId":"application-2"}"#);
+    let error = missing_placement
+        .client()
+        .applications()
+        .create(
+            CreateApplication::new("api", EnvironmentId::new("environment-1"))
+                .with_server_placement(ServerPlacement::Local),
+        )
+        .await
+        .expect_err("managed placement requires response evidence");
+    assert!(matches!(
+        error,
+        dokploy_sdk::Error::UnexpectedResponse {
+            operation: "application.create"
+        }
+    ));
+    missing_placement.finish();
 }
 
 #[tokio::test]

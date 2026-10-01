@@ -56,7 +56,53 @@ identifier!(ServerId);
 identifier!(RegistryId);
 identifier!(DestinationId);
 
+trait IdentifierValue {
+    fn identifier_value(&self) -> &str;
+}
+
+impl IdentifierValue for ServerId {
+    fn identifier_value(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl IdentifierValue for RegistryId {
+    fn identifier_value(&self) -> &str {
+        self.as_str()
+    }
+}
+
 const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32";
+
+/// Explicit physical placement selected when creating a service.
+///
+/// Leaving placement unset on a create input omits `serverId` and leaves the
+/// field unmanaged. Selecting [`Self::Local`] sends an explicit JSON null,
+/// while [`Self::Server`] sends one resolved external server identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServerPlacement {
+    /// Place the service on Dokploy's local server.
+    Local,
+    /// Place the service on one specific external Dokploy server.
+    Server(ServerId),
+}
+
+impl ServerPlacement {
+    pub(crate) fn is_valid(&self) -> bool {
+        match self {
+            Self::Local => true,
+            Self::Server(server_id) => !server_id.as_str().is_empty(),
+        }
+    }
+
+    pub(crate) fn matches_response(&self, field: &ResponseField<ServerId>) -> bool {
+        match (self, field) {
+            (Self::Local, ResponseField::Null) => true,
+            (Self::Server(expected), ResponseField::Value(actual)) => expected == actual,
+            _ => false,
+        }
+    }
+}
 
 /// Minimal non-sensitive server identity returned by `server.all`.
 ///
@@ -181,7 +227,7 @@ pub struct CreateCompose {
     description: Option<String>,
     compose_type: ComposeType,
     app_name: Option<String>,
-    server_id: Option<ServerId>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateCompose {
@@ -199,7 +245,7 @@ impl CreateCompose {
             description: None,
             compose_type: ComposeType::DockerCompose,
             app_name: None,
-            server_id: None,
+            server_placement: None,
         }
     }
 
@@ -224,11 +270,17 @@ impl CreateCompose {
         self
     }
 
-    /// Associates the Compose record with a specific Dokploy server.
+    /// Selects an explicit local or external server placement.
     #[must_use]
-    pub fn with_server(mut self, server_id: ServerId) -> Self {
-        self.server_id = Some(server_id);
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
         self
+    }
+
+    /// Associates the Compose record with a specific external Dokploy server.
+    #[must_use]
+    pub fn with_server(self, server_id: ServerId) -> Self {
+        self.with_server_placement(ServerPlacement::Server(server_id))
     }
 
     pub(crate) fn name(&self) -> &str {
@@ -239,8 +291,8 @@ impl CreateCompose {
         &self.environment_id
     }
 
-    pub(crate) const fn server_id(&self) -> Option<&ServerId> {
-        self.server_id.as_ref()
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
@@ -252,9 +304,9 @@ impl CreateCompose {
                 .as_ref()
                 .is_none_or(|value| valid_application_name(value))
             && self
-                .server_id
+                .server_placement
                 .as_ref()
-                .is_none_or(|value| !value.as_str().is_empty())
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -268,7 +320,7 @@ impl fmt::Debug for CreateCompose {
             .field("description", &self.description)
             .field("compose_type", &self.compose_type)
             .field("app_name", &self.app_name)
-            .field("server_id", &self.server_id)
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -282,7 +334,7 @@ impl Serialize for CreateCompose {
             "CreateCompose",
             5 + usize::from(self.description.is_some())
                 + usize::from(self.app_name.is_some())
-                + usize::from(self.server_id.is_some()),
+                + usize::from(self.server_placement.is_some()),
         )?;
         body.serialize_field("name", &self.name)?;
         if let Some(description) = &self.description {
@@ -293,8 +345,15 @@ impl Serialize for CreateCompose {
         if let Some(app_name) = &self.app_name {
             body.serialize_field("appName", app_name)?;
         }
-        if let Some(server_id) = &self.server_id {
-            body.serialize_field("serverId", server_id.as_str())?;
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
         }
         body.serialize_field("composeFile", self.compose_file.as_str())?;
         body.serialize_field("sourceType", "raw")?;
@@ -1981,6 +2040,7 @@ impl UpdateEnvironment {
 pub struct CreateApplication {
     pub(crate) name: String,
     pub(crate) environment_id: EnvironmentId,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateApplication {
@@ -1990,7 +2050,53 @@ impl CreateApplication {
         Self {
             name: name.into(),
             environment_id,
+            server_placement: None,
         }
+    }
+
+    /// Selects an explicit local or external server placement.
+    #[must_use]
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
+        self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && !self.environment_id.as_str().is_empty()
+            && self
+                .server_placement
+                .as_ref()
+                .is_none_or(ServerPlacement::is_valid)
+    }
+}
+
+impl Serialize for CreateApplication {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct(
+            "CreateApplication",
+            2 + usize::from(self.server_placement.is_some()),
+        )?;
+        body.serialize_field("name", &self.name)?;
+        body.serialize_field("environmentId", self.environment_id.as_str())?;
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
+        }
+        body.end()
     }
 }
 
@@ -2017,7 +2123,9 @@ impl CreatedApplication {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApplicationCreateResponse {
-    application_id: ApplicationId,
+    pub(crate) application_id: ApplicationId,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
 }
 
 /// A transient application environment document used only to preserve unowned entries.
@@ -2057,6 +2165,10 @@ pub struct UpdateApplication {
     branch: Option<Nullable<String>>,
     environment: Option<Nullable<Zeroizing<String>>>,
     environment_id: Option<EnvironmentId>,
+    build_server_id: Option<Nullable<ServerId>>,
+    registry_id: Option<Nullable<RegistryId>>,
+    build_registry_id: Option<Nullable<RegistryId>>,
+    rollback_registry_id: Option<Nullable<RegistryId>>,
 }
 
 impl UpdateApplication {
@@ -2072,6 +2184,10 @@ impl UpdateApplication {
             branch: None,
             environment: None,
             environment_id: None,
+            build_server_id: None,
+            registry_id: None,
+            build_registry_id: None,
+            rollback_registry_id: None,
         }
     }
 
@@ -2127,6 +2243,34 @@ impl UpdateApplication {
         self
     }
 
+    /// Selects or clears the external build server association.
+    #[must_use]
+    pub fn with_build_server(mut self, server_id: Nullable<ServerId>) -> Self {
+        self.build_server_id = Some(server_id);
+        self
+    }
+
+    /// Selects or clears the runtime image registry association.
+    #[must_use]
+    pub fn with_registry(mut self, registry_id: Nullable<RegistryId>) -> Self {
+        self.registry_id = Some(registry_id);
+        self
+    }
+
+    /// Selects or clears the build image registry association.
+    #[must_use]
+    pub fn with_build_registry(mut self, registry_id: Nullable<RegistryId>) -> Self {
+        self.build_registry_id = Some(registry_id);
+        self
+    }
+
+    /// Selects or clears the rollback image registry association.
+    #[must_use]
+    pub fn with_rollback_registry(mut self, registry_id: Nullable<RegistryId>) -> Self {
+        self.rollback_registry_id = Some(registry_id);
+        self
+    }
+
     pub(crate) fn is_valid(&self) -> bool {
         !self.application_id.as_str().is_empty()
             && (self.description.is_some()
@@ -2135,7 +2279,15 @@ impl UpdateApplication {
                 || self.repository.is_some()
                 || self.branch.is_some()
                 || self.environment.is_some()
-                || self.environment_id.is_some())
+                || self.environment_id.is_some()
+                || self.build_server_id.is_some()
+                || self.registry_id.is_some()
+                || self.build_registry_id.is_some()
+                || self.rollback_registry_id.is_some())
+            && nullable_identifier_is_valid(self.build_server_id.as_ref())
+            && nullable_identifier_is_valid(self.registry_id.as_ref())
+            && nullable_identifier_is_valid(self.build_registry_id.as_ref())
+            && nullable_identifier_is_valid(self.rollback_registry_id.as_ref())
     }
 }
 
@@ -2154,6 +2306,10 @@ impl fmt::Debug for UpdateApplication {
                 &self.environment.as_ref().map(|_| "[REDACTED]"),
             )
             .field("environment_id", &self.environment_id)
+            .field("build_server_id", &self.build_server_id)
+            .field("registry_id", &self.registry_id)
+            .field("build_registry_id", &self.build_registry_id)
+            .field("rollback_registry_id", &self.rollback_registry_id)
             .finish()
     }
 }
@@ -2171,6 +2327,10 @@ impl Serialize for UpdateApplication {
         fields += usize::from(self.branch.is_some());
         fields += usize::from(self.environment.is_some());
         fields += usize::from(self.environment_id.is_some());
+        fields += usize::from(self.build_server_id.is_some());
+        fields += usize::from(self.registry_id.is_some());
+        fields += usize::from(self.build_registry_id.is_some());
+        fields += usize::from(self.rollback_registry_id.is_some());
         let mut body = serializer.serialize_struct("UpdateApplication", fields)?;
         body.serialize_field("applicationId", self.application_id.as_str())?;
         if let Some(description) = &self.description {
@@ -2197,8 +2357,30 @@ impl Serialize for UpdateApplication {
         if let Some(environment_id) = &self.environment_id {
             body.serialize_field("environmentId", environment_id.as_str())?;
         }
+        if let Some(build_server_id) = &self.build_server_id {
+            body.serialize_field("buildServerId", build_server_id)?;
+        }
+        if let Some(registry_id) = &self.registry_id {
+            body.serialize_field("registryId", registry_id)?;
+        }
+        if let Some(build_registry_id) = &self.build_registry_id {
+            body.serialize_field("buildRegistryId", build_registry_id)?;
+        }
+        if let Some(rollback_registry_id) = &self.rollback_registry_id {
+            body.serialize_field("rollbackRegistryId", rollback_registry_id)?;
+        }
         body.end()
     }
+}
+
+fn nullable_identifier_is_valid<T>(value: Option<&Nullable<T>>) -> bool
+where
+    T: IdentifierValue,
+{
+    value.is_none_or(|value| match value {
+        Nullable::Null => true,
+        Nullable::Value(identifier) => !identifier.identifier_value().is_empty(),
+    })
 }
 
 /// Inputs required to create one Dokploy Postgres database.
@@ -2208,6 +2390,7 @@ pub struct CreatePostgres {
     database_name: String,
     database_user: String,
     database_password: Zeroizing<String>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreatePostgres {
@@ -2226,7 +2409,19 @@ impl CreatePostgres {
             database_name: database_name.into(),
             database_user: database_user.into(),
             database_password,
+            server_placement: None,
         }
+    }
+
+    /// Selects an explicit local or external server placement.
+    #[must_use]
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
+        self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
@@ -2235,6 +2430,10 @@ impl CreatePostgres {
             && !self.database_name.is_empty()
             && !self.database_user.is_empty()
             && !self.database_password.is_empty()
+            && self
+                .server_placement
+                .as_ref()
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -2247,6 +2446,7 @@ impl fmt::Debug for CreatePostgres {
             .field("database_name", &self.database_name)
             .field("database_user", &self.database_user)
             .field("database_password", &"[REDACTED]")
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -2256,12 +2456,25 @@ impl Serialize for CreatePostgres {
     where
         S: Serializer,
     {
-        let mut body = serializer.serialize_struct("CreatePostgres", 5)?;
+        let mut body = serializer.serialize_struct(
+            "CreatePostgres",
+            5 + usize::from(self.server_placement.is_some()),
+        )?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("environmentId", self.environment_id.as_str())?;
         body.serialize_field("databaseName", &self.database_name)?;
         body.serialize_field("databaseUser", &self.database_user)?;
         body.serialize_field("databasePassword", self.database_password.as_str())?;
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
+        }
         body.end()
     }
 }
@@ -2289,7 +2502,9 @@ impl CreatedPostgres {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PostgresCreateResponse {
-    postgres_id: PostgresId,
+    pub(crate) postgres_id: PostgresId,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
 }
 
 /// Owned Postgres fields written by one update.
@@ -2395,7 +2610,7 @@ pub struct CreateLibSql {
     database_password: Zeroizing<String>,
     node: LibSqlNode,
     enable_namespaces: bool,
-    server_id: Option<ServerId>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateLibSql {
@@ -2420,7 +2635,7 @@ impl CreateLibSql {
             database_password,
             node,
             enable_namespaces: false,
-            server_id: None,
+            server_placement: None,
         }
     }
 
@@ -2438,11 +2653,15 @@ impl CreateLibSql {
         self
     }
 
-    /// Associates the database with one Dokploy server at creation.
+    /// Selects an explicit local or external server placement.
     #[must_use]
-    pub fn with_server(mut self, server_id: ServerId) -> Self {
-        self.server_id = Some(server_id);
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
         self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn project_id(&self) -> &ProjectId {
@@ -2466,9 +2685,9 @@ impl CreateLibSql {
             && !self.database_password.is_empty()
             && self.node.is_valid()
             && self
-                .server_id
+                .server_placement
                 .as_ref()
-                .is_none_or(|server_id| !server_id.as_str().is_empty())
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -2485,7 +2704,7 @@ impl fmt::Debug for CreateLibSql {
             .field("database_password", &"[REDACTED]")
             .field("node", &self.node)
             .field("enable_namespaces", &self.enable_namespaces)
-            .field("server_id", &self.server_id)
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -2495,7 +2714,10 @@ impl Serialize for CreateLibSql {
     where
         S: Serializer,
     {
-        let mut body = serializer.serialize_struct("CreateLibSql", 11)?;
+        let mut body = serializer.serialize_struct(
+            "CreateLibSql",
+            10 + usize::from(self.server_placement.is_some()),
+        )?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("appName", &self.app_name)?;
         body.serialize_field("dockerImage", LIBSQL_DEFAULT_IMAGE)?;
@@ -2506,7 +2728,16 @@ impl Serialize for CreateLibSql {
         body.serialize_field("sqldNode", self.node.wire_name())?;
         body.serialize_field("sqldPrimaryUrl", &self.node.primary_url())?;
         body.serialize_field("enableNamespaces", &self.enable_namespaces)?;
-        body.serialize_field("serverId", &self.server_id.as_ref().map(ServerId::as_str))?;
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
+        }
         body.end()
     }
 }
@@ -2656,6 +2887,7 @@ pub struct CreateMongo {
     database_user: String,
     database_password: Zeroizing<String>,
     replica_sets: Option<bool>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateMongo {
@@ -2673,6 +2905,7 @@ impl CreateMongo {
             database_user: database_user.into(),
             database_password,
             replica_sets: None,
+            server_placement: None,
         }
     }
 
@@ -2681,6 +2914,17 @@ impl CreateMongo {
     pub fn with_replica_sets(mut self, replica_sets: bool) -> Self {
         self.replica_sets = Some(replica_sets);
         self
+    }
+
+    /// Selects an explicit local or external server placement.
+    #[must_use]
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
+        self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
@@ -2692,6 +2936,10 @@ impl CreateMongo {
                 .database_password
                 .chars()
                 .all(valid_database_password_character)
+            && self
+                .server_placement
+                .as_ref()
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -2704,6 +2952,7 @@ impl fmt::Debug for CreateMongo {
             .field("database_user", &self.database_user)
             .field("database_password", &"[REDACTED]")
             .field("replica_sets", &self.replica_sets)
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -2713,14 +2962,27 @@ impl Serialize for CreateMongo {
     where
         S: Serializer,
     {
-        let mut body = serializer
-            .serialize_struct("CreateMongo", 4 + usize::from(self.replica_sets.is_some()))?;
+        let mut body = serializer.serialize_struct(
+            "CreateMongo",
+            4 + usize::from(self.replica_sets.is_some())
+                + usize::from(self.server_placement.is_some()),
+        )?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("environmentId", self.environment_id.as_str())?;
         body.serialize_field("databaseUser", &self.database_user)?;
         body.serialize_field("databasePassword", self.database_password.as_str())?;
         if let Some(replica_sets) = self.replica_sets {
             body.serialize_field("replicaSets", &replica_sets)?;
+        }
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
         }
         body.end()
     }
@@ -2749,7 +3011,9 @@ impl CreatedMongo {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MongoCreateResponse {
-    mongo_id: MongoId,
+    pub(crate) mongo_id: MongoId,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
 }
 
 /// Owned non-secret MongoDB fields written by one update.
@@ -2876,6 +3140,7 @@ pub struct CreateMariaDb {
     database_user: String,
     database_password: Zeroizing<String>,
     database_root_password: Option<Zeroizing<String>>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateMariaDb {
@@ -2895,6 +3160,7 @@ impl CreateMariaDb {
             database_user: database_user.into(),
             database_password,
             database_root_password: None,
+            server_placement: None,
         }
     }
 
@@ -2903,6 +3169,17 @@ impl CreateMariaDb {
     pub fn with_root_password(mut self, database_root_password: Zeroizing<String>) -> Self {
         self.database_root_password = Some(database_root_password);
         self
+    }
+
+    /// Selects an explicit local or external server placement.
+    #[must_use]
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
+        self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
@@ -2918,6 +3195,10 @@ impl CreateMariaDb {
             && self.database_root_password.as_ref().is_none_or(|password| {
                 !password.is_empty() && password.chars().all(valid_database_password_character)
             })
+            && self
+                .server_placement
+                .as_ref()
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -2934,6 +3215,7 @@ impl fmt::Debug for CreateMariaDb {
                 "database_root_password",
                 &self.database_root_password.as_ref().map(|_| "[REDACTED]"),
             )
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -2945,7 +3227,8 @@ impl Serialize for CreateMariaDb {
     {
         let mut body = serializer.serialize_struct(
             "CreateMariaDb",
-            5 + usize::from(self.database_root_password.is_some()),
+            5 + usize::from(self.database_root_password.is_some())
+                + usize::from(self.server_placement.is_some()),
         )?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("environmentId", self.environment_id.as_str())?;
@@ -2954,6 +3237,16 @@ impl Serialize for CreateMariaDb {
         body.serialize_field("databasePassword", self.database_password.as_str())?;
         if let Some(database_root_password) = &self.database_root_password {
             body.serialize_field("databaseRootPassword", database_root_password.as_str())?;
+        }
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
         }
         body.end()
     }
@@ -2982,7 +3275,9 @@ impl CreatedMariaDb {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MariaDbCreateResponse {
-    mariadb_id: MariaDbId,
+    pub(crate) mariadb_id: MariaDbId,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
 }
 
 /// Owned non-secret MariaDB fields written by one update.
@@ -3144,6 +3439,7 @@ pub struct CreateMySql {
     database_user: String,
     database_password: Zeroizing<String>,
     database_root_password: Zeroizing<String>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateMySql {
@@ -3164,7 +3460,19 @@ impl CreateMySql {
             database_user: database_user.into(),
             database_password,
             database_root_password,
+            server_placement: None,
         }
+    }
+
+    /// Selects an explicit local or external server placement.
+    #[must_use]
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
+        self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
@@ -3174,6 +3482,10 @@ impl CreateMySql {
             && !self.database_user.is_empty()
             && !self.database_password.is_empty()
             && !self.database_root_password.is_empty()
+            && self
+                .server_placement
+                .as_ref()
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -3187,6 +3499,7 @@ impl fmt::Debug for CreateMySql {
             .field("database_user", &self.database_user)
             .field("database_password", &"[REDACTED]")
             .field("database_root_password", &"[REDACTED]")
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -3196,13 +3509,26 @@ impl Serialize for CreateMySql {
     where
         S: Serializer,
     {
-        let mut body = serializer.serialize_struct("CreateMySql", 6)?;
+        let mut body = serializer.serialize_struct(
+            "CreateMySql",
+            6 + usize::from(self.server_placement.is_some()),
+        )?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("environmentId", self.environment_id.as_str())?;
         body.serialize_field("databaseName", &self.database_name)?;
         body.serialize_field("databaseUser", &self.database_user)?;
         body.serialize_field("databasePassword", self.database_password.as_str())?;
         body.serialize_field("databaseRootPassword", self.database_root_password.as_str())?;
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
+        }
         body.end()
     }
 }
@@ -3230,7 +3556,9 @@ impl CreatedMySql {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MySqlCreateResponse {
-    mysql_id: MySqlId,
+    pub(crate) mysql_id: MySqlId,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
 }
 
 /// Owned non-secret MySQL fields written by one update.
@@ -3421,6 +3749,7 @@ pub struct CreateRedis {
     name: String,
     environment_id: EnvironmentId,
     database_password: Zeroizing<String>,
+    server_placement: Option<ServerPlacement>,
 }
 
 impl CreateRedis {
@@ -3435,13 +3764,29 @@ impl CreateRedis {
             name: name.into(),
             environment_id,
             database_password,
+            server_placement: None,
         }
+    }
+
+    /// Selects an explicit local or external server placement.
+    #[must_use]
+    pub fn with_server_placement(mut self, placement: ServerPlacement) -> Self {
+        self.server_placement = Some(placement);
+        self
+    }
+
+    pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
+        self.server_placement.as_ref()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
         !self.name.is_empty()
             && !self.environment_id.as_str().is_empty()
             && !self.database_password.is_empty()
+            && self
+                .server_placement
+                .as_ref()
+                .is_none_or(ServerPlacement::is_valid)
     }
 }
 
@@ -3452,6 +3797,7 @@ impl fmt::Debug for CreateRedis {
             .field("name", &self.name)
             .field("environment_id", &self.environment_id)
             .field("database_password", &"[REDACTED]")
+            .field("server_placement", &self.server_placement)
             .finish()
     }
 }
@@ -3461,10 +3807,23 @@ impl Serialize for CreateRedis {
     where
         S: Serializer,
     {
-        let mut body = serializer.serialize_struct("CreateRedis", 3)?;
+        let mut body = serializer.serialize_struct(
+            "CreateRedis",
+            3 + usize::from(self.server_placement.is_some()),
+        )?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("environmentId", self.environment_id.as_str())?;
         body.serialize_field("databasePassword", self.database_password.as_str())?;
+        if let Some(placement) = &self.server_placement {
+            match placement {
+                ServerPlacement::Local => {
+                    body.serialize_field("serverId", &Option::<&str>::None)?;
+                }
+                ServerPlacement::Server(server_id) => {
+                    body.serialize_field("serverId", server_id.as_str())?;
+                }
+            }
+        }
         body.end()
     }
 }
@@ -3492,7 +3851,9 @@ impl CreatedRedis {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RedisCreateResponse {
-    redis_id: RedisId,
+    pub(crate) redis_id: RedisId,
+    #[serde(default)]
+    pub(crate) server_id: ResponseField<ServerId>,
 }
 
 /// A write-only Redis password update.
@@ -3660,7 +4021,15 @@ pub struct ApplicationDetails {
     #[serde(default)]
     pub has_git_provider_access: Option<bool>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
+    #[serde(default)]
+    pub build_server_id: ResponseField<ServerId>,
+    #[serde(default)]
+    pub registry_id: ResponseField<RegistryId>,
+    #[serde(default)]
+    pub build_registry_id: ResponseField<RegistryId>,
+    #[serde(default)]
+    pub rollback_registry_id: ResponseField<RegistryId>,
     #[serde(default)]
     pub unauthorized_provider: Option<String>,
 }
@@ -4718,7 +5087,7 @@ pub struct PostgresDetails {
     #[serde(default)]
     pub external_port: Option<u16>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// A safe subset of the response returned by `libsql.one`.
@@ -4753,7 +5122,7 @@ pub struct LibSqlDetails {
     #[serde(default)]
     pub external_admin_port: Option<u16>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// One safe LibSQL entry embedded in an environment from `project.one`.
@@ -4768,7 +5137,7 @@ pub struct LibSqlSearchItem {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// Sparse LibSQL identity embedded by `project.all`.
@@ -4788,7 +5157,7 @@ pub struct LibSqlTopologySummary {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 impl LibSqlTopologySummary {
@@ -4845,7 +5214,7 @@ pub struct MariaDbDetails {
     #[serde(default)]
     pub external_port: Option<u16>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// A safe subset of the response returned by `mongo.one`.
@@ -4872,7 +5241,7 @@ pub struct MongoDetails {
     #[serde(default)]
     pub external_port: Option<u16>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// One safe MongoDB entry returned by `mongo.search`.
@@ -4961,7 +5330,7 @@ pub struct MySqlDetails {
     #[serde(default)]
     pub external_port: Option<u16>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// One safe MySQL entry returned by `mysql.search`.
@@ -5045,7 +5414,7 @@ pub struct RedisDetails {
     #[serde(default)]
     pub external_port: Option<u16>,
     #[serde(default)]
-    pub server_id: Option<ServerId>,
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// One safe Redis entry returned by `redis.search`.
@@ -5196,6 +5565,8 @@ pub struct ApplicationSummary {
     pub name: String,
     #[serde(default)]
     pub application_status: Option<String>,
+    #[serde(default)]
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// The role-dependent Postgres projection embedded in `project.all`.
@@ -5207,6 +5578,8 @@ pub struct PostgresSummary {
     pub name: Option<String>,
     #[serde(default)]
     pub application_status: Option<String>,
+    #[serde(default)]
+    pub server_id: ResponseField<ServerId>,
 }
 
 /// The role-dependent Redis projection embedded in `project.all`.
@@ -5218,6 +5591,8 @@ pub struct RedisSummary {
     pub name: Option<String>,
     #[serde(default)]
     pub application_status: Option<String>,
+    #[serde(default)]
+    pub server_id: ResponseField<ServerId>,
 }
 
 #[cfg(test)]
@@ -5236,7 +5611,11 @@ mod tests {
 
         assert_eq!(application.application_id.as_str(), "application-1");
         assert_eq!(application.environment_id.as_str(), "environment-1");
-        assert_eq!(application.server_id, None);
+        assert_eq!(application.server_id, ResponseField::Null);
+        assert_eq!(application.build_server_id, ResponseField::Null);
+        assert_eq!(application.registry_id, ResponseField::Null);
+        assert_eq!(application.build_registry_id, ResponseField::Null);
+        assert_eq!(application.rollback_registry_id, ResponseField::Null);
         assert_eq!(application.description, ResponseField::Null);
         assert_eq!(application.replicas, ResponseField::Value(1));
         assert_eq!(application.build_path, ResponseField::Value("/".to_owned()));
