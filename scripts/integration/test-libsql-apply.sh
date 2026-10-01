@@ -10,6 +10,8 @@ script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=common.sh
 source "$script_directory/common.sh"
+# shellcheck source=libsql-one-evidence.sh
+source "$script_directory/libsql-one-evidence.sh"
 
 api_key_file="$state_directory/api-key"
 expected_image='dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8'
@@ -72,13 +74,15 @@ cleanup() {
     local primary_status=$?
     local cleanup_status=0
     local lookup_status=0
-    local one_status=""
     local cleanup_project_id="$project_id"
     local state_file="$workspace/.dokploy/state.json"
 
     trap - EXIT
     set +e
     unset DOKPLOY_FINGERPRINT_KEY PHASE8_LIBSQL_PASSWORD
+    if ! discard_pending_libsql_raw_response; then
+        cleanup_status=1
+    fi
     if [[ -s "$state_file" ]]; then
         if [[ -z "$cleanup_project_id" ]]; then
             cleanup_project_id="$(jq -r --arg address "project.$project_name" '.resources[$address].remoteId // empty' "$state_file")"
@@ -121,8 +125,9 @@ cleanup() {
 
     for libsql_id in "$original_libsql_id" "$replacement_libsql_id"; do
         if [[ -n "$libsql_id" ]]; then
-            one_status="$(api_get "libsql.one?libsqlId=$(urlencode "$libsql_id")" "$workspace/cleanup-libsql-$libsql_id.json")"
-            if [[ "$?" -ne 0 || "$one_status" != "404" ]]; then
+            if ! capture_libsql_one_absence_evidence \
+                "libsql.one?libsqlId=$(urlencode "$libsql_id")" \
+                "$workspace/cleanup-libsql-$libsql_id.status"; then
                 echo "LibSQL cleanup could not prove database absence" >&2
                 cleanup_status=1
             fi
@@ -235,32 +240,10 @@ assert_direct_node() {
     local expected_node="$2"
     local label="$3"
     local response_file="$workspace/$label.json"
-    local sanitized_file=""
-    local status=""
 
-    status="$(api_get "libsql.one?libsqlId=$(urlencode "$libsql_id")" "$response_file")"
-    if [[ "$status" != "200" ]]; then
-        echo "libsql.one returned HTTP $status; expected 200" >&2
-        exit 1
-    fi
-    sanitized_file="$(mktemp "$workspace/$label.sanitized.XXXXXX")"
-    if ! jq '{libsqlId, sqldNode, applicationStatus}' "$response_file" >"$sanitized_file"; then
-        rm -f -- "$sanitized_file"
-        echo "libsql.one returned an invalid response" >&2
-        exit 1
-    fi
-    chmod 600 "$sanitized_file"
-    if ! jq -e '
-        (keys | sort) == ["applicationStatus", "libsqlId", "sqldNode"]
-        and (.libsqlId | type) == "string"
-        and (.sqldNode | type) == "string"
-        and (.applicationStatus | type) == "string"
-    ' "$sanitized_file" >/dev/null; then
-        rm -f -- "$sanitized_file"
-        echo "libsql.one returned an invalid response" >&2
-        exit 1
-    fi
-    mv -- "$sanitized_file" "$response_file"
+    capture_libsql_one_evidence \
+        "libsql.one?libsqlId=$(urlencode "$libsql_id")" \
+        "$response_file"
     if ! jq -e --arg id "$libsql_id" --arg node "$expected_node" '
         .libsqlId == $id and .sqldNode == $node and .applicationStatus == "idle"
     ' "$response_file" >/dev/null; then
@@ -313,8 +296,9 @@ if [[ "$replacement_libsql_id" == "$original_libsql_id" ]]; then
     echo "LibSQL node replacement retained the old physical identity" >&2
     exit 1
 fi
-old_status="$(api_get "libsql.one?libsqlId=$(urlencode "$original_libsql_id")" "$workspace/original-libsql.removed.json")"
-if [[ "$old_status" != "404" ]]; then
+if ! capture_libsql_one_absence_evidence \
+    "libsql.one?libsqlId=$(urlencode "$original_libsql_id")" \
+    "$workspace/original-libsql.removed.status"; then
     echo "the replaced LibSQL identity remains readable" >&2
     exit 1
 fi
@@ -336,9 +320,10 @@ EOF
 chmod 600 "$config_file"
 run_apply delete
 
-one_status="$(api_get "libsql.one?libsqlId=$(urlencode "$replacement_libsql_id")" "$workspace/replacement-libsql.removed.json")"
-if [[ "$one_status" != "404" ]]; then
-    echo "libsql.one returned HTTP $one_status after declarative deletion; expected 404" >&2
+if ! capture_libsql_one_absence_evidence \
+    "libsql.one?libsqlId=$(urlencode "$replacement_libsql_id")" \
+    "$workspace/replacement-libsql.removed.status"; then
+    echo "libsql.one did not prove absence after declarative deletion" >&2
     exit 1
 fi
 topology_status="$(api_get "project.one?projectId=$(urlencode "$project_id")" "$workspace/project-one.after-delete.json")"
