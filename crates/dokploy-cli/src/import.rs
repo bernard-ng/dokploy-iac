@@ -6,13 +6,15 @@ use std::path::{Path, PathBuf};
 use dokploy_config::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigWriteError, DomainDocument,
     EnvironmentDocument, Field, LibSqlDocument, LibSqlNodeConfig, LifecycleDocument,
-    MariaDbDocument, MongoDocument, MySqlDocument, PortDocument, PortNumber, PortProtocolConfig,
-    PortPublishModeConfig, PostgresDocument, RedisDocument, SourceDocument,
+    MariaDbDocument, MongoDocument, MySqlDocument, NonEmptyText, PortDocument, PortNumber,
+    PortProtocolConfig, PortPublishModeConfig, PostgresDocument, RedirectDocument, RedisDocument,
+    SecurityDocument, SourceDocument,
 };
 use dokploy_sdk::{
     ApplicationDetails, ApplicationId, ComposeId, Dokploy, DomainId, EnvironmentDetails,
     EnvironmentId, Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PortDetails, PortId,
-    PortProtocol, PostgresId, ProjectDetails, ProjectId, PublishMode, RedisId, ResponseField,
+    PortProtocol, PostgresId, ProjectDetails, ProjectId, PublishMode, RedirectDetails, RedirectId,
+    RedisId, ResponseField, SecurityDetails, SecurityId,
 };
 use dokploy_state::{
     ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -138,6 +140,30 @@ pub async fn select_with_prompter(
                             port.published_port,
                             port_protocol_label(port.protocol)
                         ),
+                    ));
+                }
+                for redirect in client
+                    .redirects()
+                    .by_application(application.application_id.clone())
+                    .await?
+                    .redirects()
+                {
+                    choices.push(ImportChoice::new(
+                        ImportKind::Redirect,
+                        redirect.redirect_id.as_str(),
+                        &redirect.regex,
+                    ));
+                }
+                for entry in client
+                    .security()
+                    .by_application(application.application_id.clone())
+                    .await?
+                    .entries()
+                {
+                    choices.push(ImportChoice::new(
+                        ImportKind::Security,
+                        entry.security_id.as_str(),
+                        &entry.username,
                     ));
                 }
             }
@@ -287,6 +313,8 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Redis => "redis",
         ImportKind::Domain => "domain",
         ImportKind::Port => "port",
+        ImportKind::Redirect => "redirect",
+        ImportKind::Security => "security",
     }
 }
 
@@ -530,7 +558,95 @@ async fn discover(
                 .await?;
             build_port(project, environment, application, port, target)
         }
+        ImportKind::Redirect => {
+            let requested_id = RedirectId::new(remote_id);
+            let redirect = client.redirects().get(requested_id.clone()).await?;
+            if redirect.redirect_id != requested_id {
+                return Err(ImportError::InvalidRemoteTopology);
+            }
+            let collection = client
+                .redirects()
+                .by_application(redirect.application_id.clone())
+                .await?;
+            validate_redirect_import_authority(&redirect, collection.redirects())?;
+            let application = client
+                .applications()
+                .get(redirect.application_id.clone())
+                .await?;
+            let environment = client
+                .environments()
+                .get(application.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_redirect(project, environment, application, redirect, target)
+        }
+        ImportKind::Security => {
+            let requested_id = SecurityId::new(remote_id);
+            let entry = client.security().get(requested_id.clone()).await?;
+            if entry.security_id != requested_id {
+                return Err(ImportError::InvalidRemoteTopology);
+            }
+            let collection = client
+                .security()
+                .by_application(entry.application_id.clone())
+                .await?;
+            validate_security_import_authority(&entry, collection.entries())?;
+            let application = client
+                .applications()
+                .get(entry.application_id.clone())
+                .await?;
+            let environment = client
+                .environments()
+                .get(application.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_security(project, environment, application, entry, target)
+        }
     }
+}
+
+fn validate_redirect_import_authority(
+    direct: &RedirectDetails,
+    collection: &[RedirectDetails],
+) -> Result<(), ImportError> {
+    let matching = collection
+        .iter()
+        .filter(|candidate| candidate.redirect_id == direct.redirect_id)
+        .collect::<Vec<_>>();
+    let collisions = collection
+        .iter()
+        .filter(|candidate| candidate.regex == direct.regex)
+        .count();
+    if matching.as_slice() != [direct] || collisions != 1 {
+        return Err(ImportError::InvalidRemoteTopology);
+    }
+
+    Ok(())
+}
+
+fn validate_security_import_authority(
+    direct: &SecurityDetails,
+    collection: &[SecurityDetails],
+) -> Result<(), ImportError> {
+    let matching = collection
+        .iter()
+        .filter(|candidate| candidate.security_id == direct.security_id)
+        .collect::<Vec<_>>();
+    let collisions = collection
+        .iter()
+        .filter(|candidate| candidate.username == direct.username)
+        .count();
+    if matching.as_slice() != [direct] || collisions != 1 {
+        return Err(ImportError::InvalidRemoteTopology);
+    }
+
+    Ok(())
 }
 
 fn validate_port_import_authority(
@@ -748,6 +864,145 @@ fn build_port(
                     serde_json::json!(port_protocol_label(port.protocol)),
                 ),
             ]),
+            Some(application_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
+fn build_redirect(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    application: ApplicationDetails,
+    redirect: RedirectDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let application_address = address(ResourceKind::Application, &application.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    let (mut application_config, application_inputs) = application_config(&application);
+    application_config.add_redirect(
+        target.name().clone(),
+        RedirectDocument {
+            regex: NonEmptyText::new(redirect.regex.clone())
+                .ok_or(ImportError::InvalidRemoteTopology)?,
+            replacement: NonEmptyText::new(redirect.replacement.clone())
+                .ok_or(ImportError::InvalidRemoteTopology)?,
+            permanent: redirect.permanent,
+            depends_on: Vec::new(),
+            lifecycle: LifecycleDocument {
+                protect: Field::Set(true),
+                ..LifecycleDocument::default()
+            },
+        },
+    )?;
+    environment_config.add_application(application_address.name().clone(), application_config)?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    imported.resources.push(ImportedResource {
+        address: application_address.clone(),
+        state: resource_state(
+            &application_address,
+            application.application_id.as_str(),
+            false,
+            application_inputs,
+            Some(environment_address),
+        )?,
+    });
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            redirect.redirect_id.as_str(),
+            true,
+            serde_json::Map::from_iter([
+                ("regex".to_owned(), serde_json::json!(redirect.regex)),
+                (
+                    "replacement".to_owned(),
+                    serde_json::json!(redirect.replacement),
+                ),
+                (
+                    "permanent".to_owned(),
+                    serde_json::json!(redirect.permanent),
+                ),
+            ]),
+            Some(application_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
+/// Imports the username and identity only. The password is never read into the
+/// document or state; it stays unmanaged until the operator declares a descriptor.
+fn build_security(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    application: ApplicationDetails,
+    entry: SecurityDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let application_address = address(ResourceKind::Application, &application.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    let (mut application_config, application_inputs) = application_config(&application);
+    application_config.add_security(
+        target.name().clone(),
+        SecurityDocument {
+            username: NonEmptyText::new(entry.username.clone())
+                .ok_or(ImportError::InvalidRemoteTopology)?,
+            password: Field::Unmanaged,
+            depends_on: Vec::new(),
+            lifecycle: LifecycleDocument {
+                protect: Field::Set(true),
+                ..LifecycleDocument::default()
+            },
+        },
+    )?;
+    environment_config.add_application(application_address.name().clone(), application_config)?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    imported.resources.push(ImportedResource {
+        address: application_address.clone(),
+        state: resource_state(
+            &application_address,
+            application.application_id.as_str(),
+            false,
+            application_inputs,
+            Some(environment_address),
+        )?,
+    });
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            entry.security_id.as_str(),
+            true,
+            serde_json::Map::from_iter([(
+                "username".to_owned(),
+                serde_json::json!(entry.username),
+            )]),
             Some(application_address),
         )?,
     });
@@ -1321,6 +1576,8 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Redis => ResourceKind::Redis,
         ImportKind::Domain => ResourceKind::Domain,
         ImportKind::Port => ResourceKind::Port,
+        ImportKind::Redirect => ResourceKind::Redirect,
+        ImportKind::Security => ResourceKind::Security,
     }
 }
 

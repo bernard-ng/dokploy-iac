@@ -13,6 +13,8 @@ use thiserror::Error;
 
 use crate::desired::CompiledDesired;
 
+mod leaf;
+
 /// Whether `project.all` is known to contain every project visible to reconciliation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectTopologyAuthority {
@@ -121,6 +123,24 @@ pub enum PortTopologyAuthority {
     Partial,
 }
 
+/// Whether an exact application's Redirect collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RedirectTopologyAuthority {
+    /// Absence from `application.one.redirects` proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
+/// Whether an exact application's Security collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SecurityTopologyAuthority {
+    /// Absence from `application.one.security` proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -148,6 +168,10 @@ pub struct DiscoveryAuthority {
     pub domains: DomainTopologyAuthority,
     /// Completeness of each exact application's Port collection.
     pub ports: PortTopologyAuthority,
+    /// Completeness of each exact application's Redirect collection.
+    pub redirects: RedirectTopologyAuthority,
+    /// Completeness of each exact application's Security collection.
+    pub security: SecurityTopologyAuthority,
 }
 
 impl DiscoveryAuthority {
@@ -167,6 +191,8 @@ impl DiscoveryAuthority {
             redis: RedisTopologyAuthority::Authoritative,
             domains: DomainTopologyAuthority::Authoritative,
             ports: PortTopologyAuthority::Authoritative,
+            redirects: RedirectTopologyAuthority::Authoritative,
+            security: SecurityTopologyAuthority::Authoritative,
         }
     }
 }
@@ -363,6 +389,36 @@ pub enum DiscoverRemoteError {
     /// Direct and authoritative parent Port reads contradict each other.
     #[error("DOKREM067: Port read endpoints returned conflicting topology")]
     PortTopologyConflict,
+    /// A Redirect has no unambiguous containing application.
+    #[error("DOKREM068: Redirect containment is unavailable")]
+    RedirectContainment,
+    /// A Redirect physical identity does not satisfy the state contract.
+    #[error("DOKREM069: Redirect topology contains an invalid remote identity")]
+    InvalidRedirectId,
+    /// More than one Redirect occupies one application-scoped regular expression.
+    #[error("DOKREM070: Redirect topology contains a duplicate regular expression")]
+    DuplicateRedirectCollision,
+    /// More than one logical address resolves to the same Redirect identity.
+    #[error("DOKREM071: Redirect topology contains a duplicate remote identity")]
+    DuplicateRedirectId,
+    /// Direct and authoritative parent Redirect reads contradict each other.
+    #[error("DOKREM072: Redirect read endpoints returned conflicting topology")]
+    RedirectTopologyConflict,
+    /// A Security entry has no unambiguous containing application.
+    #[error("DOKREM073: Security containment is unavailable")]
+    SecurityContainment,
+    /// A Security physical identity does not satisfy the state contract.
+    #[error("DOKREM074: Security topology contains an invalid remote identity")]
+    InvalidSecurityId,
+    /// More than one Security entry occupies one application-scoped username.
+    #[error("DOKREM075: Security topology contains a duplicate username")]
+    DuplicateSecurityCollision,
+    /// More than one logical address resolves to the same Security identity.
+    #[error("DOKREM076: Security topology contains a duplicate remote identity")]
+    DuplicateSecurityId,
+    /// Direct and authoritative parent Security reads contradict each other.
+    #[error("DOKREM077: Security read endpoints returned conflicting topology")]
+    SecurityTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -442,6 +498,26 @@ pub async fn discover_remote(
     let ports =
         discover_port_observations(client, compiled, state, &observations, authority.ports).await?;
     observations.extend(ports);
+    let redirects = leaf::discover_leaf_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        ResourceKind::Redirect,
+        authority.redirects == RedirectTopologyAuthority::Authoritative,
+    )
+    .await?;
+    observations.extend(redirects);
+    let security = leaf::discover_leaf_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        ResourceKind::Security,
+        authority.security == SecurityTopologyAuthority::Authoritative,
+    )
+    .await?;
+    observations.extend(security);
     let compose =
         discover_compose_observations(client, compiled, state, &observations, authority.compose)
             .await?;
@@ -572,6 +648,18 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .requiring(PropertyPath::PublishMode)
             .requiring(PropertyPath::Protocol)
             .with_default_property(in_place)
+            .with_containment(MutationMode::Replace),
+        ResourceKind::Redirect => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Regex)
+            .requiring(PropertyPath::Replacement)
+            .requiring(PropertyPath::Permanent)
+            .with_default_property(in_place)
+            .with_containment(MutationMode::Replace),
+        ResourceKind::Security => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Username)
+            .requiring(PropertyPath::Password)
+            .with_property(PropertyPath::Username, set_only)
+            .with_property(PropertyPath::Password, set_only)
             .with_containment(MutationMode::Replace),
     }
 }
@@ -2929,6 +3017,9 @@ fn application_properties(
             | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -2977,6 +3068,9 @@ fn compose_properties(
             | PropertyPath::RootPassword
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -3277,6 +3371,9 @@ fn postgres_properties(
             | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -3538,6 +3635,9 @@ fn mysql_properties(
             | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -3820,6 +3920,9 @@ fn mariadb_properties(
             | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -4103,6 +4206,9 @@ fn mongo_properties(
             | PropertyPath::EnvironmentVariable(_)
             | PropertyPath::ComposeDocument
             | PropertyPath::Node
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -4395,6 +4501,9 @@ fn libsql_properties(
             PropertyPath::Database
             | PropertyPath::RootPassword
             | PropertyPath::ReplicaSets
+            | PropertyPath::Regex
+            | PropertyPath::Replacement
+            | PropertyPath::Permanent
             | PropertyPath::Replicas
             | PropertyPath::Source
             | PropertyPath::SourceRepository

@@ -193,6 +193,85 @@ environments:
 }
 
 #[test]
+fn security_passwords_are_fingerprinted_and_bound_once_while_redirects_need_no_sources() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        redirects:
+          www:
+            regex: "^/old"
+            replacement: "/new"
+            permanent: true
+        security:
+          admin:
+            username: admin
+            password:
+              env: ADMIN_PASSWORD
+          viewer:
+            username: viewer
+"#,
+    )
+    .unwrap();
+    let resolver = RecordingSourceResolver {
+        environment: BTreeMap::from([(
+            "ADMIN_PASSWORD".to_owned(),
+            Ok(b"security-password-canary".to_vec()),
+        )]),
+        ..RecordingSourceResolver::default()
+    };
+    let loader = existing_fingerprinter_loader();
+    let workspace = tempfile::tempdir().unwrap();
+    let mut compiled = compile_for_instance_with(
+        &config,
+        digest('a'),
+        instance(),
+        workspace.path(),
+        &loader,
+        &resolver,
+    )
+    .unwrap();
+
+    assert_eq!(*resolver.calls.borrow(), ["env:ADMIN_PASSWORD"]);
+    let admin: ResourceAddress = "security.admin".parse().unwrap();
+    let viewer: ResourceAddress = "security.viewer".parse().unwrap();
+    assert!(matches!(
+        compiled.desired_state().resources()[&admin]
+            .properties()
+            .get(&PropertyPath::Password),
+        Some(OwnedValue::Sensitive(_))
+    ));
+    assert!(
+        compiled.desired_state().resources()[&viewer]
+            .properties()
+            .get(&PropertyPath::Password)
+            .is_none()
+    );
+    assert!(
+        compiled
+            .take_sensitive(&viewer, &PropertyPath::Password)
+            .is_none()
+    );
+    let value = compiled
+        .take_sensitive(&admin, &PropertyPath::Password)
+        .expect("a configured password has one execution binding");
+    assert_eq!(value.into_parts().0.as_slice(), b"security-password-canary");
+    assert!(
+        compiled
+            .take_sensitive(&admin, &PropertyPath::Password)
+            .is_none()
+    );
+
+    let debug = format!("{compiled:?} {:?}", compiled.desired_state());
+    assert!(!debug.contains("security-password-canary"));
+}
+
+#[test]
 fn literal_environment_and_file_sources_resolve_once_with_exact_untrimmed_bytes() {
     let config = DokployConfig::parse(
         r#"

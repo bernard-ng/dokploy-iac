@@ -89,6 +89,12 @@ pub enum PropertyPath {
     PublishMode,
     /// Transport protocol.
     Protocol,
+    /// Redirect regular expression, the application-scoped collision key.
+    Regex,
+    /// Redirect replacement expression.
+    Replacement,
+    /// Whether a Redirect is permanent.
+    Permanent,
     /// Deployment status, valid only in lifecycle metadata.
     DeploymentStatus,
 }
@@ -170,6 +176,10 @@ impl PropertyPath {
                 self,
                 Self::PublishedPort | Self::TargetPort | Self::PublishMode | Self::Protocol
             ),
+            ResourceKind::Redirect => {
+                matches!(self, Self::Regex | Self::Replacement | Self::Permanent)
+            }
+            ResourceKind::Security => matches!(self, Self::Username | Self::Password),
         }
     }
 }
@@ -199,6 +209,9 @@ impl fmt::Display for PropertyPath {
             Self::TargetPort => formatter.write_str("target_port"),
             Self::PublishMode => formatter.write_str("publish_mode"),
             Self::Protocol => formatter.write_str("protocol"),
+            Self::Regex => formatter.write_str("regex"),
+            Self::Replacement => formatter.write_str("replacement"),
+            Self::Permanent => formatter.write_str("permanent"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
         }
     }
@@ -228,6 +241,9 @@ impl FromStr for PropertyPath {
             "target_port" => Ok(Self::TargetPort),
             "publish_mode" => Ok(Self::PublishMode),
             "protocol" => Ok(Self::Protocol),
+            "regex" => Ok(Self::Regex),
+            "replacement" => Ok(Self::Replacement),
+            "permanent" => Ok(Self::Permanent),
             "deployment.status" => Ok(Self::DeploymentStatus),
             _ => {
                 let Some(name) = value.strip_prefix("environment.") else {

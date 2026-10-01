@@ -581,6 +581,22 @@ environments:
           env: {canary}
 "#
         ),
+        format!(
+            r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        security:
+          admin:
+            username: admin
+            password:
+              env: {canary}
+"#
+        ),
     ];
 
     for yaml in cases {
@@ -642,4 +658,87 @@ environments:
         Some(&value(serde_json::json!("tcp")))
     );
     assert_eq!(port.containment().unwrap().to_string(), "application.api");
+}
+
+#[test]
+fn compiles_complete_redirect_ownership_and_application_containment() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        redirects:
+          www:
+            regex: "^/old/(.*)"
+            replacement: "/new/${1}"
+            permanent: false
+"#,
+    )
+    .expect("valid nested Redirect configuration");
+
+    let compiled = compile_desired(&config, digest()).expect("Redirect desired state compiles");
+    let address = "redirect.www".parse().unwrap();
+    let redirect = &compiled.desired_state().resources()[&address];
+
+    assert_eq!(
+        redirect.properties().get(&PropertyPath::Regex),
+        Some(&value(serde_json::json!("^/old/(.*)")))
+    );
+    assert_eq!(
+        redirect.properties().get(&PropertyPath::Replacement),
+        Some(&value(serde_json::json!("/new/${1}")))
+    );
+    assert_eq!(
+        redirect.properties().get(&PropertyPath::Permanent),
+        Some(&value(serde_json::json!(false)))
+    );
+    assert_eq!(
+        redirect.containment().unwrap().to_string(),
+        "application.api"
+    );
+    assert_eq!(
+        compiled.bindings().redirect_regex(&address),
+        Some("^/old/(.*)")
+    );
+}
+
+#[test]
+fn compiles_security_username_and_leaves_an_unmanaged_password_unowned() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        security:
+          admin:
+            username: admin
+"#,
+    )
+    .expect("valid nested Security configuration");
+
+    let compiled = compile_desired(&config, digest()).expect("unmanaged password compiles offline");
+    let address = "security.admin".parse().unwrap();
+    let security = &compiled.desired_state().resources()[&address];
+
+    assert_eq!(
+        security.properties().get(&PropertyPath::Username),
+        Some(&value(serde_json::json!("admin")))
+    );
+    assert!(security.properties().get(&PropertyPath::Password).is_none());
+    assert_eq!(
+        security.containment().unwrap().to_string(),
+        "application.api"
+    );
+    assert_eq!(
+        compiled.bindings().security_username(&address),
+        Some("admin")
+    );
 }

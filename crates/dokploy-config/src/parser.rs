@@ -8,12 +8,12 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 use crate::model::{
     ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
     LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PortConfig, PostgresConfig,
-    ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
-    ValidationIssue, address,
+    ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, SecurityConfig, SourceLocation,
+    ValidationDiagnostic, ValidationIssue, address,
 };
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, PortNumber, PortProtocolConfig,
-    PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
+    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, NonEmptyText, PortNumber,
+    PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
 };
 
 type ResourceTables<'a> = (
@@ -111,6 +111,12 @@ struct RawApplication {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawPort>")]
     ports: BTreeMap<String, Spanned<RawPort>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawRedirect>")]
+    redirects: BTreeMap<String, Spanned<RawRedirect>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawSecurity>")]
+    security: BTreeMap<String, Spanned<RawSecurity>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -120,6 +126,32 @@ struct RawPort {
     target_port: PortNumber,
     publish_mode: PortPublishModeConfig,
     protocol: PortProtocolConfig,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawRedirect {
+    regex: NonEmptyText,
+    replacement: NonEmptyText,
+    permanent: bool,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawSecurity {
+    username: NonEmptyText,
+    #[serde(default)]
+    password: Field<SecretSource>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -422,6 +454,55 @@ impl DokployConfig {
                         &mut diagnostics,
                     );
                 }
+
+                for (name, raw_redirect) in raw_config.redirects {
+                    let redirect_location = source_location(raw_redirect.defined);
+                    let raw_redirect = raw_redirect.value;
+                    let redirect_address = address(
+                        ResourceKind::Redirect,
+                        name,
+                        redirect_location,
+                        &mut diagnostics,
+                    );
+                    insert_child_resource(
+                        (&mut resources, &mut parents, &mut locations),
+                        redirect_address,
+                        application_address.as_ref(),
+                        ResourceConfig::Redirect(RedirectConfig {
+                            regex: raw_redirect.regex,
+                            replacement: raw_redirect.replacement,
+                            permanent: raw_redirect.permanent,
+                            depends_on: raw_redirect.depends_on,
+                            lifecycle: raw_redirect.lifecycle,
+                        }),
+                        redirect_location,
+                        &mut diagnostics,
+                    );
+                }
+
+                for (name, raw_security) in raw_config.security {
+                    let security_location = source_location(raw_security.defined);
+                    let raw_security = raw_security.value;
+                    let security_address = address(
+                        ResourceKind::Security,
+                        name,
+                        security_location,
+                        &mut diagnostics,
+                    );
+                    insert_child_resource(
+                        (&mut resources, &mut parents, &mut locations),
+                        security_address,
+                        application_address.as_ref(),
+                        ResourceConfig::Security(SecurityConfig {
+                            username: raw_security.username,
+                            password: raw_security.password,
+                            depends_on: raw_security.depends_on,
+                            lifecycle: raw_security.lifecycle,
+                        }),
+                        security_location,
+                        &mut diagnostics,
+                    );
+                }
             }
 
             for (name, raw_config) in environment.compose {
@@ -688,6 +769,8 @@ fn validate_resources(
 ) {
     let addresses: BTreeSet<_> = resources.keys().cloned().collect();
     let mut port_collisions = BTreeSet::new();
+    let mut redirect_collisions = BTreeSet::new();
+    let mut security_collisions = BTreeSet::new();
 
     for (address, config) in resources.iter_mut() {
         let location = locations
@@ -822,6 +905,40 @@ fn validate_resources(
             }
         }
 
+        if let ResourceConfig::Redirect(redirect) = config {
+            let parent = parents
+                .get(address)
+                .expect("nested Redirect resources always have an application parent");
+            if !redirect_collisions.insert((parent.clone(), redirect.regex.as_str().to_owned())) {
+                emit(
+                    diagnostics,
+                    ValidationIssue::DuplicateRedirectCollision,
+                    location,
+                );
+            }
+        }
+
+        if let ResourceConfig::Security(security) = config {
+            let parent = parents
+                .get(address)
+                .expect("nested Security resources always have an application parent");
+            if !security_collisions.insert((parent.clone(), security.username.as_str().to_owned()))
+            {
+                emit(
+                    diagnostics,
+                    ValidationIssue::DuplicateSecurityCollision,
+                    location,
+                );
+            }
+            if matches!(security.password, Field::Clear) {
+                emit(
+                    diagnostics,
+                    ValidationIssue::SecurityPasswordCannotBeCleared,
+                    location,
+                );
+            }
+        }
+
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
     }
@@ -923,7 +1040,9 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Compose
         | ResourceKind::LibSql
         | ResourceKind::Domain
-        | ResourceKind::Port => false,
+        | ResourceKind::Port
+        | ResourceKind::Redirect
+        | ResourceKind::Security => false,
     }
 }
 
@@ -951,6 +1070,8 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
             value.as_str(),
             "published_port" | "target_port" | "publish_mode" | "protocol"
         ),
+        ResourceKind::Redirect => matches!(value.as_str(), "regex" | "replacement" | "permanent"),
+        ResourceKind::Security => value == "username",
     }
 }
 

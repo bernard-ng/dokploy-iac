@@ -3417,3 +3417,513 @@ fn domain_configuration(destroy: Option<bool>) -> String {
 
     configuration
 }
+
+const LEAF_PROJECT_TOPOLOGY: &str = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"postgres":[],"redis":[]}]}]"#;
+const LEAF_ENVIRONMENT_COLLECTION: &str =
+    r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+const LEAF_ENVIRONMENT: &str =
+    r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+const LEAF_APPLICATION_COLLECTION: &str = r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#;
+const LEAF_APPLICATION: &str = r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#;
+
+/// Responses for creating the project and application of a fresh workspace.
+fn leaf_bootstrap_responses() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+    ]
+}
+
+/// Responses for the shared topology prefix of a later discovery.
+fn leaf_topology_responses() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("200 OK", LEAF_PROJECT_TOPOLOGY),
+        ("200 OK", LEAF_ENVIRONMENT_COLLECTION),
+        ("200 OK", LEAF_ENVIRONMENT),
+        ("200 OK", LEAF_APPLICATION_COLLECTION),
+        ("200 OK", LEAF_APPLICATION),
+    ]
+}
+
+fn redirect_configuration(replacement: &str, permanent: bool) -> String {
+    format!(
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        redirects:\n",
+            "          www:\n",
+            "            regex: \"^/old\"\n",
+            "            replacement: \"{}\"\n",
+            "            permanent: {}\n",
+        ),
+        replacement, permanent,
+    )
+}
+
+const REDIRECT_EMPTY: &str = r#"{"applicationId":"application-1","redirects":[]}"#;
+const REDIRECT_OLD: &str = r#"{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/new","permanent":true}"#;
+const REDIRECT_OLD_COLLECTION: &str = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/new","permanent":true}]}"#;
+const REDIRECT_NEW_COLLECTION: &str = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/newer","permanent":false}]}"#;
+
+#[tokio::test]
+async fn redirect_create_discovers_its_identity_and_never_deploys() {
+    let mut responses = leaf_bootstrap_responses();
+    responses.extend([
+        ("200 OK", REDIRECT_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+    ]);
+    let server = TestServer::respond_in_sequence(responses);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, redirect_configuration("/new", true))
+        .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("Redirect creation succeeds");
+
+    assert_eq!(summary.applied(), 4);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    let redirect: ResourceAddress = "redirect.www".parse().expect("address is valid");
+    let created = state.resource(&redirect).expect("Redirect is checkpointed");
+    assert_eq!(created.remote_id().as_str(), "redirect-1");
+    assert_eq!(
+        created.last_applied().as_json(),
+        &serde_json::json!({"regex": "^/old", "replacement": "/new", "permanent": true})
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(requests[4].starts_with("POST /api/redirects.create HTTP/1.1\r\n"));
+    assert!(requests[4].contains(r#""applicationId":"application-1""#));
+    assert!(requests[4].contains(r#""regex":"^/old""#));
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn redirect_update_uses_a_fresh_read_and_complete_replacement_without_deploying() {
+    let mut responses = leaf_bootstrap_responses();
+    responses.extend([
+        ("200 OK", REDIRECT_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+    ]);
+    // Discovery: parent collection, direct read, and its collection agreement.
+    responses.extend(leaf_topology_responses());
+    responses.extend([
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+    ]);
+    // Executor preparation: fresh direct read, agreement, collision collection.
+    responses.extend([
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+    ]);
+    // SDK update: its own fresh read, the mutation, and the proof read.
+    responses.extend([
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", REDIRECT_NEW_COLLECTION),
+    ]);
+    let server = TestServer::respond_in_sequence(responses);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, redirect_configuration("/new", true))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Redirect creation succeeds");
+    fs::write(&config, redirect_configuration("/newer", false))
+        .expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Redirect update succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 21);
+    assert!(requests[17].starts_with("GET /api/redirects.one?redirectId=redirect-1"));
+    assert!(requests[19].starts_with("POST /api/redirects.update HTTP/1.1\r\n"));
+    for expected in [
+        r#""redirectId":"redirect-1""#,
+        r#""regex":"^/old""#,
+        r#""replacement":"/newer""#,
+        r#""permanent":false"#,
+    ] {
+        assert!(requests[19].contains(expected), "{expected}");
+    }
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn redirect_containment_change_deletes_before_creating_under_the_new_application() {
+    let application_api = r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#;
+    let application_worker = r#"{"applicationId":"application-2","environmentId":"environment-1","name":"worker","appName":"worker"}"#;
+    let topology = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"},{"applicationId":"application-2","environmentId":"environment-1","name":"worker"}],"postgres":[],"redis":[]}]}]"#;
+    let applications = r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"},{"applicationId":"application-2","environmentId":"environment-1","name":"worker"}],"total":2}"#;
+    let worker_empty = r#"{"applicationId":"application-2","redirects":[]}"#;
+    let worker_collection = r#"{"applicationId":"application-2","redirects":[{"redirectId":"redirect-2","applicationId":"application-2","regex":"^/old","replacement":"/new","permanent":true}]}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", application_api),
+        ("200 OK", application_worker),
+        ("200 OK", REDIRECT_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        // Discovery.
+        ("200 OK", topology),
+        ("200 OK", LEAF_ENVIRONMENT_COLLECTION),
+        ("200 OK", LEAF_ENVIRONMENT),
+        ("200 OK", applications),
+        ("200 OK", application_api),
+        ("200 OK", application_worker),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", worker_empty),
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        // Delete: fresh read, agreement, mutation, absence proof.
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", REDIRECT_EMPTY),
+        // Create under the worker.
+        ("200 OK", worker_empty),
+        ("200 OK", "true"),
+        ("200 OK", worker_collection),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    let configuration = |under_worker: bool| {
+        let redirect = concat!(
+            "        redirects:\n",
+            "          www:\n",
+            "            regex: \"^/old\"\n",
+            "            replacement: \"/new\"\n",
+            "            permanent: true\n",
+        );
+        let (api, worker) = if under_worker {
+            (
+                String::from("      api: {}\n"),
+                format!("      worker:\n{redirect}"),
+            )
+        } else {
+            (
+                format!("      api:\n{redirect}"),
+                String::from("      worker: {}\n"),
+            )
+        };
+        format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n{api}{worker}"
+        )
+    };
+    fs::write(&config, configuration(false)).expect("initial configuration is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Redirect creation succeeds");
+    fs::write(&config, configuration(true)).expect("moved configuration is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Redirect containment replacement succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 24);
+    assert!(requests[19].starts_with("POST /api/redirects.delete HTTP/1.1\r\n"));
+    assert!(requests[22].starts_with("POST /api/redirects.create HTTP/1.1\r\n"));
+    assert!(requests[22].contains(r#""applicationId":"application-2""#));
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn removed_redirect_is_deleted_and_forgotten_durably() {
+    let mut responses = leaf_bootstrap_responses();
+    responses.extend([
+        ("200 OK", REDIRECT_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+    ]);
+    responses.extend(leaf_topology_responses());
+    responses.extend([
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        // SDK delete: fresh read, agreement, mutation, absence proof.
+        ("200 OK", REDIRECT_OLD),
+        ("200 OK", REDIRECT_OLD_COLLECTION),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", REDIRECT_EMPTY),
+    ]);
+    let server = TestServer::respond_in_sequence(responses);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(&config, redirect_configuration("/new", true))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Redirect creation succeeds");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api: {}\n",
+            "removed:\n",
+            "  - from: redirect.www\n",
+            "    destroy: true\n",
+        ),
+    )
+    .expect("removal configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Redirect deletion succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store.inspect().unwrap().unwrap();
+    assert!(state.resource(&"redirect.www".parse().unwrap()).is_none());
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 18);
+    assert!(requests[16].starts_with("POST /api/redirects.delete HTTP/1.1\r\n"));
+    assert!(requests[16].contains(r#""redirectId":"redirect-1""#));
+}
+
+const SECURITY_EMPTY: &str = r#"{"applicationId":"application-1","security":[]}"#;
+const SECURITY_OLD: &str = r#"{"securityId":"security-1","applicationId":"application-1","username":"admin","password":"remote-password-canary"}"#;
+const SECURITY_OLD_COLLECTION: &str = r#"{"applicationId":"application-1","security":[{"securityId":"security-1","applicationId":"application-1","username":"admin","password":"remote-password-canary"}]}"#;
+const SECURITY_NEW_COLLECTION: &str = r#"{"applicationId":"application-1","security":[{"securityId":"security-1","applicationId":"application-1","username":"root","password":"security-rotated-password-canary"}]}"#;
+
+fn security_configuration(username: &str, password_file: Option<&str>) -> String {
+    let password = password_file.map_or_else(String::new, |path| {
+        format!("            password:\n              file: {path}\n")
+    });
+    format!(
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        security:\n",
+            "          admin:\n",
+            "            username: {}\n",
+            "{}",
+        ),
+        username, password,
+    )
+}
+
+fn security_secrets(directory: &std::path::Path, password: &str) {
+    let secrets = directory.join(".secrets");
+    fs::create_dir_all(&secrets).expect("secret fixture directory is writable");
+    fs::write(secrets.join("admin"), password).expect("secret fixture is writable");
+}
+
+#[tokio::test]
+async fn security_create_sends_the_password_once_and_never_persists_it() {
+    let mut responses = leaf_bootstrap_responses();
+    responses.extend([
+        ("200 OK", SECURITY_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+    ]);
+    let server = TestServer::respond_in_sequence(responses);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    security_secrets(directory.path(), "security-create-password-canary");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        security_configuration("admin", Some(".secrets/admin")),
+    )
+    .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("Security creation succeeds");
+
+    assert_eq!(summary.applied(), 4);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    let security: ResourceAddress = "security.admin".parse().expect("address is valid");
+    let created = state.resource(&security).expect("entry is checkpointed");
+    assert_eq!(created.remote_id().as_str(), "security-1");
+    assert_eq!(
+        created.last_applied().as_json(),
+        &serde_json::json!({"username": "admin"})
+    );
+    let state_json = serde_json::to_string(&state).unwrap();
+    assert!(!state_json.contains("security-create-password-canary"));
+    assert!(!state_json.contains("remote-password-canary"));
+    let journal = operation_journal(directory.path());
+    assert!(!journal.contains("security-create-password-canary"));
+    assert!(!journal.contains("remote-password-canary"));
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(requests[4].starts_with("POST /api/security.create HTTP/1.1\r\n"));
+    assert!(requests[4].contains(r#""password":"security-create-password-canary""#));
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn security_rotation_sends_complete_credentials_and_stays_secret_free() {
+    let mut responses = leaf_bootstrap_responses();
+    responses.extend([
+        ("200 OK", SECURITY_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+    ]);
+    responses.extend(leaf_topology_responses());
+    responses.extend([
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        ("200 OK", SECURITY_OLD),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        // Executor preparation.
+        ("200 OK", SECURITY_OLD),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        // SDK update with its credential proof read.
+        ("200 OK", SECURITY_OLD),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", SECURITY_NEW_COLLECTION),
+    ]);
+    let server = TestServer::respond_in_sequence(responses);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    security_secrets(directory.path(), "security-initial-password-canary");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        security_configuration("admin", Some(".secrets/admin")),
+    )
+    .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Security creation succeeds");
+    security_secrets(directory.path(), "security-rotated-password-canary");
+    fs::write(
+        &config,
+        security_configuration("root", Some(".secrets/admin")),
+    )
+    .expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Security update succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    let state_json = serde_json::to_string(&state).unwrap();
+    for canary in [
+        "security-initial-password-canary",
+        "security-rotated-password-canary",
+        "remote-password-canary",
+    ] {
+        assert!(!state_json.contains(canary));
+        assert!(!operation_journal(directory.path()).contains(canary));
+    }
+    let requests = server.finish();
+    assert_eq!(requests.len(), 21);
+    assert!(requests[19].starts_with("POST /api/security.update HTTP/1.1\r\n"));
+    assert!(requests[19].contains(r#""securityId":"security-1""#));
+    assert!(requests[19].contains(r#""username":"root""#));
+    assert!(requests[19].contains(r#""password":"security-rotated-password-canary""#));
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn security_update_without_a_declared_password_fails_before_any_mutation() {
+    let mut responses = leaf_bootstrap_responses();
+    responses.extend([
+        ("200 OK", SECURITY_EMPTY),
+        ("200 OK", "true"),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+    ]);
+    responses.extend(leaf_topology_responses());
+    responses.extend([
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        ("200 OK", SECURITY_OLD),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        // Executor preparation reads, then fails closed for the missing password.
+        ("200 OK", SECURITY_OLD),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+        ("200 OK", SECURITY_OLD_COLLECTION),
+    ]);
+    let server = TestServer::respond_in_sequence(responses);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    security_secrets(directory.path(), "security-initial-password-canary");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        security_configuration("admin", Some(".secrets/admin")),
+    )
+    .expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Security creation succeeds");
+    fs::write(&config, security_configuration("root", None))
+        .expect("updated configuration fixture is writable");
+
+    let error = apply_workspace(&client, &config)
+        .await
+        .expect_err("Dokploy cannot update a username without the password");
+
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::InvalidCheckpoint
+    ));
+    let requests = server.finish();
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("security.update"))
+    );
+    assert!(requests.iter().all(
+        |request| !request.contains("security-initial-password-canary")
+            || request.starts_with("POST /api/security.create")
+    ));
+}

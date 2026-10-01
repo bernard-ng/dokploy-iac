@@ -213,6 +213,8 @@ pub enum ImportKind {
     Redis,
     Domain,
     Port,
+    Redirect,
+    Security,
 }
 
 #[derive(Subcommand)]

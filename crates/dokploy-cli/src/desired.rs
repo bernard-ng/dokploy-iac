@@ -97,6 +97,8 @@ pub struct ExecutionBindings {
     domain_applications: BTreeMap<ResourceAddress, ResourceAddress>,
     domain_hosts: BTreeMap<ResourceAddress, String>,
     ports: BTreeMap<ResourceAddress, PortBinding>,
+    redirect_regexes: BTreeMap<ResourceAddress, String>,
+    security_usernames: BTreeMap<ResourceAddress, String>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
 }
 
@@ -125,6 +127,18 @@ impl ExecutionBindings {
     #[must_use]
     pub fn domain_host(&self, address: &ResourceAddress) -> Option<&str> {
         self.domain_hosts.get(address).map(String::as_str)
+    }
+
+    /// Returns the configured Redirect regular expression, the application-scoped collision key.
+    #[must_use]
+    pub fn redirect_regex(&self, address: &ResourceAddress) -> Option<&str> {
+        self.redirect_regexes.get(address).map(String::as_str)
+    }
+
+    /// Returns the configured Security username, the application-scoped collision key.
+    #[must_use]
+    pub fn security_username(&self, address: &ResourceAddress) -> Option<&str> {
+        self.security_usernames.get(address).map(String::as_str)
     }
 
     /// Returns the complete non-secret Port input for collision and execution checks.
@@ -412,6 +426,33 @@ fn compile_desired_with_fingerprints(
                     })),
                 );
             }
+            ResourceConfig::Redirect(redirect) => {
+                properties.insert(
+                    PropertyPath::Regex,
+                    comparable(serde_json::json!(redirect.regex().as_str())),
+                );
+                properties.insert(
+                    PropertyPath::Replacement,
+                    comparable(serde_json::json!(redirect.replacement().as_str())),
+                );
+                properties.insert(
+                    PropertyPath::Permanent,
+                    comparable(serde_json::json!(redirect.permanent())),
+                );
+            }
+            ResourceConfig::Security(security) => {
+                properties.insert(
+                    PropertyPath::Username,
+                    comparable(serde_json::json!(security.username().as_str())),
+                );
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Password,
+                    security.password(),
+                    fingerprints,
+                )?;
+            }
         }
 
         let protection = match resource.lifecycle().protect() {
@@ -517,6 +558,16 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
                         },
                     },
                 );
+            }
+            ResourceConfig::Redirect(redirect) => {
+                bindings
+                    .redirect_regexes
+                    .insert(address.clone(), redirect.regex().as_str().to_owned());
+            }
+            ResourceConfig::Security(security) => {
+                bindings
+                    .security_usernames
+                    .insert(address.clone(), security.username().as_str().to_owned());
             }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)

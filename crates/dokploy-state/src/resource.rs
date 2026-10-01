@@ -22,6 +22,8 @@ pub enum ResourceKind {
     Redis,
     Domain,
     Port,
+    Redirect,
+    Security,
 }
 
 impl ResourceKind {
@@ -41,6 +43,8 @@ impl ResourceKind {
             Self::Redis => "redis",
             Self::Domain => "domain",
             Self::Port => "port",
+            Self::Redirect => "redirect",
+            Self::Security => "security",
         }
     }
 
@@ -59,7 +63,7 @@ impl ResourceKind {
             | Self::LibSql
             | Self::Redis
             | Self::Domain => Some(Self::Environment),
-            Self::Port => Some(Self::Application),
+            Self::Port | Self::Redirect | Self::Security => Some(Self::Application),
         }
     }
 }
@@ -99,6 +103,8 @@ impl FromStr for ResourceKind {
             "redis" => Ok(Self::Redis),
             "domain" => Ok(Self::Domain),
             "port" => Ok(Self::Port),
+            "redirect" => Ok(Self::Redirect),
+            "security" => Ok(Self::Security),
             _ => Err(ResourceKindParseError {
                 value: value.to_owned(),
             }),

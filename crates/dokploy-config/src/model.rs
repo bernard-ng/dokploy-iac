@@ -5,8 +5,8 @@ use schemars::Schema;
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, PortNumber, PortProtocolConfig,
-    PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
+    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, NonEmptyText, PortNumber,
+    PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
 };
 
 /// A fully parsed and semantically validated `dokploy.yaml` document.
@@ -110,6 +110,8 @@ pub enum ResourceConfig {
     Redis(RedisConfig),
     Domain(DomainConfig),
     Port(PortConfig),
+    Redirect(RedirectConfig),
+    Security(SecurityConfig),
 }
 
 impl ResourceConfig {
@@ -128,6 +130,8 @@ impl ResourceConfig {
             Self::Redis(_) => ResourceKind::Redis,
             Self::Domain(_) => ResourceKind::Domain,
             Self::Port(_) => ResourceKind::Port,
+            Self::Redirect(_) => ResourceKind::Redirect,
+            Self::Security(_) => ResourceKind::Security,
         }
     }
 
@@ -228,6 +232,22 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_redirect(&self) -> Option<&RedirectConfig> {
+        match self {
+            Self::Redirect(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_security(&self) -> Option<&SecurityConfig> {
+        match self {
+            Self::Security(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn depends_on(&self) -> &[ResourceAddress] {
         match self {
             Self::Project(config) => &config.depends_on,
@@ -242,6 +262,8 @@ impl ResourceConfig {
             Self::Redis(config) => &config.depends_on,
             Self::Domain(config) => &config.depends_on,
             Self::Port(config) => &config.depends_on,
+            Self::Redirect(config) => &config.depends_on,
+            Self::Security(config) => &config.depends_on,
         }
     }
 
@@ -260,6 +282,8 @@ impl ResourceConfig {
             Self::Redis(config) => &config.lifecycle,
             Self::Domain(config) => &config.lifecycle,
             Self::Port(config) => &config.lifecycle,
+            Self::Redirect(config) => &config.lifecycle,
+            Self::Security(config) => &config.lifecycle,
         }
     }
 
@@ -277,6 +301,8 @@ impl ResourceConfig {
             Self::Redis(config) => &mut config.lifecycle,
             Self::Domain(config) => &mut config.lifecycle,
             Self::Port(config) => &mut config.lifecycle,
+            Self::Redirect(config) => &mut config.lifecycle,
+            Self::Security(config) => &mut config.lifecycle,
         }
     }
 
@@ -294,6 +320,8 @@ impl ResourceConfig {
             Self::Redis(config) => &mut config.depends_on,
             Self::Domain(config) => &mut config.depends_on,
             Self::Port(config) => &mut config.depends_on,
+            Self::Redirect(config) => &mut config.depends_on,
+            Self::Security(config) => &mut config.depends_on,
         }
     }
 
@@ -369,7 +397,16 @@ impl ResourceConfig {
                     secrets.push(secret);
                 }
             }
-            Self::Project(_) | Self::Environment(_) | Self::Domain(_) | Self::Port(_) => {}
+            Self::Security(config) => {
+                if let Field::Set(secret) = &config.password {
+                    secrets.push(secret);
+                }
+            }
+            Self::Project(_)
+            | Self::Environment(_)
+            | Self::Domain(_)
+            | Self::Port(_)
+            | Self::Redirect(_) => {}
         }
         secrets
     }
@@ -535,6 +572,63 @@ impl PortConfig {
 }
 
 redacted_debug!(PortConfig, "PortConfig");
+
+/// Complete declarative inputs for one application Redirect.
+#[derive(Clone, Eq, PartialEq)]
+pub struct RedirectConfig {
+    pub(crate) regex: NonEmptyText,
+    pub(crate) replacement: NonEmptyText,
+    pub(crate) permanent: bool,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl RedirectConfig {
+    /// Returns the regular expression, which is unique within one application.
+    #[must_use]
+    pub const fn regex(&self) -> &NonEmptyText {
+        &self.regex
+    }
+
+    #[must_use]
+    pub const fn replacement(&self) -> &NonEmptyText {
+        &self.replacement
+    }
+
+    #[must_use]
+    pub const fn permanent(&self) -> bool {
+        self.permanent
+    }
+}
+
+redacted_debug!(RedirectConfig, "RedirectConfig");
+
+/// Declarative inputs for one application basic-auth entry.
+///
+/// The password is a descriptor only. It can be omitted (unmanaged) but never
+/// cleared, because Dokploy has no password-clear operation.
+#[derive(Clone, Eq, PartialEq)]
+pub struct SecurityConfig {
+    pub(crate) username: NonEmptyText,
+    pub(crate) password: Field<SecretSource>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl SecurityConfig {
+    /// Returns the username, which is unique within one application.
+    #[must_use]
+    pub const fn username(&self) -> &NonEmptyText {
+        &self.username
+    }
+
+    #[must_use]
+    pub const fn password(&self) -> &Field<SecretSource> {
+        &self.password
+    }
+}
+
+redacted_debug!(SecurityConfig, "SecurityConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct ComposeConfig {
@@ -780,6 +874,9 @@ pub enum ValidationIssue {
     ComposeDocumentCannotBeCleared,
     UnmanagedComposeDocumentRequiresProtection,
     DuplicatePortCollision,
+    DuplicateRedirectCollision,
+    SecurityPasswordCannotBeCleared,
+    DuplicateSecurityCollision,
 }
 
 impl ValidationIssue {
@@ -812,6 +909,9 @@ impl ValidationIssue {
             Self::ComposeDocumentCannotBeCleared => "DOKCFG023",
             Self::UnmanagedComposeDocumentRequiresProtection => "DOKCFG024",
             Self::DuplicatePortCollision => "DOKCFG025",
+            Self::DuplicateRedirectCollision => "DOKCFG026",
+            Self::SecurityPasswordCannotBeCleared => "DOKCFG027",
+            Self::DuplicateSecurityCollision => "DOKCFG028",
         }
     }
 
@@ -847,6 +947,13 @@ impl ValidationIssue {
             }
             Self::DuplicatePortCollision => {
                 "published port and protocol are duplicated within one application"
+            }
+            Self::DuplicateRedirectCollision => {
+                "redirect regular expression is duplicated within one application"
+            }
+            Self::SecurityPasswordCannotBeCleared => "Security password cannot be null",
+            Self::DuplicateSecurityCollision => {
+                "security username is duplicated within one application"
             }
         }
     }

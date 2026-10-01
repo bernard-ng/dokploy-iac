@@ -117,6 +117,8 @@ fn authoritative() -> DiscoveryAuthority {
         redis: RedisTopologyAuthority::Authoritative,
         domains: DomainTopologyAuthority::Authoritative,
         ports: PortTopologyAuthority::Authoritative,
+        redirects: dokploy_cli::remote::RedirectTopologyAuthority::Authoritative,
+        security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
     }
 }
 
@@ -448,6 +450,8 @@ environments:
         redis: RedisTopologyAuthority::Authoritative,
         domains: DomainTopologyAuthority::Authoritative,
         ports: PortTopologyAuthority::Authoritative,
+        redirects: dokploy_cli::remote::RedirectTopologyAuthority::Authoritative,
+        security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
     };
 
     let remote = discover_remote(&client, &desired, &state, authority)

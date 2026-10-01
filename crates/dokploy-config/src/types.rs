@@ -53,6 +53,54 @@ impl JsonSchema for PortNumber {
     }
 }
 
+/// A nonempty string used for application-scoped collision keys and values.
+#[derive(Clone, Eq, PartialEq)]
+pub struct NonEmptyText(String);
+
+impl NonEmptyText {
+    /// Creates a validated nonempty value.
+    #[must_use]
+    pub fn new(value: impl Into<String>) -> Option<Self> {
+        let value = value.into();
+        (!value.is_empty()).then_some(Self(value))
+    }
+
+    /// Returns the validated text.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for NonEmptyText {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("NonEmptyText([REDACTED])")
+    }
+}
+
+impl<'de> Deserialize<'de> for NonEmptyText {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).ok_or_else(|| de::Error::custom("value must not be empty"))
+    }
+}
+
+impl JsonSchema for NonEmptyText {
+    fn schema_name() -> Cow<'static, str> {
+        "NonEmptyText".into()
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "type": "string",
+            "minLength": 1
+        })
+    }
+}
+
 /// The network scope used to publish an application port.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -198,7 +246,7 @@ impl JsonSchema for ResourceReference {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
         })
     }
 }

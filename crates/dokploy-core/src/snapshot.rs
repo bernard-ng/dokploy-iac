@@ -380,7 +380,7 @@ fn validate_desired_resource(
                 address: address.clone(),
             });
         }
-        if !owned_value_valid(path, value) {
+        if !owned_value_valid(path, value) || !kind_value_valid(address.kind(), path, value) {
             return Err(DesiredStateError::InvalidPropertyValue {
                 address: address.clone(),
             });
@@ -460,8 +460,31 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
         PropertyPath::PublishedPort | PropertyPath::TargetPort => port_number_value_valid(value),
         PropertyPath::PublishMode => port_string_value_valid(value, &["ingress", "host"]),
         PropertyPath::Protocol => port_string_value_valid(value, &["tcp", "udp"]),
+        PropertyPath::Regex | PropertyPath::Replacement => non_empty_string_value_valid(value),
+        PropertyPath::Permanent => {
+            matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
+        }
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
     }
+}
+
+/// Rejects values that are valid for a shared path but invalid for one leaf kind.
+fn kind_value_valid(kind: ResourceKind, path: &PropertyPath, value: &OwnedValue) -> bool {
+    match (kind, path) {
+        (ResourceKind::Security, PropertyPath::Username) => non_empty_string_value_valid(value),
+        (ResourceKind::Security, PropertyPath::Password) => {
+            matches!(value, OwnedValue::Sensitive(_))
+        }
+        _ => true,
+    }
+}
+
+fn non_empty_string_value_valid(value: &OwnedValue) -> bool {
+    matches!(
+        value,
+        OwnedValue::Value(value)
+            if value.as_json().as_str().is_some_and(|text| !text.is_empty())
+    )
 }
 
 fn port_number_value_valid(value: &OwnedValue) -> bool {
@@ -744,7 +767,7 @@ fn project_managed_inputs(
                 address: address.clone(),
             });
         }
-        if !owned_value_valid(path, value) {
+        if !owned_value_valid(path, value) || !kind_value_valid(kind, path, value) {
             return Err(StoredStateError::InvalidPropertyValue {
                 address: address.clone(),
             });
@@ -1277,6 +1300,19 @@ fn validate_remote_resource(
                 PropertyPath::Protocol => {
                     port_observation_string_valid(observation, &["tcp", "udp"])
                 }
+                PropertyPath::Regex | PropertyPath::Replacement => {
+                    non_empty_observation_valid(observation)
+                }
+                PropertyPath::Permanent => match observation {
+                    PropertyObservation::Known(value) => value.as_json().is_boolean(),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => false,
+                },
+                PropertyPath::Username if address.kind() == ResourceKind::Security => {
+                    non_empty_observation_valid(observation)
+                }
                 _ => !matches!(
                     observation,
                     PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
@@ -1300,6 +1336,17 @@ fn validate_remote_resource(
         });
     }
     Ok(())
+}
+
+fn non_empty_observation_valid(observation: &PropertyObservation) -> bool {
+    match observation {
+        PropertyObservation::Known(value) => value
+            .as_json()
+            .as_str()
+            .is_some_and(|candidate| !candidate.is_empty()),
+        PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
+        PropertyObservation::KnownAbsent => false,
+    }
 }
 
 fn port_observation_string_valid(observation: &PropertyObservation, allowed: &[&str]) -> bool {

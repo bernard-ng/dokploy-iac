@@ -253,10 +253,19 @@ fn preflight_sensitive_inputs(
                     );
                 }
             }
+            ResourceConfig::Security(security) => {
+                if let Field::Set(source) = security.password() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Password),
+                        pending_secret_source(source),
+                    );
+                }
+            }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Domain(_)
-            | ResourceConfig::Port(_) => {}
+            | ResourceConfig::Port(_)
+            | ResourceConfig::Redirect(_) => {}
         }
     }
 

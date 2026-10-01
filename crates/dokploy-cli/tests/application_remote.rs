@@ -109,6 +109,8 @@ fn authority(applications: ApplicationTopologyAuthority) -> DiscoveryAuthority {
         redis: RedisTopologyAuthority::Authoritative,
         domains: DomainTopologyAuthority::Authoritative,
         ports: PortTopologyAuthority::Authoritative,
+        redirects: dokploy_cli::remote::RedirectTopologyAuthority::Authoritative,
+        security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
     }
 }
 

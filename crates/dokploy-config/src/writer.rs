@@ -8,8 +8,9 @@ use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, PortNumber, PortProtocolConfig,
-    PortPublishModeConfig, PropertyPath, ResourceConfig, SecretSource, SourceConfig,
+    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, NonEmptyText, PortNumber,
+    PortProtocolConfig, PortPublishModeConfig, PropertyPath, ResourceConfig, SecretSource,
+    SourceConfig,
 };
 
 /// A typed, nested document for constructing imported configuration safely.
@@ -149,6 +150,33 @@ impl ConfigDocument {
                 );
                 continue;
             }
+            if let ResourceConfig::Redirect(redirect) = resource {
+                let application = application_document_mut(&mut document, config, parent)?;
+                application.redirects.insert(
+                    address.name().clone(),
+                    RedirectDocument {
+                        regex: redirect.regex.clone(),
+                        replacement: redirect.replacement.clone(),
+                        permanent: redirect.permanent,
+                        depends_on: redirect.depends_on.clone(),
+                        lifecycle: lifecycle_document(&redirect.lifecycle),
+                    },
+                );
+                continue;
+            }
+            if let ResourceConfig::Security(security) = resource {
+                let application = application_document_mut(&mut document, config, parent)?;
+                application.security.insert(
+                    address.name().clone(),
+                    SecurityDocument {
+                        username: security.username.clone(),
+                        password: security.password.clone(),
+                        depends_on: security.depends_on.clone(),
+                        lifecycle: lifecycle_document(&security.lifecycle),
+                    },
+                );
+                continue;
+            }
             let environment = document
                 .environments
                 .get_mut(parent.name())
@@ -166,6 +194,8 @@ impl ConfigDocument {
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                             ports: BTreeMap::new(),
+                            redirects: BTreeMap::new(),
+                            security: BTreeMap::new(),
                         },
                     );
                 }
@@ -266,7 +296,9 @@ impl ConfigDocument {
                 }
                 ResourceConfig::Project(_)
                 | ResourceConfig::Environment(_)
-                | ResourceConfig::Port(_) => {
+                | ResourceConfig::Port(_)
+                | ResourceConfig::Redirect(_)
+                | ResourceConfig::Security(_) => {
                     return Err(ConfigWriteError::InconsistentModel);
                 }
             }
@@ -285,6 +317,22 @@ impl ConfigDocument {
 
         Ok(document)
     }
+}
+
+fn application_document_mut<'a>(
+    document: &'a mut ConfigDocument,
+    config: &DokployConfig,
+    application: &ResourceAddress,
+) -> Result<&'a mut ApplicationDocument, ConfigWriteError> {
+    let environment_address = config
+        .parents
+        .get(application)
+        .ok_or(ConfigWriteError::InconsistentModel)?;
+    document
+        .environments
+        .get_mut(environment_address.name())
+        .and_then(|environment| environment.applications.get_mut(application.name()))
+        .ok_or(ConfigWriteError::InconsistentModel)
 }
 
 fn lifecycle_document(lifecycle: &Lifecycle) -> LifecycleDocument {
@@ -430,6 +478,8 @@ pub struct ApplicationDocument {
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
     pub ports: BTreeMap<ResourceName, PortDocument>,
+    pub redirects: BTreeMap<ResourceName, RedirectDocument>,
+    pub security: BTreeMap<ResourceName, SecurityDocument>,
 }
 
 impl ApplicationDocument {
@@ -440,6 +490,43 @@ impl ApplicationDocument {
     ) -> Result<(), ConfigDocumentError> {
         insert_resource(&mut self.ports, name, port, ResourceKind::Port)
     }
+
+    pub fn add_redirect(
+        &mut self,
+        name: ResourceName,
+        redirect: RedirectDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.redirects, name, redirect, ResourceKind::Redirect)
+    }
+
+    pub fn add_security(
+        &mut self,
+        name: ResourceName,
+        security: SecurityDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.security, name, security, ResourceKind::Security)
+    }
+}
+
+/// Redirect properties accepted by an imported document.
+#[derive(Clone)]
+pub struct RedirectDocument {
+    pub regex: NonEmptyText,
+    pub replacement: NonEmptyText,
+    pub permanent: bool,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// Security properties accepted by an imported document.
+///
+/// The password is a descriptor only and starts unmanaged.
+#[derive(Clone)]
+pub struct SecurityDocument {
+    pub username: NonEmptyText,
+    pub password: Field<SecretSource>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
 }
 
 /// Port properties accepted by an imported document.
@@ -760,6 +847,43 @@ fn render_application_document(output: &mut String, indent: usize, config: &Appl
             render_port_document(output, indent + 4, port);
         }
     }
+    if !config.redirects.is_empty() {
+        mapping_header(output, indent, "redirects");
+        for (name, redirect) in &config.redirects {
+            mapping_header(output, indent + 2, name.as_str());
+            render_redirect_document(output, indent + 4, redirect);
+        }
+    }
+    if !config.security.is_empty() {
+        mapping_header(output, indent, "security");
+        for (name, security) in &config.security {
+            mapping_header(output, indent + 2, name.as_str());
+            render_security_document(output, indent + 4, security);
+        }
+    }
+}
+
+fn render_redirect_document(output: &mut String, indent: usize, config: &RedirectDocument) {
+    line(output, indent, "regex", &quoted(config.regex.as_str()));
+    line(
+        output,
+        indent,
+        "replacement",
+        &quoted(config.replacement.as_str()),
+    );
+    line(output, indent, "permanent", bool_text(config.permanent));
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+fn render_security_document(output: &mut String, indent: usize, config: &SecurityDocument) {
+    line(
+        output,
+        indent,
+        "username",
+        &quoted(config.username.as_str()),
+    );
+    secret_field(output, indent, "password", &config.password);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
 fn render_port_document(output: &mut String, indent: usize, config: &PortDocument) {
@@ -1069,6 +1193,8 @@ fn render_children(
         renderer(output, 8, resource)?;
         if kind == ResourceKind::Application {
             render_port_children(output, config, address)?;
+            render_redirect_children(output, config, address)?;
+            render_security_children(output, config, address)?;
         }
         collapse_empty_mapping(output, item_start, 6, address.name().as_str());
     }
@@ -1097,6 +1223,58 @@ fn render_port_children(
     for (address, resource) in ports {
         mapping_header(output, 10, address.name().as_str());
         render_port(output, 12, resource)?;
+    }
+
+    Ok(())
+}
+
+fn render_redirect_children(
+    output: &mut String,
+    config: &DokployConfig,
+    application: &ResourceAddress,
+) -> Result<(), ConfigWriteError> {
+    let redirects = config
+        .resources
+        .iter()
+        .filter(|(address, _)| {
+            address.kind() == ResourceKind::Redirect
+                && config.parents.get(*address) == Some(application)
+        })
+        .collect::<Vec<_>>();
+    if redirects.is_empty() {
+        return Ok(());
+    }
+
+    mapping_header(output, 8, "redirects");
+    for (address, resource) in redirects {
+        mapping_header(output, 10, address.name().as_str());
+        render_redirect(output, 12, resource)?;
+    }
+
+    Ok(())
+}
+
+fn render_security_children(
+    output: &mut String,
+    config: &DokployConfig,
+    application: &ResourceAddress,
+) -> Result<(), ConfigWriteError> {
+    let entries = config
+        .resources
+        .iter()
+        .filter(|(address, _)| {
+            address.kind() == ResourceKind::Security
+                && config.parents.get(*address) == Some(application)
+        })
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return Ok(());
+    }
+
+    mapping_header(output, 8, "security");
+    for (address, resource) in entries {
+        mapping_header(output, 10, address.name().as_str());
+        render_security(output, 12, resource)?;
     }
 
     Ok(())
@@ -1143,6 +1321,49 @@ fn render_port(
         port_publish_mode(config.publish_mode()),
     );
     line(output, indent, "protocol", port_protocol(config.protocol()));
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_redirect(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Redirect(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    line(output, indent, "regex", &quoted(config.regex().as_str()));
+    line(
+        output,
+        indent,
+        "replacement",
+        &quoted(config.replacement().as_str()),
+    );
+    line(output, indent, "permanent", bool_text(config.permanent()));
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_security(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Security(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    line(
+        output,
+        indent,
+        "username",
+        &quoted(config.username().as_str()),
+    );
+    secret_field(output, indent, "password", config.password());
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1403,11 +1624,15 @@ const fn port_protocol(value: PortProtocolConfig) -> &'static str {
     }
 }
 
+const fn bool_text(value: bool) -> &'static str {
+    if value { "true" } else { "false" }
+}
+
 fn bool_field(output: &mut String, indent: usize, name: &str, field: &Field<bool>) {
     match field {
         Field::Unmanaged => {}
         Field::Clear => line(output, indent, name, "null"),
-        Field::Set(value) => line(output, indent, name, if *value { "true" } else { "false" }),
+        Field::Set(value) => line(output, indent, name, bool_text(*value)),
     }
 }
 

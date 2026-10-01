@@ -258,6 +258,9 @@ fn property_paths_use_config_compatible_stable_strings() {
         (PropertyPath::TargetPort, "target_port"),
         (PropertyPath::PublishMode, "publish_mode"),
         (PropertyPath::Protocol, "protocol"),
+        (PropertyPath::Regex, "regex"),
+        (PropertyPath::Replacement, "replacement"),
+        (PropertyPath::Permanent, "permanent"),
         (PropertyPath::DeploymentStatus, "deployment.status"),
     ];
 
@@ -4757,4 +4760,340 @@ fn containment_for(
             ),
             _ => unreachable!("the current model has only two containment parent kinds"),
         })
+}
+
+#[test]
+fn redirect_values_are_validated_at_desired_stored_and_remote_seams() {
+    let redirect = address("redirect.www");
+    let application = address("application.api");
+    let valid_properties = BTreeMap::from([
+        (
+            PropertyPath::Regex,
+            OwnedValue::Value(value(json!("^/old"))),
+        ),
+        (
+            PropertyPath::Replacement,
+            OwnedValue::Value(value(json!("/new"))),
+        ),
+        (
+            PropertyPath::Permanent,
+            OwnedValue::Value(value(json!(true))),
+        ),
+    ]);
+
+    DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            redirect.clone(),
+            DesiredResource::new(valid_properties.clone())
+                .with_containment(Some(application.clone())),
+        )]),
+    )
+    .expect("typed Redirect values are valid");
+
+    for (path, invalid) in [
+        (PropertyPath::Regex, OwnedValue::Null),
+        (PropertyPath::Regex, OwnedValue::Value(value(json!("")))),
+        (PropertyPath::Regex, OwnedValue::Value(value(json!(7)))),
+        (
+            PropertyPath::Replacement,
+            OwnedValue::Value(value(json!(""))),
+        ),
+        (PropertyPath::Replacement, OwnedValue::Null),
+        (PropertyPath::Permanent, OwnedValue::Null),
+        (
+            PropertyPath::Permanent,
+            OwnedValue::Value(value(json!("true"))),
+        ),
+    ] {
+        let mut properties = valid_properties.clone();
+        properties.insert(path, invalid);
+        let error = DesiredState::try_new(
+            digest(),
+            BTreeMap::from([(
+                redirect.clone(),
+                DesiredResource::new(properties).with_containment(Some(application.clone())),
+            )]),
+        )
+        .expect_err("invalid Redirect values must fail at the desired-state seam");
+        assert!(matches!(
+            error,
+            DesiredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+
+    for managed in [
+        json!({"regex": null, "replacement": "/new", "permanent": true}),
+        json!({"regex": "^/old", "replacement": "", "permanent": true}),
+        json!({"regex": "^/old", "replacement": "/new", "permanent": "yes"}),
+        json!({"regex": "^/old", "replacement": "/new", "permanent": null}),
+    ] {
+        let state = state_with_resource_details(
+            &redirect,
+            &instance(),
+            ResourceKind::Redirect,
+            "redirect-1",
+            managed,
+            false,
+            vec![application.clone()],
+        );
+        let error = StoredState::try_from_state(&state)
+            .expect_err("invalid stored Redirect values must fail at the state seam");
+        assert!(matches!(
+            error,
+            StoredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+
+    for (path, observation) in [
+        (PropertyPath::Regex, PropertyObservation::KnownAbsent),
+        (
+            PropertyPath::Regex,
+            PropertyObservation::Known(value(json!(""))),
+        ),
+        (
+            PropertyPath::Replacement,
+            PropertyObservation::Known(value(json!(false))),
+        ),
+        (
+            PropertyPath::Permanent,
+            PropertyObservation::Known(value(json!("true"))),
+        ),
+        (PropertyPath::Permanent, PropertyObservation::KnownAbsent),
+        (
+            PropertyPath::Permanent,
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        ),
+    ] {
+        let error = RemoteState::try_new(
+            instance(),
+            [(
+                redirect.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([(path, observation)]),
+                )),
+            )],
+        )
+        .expect_err("invalid known Redirect observations must fail closed");
+        assert!(matches!(
+            error,
+            RemoteStateError::InvalidPropertyObservation { .. }
+        ));
+    }
+}
+
+#[test]
+fn redirect_and_security_paths_are_kind_scoped() {
+    let application = address("application.api");
+    for path in [
+        PropertyPath::Regex,
+        PropertyPath::Replacement,
+        PropertyPath::Permanent,
+    ] {
+        for wrong in ["port.http", "security.admin", "application.web"] {
+            let wrong = address(wrong);
+            let error = DesiredState::try_new(
+                digest(),
+                BTreeMap::from([(
+                    wrong.clone(),
+                    DesiredResource::new(BTreeMap::from([(
+                        path.clone(),
+                        OwnedValue::Value(value(json!("x"))),
+                    )]))
+                    .with_containment(Some(
+                        if wrong.kind() == ResourceKind::Application {
+                            address("environment.production")
+                        } else {
+                            application.clone()
+                        },
+                    )),
+                )]),
+            )
+            .expect_err("Redirect paths belong only to Redirect resources");
+            assert!(matches!(
+                error,
+                DesiredStateError::InvalidPropertyPath { .. }
+            ));
+        }
+    }
+
+    let error = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            address("redirect.www"),
+            DesiredResource::new(BTreeMap::from([(
+                PropertyPath::Username,
+                OwnedValue::Value(value(json!("admin"))),
+            )]))
+            .with_containment(Some(application.clone())),
+        )]),
+    )
+    .expect_err("Redirects have no username");
+    assert!(matches!(
+        error,
+        DesiredStateError::InvalidPropertyPath { .. }
+    ));
+
+    let error = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            address("security.admin"),
+            DesiredResource::new(BTreeMap::from([(
+                PropertyPath::Regex,
+                OwnedValue::Value(value(json!("^/a"))),
+            )]))
+            .with_containment(Some(application)),
+        )]),
+    )
+    .expect_err("Security entries have no regex");
+    assert!(matches!(
+        error,
+        DesiredStateError::InvalidPropertyPath { .. }
+    ));
+}
+
+#[test]
+fn security_values_are_validated_at_desired_stored_and_remote_seams() {
+    let security = address("security.admin");
+    let application = address("application.api");
+    let username = || OwnedValue::Value(value(json!("admin")));
+
+    DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            security.clone(),
+            DesiredResource::new(BTreeMap::from([
+                (PropertyPath::Username, username()),
+                (PropertyPath::Password, sensitive_intent(0xa5)),
+            ]))
+            .with_containment(Some(application.clone())),
+        )]),
+    )
+    .expect("a username and an opaque password intent are valid");
+
+    for properties in [
+        BTreeMap::from([(PropertyPath::Username, OwnedValue::Null)]),
+        BTreeMap::from([(PropertyPath::Username, OwnedValue::Value(value(json!(""))))]),
+        BTreeMap::from([(PropertyPath::Username, OwnedValue::Value(value(json!(1))))]),
+        BTreeMap::from([
+            (PropertyPath::Username, username()),
+            (PropertyPath::Password, OwnedValue::Null),
+        ]),
+    ] {
+        let error = DesiredState::try_new(
+            digest(),
+            BTreeMap::from([(
+                security.clone(),
+                DesiredResource::new(properties).with_containment(Some(application.clone())),
+            )]),
+        )
+        .expect_err("invalid Security values must fail at the desired-state seam");
+        assert!(matches!(
+            error,
+            DesiredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+
+    for managed in [
+        json!({"username": null}),
+        json!({"username": ""}),
+        json!({"username": "admin", "password": null}),
+    ] {
+        let state = state_with_resource_details(
+            &security,
+            &instance(),
+            ResourceKind::Security,
+            "security-1",
+            managed,
+            false,
+            vec![application.clone()],
+        );
+        let error = StoredState::try_from_state(&state)
+            .expect_err("invalid stored Security values must fail at the state seam");
+        assert!(matches!(
+            error,
+            StoredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+
+    let key_id = FingerprintKeyId::new(
+        Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").expect("UUID must parse"),
+    )
+    .expect("key ID must be valid");
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    state
+        .upsert_resource(
+            security.clone(),
+            ResourceState::try_new(
+                ResourceKind::Security,
+                remote_id(),
+                false,
+                ManagedInputs::try_from_json(json!({"username": "admin"})).unwrap(),
+                SensitiveInputs::try_from_entries([(
+                    SensitivePropertyPath::parse("password").unwrap(),
+                    SensitiveFingerprint::new_v1(key_id, [0xa5; 32]),
+                )])
+                .unwrap(),
+                Some(application.clone()),
+                Vec::new(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    StoredState::try_from_state(&state).expect("a sensitive receipt is a valid stored password");
+
+    for (path, observation) in [
+        (PropertyPath::Username, PropertyObservation::KnownAbsent),
+        (
+            PropertyPath::Username,
+            PropertyObservation::Known(value(json!(""))),
+        ),
+        (
+            PropertyPath::Username,
+            PropertyObservation::Known(value(json!(3))),
+        ),
+        (
+            PropertyPath::Password,
+            PropertyObservation::Known(value(json!("remote-password-canary"))),
+        ),
+    ] {
+        let error = RemoteState::try_new(
+            instance(),
+            [(
+                security.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([(path, observation)]),
+                )),
+            )],
+        )
+        .expect_err("invalid known Security observations must fail closed");
+        assert!(matches!(
+            error,
+            RemoteStateError::InvalidPropertyObservation { .. }
+        ));
+        assert!(!format!("{error:?} {error}").contains("remote-password-canary"));
+    }
+
+    RemoteState::try_new(
+        instance(),
+        [(
+            security,
+            RemoteObservation::Present(RemoteResource::new(
+                remote_id(),
+                BTreeMap::from([
+                    (
+                        PropertyPath::Username,
+                        PropertyObservation::Known(value(json!("admin"))),
+                    ),
+                    (
+                        PropertyPath::Password,
+                        PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+                    ),
+                ]),
+            )),
+        )],
+    )
+    .expect("a write-only remote password is observed only as unknown or absent");
 }

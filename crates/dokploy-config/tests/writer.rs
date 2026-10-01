@@ -2,9 +2,9 @@ use std::fs;
 
 use dokploy_config::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,
-    DokployConfig, DomainDocument, EnvironmentDocument, Field, MySqlDocument, PortDocument,
-    PortNumber, PortProtocolConfig, PortPublishModeConfig, PostgresDocument, RedisDocument,
-    SourceDocument, render, write,
+    DokployConfig, DomainDocument, EnvironmentDocument, Field, MySqlDocument, NonEmptyText,
+    PortDocument, PortNumber, PortProtocolConfig, PortPublishModeConfig, PostgresDocument,
+    RedirectDocument, RedisDocument, SecurityDocument, SourceDocument, render, write,
 };
 use dokploy_state::{ResourceKind, ResourceName};
 
@@ -81,6 +81,16 @@ environments:
         depends_on: [redis.cache, postgres.main]
         lifecycle:
           ignore_changes: [replicas, deployment.status]
+        redirects:
+          www:
+            regex: "^https?://example.test/(.*)"
+            replacement: "https://www.example.test/${1}"
+            permanent: true
+        security:
+          admin:
+            username: admin
+            password:
+              env: ADMIN_PASSWORD
     domains:
       public:
         host: api.example.test
@@ -115,6 +125,10 @@ fn renders_the_complete_mvp_model_as_deterministic_nested_yaml() {
     assert!(first.contains("        replica_sets: true\n"));
     assert!(first.contains("\n    libsql:\n      edge:\n"));
     assert!(first.contains("        node:\n          type: \"primary\"\n"));
+    assert!(first.contains("\n        redirects:\n          www:\n"));
+    assert!(first.contains("            permanent: true\n"));
+    assert!(first.contains("\n        security:\n          admin:\n"));
+    assert!(first.contains("            password:\n              env: \"ADMIN_PASSWORD\"\n"));
     assert!(!first.contains("resources:"));
 }
 
@@ -433,4 +447,96 @@ fn typed_document_and_canonical_writer_keep_ports_nested_under_applications() {
 
 fn name(value: &str) -> ResourceName {
     value.parse().expect("fixture resource name is valid")
+}
+
+#[test]
+fn typed_document_and_canonical_writer_keep_redirects_and_security_nested() {
+    let mut application = ApplicationDocument::default();
+    application
+        .add_redirect(
+            name("www"),
+            RedirectDocument {
+                regex: NonEmptyText::new("^https?://example.com/(.*)\"").unwrap(),
+                replacement: NonEmptyText::new("https://www.example.com/${1}").unwrap(),
+                permanent: true,
+                depends_on: Vec::new(),
+                lifecycle: Default::default(),
+            },
+        )
+        .expect("Redirect name is unique");
+    application
+        .add_security(
+            name("admin"),
+            SecurityDocument {
+                username: NonEmptyText::new("admin").unwrap(),
+                password: Field::Unmanaged,
+                depends_on: Vec::new(),
+                lifecycle: Default::default(),
+            },
+        )
+        .expect("Security name is unique");
+    assert_eq!(
+        application
+            .add_security(
+                name("admin"),
+                SecurityDocument {
+                    username: NonEmptyText::new("other").unwrap(),
+                    password: Field::Unmanaged,
+                    depends_on: Vec::new(),
+                    lifecycle: Default::default(),
+                },
+            )
+            .unwrap_err(),
+        ConfigDocumentError::DuplicateResource {
+            kind: ResourceKind::Security
+        }
+    );
+    let mut environment = EnvironmentDocument::default();
+    environment
+        .add_application(name("api"), application)
+        .expect("application name is unique");
+    let mut document = ConfigDocument::new(name("platform"));
+    document
+        .add_environment(name("production"), environment)
+        .expect("environment name is unique");
+
+    let rendered = document.render().expect("nested leaf document renders");
+
+    assert!(rendered.contains("        redirects:\n          www:\n"));
+    assert!(rendered.contains("            permanent: true\n"));
+    assert!(rendered.contains("        security:\n          admin:\n"));
+    assert!(rendered.contains("            username: \"admin\"\n"));
+    assert!(!rendered.contains("password"));
+    assert_eq!(
+        ConfigDocument::from_config(&DokployConfig::parse(&rendered).unwrap())
+            .unwrap()
+            .render()
+            .unwrap(),
+        rendered
+    );
+
+    let mut application = ApplicationDocument::default();
+    application
+        .add_security(
+            name("admin"),
+            SecurityDocument {
+                username: NonEmptyText::new("admin").unwrap(),
+                password: Field::Clear,
+                depends_on: Vec::new(),
+                lifecycle: Default::default(),
+            },
+        )
+        .unwrap();
+    let mut environment = EnvironmentDocument::default();
+    environment
+        .add_application(name("api"), application)
+        .unwrap();
+    let mut document = ConfigDocument::new(name("platform"));
+    document
+        .add_environment(name("production"), environment)
+        .unwrap();
+    assert!(matches!(
+        document.render().unwrap_err(),
+        ConfigWriteError::GeneratedConfig(_)
+    ));
 }

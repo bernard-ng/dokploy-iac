@@ -1048,3 +1048,164 @@ async fn port_import_is_protected_authoritative_and_immediately_convergent() {
     assert_eq!(requests.len(), 12);
     assert!(requests.iter().all(|request| request.starts_with("GET ")));
 }
+
+const IMPORT_APPLICATION: &str = r#"{"applicationId":"application-1","name":"API Service","appName":"api","environmentId":"environment-1","description":"API","replicas":1}"#;
+const IMPORT_ENVIRONMENT: &str =
+    r#"{"environmentId":"environment-1","name":"Production West","projectId":"project-1"}"#;
+const IMPORT_PROJECT: &str =
+    r#"{"projectId":"project-1","name":"IaC Contract Test","environments":[]}"#;
+const IMPORT_PROJECT_TOPOLOGY: &str = r#"[{"projectId":"project-1","name":"IaC Contract Test","environments":[{"environmentId":"environment-1","name":"Production West","isDefault":true,"applications":[{"applicationId":"application-1","name":"API Service"}],"postgres":[],"redis":[]}]}]"#;
+const IMPORT_ENVIRONMENT_COLLECTION: &str =
+    r#"[{"environmentId":"environment-1","name":"Production West"}]"#;
+const IMPORT_APPLICATION_COLLECTION: &str = r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"API Service"}],"total":1}"#;
+
+#[tokio::test]
+async fn redirect_import_is_protected_authoritative_and_immediately_convergent() {
+    let redirect = r#"{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/new","permanent":true}"#;
+    let collection = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/new","permanent":true}]}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        redirect,
+        collection,
+        collection,
+        IMPORT_APPLICATION,
+        IMPORT_ENVIRONMENT,
+        IMPORT_PROJECT,
+        IMPORT_PROJECT_TOPOLOGY,
+        IMPORT_ENVIRONMENT_COLLECTION,
+        IMPORT_ENVIRONMENT,
+        IMPORT_APPLICATION_COLLECTION,
+        IMPORT_APPLICATION,
+        collection,
+        redirect,
+        collection,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Redirect,
+            remote_id: "redirect-1".to_owned(),
+            address: "redirect.www".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("Redirect imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 4);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).unwrap();
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"redirect.www".parse().unwrap()).unwrap();
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    let imported = state.resource(&"redirect.www".parse().unwrap()).unwrap();
+    assert!(imported.is_protected());
+    assert_eq!(
+        imported.last_applied().as_json(),
+        &serde_json::json!({"regex": "^/old", "replacement": "/new", "permanent": true})
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 14);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
+async fn security_import_leaves_the_password_unmanaged_and_secret_free() {
+    let entry = r#"{"securityId":"security-1","applicationId":"application-1","username":"admin","password":"import-password-canary"}"#;
+    let collection = r#"{"applicationId":"application-1","security":[{"securityId":"security-1","applicationId":"application-1","username":"admin","password":"import-password-canary"}]}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        entry,
+        collection,
+        collection,
+        IMPORT_APPLICATION,
+        IMPORT_ENVIRONMENT,
+        IMPORT_PROJECT,
+        IMPORT_PROJECT_TOPOLOGY,
+        IMPORT_ENVIRONMENT_COLLECTION,
+        IMPORT_ENVIRONMENT,
+        IMPORT_APPLICATION_COLLECTION,
+        IMPORT_APPLICATION,
+        collection,
+        entry,
+        collection,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Security,
+            remote_id: "security-1".to_owned(),
+            address: "security.admin".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("Security imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 4);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).unwrap();
+    assert!(!source.contains("import-password-canary"));
+    assert!(!source.contains("password"));
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"security.admin".parse().unwrap()).unwrap();
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    assert_eq!(
+        resource.as_security().unwrap().password(),
+        &Field::Unmanaged
+    );
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    let imported = state.resource(&"security.admin".parse().unwrap()).unwrap();
+    assert!(imported.is_protected());
+    assert_eq!(
+        imported.last_applied().as_json(),
+        &serde_json::json!({"username": "admin"})
+    );
+    assert!(imported.sensitive_inputs().paths().next().is_none());
+    assert!(
+        !serde_json::to_string(&state)
+            .unwrap()
+            .contains("import-password-canary")
+    );
+    assert!(!format!("{plan:?}").contains("import-password-canary"));
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 14);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}

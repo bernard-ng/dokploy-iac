@@ -1462,3 +1462,490 @@ fn compose_sensitive_inputs(document: u8) -> SensitiveInputs {
     )])
     .unwrap()
 }
+
+const LEAF_TOPOLOGY: [&str; 5] = [
+    r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"postgres":[],"redis":[]}]}]"#,
+    r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+    r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+    r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+    r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#,
+];
+
+/// Seeds project, environment, and application state and returns the store state.
+fn seed_leaf_workspace(
+    server: &TestServer,
+    config: &str,
+) -> (tempfile::TempDir, StateStore, StateFile, std::path::PathBuf) {
+    let workspace = tempfile::tempdir().expect("temporary workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(&config_file, config).expect("configuration fixture is writable");
+    fs::create_dir_all(workspace.path().join(".secrets")).unwrap();
+    fs::write(
+        workspace.path().join(".secrets/admin-password"),
+        "security-recovery-password-canary",
+    )
+    .unwrap();
+    let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
+    let store = StateStore::new(workspace.path(), instance.clone()).expect("state store is valid");
+    let mut state = seed_parent_state(&store, instance);
+    let before_application = state.clone();
+    state
+        .upsert_resource(
+            address("application.api"),
+            ResourceState::new(
+                ResourceKind::Application,
+                RemoteId::new("application-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                Some(address("environment.production")),
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_application), &state)
+        .unwrap();
+
+    (workspace, store, state, config_file)
+}
+
+fn leaf_state(
+    kind: ResourceKind,
+    remote_id: &str,
+    inputs: serde_json::Value,
+    sensitive: SensitiveInputs,
+) -> ResourceState {
+    ResourceState::try_new(
+        kind,
+        RemoteId::new(remote_id).unwrap(),
+        false,
+        ManagedInputs::try_from_json(inputs).unwrap(),
+        sensitive,
+        Some(address("application.api")),
+        Vec::new(),
+    )
+    .unwrap()
+}
+
+fn security_sensitive_inputs(password: u8) -> SensitiveInputs {
+    mongo_sensitive_inputs(password)
+}
+
+fn start_leaf_step(
+    store: &StateStore,
+    address: &ResourceAddress,
+    action: JournalAction,
+    expected: ExpectedCheckpoint,
+) {
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("f".repeat(64)).unwrap()).unwrap();
+    journal
+        .start_recoverable_step(address.clone(), action, expected)
+        .unwrap();
+    drop(journal);
+    drop(write);
+}
+
+fn checkpoint_leaf(
+    store: &StateStore,
+    mut state: StateFile,
+    address: &ResourceAddress,
+    resource: ResourceState,
+) {
+    let before = state.clone();
+    state.upsert_resource(address.clone(), resource).unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before), &state)
+        .unwrap();
+}
+
+const REDIRECT_CONFIG: &str = concat!(
+    "version: 1\n",
+    "project:\n  name: platform\n",
+    "environments:\n",
+    "  production:\n",
+    "    applications:\n",
+    "      api:\n",
+    "        redirects:\n",
+    "          www:\n",
+    "            regex: \"^/old\"\n",
+    "            replacement: \"/newer\"\n",
+    "            permanent: true\n",
+);
+
+#[tokio::test]
+async fn uncertain_redirect_update_is_recovered_from_authoritative_complete_state() {
+    const REDIRECT: &str = r#"{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/newer","permanent":true}"#;
+    const COLLECTION: &str = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/newer","permanent":true}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.extend([COLLECTION, REDIRECT, COLLECTION]);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (_workspace, store, state, config_file) = seed_leaf_workspace(&server, REDIRECT_CONFIG);
+    let redirect = address("redirect.www");
+    let before = leaf_state(
+        ResourceKind::Redirect,
+        "redirect-1",
+        serde_json::json!({"regex": "^/old", "replacement": "/new", "permanent": true}),
+        SensitiveInputs::default(),
+    );
+    let after_inputs =
+        serde_json::json!({"regex": "^/old", "replacement": "/newer", "permanent": true});
+    let after = leaf_state(
+        ResourceKind::Redirect,
+        "redirect-1",
+        after_inputs.clone(),
+        SensitiveInputs::default(),
+    );
+    checkpoint_leaf(&store, state, &redirect, before.clone());
+    start_leaf_step(
+        &store,
+        &redirect,
+        JournalAction::Update,
+        ExpectedCheckpoint::update(before, after).unwrap(),
+    );
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&redirect));
+        assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
+        Ok(true)
+    })
+    .await
+    .expect("complete authoritative Redirect evidence confirms the update");
+
+    assert_eq!(result.recovered_steps(), 1);
+    assert_eq!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&redirect)
+            .unwrap()
+            .last_applied()
+            .as_json(),
+        &after_inputs
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 8);
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("redirects.update"))
+    );
+}
+
+#[tokio::test]
+async fn uncertain_redirect_update_with_stale_remote_state_requires_no_change_confirmation() {
+    const REDIRECT: &str = r#"{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/new","permanent":true}"#;
+    const COLLECTION: &str = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/new","permanent":true}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.extend([COLLECTION, REDIRECT, COLLECTION]);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (_workspace, store, state, config_file) = seed_leaf_workspace(&server, REDIRECT_CONFIG);
+    let redirect = address("redirect.www");
+    let before_inputs =
+        serde_json::json!({"regex": "^/old", "replacement": "/new", "permanent": true});
+    let before = leaf_state(
+        ResourceKind::Redirect,
+        "redirect-1",
+        before_inputs.clone(),
+        SensitiveInputs::default(),
+    );
+    let after = leaf_state(
+        ResourceKind::Redirect,
+        "redirect-1",
+        serde_json::json!({"regex": "^/old", "replacement": "/newer", "permanent": true}),
+        SensitiveInputs::default(),
+    );
+    checkpoint_leaf(&store, state, &redirect, before.clone());
+    start_leaf_step(
+        &store,
+        &redirect,
+        JournalAction::Update,
+        ExpectedCheckpoint::update(before, after).unwrap(),
+    );
+
+    recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.action(), RecoveryAction::ConfirmNoChange);
+        Ok(true)
+    })
+    .await
+    .expect("the unchanged authoritative state proves the update did not happen");
+
+    assert_eq!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&redirect)
+            .unwrap()
+            .last_applied()
+            .as_json(),
+        &before_inputs
+    );
+    server.finish();
+}
+
+#[tokio::test]
+async fn uncertain_redirect_create_adopts_one_exact_collision_key_without_retrying() {
+    const COLLECTION: &str = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-1","applicationId":"application-1","regex":"^/old","replacement":"/newer","permanent":true}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.push(COLLECTION);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (_workspace, store, _state, config_file) = seed_leaf_workspace(&server, REDIRECT_CONFIG);
+    let redirect = address("redirect.www");
+    let inputs = serde_json::json!({"regex": "^/old", "replacement": "/newer", "permanent": true});
+    let target = leaf_state(
+        ResourceKind::Redirect,
+        "recovery-pending",
+        inputs.clone(),
+        SensitiveInputs::default(),
+    );
+    start_leaf_step(
+        &store,
+        &redirect,
+        JournalAction::Create,
+        ExpectedCheckpoint::create(target).unwrap(),
+    );
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&redirect));
+        assert_eq!(preview.action(), RecoveryAction::AdoptCreatedResource);
+        Ok(true)
+    })
+    .await
+    .expect("one exact authoritative Redirect adopts the uncertain create");
+
+    assert_eq!(result.recovered_steps(), 1);
+    let recovered = store.inspect().unwrap().unwrap();
+    let adopted = recovered.resource(&redirect).unwrap();
+    assert_eq!(adopted.remote_id().as_str(), "redirect-1");
+    assert_eq!(adopted.last_applied().as_json(), &inputs);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("redirects.create"))
+    );
+}
+
+#[tokio::test]
+async fn uncertain_redirect_create_with_a_different_record_requires_manual_intervention() {
+    const COLLECTION: &str = r#"{"applicationId":"application-1","redirects":[{"redirectId":"redirect-9","applicationId":"application-1","regex":"^/old","replacement":"/someone-else","permanent":false}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.push(COLLECTION);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (_workspace, store, _state, config_file) = seed_leaf_workspace(&server, REDIRECT_CONFIG);
+    let redirect = address("redirect.www");
+    let target = leaf_state(
+        ResourceKind::Redirect,
+        "recovery-pending",
+        serde_json::json!({"regex": "^/old", "replacement": "/newer", "permanent": true}),
+        SensitiveInputs::default(),
+    );
+    start_leaf_step(
+        &store,
+        &redirect,
+        JournalAction::Create,
+        ExpectedCheckpoint::create(target).unwrap(),
+    );
+
+    let error = recover_workspace_with_approval(&server.client(), &config_file, |_| Ok(true))
+        .await
+        .expect_err("a record that differs from the proposed state is not adopted");
+
+    assert!(matches!(
+        error,
+        dokploy_cli::recovery::RecoverWorkspaceError::ManualIntervention
+    ));
+    assert!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&redirect)
+            .is_none()
+    );
+    server.finish();
+}
+
+const SECURITY_CONFIG: &str = concat!(
+    "version: 1\n",
+    "project:\n  name: platform\n",
+    "environments:\n",
+    "  production:\n",
+    "    applications:\n",
+    "      api:\n",
+    "        security:\n",
+    "          admin:\n",
+    "            username: root\n",
+    "            password:\n",
+    "              file: .secrets/admin-password\n",
+);
+
+#[tokio::test]
+async fn uncertain_security_create_adopts_one_exact_username_without_retrying_the_password() {
+    const COLLECTION: &str = r#"{"applicationId":"application-1","security":[{"securityId":"security-1","applicationId":"application-1","username":"root","password":"remote-password-canary"}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.push(COLLECTION);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (workspace, store, _state, config_file) = seed_leaf_workspace(&server, SECURITY_CONFIG);
+    let security = address("security.admin");
+    let target = leaf_state(
+        ResourceKind::Security,
+        "recovery-pending",
+        serde_json::json!({"username": "root"}),
+        security_sensitive_inputs(3),
+    );
+    start_leaf_step(
+        &store,
+        &security,
+        JournalAction::Create,
+        ExpectedCheckpoint::create(target).unwrap(),
+    );
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&security));
+        assert_eq!(preview.action(), RecoveryAction::AdoptCreatedResource);
+        Ok(true)
+    })
+    .await
+    .expect("one exact authoritative username adopts the uncertain create");
+
+    assert_eq!(result.recovered_steps(), 1);
+    let recovered = store.inspect().unwrap().unwrap();
+    let adopted = recovered.resource(&security).unwrap();
+    assert_eq!(adopted.remote_id().as_str(), "security-1");
+    assert_eq!(
+        adopted.last_applied().as_json(),
+        &serde_json::json!({"username": "root"})
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("security.create"))
+    );
+    let durable = fs::read_dir(workspace.path().join(".dokploy"))
+        .map(|entries| {
+            entries
+                .flat_map(|entry| {
+                    let path = entry.unwrap().path();
+                    if path.is_dir() {
+                        fs::read_dir(path)
+                            .unwrap()
+                            .flat_map(|inner| fs::read(inner.unwrap().path()).unwrap())
+                            .collect::<Vec<_>>()
+                    } else {
+                        fs::read(path).unwrap()
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap();
+    let durable = String::from_utf8_lossy(&durable);
+    assert!(!durable.contains("remote-password-canary"));
+    assert!(!durable.contains("security-recovery-password-canary"));
+}
+
+#[tokio::test]
+async fn uncertain_security_username_update_is_recovered_when_the_password_is_unchanged() {
+    const SECURITY: &str = r#"{"securityId":"security-1","applicationId":"application-1","username":"root","password":"remote-password-canary"}"#;
+    const COLLECTION: &str = r#"{"applicationId":"application-1","security":[{"securityId":"security-1","applicationId":"application-1","username":"root","password":"remote-password-canary"}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.extend([COLLECTION, SECURITY, COLLECTION]);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (_workspace, store, state, config_file) = seed_leaf_workspace(&server, SECURITY_CONFIG);
+    let security = address("security.admin");
+    let before = leaf_state(
+        ResourceKind::Security,
+        "security-1",
+        serde_json::json!({"username": "admin"}),
+        security_sensitive_inputs(3),
+    );
+    let after = leaf_state(
+        ResourceKind::Security,
+        "security-1",
+        serde_json::json!({"username": "root"}),
+        security_sensitive_inputs(3),
+    );
+    checkpoint_leaf(&store, state, &security, before.clone());
+    start_leaf_step(
+        &store,
+        &security,
+        JournalAction::Update,
+        ExpectedCheckpoint::update(before, after).unwrap(),
+    );
+
+    recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
+        Ok(true)
+    })
+    .await
+    .expect("an unchanged password receipt lets the username update be confirmed");
+
+    assert_eq!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&security)
+            .unwrap()
+            .last_applied()
+            .as_json(),
+        &serde_json::json!({"username": "root"})
+    );
+    server.finish();
+}
+
+#[tokio::test]
+async fn uncertain_security_password_rotation_requires_manual_intervention() {
+    const SECURITY: &str = r#"{"securityId":"security-1","applicationId":"application-1","username":"root","password":"remote-password-canary"}"#;
+    const COLLECTION: &str = r#"{"applicationId":"application-1","security":[{"securityId":"security-1","applicationId":"application-1","username":"root","password":"remote-password-canary"}]}"#;
+    let mut bodies = LEAF_TOPOLOGY.to_vec();
+    bodies.extend([COLLECTION, SECURITY, COLLECTION]);
+    let server = TestServer::respond_in_sequence(bodies);
+    let (_workspace, store, state, config_file) = seed_leaf_workspace(&server, SECURITY_CONFIG);
+    let security = address("security.admin");
+    let before = leaf_state(
+        ResourceKind::Security,
+        "security-1",
+        serde_json::json!({"username": "root"}),
+        security_sensitive_inputs(3),
+    );
+    let after = leaf_state(
+        ResourceKind::Security,
+        "security-1",
+        serde_json::json!({"username": "root"}),
+        security_sensitive_inputs(4),
+    );
+    checkpoint_leaf(&store, state, &security, before.clone());
+    start_leaf_step(
+        &store,
+        &security,
+        JournalAction::Update,
+        ExpectedCheckpoint::update(before, after).unwrap(),
+    );
+
+    let error = recover_workspace_with_approval(&server.client(), &config_file, |_| Ok(true))
+        .await
+        .expect_err("a password rotation cannot be proven from write-only remote state");
+
+    assert!(matches!(
+        error,
+        dokploy_cli::recovery::RecoverWorkspaceError::ManualIntervention
+    ));
+    assert!(matches!(
+        store.recovery_status().unwrap(),
+        RecoveryStatus::RecoveryRequired(_)
+    ));
+    assert!(!format!("{error:?} {error}").contains("remote-password-canary"));
+    server.finish();
+}

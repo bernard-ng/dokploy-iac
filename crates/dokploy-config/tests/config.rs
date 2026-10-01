@@ -1161,3 +1161,291 @@ environments:
     )
     .expect("protocol and application are part of the collision key");
 }
+
+#[test]
+fn parses_redirects_beneath_their_application_with_required_typed_fields() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        redirects:
+          www:
+            regex: "^https?://example.com/(.*)"
+            replacement: "https://www.example.com/${1}"
+            permanent: true
+"#,
+    )
+    .expect("valid nested Redirect configuration");
+    let address: ResourceAddress = "redirect.www".parse().unwrap();
+    let redirect = config.resource(&address).unwrap().as_redirect().unwrap();
+
+    assert_eq!(redirect.regex().as_str(), "^https?://example.com/(.*)");
+    assert_eq!(
+        redirect.replacement().as_str(),
+        "https://www.example.com/${1}"
+    );
+    assert!(redirect.permanent());
+    assert_eq!(
+        config.parent_of(&address).unwrap().to_string(),
+        "application.api"
+    );
+
+    for invalid in [
+        "regex: \"\"\n            replacement: \"/x\"\n            permanent: true",
+        "regex: \"^/a\"\n            replacement: \"\"\n            permanent: true",
+        "regex: \"^/a\"\n            replacement: \"/x\"",
+        "regex: \"^/a\"\n            replacement: \"/x\"\n            permanent: null",
+        "regex: null\n            replacement: \"/x\"\n            permanent: true",
+        "regex: \"^/a\"\n            replacement: \"/x\"\n            permanent: true\n            unknown: 1",
+    ] {
+        let yaml = format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        redirects:\n          www:\n            {invalid}\n"
+        );
+        assert!(DokployConfig::parse(&yaml).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn rejects_duplicate_redirect_collision_keys_within_one_application() {
+    let error = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        redirects:
+          first:
+            regex: "^/a"
+            replacement: "/x"
+            permanent: true
+          second:
+            regex: "^/a"
+            replacement: "/y"
+            permanent: false
+"#,
+    )
+    .expect_err("one application cannot declare one regular expression twice");
+
+    assert!(
+        error
+            .issues()
+            .contains(&ValidationIssue::DuplicateRedirectCollision)
+    );
+
+    DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        redirects:
+          first:
+            regex: "^/a"
+            replacement: "/x"
+            permanent: true
+      worker:
+        redirects:
+          first_worker:
+            regex: "^/a"
+            replacement: "/x"
+            permanent: true
+"#,
+    )
+    .expect("the application is part of the Redirect collision key");
+}
+
+#[test]
+fn redirect_lifecycle_accepts_only_owned_redirect_fields() {
+    let yaml = |path: &str| {
+        format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        redirects:\n          www:\n            regex: \"^/a\"\n            replacement: \"/x\"\n            permanent: true\n            lifecycle:\n              ignore_changes:\n                - {path}\n"
+        )
+    };
+
+    DokployConfig::parse(&yaml("permanent")).expect("permanent can be ignored");
+    assert!(DokployConfig::parse(&yaml("username")).is_err());
+}
+
+#[test]
+fn parses_security_entries_with_descriptor_only_passwords() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        security:
+          admin:
+            username: "admin"
+            password:
+              env: ADMIN_PASSWORD
+          legacy:
+            username: "legacy"
+            lifecycle:
+              protect: true
+"#,
+    )
+    .expect("valid nested Security configuration");
+    let admin: ResourceAddress = "security.admin".parse().unwrap();
+    let legacy: ResourceAddress = "security.legacy".parse().unwrap();
+    let admin_config = config.resource(&admin).unwrap().as_security().unwrap();
+
+    assert_eq!(admin_config.username().as_str(), "admin");
+    assert!(matches!(admin_config.password(), Field::Set(_)));
+    assert!(matches!(
+        config
+            .resource(&legacy)
+            .unwrap()
+            .as_security()
+            .unwrap()
+            .password(),
+        Field::Unmanaged
+    ));
+    assert_eq!(
+        config.parent_of(&admin).unwrap().to_string(),
+        "application.api"
+    );
+    assert!(!format!("{config:?}").contains("ADMIN_PASSWORD"));
+
+    for invalid in [
+        "username: \"\"",
+        "username: null",
+        "password:\n              env: ADMIN_PASSWORD",
+        "username: \"a\"\n            password: \"literal-canary-password\"",
+        "username: \"a\"\n            password:\n              env: lowercase",
+        "username: \"a\"\n            password:\n              file: /etc/passwd",
+    ] {
+        let yaml = format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        security:\n          admin:\n            {invalid}\n"
+        );
+        let error = DokployConfig::parse(&yaml).expect_err(invalid);
+        assert!(!format!("{error:?} {error}").contains("literal-canary-password"));
+    }
+}
+
+#[test]
+fn rejects_cleared_security_passwords_and_duplicate_usernames() {
+    let error = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        security:
+          admin:
+            username: "admin"
+            password: null
+"#,
+    )
+    .expect_err("Dokploy cannot clear a basic-auth password");
+    assert!(
+        error
+            .issues()
+            .contains(&ValidationIssue::SecurityPasswordCannotBeCleared)
+    );
+
+    let error = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        security:
+          first:
+            username: "admin"
+          second:
+            username: "admin"
+      worker:
+        security:
+          third:
+            username: "admin"
+"#,
+    )
+    .expect_err("one application cannot declare one username twice");
+    assert_eq!(
+        error
+            .issues()
+            .iter()
+            .filter(|issue| **issue == ValidationIssue::DuplicateSecurityCollision)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn security_lifecycle_rejects_ignoring_the_password() {
+    let yaml = |path: &str| {
+        format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        security:\n          admin:\n            username: \"admin\"\n            lifecycle:\n              ignore_changes:\n                - {path}\n"
+        )
+    };
+
+    DokployConfig::parse(&yaml("username")).expect("username can be ignored");
+    assert!(DokployConfig::parse(&yaml("password")).is_err());
+}
+
+#[test]
+fn generated_schema_models_redirect_and_security_leaves() {
+    let schema = serde_json::to_value(DokployConfig::json_schema()).unwrap();
+    let required = |name: &str| {
+        let mut required = schema["$defs"][name]["required"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{name} must declare required fields"))
+            .iter()
+            .map(|value| value.as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        required.sort();
+        required
+    };
+
+    assert_eq!(
+        required("RawRedirect"),
+        ["permanent", "regex", "replacement"]
+    );
+    assert_eq!(required("RawSecurity"), ["username"]);
+    assert_eq!(
+        schema["$defs"]["RawRedirect"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        schema["$defs"]["RawSecurity"]["additionalProperties"],
+        false
+    );
+    assert_eq!(schema["$defs"]["NonEmptyText"]["minLength"], 1);
+    assert_eq!(
+        schema["$defs"]["RawSecurity"]["properties"]["password"],
+        schema["$defs"]["RawPostgres"]["properties"]["password"]
+    );
+    assert!(
+        schema["$defs"]["RawApplication"]["properties"]
+            .as_object()
+            .unwrap()
+            .contains_key("redirects")
+    );
+    assert!(
+        schema["$defs"]["RawApplication"]["properties"]
+            .as_object()
+            .unwrap()
+            .contains_key("security")
+    );
+}

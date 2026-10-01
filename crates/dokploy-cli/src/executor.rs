@@ -13,11 +13,12 @@ use dokploy_core::{
 use dokploy_sdk::{
     ApplicationId, ChangeLibSqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication,
     CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo,
-    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId,
-    EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode, MariaDbId, MongoId, MySqlId, Nullable,
-    PortId, PortProtocol, PostgresId, ProjectId, PublishMode, RedisId, UpdateApplication,
-    UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo,
-    UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedis,
+    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
+    CreateSecurity, Dokploy, DomainId, EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode,
+    MariaDbId, MongoId, MySqlId, Nullable, PortId, PortProtocol, PostgresId, ProjectId,
+    PublishMode, RedirectId, RedisId, SecurityId, UpdateApplication, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePort,
+    UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSecurity,
 };
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
@@ -726,6 +727,33 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.port_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
+            ResourceKind::Redirect => {
+                let input = redirect_create_input(checkpoint, &state)?;
+                let created = match client.redirects().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        fail_if_definitive(&mut journal, token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.redirect_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
+            ResourceKind::Security => {
+                let input =
+                    security_create_input(&mut compiled, change.address(), checkpoint, &state)?;
+                let created = match client.security().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        fail_if_definitive(&mut journal, token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.security_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
         };
         let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
         state.upsert_resource(change.address().clone(), resource)?;
@@ -756,6 +784,8 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Redis
                     | ResourceKind::Domain
                     | ResourceKind::Port
+                    | ResourceKind::Redirect
+                    | ResourceKind::Security
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
@@ -764,7 +794,10 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
         ChangeKind::Replace => {
             matches!(
                 change.address().kind(),
-                ResourceKind::LibSql | ResourceKind::Port
+                ResourceKind::LibSql
+                    | ResourceKind::Port
+                    | ResourceKind::Redirect
+                    | ResourceKind::Security
             ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
         }
     }) {
@@ -1034,7 +1067,9 @@ async fn prepare_move_mutation(
                 host,
             )))
         }
-        ResourceKind::Port => Err(ApplyWorkspaceError::UnsupportedChange),
+        ResourceKind::Port | ResourceKind::Redirect | ResourceKind::Security => {
+            Err(ApplyWorkspaceError::UnsupportedChange)
+        }
     }
 }
 
@@ -1158,6 +1193,18 @@ async fn delete_remote_resource(
                 .await,
         ),
         ResourceKind::Port => Some(client.ports().delete(PortId::new(remote_id.as_str())).await),
+        ResourceKind::Redirect => Some(
+            client
+                .redirects()
+                .delete(RedirectId::new(remote_id.as_str()))
+                .await,
+        ),
+        ResourceKind::Security => Some(
+            client
+                .security()
+                .delete(SecurityId::new(remote_id.as_str()))
+                .await,
+        ),
     }
 }
 
@@ -1220,6 +1267,31 @@ fn port_update_input(
         required_publish_mode(checkpoint)?,
         required_port_protocol(checkpoint)?,
     ))
+}
+
+fn redirect_create_input(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+) -> Result<CreateRedirect, ApplyWorkspaceError> {
+    Ok(CreateRedirect::new(
+        checkpoint_application_id(checkpoint, state)?,
+        required_string(checkpoint, &PropertyPath::Regex)?,
+        required_string(checkpoint, &PropertyPath::Replacement)?,
+        required_bool(checkpoint, &PropertyPath::Permanent)?,
+    ))
+}
+
+fn security_create_input(
+    compiled: &mut crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+) -> Result<CreateSecurity, ApplyWorkspaceError> {
+    let application_id = checkpoint_application_id(checkpoint, state)?;
+    let username = required_string(checkpoint, &PropertyPath::Username)?;
+    let password = take_sensitive_string(compiled, address, &PropertyPath::Password)?;
+
+    Ok(CreateSecurity::new(application_id, username, password))
 }
 
 fn required_port_number(
@@ -2227,6 +2299,14 @@ async fn execute_delete_before_create_replacement(
     {
         return execute_port_replacement(client, change, state, journal).await;
     }
+    if matches!(
+        change.address().kind(),
+        ResourceKind::Redirect | ResourceKind::Security
+    ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return execute_application_leaf_replacement(client, compiled, change, state, journal)
+            .await;
+    }
     if change.address().kind() != ResourceKind::LibSql
         || change.replacement_order() != Some(ReplacementOrder::DeleteBeforeCreate)
     {
@@ -2360,6 +2440,225 @@ async fn execute_port_replacement(
     journal.succeed(create_token, Some(remote_id), state)?;
 
     Ok(())
+}
+
+/// Replaces a Redirect or Security entry whose containing application changed.
+///
+/// The old identity is deleted and checkpointed first. The create step carries a
+/// recovery placeholder so an uncertain create can be adopted by its exact
+/// application-scoped collision key.
+async fn execute_application_leaf_replacement(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    let kind = change.address().kind();
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let delete_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Delete,
+        ExpectedCheckpoint::remove(before.clone()),
+    )?;
+    let Some(deleted) = delete_remote_resource(client, kind, before.remote_id()).await else {
+        return Err(ApplyWorkspaceError::UnsupportedChange);
+    };
+    if let Err(error) = deleted
+        && !is_already_missing(&error)
+    {
+        let code = failure_code(&error);
+        fail_if_definitive(journal, delete_token, code)?;
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+    state.remove_resource(change.address())?;
+    journal.succeed(delete_token, None, state)?;
+
+    let placeholder = RemoteId::new("recovery-pending")
+        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+    let create_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Create,
+        ExpectedCheckpoint::create(checkpoint.materialize(change.address(), placeholder)?)?,
+    )?;
+    let created = match kind {
+        ResourceKind::Redirect => {
+            let input = redirect_create_input(checkpoint, state)?;
+            client
+                .redirects()
+                .create(input)
+                .await
+                .map(|created| created.redirect_id().as_str().to_owned())
+        }
+        ResourceKind::Security => {
+            let input = security_create_input(compiled, change.address(), checkpoint, state)?;
+            client
+                .security()
+                .create(input)
+                .await
+                .map(|created| created.security_id().as_str().to_owned())
+        }
+        _ => return Err(ApplyWorkspaceError::UnsupportedChange),
+    };
+    let created = match created {
+        Ok(created) => created,
+        Err(error) => {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, create_token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+    };
+    let remote_id =
+        RemoteId::new(created).map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+    state.upsert_resource(change.address().clone(), resource)?;
+    journal.succeed(create_token, Some(remote_id), state)?;
+
+    Ok(())
+}
+
+/// Prepares a complete Redirect replacement from a fresh read.
+///
+/// Fields selected by the plan come from the checkpoint. Every other field,
+/// including an ignored one, keeps its current remote value, so the complete
+/// replacement never overwrites a value this configuration does not own.
+async fn redirect_update_input(
+    client: &Dokploy,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+    remote_id: &RemoteId,
+    selected_paths: &[PropertyPath],
+) -> Result<UpdateRedirect, ApplyWorkspaceError> {
+    if selected_paths.iter().any(|path| {
+        !matches!(
+            path,
+            PropertyPath::Regex | PropertyPath::Replacement | PropertyPath::Permanent
+        )
+    }) {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+    let application_id = checkpoint_application_id(checkpoint, state)?;
+    let current = client
+        .redirects()
+        .get(RedirectId::new(remote_id.as_str()))
+        .await
+        .map_err(|error| ApplyWorkspaceError::RemotePreparation {
+            code: failure_code(&error),
+        })?;
+    if current.redirect_id.as_str() != remote_id.as_str()
+        || current.application_id != application_id
+    {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+    let regex = if selected_paths.contains(&PropertyPath::Regex) {
+        required_string(checkpoint, &PropertyPath::Regex)?
+    } else {
+        current.regex.clone()
+    };
+    let replacement = if selected_paths.contains(&PropertyPath::Replacement) {
+        required_string(checkpoint, &PropertyPath::Replacement)?
+    } else {
+        current.replacement.clone()
+    };
+    let permanent = if selected_paths.contains(&PropertyPath::Permanent) {
+        required_bool(checkpoint, &PropertyPath::Permanent)?
+    } else {
+        current.permanent
+    };
+    let collection = client
+        .redirects()
+        .by_application(application_id)
+        .await
+        .map_err(|error| ApplyWorkspaceError::RemotePreparation {
+            code: failure_code(&error),
+        })?;
+    if collection
+        .redirects()
+        .iter()
+        .any(|other| other.redirect_id != current.redirect_id && other.regex == regex)
+    {
+        return Err(ApplyWorkspaceError::RemotePreparation {
+            code: FailureCode::Validation,
+        });
+    }
+
+    Ok(UpdateRedirect::new(
+        RedirectId::new(remote_id.as_str()),
+        regex,
+        replacement,
+        permanent,
+    ))
+}
+
+/// Prepares a complete Security replacement from a fresh read.
+///
+/// Dokploy requires the username and password together and offers no way to
+/// leave the password unchanged, so the declared password descriptor must be
+/// available for every update. A username-only change with an unmanaged password
+/// fails here, before any remote mutation or journal step.
+async fn security_update_input(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+    remote_id: &RemoteId,
+    selected_paths: &[PropertyPath],
+) -> Result<UpdateSecurity, ApplyWorkspaceError> {
+    if selected_paths
+        .iter()
+        .any(|path| !matches!(path, PropertyPath::Username | PropertyPath::Password))
+    {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+    let application_id = checkpoint_application_id(checkpoint, state)?;
+    let current = client
+        .security()
+        .get(SecurityId::new(remote_id.as_str()))
+        .await
+        .map_err(|error| ApplyWorkspaceError::RemotePreparation {
+            code: failure_code(&error),
+        })?;
+    if current.security_id.as_str() != remote_id.as_str()
+        || current.application_id != application_id
+    {
+        return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+    let username = if selected_paths.contains(&PropertyPath::Username) {
+        required_string(checkpoint, &PropertyPath::Username)?
+    } else {
+        current.username.clone()
+    };
+    let collection = client
+        .security()
+        .by_application(application_id)
+        .await
+        .map_err(|error| ApplyWorkspaceError::RemotePreparation {
+            code: failure_code(&error),
+        })?;
+    if collection
+        .entries()
+        .iter()
+        .any(|other| other.security_id != current.security_id && other.username == username)
+    {
+        return Err(ApplyWorkspaceError::RemotePreparation {
+            code: FailureCode::Validation,
+        });
+    }
+    let password = take_sensitive_string(compiled, address, &PropertyPath::Password)?;
+
+    Ok(UpdateSecurity::new(
+        SecurityId::new(remote_id.as_str()),
+        username,
+        password,
+    ))
 }
 
 async fn execute_libsql_update(
@@ -2689,6 +2988,21 @@ async fn execute_existing_change(
             }
             ExistingMutation::Port(port_update_input(checkpoint, &remote_id)?)
         }
+        ResourceKind::Redirect => ExistingMutation::Redirect(
+            redirect_update_input(client, checkpoint, state, &remote_id, &selected_paths).await?,
+        ),
+        ResourceKind::Security => ExistingMutation::Security(
+            security_update_input(
+                client,
+                compiled,
+                change.address(),
+                checkpoint,
+                state,
+                &remote_id,
+                &selected_paths,
+            )
+            .await?,
+        ),
     };
 
     let token = journal.start_recoverable_step(
@@ -2740,6 +3054,8 @@ enum ExistingMutation {
     Redis(UpdateRedis),
     Domain(UpdateDomain),
     Port(UpdatePort),
+    Redirect(UpdateRedirect),
+    Security(UpdateSecurity),
 }
 
 impl ExistingMutation {
@@ -2756,6 +3072,8 @@ impl ExistingMutation {
             Self::Redis(input) => client.redis().update(input).await,
             Self::Domain(input) => client.domains().update(input).await,
             Self::Port(input) => client.ports().update(input).await,
+            Self::Redirect(input) => client.redirects().update(input).await,
+            Self::Security(input) => client.security().update(input).await,
         }
     }
 }

@@ -160,6 +160,41 @@ fn port_state_requires_application_containment() {
 }
 
 #[test]
+fn redirect_and_security_state_require_application_containment() {
+    let application: ResourceAddress = "application.api".parse().unwrap();
+    let environment: ResourceAddress = "environment.production".parse().unwrap();
+
+    for (kind, managed) in [
+        (
+            ResourceKind::Redirect,
+            json!({"regex": "^/old", "replacement": "/new", "permanent": true}),
+        ),
+        (ResourceKind::Security, json!({"username": "admin"})),
+    ] {
+        let new_state = |containment| {
+            ResourceState::try_new(
+                kind,
+                RemoteId::new("leaf-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(managed.clone()).unwrap(),
+                SensitiveInputs::default(),
+                containment,
+                Vec::new(),
+            )
+        };
+
+        assert!(new_state(Some(application.clone())).is_ok());
+        assert!(new_state(Some(environment.clone())).is_err());
+        assert!(new_state(None).is_err());
+        assert_eq!(kind.as_str().parse::<ResourceKind>().unwrap(), kind);
+        assert_eq!(
+            kind.containment_parent_kind(),
+            Some(ResourceKind::Application)
+        );
+    }
+}
+
+#[test]
 fn instance_identity_compares_normalized_base_urls() {
     let first = InstanceIdentity::parse("HTTPS://Deploy.Example.com:443/")
         .expect("a valid Dokploy URL must normalize");

@@ -487,7 +487,10 @@ impl ResourceCheckpoint {
                 | PropertyPath::PublishedPort
                 | PropertyPath::TargetPort
                 | PropertyPath::PublishMode
-                | PropertyPath::Protocol => {
+                | PropertyPath::Protocol
+                | PropertyPath::Regex
+                | PropertyPath::Replacement
+                | PropertyPath::Permanent => {
                     managed.insert(path.to_string(), materialize_value(value)?);
                 }
                 PropertyPath::DeploymentStatus => {
