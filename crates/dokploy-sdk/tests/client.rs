@@ -732,7 +732,7 @@ async fn imperative_requests_must_match_generated_endpoint_metadata() {
 }
 
 #[tokio::test]
-async fn imperative_mutations_send_json_once_and_preserve_remote_errors() {
+async fn imperative_mutations_send_json_once_and_return_remote_status() {
     let server = TestServer::respond(
         "503 Service Unavailable",
         r#"{"code":"SERVICE_UNAVAILABLE","message":"Try again"}"#,

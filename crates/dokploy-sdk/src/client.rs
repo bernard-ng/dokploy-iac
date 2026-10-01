@@ -131,66 +131,40 @@ enum ErrorBodyPolicy {
 }
 
 fn error_body_policy(endpoint: Endpoint) -> ErrorBodyPolicy {
+    // This is the complete preserve allowlist. Every omitted endpoint fails closed.
     if matches!(
         endpoint,
-        PROJECT_ALL
-            | PROJECT_ONE
-            | PROJECT_REMOVE
-            | ENVIRONMENT_ONE
-            | ENVIRONMENT_BY_PROJECT_ID
-            | ENVIRONMENT_REMOVE
-            | APPLICATION_ONE
-            | APPLICATION_UPDATE
-            | APPLICATION_DELETE
-            | COMPOSE_ONE
-            | COMPOSE_CREATE
-            | COMPOSE_UPDATE
-            | COMPOSE_DELETE
-            | MOUNTS_ONE
-            | MOUNTS_LIST_BY_SERVICE_ID
-            | MOUNTS_CREATE
-            | MOUNTS_UPDATE
-            | MOUNTS_REMOVE
-            | SECURITY_ONE
-            | SECURITY_CREATE
-            | SECURITY_UPDATE
-            | SECURITY_DELETE
-            | SCHEDULE_ONE
-            | SCHEDULE_LIST
-            | SCHEDULE_CREATE
-            | SCHEDULE_UPDATE
-            | SCHEDULE_DELETE
-            | SERVER_ALL
-            | REGISTRY_ALL
-            | DESTINATION_ALL
-            | POSTGRES_ONE
-            | POSTGRES_CREATE
-            | POSTGRES_UPDATE
-            | POSTGRES_REMOVE
-            | LIBSQL_ONE
-            | LIBSQL_CREATE
-            | LIBSQL_UPDATE
-            | LIBSQL_REMOVE
-            | MYSQL_ONE
-            | MYSQL_CREATE
-            | MYSQL_CHANGE_PASSWORD
-            | MYSQL_REMOVE
-            | MARIADB_ONE
-            | MARIADB_CREATE
-            | MARIADB_CHANGE_PASSWORD
-            | MARIADB_REMOVE
-            | MONGO_ONE
-            | MONGO_CREATE
-            | MONGO_CHANGE_PASSWORD
-            | MONGO_REMOVE
-            | REDIS_ONE
-            | REDIS_CREATE
-            | REDIS_UPDATE
-            | REDIS_REMOVE
+        PROJECT_CREATE
+            | PROJECT_UPDATE
+            | ENVIRONMENT_CREATE
+            | ENVIRONMENT_UPDATE
+            | APPLICATION_SEARCH
+            | COMPOSE_SEARCH
+            | DOMAIN_BY_APPLICATION_ID
+            | DOMAIN_CREATE
+            | DOMAIN_DELETE
+            | DOMAIN_ONE
+            | DOMAIN_UPDATE
+            | PORT_CREATE
+            | PORT_DELETE
+            | PORT_ONE
+            | PORT_UPDATE
+            | REDIRECTS_CREATE
+            | REDIRECTS_DELETE
+            | REDIRECTS_ONE
+            | REDIRECTS_UPDATE
+            | POSTGRES_SEARCH
+            | MYSQL_SEARCH
+            | MYSQL_UPDATE
+            | MARIADB_SEARCH
+            | MARIADB_UPDATE
+            | MONGO_SEARCH
+            | MONGO_UPDATE
+            | REDIS_SEARCH
     ) {
-        ErrorBodyPolicy::Sanitize
-    } else {
         ErrorBodyPolicy::Preserve
+    } else {
+        ErrorBodyPolicy::Sanitize
     }
 }
 

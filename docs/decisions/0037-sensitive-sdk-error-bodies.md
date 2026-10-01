@@ -19,12 +19,13 @@ remote errors can include the deleted resource's secret-bearing state.
 
 ## Decision
 
-The SDK keeps one exhaustive endpoint policy for non-success response bodies.
-Sensitive endpoints collect the remote body only through the bounded zeroizing
-reader, discard it before error decoding, and return only the HTTP status, the
-stable status-derived code, the canonical status message, and an empty issues
-list. Explicitly non-sensitive endpoints continue to decode bounded structured
-errors.
+The SDK keeps one fail-closed endpoint policy for non-success response bodies.
+An explicit allowlist identifies endpoints whose structured error text is safe
+to preserve. Every other endpoint, including generated operations not used by
+the handwritten client, is sensitive by default. Sensitive endpoints collect
+the remote body only through the bounded zeroizing reader, discard it before
+error decoding, and return only the HTTP status, the stable status-derived
+code, the canonical status message, and an empty issues list.
 
 The sensitive inventory covers:
 
@@ -39,7 +40,10 @@ The sensitive inventory covers:
 
 Typed secret-aware helpers assert that their endpoint is in the policy and then
 use the shared decoder. The imperative API uses the same policy, so it cannot
-bypass sanitization by calling an owned sensitive operation directly.
+bypass sanitization by calling an owned sensitive operation directly. The test
+registry partitions every operation used by the handwritten client, including
+`application.deploy`, and separately proves that an unregistered generated
+operation fails closed.
 
 The bounded zeroizing response reader remains the only response-body buffering
 path. Mutation transport and decode failures retain the existing
@@ -64,5 +68,5 @@ owns serialization and request-body buffers end to end.
 - Callers retain stable HTTP classification without receiving server-specific
   failure details for those endpoints.
 - Ordinary validation endpoints keep actionable structured errors.
-- Adding or changing an owned endpoint requires classifying it in the policy
-  and updating the inventory test.
+- Adding an owned endpoint is safe by default. Preserving its remote error text
+  requires an explicit allowlist entry and corresponding registry coverage.
