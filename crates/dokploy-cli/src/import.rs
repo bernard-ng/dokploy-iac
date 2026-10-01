@@ -378,7 +378,11 @@ async fn discover(
             build_application(project, environment, application, target)
         }
         ImportKind::Compose => {
-            let compose = client.composes().get(ComposeId::new(remote_id)).await?;
+            let requested_id = ComposeId::new(remote_id);
+            let compose = client.composes().get(requested_id.clone()).await?;
+            if compose.compose_id != requested_id {
+                return Err(ImportError::InvalidRemoteTopology);
+            }
             let environment = client
                 .environments()
                 .get(compose.environment_id.clone())
@@ -387,6 +391,11 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
+            let collection = client
+                .composes()
+                .by_environment(compose.environment_id.clone())
+                .await?;
+            validate_compose_import_authority(&compose, collection.composes())?;
             build_compose(project, environment, compose, target)
         }
         ImportKind::Postgres => {
@@ -479,6 +488,39 @@ async fn discover(
             build_domain(project, environment, application, domain, target)
         }
     }
+}
+
+fn validate_compose_import_authority(
+    direct: &dokploy_sdk::ComposeDetails,
+    collection: &[dokploy_sdk::ComposeSearchItem],
+) -> Result<(), ImportError> {
+    let matching = collection
+        .iter()
+        .filter(|candidate| candidate.compose_id == direct.compose_id)
+        .collect::<Vec<_>>();
+    let [candidate] = matching.as_slice() else {
+        return Err(ImportError::InvalidRemoteTopology);
+    };
+    if candidate.environment_id != direct.environment_id
+        || candidate.name != direct.name
+        || !response_fields_agree(
+            &candidate.app_name,
+            &ResponseField::Value(direct.app_name.clone()),
+        )
+        || !response_fields_agree(&candidate.description, &direct.description)
+        || !response_fields_agree(&candidate.source_type, &direct.source_type)
+    {
+        return Err(ImportError::InvalidRemoteTopology);
+    }
+
+    Ok(())
+}
+
+fn response_fields_agree<T: PartialEq>(left: &ResponseField<T>, right: &ResponseField<T>) -> bool {
+    matches!(
+        (left, right),
+        (ResponseField::NotReturned, _) | (_, ResponseField::NotReturned)
+    ) || left == right
 }
 
 fn build_project(

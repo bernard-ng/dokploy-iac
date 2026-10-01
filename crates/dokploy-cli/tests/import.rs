@@ -464,6 +464,7 @@ async fn compose_import_is_protected_document_free_and_immediately_convergent() 
         compose,
         environment,
         project,
+        compose_collection,
         project_topology,
         environment_collection,
         environment,
@@ -526,8 +527,81 @@ async fn compose_import_is_protected_document_free_and_immediately_convergent() 
     );
 
     let requests = server.finish();
-    assert_eq!(requests.len(), 8);
+    assert_eq!(requests.len(), 9);
     assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
+async fn compose_import_rejects_a_direct_identity_that_differs_from_the_request() {
+    let contradictory = r#"{"composeId":"compose-2","environmentId":"environment-1","name":"Other stack","appName":"other-stack","description":"Other","sourceType":"raw"}"#;
+    let server = TestServer::respond_in_sequence(vec![contradictory]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client is valid");
+    let workspace = tempfile::tempdir().expect("workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let error = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Compose,
+            remote_id: "compose-1".to_owned(),
+            address: "compose.web".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect_err("a contradictory direct identity must fail closed");
+
+    assert!(matches!(error, ImportError::InvalidRemoteTopology));
+    assert!(!config_file.exists());
+    assert!(!workspace.path().join(".dokploy/state.json").exists());
+    let requests = server.finish();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("GET /api/compose.one?"));
+}
+
+#[tokio::test]
+async fn compose_import_requires_direct_and_authoritative_collection_agreement() {
+    let compose = r#"{"composeId":"compose-1","environmentId":"environment-1","name":"Remote stack","appName":"remote-stack","description":"Imported stack","sourceType":"raw"}"#;
+    let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
+    let project =
+        r#"{"projectId":"project-1","name":"platform","description":"Platform","environments":[]}"#;
+    let contradictory_collection = r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"Different stack","appName":"remote-stack","description":"Imported stack","sourceType":"raw"}],"total":1}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        compose,
+        environment,
+        project,
+        contradictory_collection,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client is valid");
+    let workspace = tempfile::tempdir().expect("workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let error = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Compose,
+            remote_id: "compose-1".to_owned(),
+            address: "compose.web".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect_err("contradictory collection evidence must fail closed");
+
+    assert!(matches!(error, ImportError::InvalidRemoteTopology));
+    assert!(!config_file.exists());
+    assert!(!workspace.path().join(".dokploy/state.json").exists());
+    let requests = server.finish();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[3].starts_with("GET /api/compose.search?"));
 }
 
 #[tokio::test]
