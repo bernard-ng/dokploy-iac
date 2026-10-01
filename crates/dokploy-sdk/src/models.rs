@@ -2694,6 +2694,12 @@ impl CreateLibSql {
         self
     }
 
+    /// Associates the LibSQL database with a specific external Dokploy server.
+    #[must_use]
+    pub fn with_server(self, server_id: ServerId) -> Self {
+        self.with_server_placement(ServerPlacement::Server(server_id))
+    }
+
     pub(crate) const fn server_placement(&self) -> Option<&ServerPlacement> {
         self.server_placement.as_ref()
     }

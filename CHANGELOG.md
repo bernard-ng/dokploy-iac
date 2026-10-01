@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Represent SDK server and registry associations with presence-aware
+  `ResponseField` values, add explicit unmanaged, local, and external server
+  placement for supported creates, and classify unproven post-create placement
+  as outcome unknown. This is an intentional pre-release source break: callers
+  must replace `None` with `ResponseField::NotReturned` or `ResponseField::Null`
+  as appropriate, and `Some(id)` with `ResponseField::Value(id)`.
 - Sanitize SDK failure bodies through a fail-closed endpoint policy, including
   shared reads, deploys, deletes, and unknown generated operations, while
   preserving structured errors only for explicitly safe operations and

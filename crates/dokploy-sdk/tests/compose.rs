@@ -312,8 +312,9 @@ async fn compose_create_redacts_content_and_validates_the_returned_identity() {
         .expect_err("a conflicting returned parent must fail closed");
     assert!(matches!(
         error,
-        Error::UnexpectedResponse {
-            operation: "compose.create"
+        Error::OutcomeUnknown {
+            operation: "compose.create",
+            ..
         }
     ));
     mismatch.finish();
@@ -335,8 +336,9 @@ async fn compose_create_redacts_content_and_validates_the_returned_identity() {
         .expect_err("a conflicting returned server must fail closed");
     assert!(matches!(
         error,
-        Error::UnexpectedResponse {
-            operation: "compose.create"
+        Error::OutcomeUnknown {
+            operation: "compose.create",
+            ..
         }
     ));
     server_mismatch.finish();

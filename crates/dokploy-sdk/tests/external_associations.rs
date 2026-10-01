@@ -137,6 +137,16 @@ fn every_supported_create_distinguishes_unmanaged_local_and_external_placement()
     );
 }
 
+#[test]
+fn libsql_external_server_compatibility_alias_preserves_wire_shape() {
+    let input = libsql().with_server(ServerId::new("server-1"));
+
+    assert_eq!(
+        serde_json::to_value(input).expect("LibSQL input serializes")["serverId"],
+        "server-1"
+    );
+}
+
 fn assert_server_presence<T>(fixture: &str, field: impl Fn(&T) -> &ResponseField<ServerId>)
 where
     T: DeserializeOwned,

@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_sdk::{
     ChangeMongoPassword, CreateMongo, Dokploy, EnvironmentId, Error, MongoId, ResponseField,
-    UpdateMongo,
+    ServerPlacement, UpdateMongo,
 };
 use zeroize::Zeroizing;
 
@@ -16,6 +16,14 @@ struct TestServer {
     url: String,
     requests: Receiver<Vec<String>>,
     thread: JoinHandle<()>,
+}
+
+fn test_client(server: &TestServer) -> Dokploy {
+    Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid")
 }
 
 impl TestServer {
@@ -295,6 +303,29 @@ async fn mongo_create_supports_explicit_replica_sets_without_leaking_the_passwor
             "replicaSets": true
         }),
     );
+
+    let missing_placement = TestServer::respond_with_json(r#"{"mongoId":"mongo-2"}"#);
+    let error = test_client(&missing_placement)
+        .mongo()
+        .create(
+            CreateMongo::new(
+                "main",
+                EnvironmentId::new("environment-1"),
+                "app",
+                Zeroizing::new("database-password-canary".to_owned()),
+            )
+            .with_server_placement(ServerPlacement::Local),
+        )
+        .await
+        .expect_err("managed placement requires response evidence");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "mongo.create",
+            ..
+        }
+    ));
+    missing_placement.finish();
 }
 
 #[tokio::test]

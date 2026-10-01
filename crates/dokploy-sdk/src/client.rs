@@ -467,9 +467,7 @@ impl Dokploy {
                 .as_ref()
                 .is_some_and(|placement| !placement.matches_response(&response.server_id))
         {
-            return Err(Error::UnexpectedResponse {
-                operation: APPLICATION_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(APPLICATION_CREATE));
         }
 
         Ok(CreatedApplication::from_response(response))
@@ -619,9 +617,7 @@ impl Dokploy {
             || response.name != expected_name
             || !server_matches
         {
-            return Err(Error::UnexpectedResponse {
-                operation: COMPOSE_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(COMPOSE_CREATE));
         }
 
         Ok(CreatedCompose::new(response.compose_id))
@@ -2083,9 +2079,7 @@ impl Dokploy {
                 .as_ref()
                 .is_some_and(|placement| !placement.matches_response(&response.server_id))
         {
-            return Err(Error::UnexpectedResponse {
-                operation: MONGO_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(MONGO_CREATE));
         }
 
         Ok(CreatedMongo::from_response(response))
@@ -2198,9 +2192,7 @@ impl Dokploy {
                 .as_ref()
                 .is_some_and(|placement| !placement.matches_response(&response.server_id))
         {
-            return Err(Error::UnexpectedResponse {
-                operation: MARIADB_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(MARIADB_CREATE));
         }
 
         Ok(CreatedMariaDb::from_response(response))
@@ -2311,9 +2303,7 @@ impl Dokploy {
                 .as_ref()
                 .is_some_and(|placement| !placement.matches_response(&response.server_id))
         {
-            return Err(Error::UnexpectedResponse {
-                operation: MYSQL_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(MYSQL_CREATE));
         }
 
         Ok(CreatedMySql::from_response(response))
@@ -2427,9 +2417,7 @@ impl Dokploy {
                 .as_ref()
                 .is_some_and(|placement| !placement.matches_response(&response.server_id))
         {
-            return Err(Error::UnexpectedResponse {
-                operation: POSTGRES_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(POSTGRES_CREATE));
         }
 
         Ok(CreatedPostgres::from_response(response))
@@ -2538,9 +2526,7 @@ impl Dokploy {
                 .as_ref()
                 .is_some_and(|placement| !placement.matches_response(&response.server_id))
         {
-            return Err(Error::UnexpectedResponse {
-                operation: REDIS_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(REDIS_CREATE));
         }
 
         Ok(CreatedRedis::from_response(response))

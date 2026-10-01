@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_sdk::{
     ChangeMariaDbPassword, CreateMariaDb, Dokploy, EnvironmentId, Error, MariaDbId, ResponseField,
-    UpdateMariaDb,
+    ServerPlacement, UpdateMariaDb,
 };
 use zeroize::Zeroizing;
 
@@ -16,6 +16,14 @@ struct TestServer {
     url: String,
     requests: Receiver<Vec<String>>,
     thread: JoinHandle<()>,
+}
+
+fn test_client(server: &TestServer) -> Dokploy {
+    Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid")
 }
 
 impl TestServer {
@@ -332,6 +340,30 @@ async fn mariadb_create_supports_an_optional_root_password_without_leaking_secre
         .1;
     let body: serde_json::Value = serde_json::from_str(body).expect("request body is JSON");
     assert_eq!(body.get("databaseRootPassword"), None);
+
+    let missing_placement = TestServer::respond_with_json(r#"{"mariadbId":"mariadb-2"}"#);
+    let error = test_client(&missing_placement)
+        .mariadb()
+        .create(
+            CreateMariaDb::new(
+                "main",
+                EnvironmentId::new("environment-1"),
+                "app",
+                "app",
+                Zeroizing::new("user-password-canary".to_owned()),
+            )
+            .with_server_placement(ServerPlacement::Local),
+        )
+        .await
+        .expect_err("managed placement requires response evidence");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "mariadb.create",
+            ..
+        }
+    ));
+    missing_placement.finish();
 }
 
 #[tokio::test]

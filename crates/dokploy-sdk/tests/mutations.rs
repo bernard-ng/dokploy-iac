@@ -229,8 +229,9 @@ async fn application_create_returns_its_physical_identity() {
         .expect_err("managed placement requires response evidence");
     assert!(matches!(
         error,
-        dokploy_sdk::Error::UnexpectedResponse {
-            operation: "application.create"
+        dokploy_sdk::Error::OutcomeUnknown {
+            operation: "application.create",
+            ..
         }
     ));
     missing_placement.finish();
@@ -273,6 +274,31 @@ async fn postgres_create_returns_its_physical_identity_without_debugging_the_pas
     assert_eq!(body["databaseName"], "app");
     assert_eq!(body["databaseUser"], "app");
     assert_eq!(body["databasePassword"], "password-canary");
+
+    let missing_placement = TestServer::respond_with_json(r#"{"postgresId":"postgres-2"}"#);
+    let error = missing_placement
+        .client()
+        .postgres()
+        .create(
+            CreatePostgres::new(
+                "main",
+                EnvironmentId::new("environment-1"),
+                "app",
+                "app",
+                Zeroizing::new("password-canary".to_owned()),
+            )
+            .with_server_placement(ServerPlacement::Local),
+        )
+        .await
+        .expect_err("managed placement requires response evidence");
+    assert!(matches!(
+        error,
+        dokploy_sdk::Error::OutcomeUnknown {
+            operation: "postgres.create",
+            ..
+        }
+    ));
+    missing_placement.finish();
 }
 
 #[tokio::test]
@@ -298,6 +324,29 @@ async fn redis_create_returns_its_physical_identity_without_debugging_the_passwo
     let request = server.finish();
     assert!(request.starts_with("POST /api/redis.create HTTP/1.1\r\n"));
     assert!(request.contains(r#""databasePassword":"password-canary""#));
+
+    let missing_placement = TestServer::respond_with_json(r#"{"redisId":"redis-2"}"#);
+    let error = missing_placement
+        .client()
+        .redis()
+        .create(
+            CreateRedis::new(
+                "cache",
+                EnvironmentId::new("environment-1"),
+                Zeroizing::new("password-canary".to_owned()),
+            )
+            .with_server_placement(ServerPlacement::Local),
+        )
+        .await
+        .expect_err("managed placement requires response evidence");
+    assert!(matches!(
+        error,
+        dokploy_sdk::Error::OutcomeUnknown {
+            operation: "redis.create",
+            ..
+        }
+    ));
+    missing_placement.finish();
 }
 
 #[tokio::test]

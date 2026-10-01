@@ -5,7 +5,7 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_sdk::{
     ChangeMySqlPassword, CreateMySql, Dokploy, EnvironmentId, Error, MySqlDetails, MySqlId,
-    ResponseField, UpdateMySql,
+    ResponseField, ServerPlacement, UpdateMySql,
 };
 use zeroize::Zeroizing;
 
@@ -16,6 +16,14 @@ struct TestServer {
     url: String,
     requests: Receiver<Vec<String>>,
     thread: JoinHandle<()>,
+}
+
+fn test_client(server: &TestServer) -> Dokploy {
+    Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client configuration is valid")
 }
 
 impl TestServer {
@@ -427,6 +435,31 @@ async fn mysql_create_requires_both_passwords_and_returns_its_identity() {
             "databaseRootPassword": "root-password-canary"
         })
     );
+
+    let missing_placement = TestServer::respond_with_json(r#"{"mysqlId":"mysql-2"}"#);
+    let error = test_client(&missing_placement)
+        .mysql()
+        .create(
+            CreateMySql::new(
+                "main",
+                EnvironmentId::new("environment-1"),
+                "app",
+                "app",
+                Zeroizing::new("user-password-canary".to_owned()),
+                Zeroizing::new("root-password-canary".to_owned()),
+            )
+            .with_server_placement(ServerPlacement::Local),
+        )
+        .await
+        .expect_err("managed placement requires response evidence");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "mysql.create",
+            ..
+        }
+    ));
+    missing_placement.finish();
 }
 
 #[tokio::test]
