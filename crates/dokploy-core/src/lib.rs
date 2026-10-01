@@ -14,8 +14,9 @@ mod snapshot;
 pub use mutation::{MutationContract, MutationMode, PropertyMutation, ReplacementOrder};
 pub use plan::{
     ChangeKind, ChangeOrigin, CheckpointMaterializationError, CheckpointTarget, CheckpointValueRef,
-    DriftChange, DriftKind, FieldChange, MetadataChangeKind, MoveAction, Plan, PlanDiagnostic,
-    PlanDiagnosticCode, PlannedChange, ResourceCheckpoint, UnsupportedDirectiveKind, ValueState,
+    DriftChange, DriftKind, ExternalSelectorFailure, FieldChange, MetadataChangeKind, MoveAction,
+    Plan, PlanDiagnostic, PlanDiagnosticCode, PlannedChange, ResourceCheckpoint,
+    UnsupportedDirectiveKind, ValueState,
 };
 pub use planner::plan;
 pub use property::{
@@ -24,7 +25,8 @@ pub use property::{
 };
 pub use snapshot::{
     ConfigDigest, ConfigDigestError, DesiredResource, DesiredState, DesiredStateError,
-    MoveDirective, PropertyObservation, PropertyUnknownReason, ProtectionIntent, RemoteFailureKind,
-    RemoteObservation, RemoteResource, RemoteState, RemoteStateError, RemovalDirective,
-    ResourceObservationMatch, StoredState, StoredStateError, compare_resource_observation,
+    ExternalResolution, MoveDirective, PropertyObservation, PropertyUnknownReason,
+    ProtectionIntent, RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState,
+    RemoteStateError, RemovalDirective, ResourceObservationMatch, StoredState, StoredStateError,
+    compare_resource_observation,
 };

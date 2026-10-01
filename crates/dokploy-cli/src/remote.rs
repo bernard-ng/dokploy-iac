@@ -3093,6 +3093,11 @@ fn application_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3151,6 +3156,11 @@ fn compose_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3461,6 +3471,11 @@ fn postgres_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3732,6 +3747,11 @@ fn mysql_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4024,6 +4044,11 @@ fn mariadb_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4317,6 +4342,11 @@ fn mongo_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4626,6 +4656,11 @@ fn libsql_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Server
+            | PropertyPath::BuildServer
+            | PropertyPath::Registry
+            | PropertyPath::BuildRegistry
+            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);

@@ -5,10 +5,11 @@ use dokploy_state::ResourceAddress;
 use crate::dependency::{DependencyGraphKind, DependencyOrdering};
 use crate::{
     ChangeKind, ChangeOrigin, CheckpointTarget, DesiredResource, DesiredState, DriftChange,
-    DriftKind, FieldChange, MetadataChangeKind, MoveAction, MutationContract, MutationMode,
-    OwnedValue, Plan, PlanDiagnostic, PlanDiagnosticCode, PlannedChange, PropertyObservation,
-    PropertyPath, PropertyUnknownReason, ProtectionIntent, RemoteObservation, RemoteResource,
-    RemoteState, ResourceCheckpoint, StoredState, UnsupportedDirectiveKind, ValueState,
+    DriftKind, ExternalResolution, ExternalSelectorFailure, FieldChange, MetadataChangeKind,
+    MoveAction, MutationContract, MutationMode, OwnedValue, Plan, PlanDiagnostic,
+    PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, PropertyUnknownReason,
+    ProtectionIntent, RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint,
+    StoredState, UnsupportedDirectiveKind, ValueState,
     plan::PLAN_FORMAT_VERSION,
     snapshot::{StoredResource, owned_source_shape_valid},
 };
@@ -65,8 +66,9 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
     let mut changes = Vec::new();
     let mut drift = Vec::new();
     let mut diagnostics = Vec::new();
+    let unresolved = unresolved_external_selectors(desired, remote, &mut diagnostics);
     for (source, target) in &directives.moves {
-        if !directives.pending_moves.contains(source) {
+        if !directives.pending_moves.contains(source) || unresolved.contains(target) {
             continue;
         }
         plan_move(
@@ -102,7 +104,7 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
         .collect();
 
     for address in relevant_addresses {
-        if directives.handled.contains(&address) {
+        if directives.handled.contains(&address) || unresolved.contains(&address) {
             continue;
         }
         let desired_resource = desired.resources.get(&address);
@@ -148,6 +150,46 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
 
     ordering.order_changes(&mut changes);
     finish_plan(desired, stored, changes, drift, diagnostics)
+}
+
+/// Blocks every desired resource whose external selector lacks a unique fresh resolution.
+///
+/// Zero or multiple exact matches, an unreadable authoritative collection, or a
+/// missing resolution all stop planning for the resource; the diagnostic names
+/// only the resource and selector property, never an external identity.
+fn unresolved_external_selectors(
+    desired: &DesiredState,
+    remote: &RemoteState,
+    diagnostics: &mut Vec<PlanDiagnostic>,
+) -> BTreeSet<ResourceAddress> {
+    let mut unresolved = BTreeSet::new();
+    for (address, resource) in &desired.resources {
+        for (path, value) in &resource.properties {
+            if !path.is_external_selector()
+                || resource.ignore_changes.contains(path)
+                || matches!(value, OwnedValue::Null)
+            {
+                continue;
+            }
+            let failure = match remote.external_resolution(address, path) {
+                Some(ExternalResolution::Local | ExternalResolution::Resolved(_)) => continue,
+                Some(ExternalResolution::Unmatched) => ExternalSelectorFailure::Unmatched,
+                Some(ExternalResolution::Ambiguous) => ExternalSelectorFailure::Ambiguous,
+                Some(ExternalResolution::Unavailable(_)) => ExternalSelectorFailure::Unavailable,
+                None => ExternalSelectorFailure::Unobserved,
+            };
+            let mut issue = diagnostic(
+                PlanDiagnosticCode::UnresolvedExternalSelector,
+                Some(address.clone()),
+            );
+            issue.property = Some(path.clone());
+            issue.selector_failure = Some(failure);
+            diagnostics.push(issue);
+            unresolved.insert(address.clone());
+        }
+    }
+
+    unresolved
 }
 
 struct ValidatedDirectives {
@@ -1162,6 +1204,7 @@ fn diagnostic(code: PlanDiagnosticCode, address: Option<ResourceAddress>) -> Pla
         remote_failure: None,
         property_unknown: None,
         unsupported: None,
+        selector_failure: None,
     }
 }
 

@@ -109,6 +109,16 @@ pub enum PropertyPath {
     FilePath,
     /// Opaque, write-only file Mount content.
     FileContent,
+    /// External server placement selector, accepted only when a service is created.
+    Server,
+    /// External build-server selector.
+    BuildServer,
+    /// External runtime image registry selector.
+    Registry,
+    /// External build image registry selector.
+    BuildRegistry,
+    /// External rollback image registry selector.
+    RollbackRegistry,
     /// Deployment status, valid only in lifecycle metadata.
     DeploymentStatus,
 }
@@ -142,6 +152,22 @@ impl PropertyPath {
         matches!(self, Self::DeploymentStatus)
     }
 
+    /// Returns whether values at this path select an external server or registry.
+    ///
+    /// Selector values are stable `{"local": true}` or `{"name": "..."}` objects.
+    /// Physical external identities never become property values.
+    #[must_use]
+    pub const fn is_external_selector(&self) -> bool {
+        matches!(
+            self,
+            Self::Server
+                | Self::BuildServer
+                | Self::Registry
+                | Self::BuildRegistry
+                | Self::RollbackRegistry
+        )
+    }
+
     pub(crate) const fn is_source_child(&self) -> bool {
         matches!(self, Self::SourceRepository | Self::SourceBranch)
     }
@@ -164,6 +190,11 @@ impl PropertyPath {
                     | Self::SourceBranch
                     | Self::Environment
                     | Self::EnvironmentVariable(_)
+                    | Self::Server
+                    | Self::BuildServer
+                    | Self::Registry
+                    | Self::BuildRegistry
+                    | Self::RollbackRegistry
                     | Self::DeploymentStatus
             ),
             ResourceKind::Compose => matches!(self, Self::Description | Self::ComposeDocument),
@@ -244,6 +275,11 @@ impl fmt::Display for PropertyPath {
             Self::VolumeName => formatter.write_str("volume_name"),
             Self::FilePath => formatter.write_str("file_path"),
             Self::FileContent => formatter.write_str("content"),
+            Self::Server => formatter.write_str("server"),
+            Self::BuildServer => formatter.write_str("build_server"),
+            Self::Registry => formatter.write_str("registry"),
+            Self::BuildRegistry => formatter.write_str("build_registry"),
+            Self::RollbackRegistry => formatter.write_str("rollback_registry"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
         }
     }
@@ -283,6 +319,11 @@ impl FromStr for PropertyPath {
             "volume_name" => Ok(Self::VolumeName),
             "file_path" => Ok(Self::FilePath),
             "content" => Ok(Self::FileContent),
+            "server" => Ok(Self::Server),
+            "build_server" => Ok(Self::BuildServer),
+            "registry" => Ok(Self::Registry),
+            "build_registry" => Ok(Self::BuildRegistry),
+            "rollback_registry" => Ok(Self::RollbackRegistry),
             "deployment.status" => Ok(Self::DeploymentStatus),
             _ => {
                 let Some(name) = value.strip_prefix("environment.") else {

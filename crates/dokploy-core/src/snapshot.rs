@@ -479,6 +479,11 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
             value,
             OwnedValue::Value(value) if mount_text_valid(value.as_json())
         ),
+        PropertyPath::Server
+        | PropertyPath::BuildServer
+        | PropertyPath::Registry
+        | PropertyPath::BuildRegistry
+        | PropertyPath::RollbackRegistry => selector_owned_value_valid(path, value),
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
     }
 }
@@ -515,6 +520,49 @@ fn mount_text_valid(value: &serde_json::Value) -> bool {
     value.as_str().is_some_and(|text| {
         !text.is_empty() && text.len() <= 4096 && !text.chars().any(char::is_control)
     })
+}
+
+/// Returns whether a JSON value is a stable external selector accepted at `path`.
+///
+/// Only server placement accepts the `local` form; every selector otherwise uses
+/// one exact `name`. Physical external identities are never valid selectors.
+fn selector_json_valid(path: &PropertyPath, value: &serde_json::Value) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    if object.len() != 1 {
+        return false;
+    }
+    match (object.get("local"), object.get("name")) {
+        (Some(local), None) => *path == PropertyPath::Server && local == &serde_json::json!(true),
+        (None, Some(name)) => name.as_str().is_some_and(external_name_valid),
+        _ => false,
+    }
+}
+
+/// Mirrors the configuration grammar for exact external record names.
+fn external_name_valid(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 256
+        && name.trim() == name
+        && !name.chars().any(char::is_control)
+}
+
+fn selector_owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
+    match value {
+        // Server placement is create-only and cannot be cleared; local is explicit.
+        OwnedValue::Null => *path != PropertyPath::Server,
+        OwnedValue::Value(value) => selector_json_valid(path, value.as_json()),
+        OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
+    }
+}
+
+fn selector_observation_valid(path: &PropertyPath, observation: &PropertyObservation) -> bool {
+    match observation {
+        PropertyObservation::Known(value) => selector_json_valid(path, value.as_json()),
+        PropertyObservation::KnownAbsent => *path != PropertyPath::Server,
+        PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
+    }
 }
 
 fn port_number_value_valid(value: &OwnedValue) -> bool {
@@ -1011,6 +1059,57 @@ pub enum RemoteObservation {
     Unavailable(RemoteFailureKind),
 }
 
+/// How one desired external selector resolved against a fresh minimal collection.
+///
+/// Servers, registries, and backup destinations are external infrastructure.
+/// Configuration stores only a stable selector; this value carries the freshly
+/// resolved physical identity for execution and keyed saved-plan binding. The
+/// identity is never serialized and never appears in debug output.
+#[derive(Clone, Eq, PartialEq)]
+pub enum ExternalResolution {
+    /// The explicit local server selector, which has no physical identity.
+    Local,
+    /// Exactly one external record matched the exact name.
+    Resolved(RemoteId),
+    /// No external record matched the exact name.
+    Unmatched,
+    /// More than one external record matched the exact name.
+    Ambiguous,
+    /// The authoritative collection could not be read conclusively.
+    Unavailable(RemoteFailureKind),
+}
+
+impl ExternalResolution {
+    /// Returns whether the selector resolved to a usable identity.
+    #[must_use]
+    pub const fn is_resolved(&self) -> bool {
+        matches!(self, Self::Local | Self::Resolved(_))
+    }
+
+    /// Returns the resolved physical identity, which is absent for `local`.
+    #[must_use]
+    pub const fn remote_id(&self) -> Option<&RemoteId> {
+        match self {
+            Self::Resolved(remote_id) => Some(remote_id),
+            Self::Local | Self::Unmatched | Self::Ambiguous | Self::Unavailable(_) => None,
+        }
+    }
+}
+
+impl fmt::Debug for ExternalResolution {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local => formatter.write_str("Local"),
+            Self::Resolved(_) => formatter.write_str("Resolved([REDACTED])"),
+            Self::Unmatched => formatter.write_str("Unmatched"),
+            Self::Ambiguous => formatter.write_str("Ambiguous"),
+            Self::Unavailable(reason) => {
+                formatter.debug_tuple("Unavailable").field(reason).finish()
+            }
+        }
+    }
+}
+
 /// How a fresh remote observation compares with one exact durable checkpoint.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResourceObservationMatch {
@@ -1089,6 +1188,7 @@ pub struct RemoteState {
     pub(crate) instance: InstanceIdentity,
     observations: BTreeMap<ResourceAddress, RemoteObservation>,
     mutation_contracts: BTreeMap<ResourceAddress, crate::MutationContract>,
+    external: BTreeMap<(ResourceAddress, PropertyPath), ExternalResolution>,
 }
 
 impl RemoteState {
@@ -1141,7 +1241,48 @@ impl RemoteState {
             instance,
             observations: normalized,
             mutation_contracts,
+            external: BTreeMap::new(),
         })
+    }
+
+    /// Attaches the fresh external selector resolutions used by desired resources.
+    ///
+    /// Each key names one desired selector property of an observed resource.
+    /// Resolved identities stay in this non-serializable snapshot, take part in
+    /// the keyed binding receipt, and never enter plans or durable state.
+    pub fn with_external_resolutions(
+        mut self,
+        resolutions: impl IntoIterator<Item = ((ResourceAddress, PropertyPath), ExternalResolution)>,
+    ) -> Result<Self, RemoteStateError> {
+        let mut external = BTreeMap::new();
+        for ((address, path), resolution) in resolutions {
+            let valid = path.is_external_selector()
+                && path.valid_for_kind(address.kind())
+                && self.observations.contains_key(&address)
+                && (path == PropertyPath::Server || resolution != ExternalResolution::Local);
+            if !valid {
+                return Err(RemoteStateError::InvalidExternalResolution { address });
+            }
+            if external
+                .insert((address.clone(), path), resolution)
+                .is_some()
+            {
+                return Err(RemoteStateError::InvalidExternalResolution { address });
+            }
+        }
+        self.external = external;
+
+        Ok(self)
+    }
+
+    /// Returns the fresh resolution of one desired external selector property.
+    #[must_use]
+    pub fn external_resolution(
+        &self,
+        address: &ResourceAddress,
+        path: &PropertyPath,
+    ) -> Option<&ExternalResolution> {
+        self.external.get(&(address.clone(), path.clone()))
     }
 
     /// Returns the Dokploy instance that was observed.
@@ -1225,6 +1366,40 @@ impl RemoteState {
             }
         }
 
+        if !self.external.is_empty() {
+            receipt_field(&mut mac, b"external", b"selectors");
+            receipt_u64(&mut mac, self.external.len());
+            for ((address, path), resolution) in &self.external {
+                receipt_field(&mut mac, b"address", address.to_string().as_bytes());
+                receipt_field(&mut mac, b"selector", path.to_string().as_bytes());
+                match resolution {
+                    ExternalResolution::Local => receipt_field(&mut mac, b"resolution", b"local"),
+                    ExternalResolution::Resolved(remote_id) => {
+                        receipt_field(&mut mac, b"resolution", b"resolved");
+                        receipt_field(&mut mac, b"external_id", remote_id.as_str().as_bytes());
+                    }
+                    ExternalResolution::Unmatched => {
+                        receipt_field(&mut mac, b"resolution", b"unmatched");
+                    }
+                    ExternalResolution::Ambiguous => {
+                        receipt_field(&mut mac, b"resolution", b"ambiguous");
+                    }
+                    ExternalResolution::Unavailable(reason) => {
+                        receipt_field(&mut mac, b"resolution", b"unavailable");
+                        receipt_field(
+                            &mut mac,
+                            b"reason",
+                            match reason {
+                                RemoteFailureKind::Unavailable => b"unavailable",
+                                RemoteFailureKind::Unauthorized => b"unauthorized",
+                                RemoteFailureKind::InvalidResponse => b"invalid_response",
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
         mac.finalize().into_bytes().into()
     }
 
@@ -1256,6 +1431,7 @@ impl fmt::Debug for RemoteState {
             .debug_struct("RemoteState")
             .field("instance", &self.instance)
             .field("observation_count", &self.observations.len())
+            .field("external_resolution_count", &self.external.len())
             .finish()
     }
 }
@@ -1286,6 +1462,9 @@ pub enum RemoteStateError {
     /// Observation and mutation-contract address sets differ.
     #[error("remote observations and mutation contracts cover different addresses")]
     MutationContractMismatch,
+    /// An external selector resolution names an invalid or unobserved selector property.
+    #[error("remote resource `{address}` contains an invalid external selector resolution")]
+    InvalidExternalResolution { address: ResourceAddress },
 }
 
 fn validate_remote_resource(
@@ -1369,6 +1548,11 @@ fn validate_remote_resource(
                         PropertyObservation::KnownAbsent => true,
                     }
                 }
+                PropertyPath::Server
+                | PropertyPath::BuildServer
+                | PropertyPath::Registry
+                | PropertyPath::BuildRegistry
+                | PropertyPath::RollbackRegistry => selector_observation_valid(path, observation),
                 _ => !matches!(
                     observation,
                     PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)

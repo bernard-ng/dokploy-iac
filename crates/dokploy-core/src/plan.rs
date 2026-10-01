@@ -506,7 +506,12 @@ impl ResourceCheckpoint {
                 | PropertyPath::MountPath
                 | PropertyPath::HostPath
                 | PropertyPath::VolumeName
-                | PropertyPath::FilePath => {
+                | PropertyPath::FilePath
+                | PropertyPath::Server
+                | PropertyPath::BuildServer
+                | PropertyPath::Registry
+                | PropertyPath::BuildRegistry
+                | PropertyPath::RollbackRegistry => {
                     managed.insert(path.to_string(), materialize_value(value)?);
                 }
                 PropertyPath::DeploymentStatus => {
@@ -699,6 +704,8 @@ pub enum PlanDiagnosticCode {
     UnsupportedMutation,
     /// A create is missing a property required by the adapter contract.
     MissingCreateProperty,
+    /// A desired external selector has no unique fresh resolution.
+    UnresolvedExternalSelector,
 }
 
 impl PlanDiagnosticCode {
@@ -724,6 +731,34 @@ impl PlanDiagnosticCode {
             Self::InvalidIgnoredCheckpoint => "DOKPLAN016",
             Self::UnsupportedMutation => "DOKPLAN017",
             Self::MissingCreateProperty => "DOKPLAN018",
+            Self::UnresolvedExternalSelector => "DOKPLAN019",
+        }
+    }
+}
+
+/// A closed reason a desired external selector cannot select exactly one record.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalSelectorFailure {
+    /// No external record has the exact configured name.
+    Unmatched,
+    /// More than one external record has the exact configured name.
+    Ambiguous,
+    /// The authoritative external collection could not be read conclusively.
+    Unavailable,
+    /// Discovery supplied no resolution for the desired selector.
+    Unobserved,
+}
+
+impl ExternalSelectorFailure {
+    /// Returns the stable machine-readable reason used in plan documents.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unmatched => "unmatched",
+            Self::Ambiguous => "ambiguous",
+            Self::Unavailable => "unavailable",
+            Self::Unobserved => "unobserved",
         }
     }
 }
@@ -738,6 +773,7 @@ pub struct PlanDiagnostic {
     pub(crate) remote_failure: Option<RemoteFailureKind>,
     pub(crate) property_unknown: Option<PropertyUnknownReason>,
     pub(crate) unsupported: Option<UnsupportedDirectiveKind>,
+    pub(crate) selector_failure: Option<ExternalSelectorFailure>,
 }
 
 impl PlanDiagnostic {
@@ -781,6 +817,12 @@ impl PlanDiagnostic {
     #[must_use]
     pub const fn unsupported(&self) -> Option<UnsupportedDirectiveKind> {
         self.unsupported
+    }
+
+    /// Returns why a desired external selector could not be resolved, when applicable.
+    #[must_use]
+    pub const fn selector_failure(&self) -> Option<ExternalSelectorFailure> {
+        self.selector_failure
     }
 }
 
@@ -867,6 +909,7 @@ impl Plan {
                 remote_failure: diagnostic.remote_failure,
                 property_unknown: diagnostic.property_unknown,
                 unsupported: diagnostic.unsupported,
+                selector_failure: diagnostic.selector_failure,
             })
             .collect();
         let document = PlanDocument {
@@ -916,4 +959,6 @@ struct PlanDiagnosticDocument<'a> {
     property_unknown: Option<PropertyUnknownReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     unsupported: Option<UnsupportedDirectiveKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_failure: Option<ExternalSelectorFailure>,
 }
