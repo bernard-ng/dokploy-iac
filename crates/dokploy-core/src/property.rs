@@ -109,6 +109,22 @@ pub enum PropertyPath {
     FilePath,
     /// Opaque, write-only file Mount content.
     FileContent,
+    /// Compose service name that scopes a Schedule.
+    ServiceName,
+    /// Schedule name, the collision key within one target.
+    ScheduleName,
+    /// Schedule cron expression.
+    CronExpression,
+    /// Schedule shell type.
+    ShellType,
+    /// Whether a Schedule is enabled.
+    Enabled,
+    /// Optional Schedule timezone.
+    Timezone,
+    /// Opaque, write-only Schedule command.
+    Command,
+    /// Opaque, write-only Schedule script.
+    Script,
     /// External server placement selector, accepted only when a service is created.
     Server,
     /// External build-server selector.
@@ -142,6 +158,8 @@ impl PropertyPath {
                 | Self::RootPassword
                 | Self::ComposeDocument
                 | Self::FileContent
+                | Self::Command
+                | Self::Script
                 | Self::EnvironmentVariable(_)
         )
     }
@@ -236,6 +254,19 @@ impl PropertyPath {
                     | Self::FilePath
                     | Self::FileContent
             ),
+            ResourceKind::Schedule => matches!(
+                self,
+                Self::Target
+                    | Self::ServiceName
+                    | Self::ScheduleName
+                    | Self::Description
+                    | Self::CronExpression
+                    | Self::ShellType
+                    | Self::Enabled
+                    | Self::Timezone
+                    | Self::Command
+                    | Self::Script
+            ),
         }
     }
 }
@@ -275,6 +306,14 @@ impl fmt::Display for PropertyPath {
             Self::VolumeName => formatter.write_str("volume_name"),
             Self::FilePath => formatter.write_str("file_path"),
             Self::FileContent => formatter.write_str("content"),
+            Self::ServiceName => formatter.write_str("service_name"),
+            Self::ScheduleName => formatter.write_str("name"),
+            Self::CronExpression => formatter.write_str("cron_expression"),
+            Self::ShellType => formatter.write_str("shell_type"),
+            Self::Enabled => formatter.write_str("enabled"),
+            Self::Timezone => formatter.write_str("timezone"),
+            Self::Command => formatter.write_str("command"),
+            Self::Script => formatter.write_str("script"),
             Self::Server => formatter.write_str("server"),
             Self::BuildServer => formatter.write_str("build_server"),
             Self::Registry => formatter.write_str("registry"),
@@ -319,6 +358,14 @@ impl FromStr for PropertyPath {
             "volume_name" => Ok(Self::VolumeName),
             "file_path" => Ok(Self::FilePath),
             "content" => Ok(Self::FileContent),
+            "service_name" => Ok(Self::ServiceName),
+            "name" => Ok(Self::ScheduleName),
+            "cron_expression" => Ok(Self::CronExpression),
+            "shell_type" => Ok(Self::ShellType),
+            "enabled" => Ok(Self::Enabled),
+            "timezone" => Ok(Self::Timezone),
+            "command" => Ok(Self::Command),
+            "script" => Ok(Self::Script),
             "server" => Ok(Self::Server),
             "build_server" => Ok(Self::BuildServer),
             "registry" => Ok(Self::Registry),

@@ -25,6 +25,7 @@ pub enum ResourceKind {
     Redirect,
     Security,
     Mount,
+    Schedule,
 }
 
 impl ResourceKind {
@@ -47,6 +48,7 @@ impl ResourceKind {
             Self::Redirect => "redirect",
             Self::Security => "security",
             Self::Mount => "mount",
+            Self::Schedule => "schedule",
         }
     }
 
@@ -65,7 +67,8 @@ impl ResourceKind {
             | Self::LibSql
             | Self::Redis
             | Self::Domain
-            | Self::Mount => Some(Self::Environment),
+            | Self::Mount
+            | Self::Schedule => Some(Self::Environment),
             Self::Port | Self::Redirect | Self::Security => Some(Self::Application),
         }
     }
@@ -87,6 +90,15 @@ impl ResourceKind {
                 | Self::LibSql
                 | Self::Redis
         )
+    }
+
+    /// Returns whether a Schedule may target resources of this kind.
+    ///
+    /// Dokploy host and Dokploy-server Schedule scopes are intentionally not
+    /// part of this closed union.
+    #[must_use]
+    pub const fn is_schedule_target(self) -> bool {
+        matches!(self, Self::Application | Self::Compose)
     }
 }
 
@@ -128,6 +140,7 @@ impl FromStr for ResourceKind {
             "redirect" => Ok(Self::Redirect),
             "security" => Ok(Self::Security),
             "mount" => Ok(Self::Mount),
+            "schedule" => Ok(Self::Schedule),
             _ => Err(ResourceKindParseError {
                 value: value.to_owned(),
             }),

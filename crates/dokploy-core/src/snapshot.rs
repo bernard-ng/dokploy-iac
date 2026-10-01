@@ -447,7 +447,10 @@ fn property_paths_overlap(left: &PropertyPath, right: &PropertyPath) -> bool {
 }
 
 fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
-    if matches!(path, PropertyPath::FileContent) {
+    if matches!(
+        path,
+        PropertyPath::FileContent | PropertyPath::Command | PropertyPath::Script
+    ) {
         return matches!(value, OwnedValue::Sensitive(_));
     }
     if path.is_sensitive() {
@@ -479,6 +482,20 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
             value,
             OwnedValue::Value(value) if mount_text_valid(value.as_json())
         ),
+        PropertyPath::ScheduleName | PropertyPath::ServiceName | PropertyPath::Timezone => {
+            matches!(
+                value,
+                OwnedValue::Value(value) if schedule_text_valid(value.as_json())
+            )
+        }
+        PropertyPath::CronExpression => matches!(
+            value,
+            OwnedValue::Value(value) if schedule_text_valid(value.as_json())
+        ),
+        PropertyPath::ShellType => port_string_value_valid(value, &["bash", "sh"]),
+        PropertyPath::Enabled => {
+            matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
+        }
         PropertyPath::Server
         | PropertyPath::BuildServer
         | PropertyPath::Registry
@@ -495,6 +512,14 @@ fn kind_value_valid(kind: ResourceKind, path: &PropertyPath, value: &OwnedValue)
         (ResourceKind::Security, PropertyPath::Password) => {
             matches!(value, OwnedValue::Sensitive(_))
         }
+        (ResourceKind::Schedule, PropertyPath::Target) => matches!(
+            value,
+            OwnedValue::Value(value) if schedule_target_text_valid(value.as_json())
+        ),
+        (ResourceKind::Schedule, PropertyPath::Description) => matches!(
+            value,
+            OwnedValue::Value(value) if schedule_text_valid(value.as_json())
+        ),
         _ => true,
     }
 }
@@ -513,6 +538,24 @@ fn mount_target_text_valid(value: &serde_json::Value) -> bool {
         .as_str()
         .and_then(|text| text.parse::<ResourceAddress>().ok())
         .is_some_and(|address| address.kind().is_mount_target())
+}
+
+/// Returns whether a JSON value is one logical address inside the closed Schedule target union.
+fn schedule_target_text_valid(value: &serde_json::Value) -> bool {
+    value
+        .as_str()
+        .and_then(|text| text.parse::<ResourceAddress>().ok())
+        .is_some_and(|address| address.kind().is_schedule_target())
+}
+
+/// Returns whether a JSON value is a bounded, control-free, trimmed, nonempty Schedule string.
+fn schedule_text_valid(value: &serde_json::Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        !text.is_empty()
+            && text.len() <= 4096
+            && text.trim() == text
+            && !text.chars().any(char::is_control)
+    })
 }
 
 /// Returns whether a JSON value is a bounded, control-free, nonempty Mount string.
@@ -1513,6 +1556,41 @@ fn validate_remote_resource(
                     non_empty_observation_valid(observation)
                 }
                 PropertyPath::Permanent => match observation {
+                    PropertyObservation::Known(value) => value.as_json().is_boolean(),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => false,
+                },
+                PropertyPath::Target if address.kind() == ResourceKind::Schedule => {
+                    match observation {
+                        PropertyObservation::Known(value) => {
+                            schedule_target_text_valid(value.as_json())
+                        }
+                        PropertyObservation::Unknown(reason) => {
+                            *reason != PropertyUnknownReason::Sensitive
+                        }
+                        PropertyObservation::KnownAbsent => false,
+                    }
+                }
+                PropertyPath::ScheduleName | PropertyPath::CronExpression => match observation {
+                    PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => false,
+                },
+                PropertyPath::ServiceName | PropertyPath::Timezone => match observation {
+                    PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => true,
+                },
+                PropertyPath::ShellType => {
+                    port_observation_string_valid(observation, &["bash", "sh"])
+                }
+                PropertyPath::Enabled => match observation {
                     PropertyObservation::Known(value) => value.as_json().is_boolean(),
                     PropertyObservation::Unknown(reason) => {
                         *reason != PropertyUnknownReason::Sensitive

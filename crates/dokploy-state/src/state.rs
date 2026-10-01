@@ -28,6 +28,8 @@ const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "document",
     "composefile",
     "content",
+    "command",
+    "script",
 ];
 
 /// The normalized base URL of the Dokploy instance owning a state lineage.
@@ -565,6 +567,10 @@ fn ensure_disjoint_inputs(
             managed.contains_key("document")
         } else if path.is_file_content() {
             managed.contains_key("content")
+        } else if path.is_schedule_command() {
+            managed.contains_key("command")
+        } else if path.is_schedule_script() {
+            managed.contains_key("script")
         } else if let Some(name) = path.environment_name() {
             match environment {
                 Some(serde_json::Value::Null) => true,

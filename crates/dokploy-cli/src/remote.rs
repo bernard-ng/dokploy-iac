@@ -743,6 +743,34 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
             )
             .with_containment(MutationMode::StateOnly),
+        ResourceKind::Schedule => {
+            let replace = PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported);
+            MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+                .requiring(PropertyPath::Target)
+                .requiring(PropertyPath::ScheduleName)
+                .requiring(PropertyPath::CronExpression)
+                .requiring(PropertyPath::ShellType)
+                .requiring(PropertyPath::Enabled)
+                .requiring(PropertyPath::Command)
+                .allowing_on_create(PropertyPath::ServiceName)
+                .allowing_on_create(PropertyPath::Description)
+                .allowing_on_create(PropertyPath::Timezone)
+                .allowing_on_create(PropertyPath::Script)
+                // A changed target or Compose service is a different Dokploy
+                // collection, so it replaces the Schedule rather than moving it.
+                .with_property(PropertyPath::Target, replace)
+                .with_property(PropertyPath::ServiceName, replace)
+                .with_property(PropertyPath::ScheduleName, in_place)
+                .with_property(PropertyPath::CronExpression, in_place)
+                .with_property(PropertyPath::ShellType, in_place)
+                .with_property(PropertyPath::Enabled, in_place)
+                // Dokploy has no proven clear for these fields or for executable text.
+                .with_property(PropertyPath::Description, set_only)
+                .with_property(PropertyPath::Timezone, set_only)
+                .with_property(PropertyPath::Command, set_only)
+                .with_property(PropertyPath::Script, set_only)
+                .with_containment(MutationMode::StateOnly)
+        }
         ResourceKind::Mount => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Target)
             .requiring(PropertyPath::MountType)
@@ -3176,6 +3204,14 @@ fn application_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -3245,6 +3281,14 @@ fn compose_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -3560,6 +3604,14 @@ fn postgres_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -3836,6 +3888,14 @@ fn mysql_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -4133,6 +4193,14 @@ fn mariadb_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -4431,6 +4499,14 @@ fn mongo_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::PublishedPort
@@ -4738,6 +4814,14 @@ fn libsql_properties(
             | PropertyPath::Regex
             | PropertyPath::Replacement
             | PropertyPath::Permanent
+            | PropertyPath::ServiceName
+            | PropertyPath::ScheduleName
+            | PropertyPath::CronExpression
+            | PropertyPath::ShellType
+            | PropertyPath::Enabled
+            | PropertyPath::Timezone
+            | PropertyPath::Command
+            | PropertyPath::Script
             | PropertyPath::Replicas
             | PropertyPath::Source
             | PropertyPath::SourceRepository

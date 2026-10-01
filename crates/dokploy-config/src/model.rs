@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::{
     ConfigValue, DomainConfig, ExternalSelector, Field, Lifecycle, MountSourceConfig,
     MoveDeclaration, NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig,
-    RemovedDeclaration, SecretSource, SourceConfig,
+    RemovedDeclaration, ScheduleShellConfig, SecretSource, SourceConfig,
 };
 
 /// A fully parsed and semantically validated `dokploy.yaml` document.
@@ -114,6 +114,7 @@ pub enum ResourceConfig {
     Redirect(RedirectConfig),
     Security(SecurityConfig),
     Mount(MountConfig),
+    Schedule(ScheduleConfig),
 }
 
 impl ResourceConfig {
@@ -135,6 +136,7 @@ impl ResourceConfig {
             Self::Redirect(_) => ResourceKind::Redirect,
             Self::Security(_) => ResourceKind::Security,
             Self::Mount(_) => ResourceKind::Mount,
+            Self::Schedule(_) => ResourceKind::Schedule,
         }
     }
 
@@ -259,6 +261,14 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_schedule(&self) -> Option<&ScheduleConfig> {
+        match self {
+            Self::Schedule(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn depends_on(&self) -> &[ResourceAddress] {
         match self {
             Self::Project(config) => &config.depends_on,
@@ -276,6 +286,7 @@ impl ResourceConfig {
             Self::Redirect(config) => &config.depends_on,
             Self::Security(config) => &config.depends_on,
             Self::Mount(config) => &config.depends_on,
+            Self::Schedule(config) => &config.depends_on,
         }
     }
 
@@ -297,6 +308,7 @@ impl ResourceConfig {
             Self::Redirect(config) => &config.lifecycle,
             Self::Security(config) => &config.lifecycle,
             Self::Mount(config) => &config.lifecycle,
+            Self::Schedule(config) => &config.lifecycle,
         }
     }
 
@@ -317,6 +329,7 @@ impl ResourceConfig {
             Self::Redirect(config) => &mut config.lifecycle,
             Self::Security(config) => &mut config.lifecycle,
             Self::Mount(config) => &mut config.lifecycle,
+            Self::Schedule(config) => &mut config.lifecycle,
         }
     }
 
@@ -337,6 +350,7 @@ impl ResourceConfig {
             Self::Redirect(config) => &mut config.depends_on,
             Self::Security(config) => &mut config.depends_on,
             Self::Mount(config) => &mut config.depends_on,
+            Self::Schedule(config) => &mut config.depends_on,
         }
     }
 
@@ -423,6 +437,14 @@ impl ResourceConfig {
                     ..
                 } = &config.source
                 {
+                    secrets.push(secret);
+                }
+            }
+            Self::Schedule(config) => {
+                if let Field::Set(secret) = &config.command {
+                    secrets.push(secret);
+                }
+                if let Field::Set(secret) = &config.script {
                     secrets.push(secret);
                 }
             }
@@ -762,6 +784,90 @@ impl MountConfig {
 
 redacted_debug!(MountConfig, "MountConfig");
 
+/// Complete declarative inputs for one Schedule on an application or one
+/// Compose service.
+///
+/// The target is an owned property and inferred dependency, not a containment
+/// parent. Schedules are contained by their environment like Mounts. The
+/// command and script are descriptors only: they can be omitted (unmanaged,
+/// which requires protection for the command) but never cleared.
+#[derive(Clone, Eq, PartialEq)]
+pub struct ScheduleConfig {
+    pub(crate) name: String,
+    pub(crate) target: ResourceAddress,
+    pub(crate) service_name: Option<String>,
+    pub(crate) cron_expression: String,
+    pub(crate) shell_type: ScheduleShellConfig,
+    pub(crate) enabled: bool,
+    pub(crate) description: Field<String>,
+    pub(crate) timezone: Field<String>,
+    pub(crate) command: Field<SecretSource>,
+    pub(crate) script: Field<SecretSource>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl ScheduleConfig {
+    /// Returns the Dokploy Schedule name, the collision key within one target.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the logical address of the application or Compose target.
+    #[must_use]
+    pub const fn target(&self) -> &ResourceAddress {
+        &self.target
+    }
+
+    /// Returns the Compose service name, present exactly for Compose targets.
+    #[must_use]
+    pub fn service_name(&self) -> Option<&str> {
+        self.service_name.as_deref()
+    }
+
+    /// Returns the cron expression.
+    #[must_use]
+    pub fn cron_expression(&self) -> &str {
+        &self.cron_expression
+    }
+
+    #[must_use]
+    pub const fn shell_type(&self) -> ScheduleShellConfig {
+        self.shell_type
+    }
+
+    /// Returns whether Dokploy may run the Schedule.
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    #[must_use]
+    pub const fn description(&self) -> &Field<String> {
+        &self.description
+    }
+
+    #[must_use]
+    pub const fn timezone(&self) -> &Field<String> {
+        &self.timezone
+    }
+
+    /// Returns the executable command descriptor, which is never a literal.
+    #[must_use]
+    pub const fn command(&self) -> &Field<SecretSource> {
+        &self.command
+    }
+
+    /// Returns the optional script descriptor, which is never a literal.
+    #[must_use]
+    pub const fn script(&self) -> &Field<SecretSource> {
+        &self.script
+    }
+}
+
+redacted_debug!(ScheduleConfig, "ScheduleConfig");
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct ComposeConfig {
     pub(crate) description: Field<String>,
@@ -1014,6 +1120,13 @@ pub enum ValidationIssue {
     DuplicateMountCollision,
     MountContentCannotBeCleared,
     UnmanagedMountContentRequiresProtection,
+    InvalidScheduleTarget,
+    InvalidScheduleField,
+    DuplicateScheduleCollision,
+    ScheduleSecretCannotBeCleared,
+    UnmanagedScheduleCommandRequiresProtection,
+    ScheduleComposeServiceMismatch,
+    ScheduleFieldCannotBeCleared,
     InvalidExternalSelectorName,
     LocalSelectorUnsupported,
     ServerPlacementCannotBeCleared,
@@ -1057,6 +1170,13 @@ impl ValidationIssue {
             Self::DuplicateMountCollision => "DOKCFG042",
             Self::MountContentCannotBeCleared => "DOKCFG043",
             Self::UnmanagedMountContentRequiresProtection => "DOKCFG044",
+            Self::InvalidScheduleTarget => "DOKCFG050",
+            Self::InvalidScheduleField => "DOKCFG051",
+            Self::DuplicateScheduleCollision => "DOKCFG052",
+            Self::ScheduleSecretCannotBeCleared => "DOKCFG053",
+            Self::UnmanagedScheduleCommandRequiresProtection => "DOKCFG054",
+            Self::ScheduleComposeServiceMismatch => "DOKCFG055",
+            Self::ScheduleFieldCannotBeCleared => "DOKCFG056",
             Self::InvalidExternalSelectorName => "DOKCFG029",
             Self::LocalSelectorUnsupported => "DOKCFG030",
             Self::ServerPlacementCannotBeCleared => "DOKCFG031",
@@ -1111,6 +1231,23 @@ impl ValidationIssue {
             Self::MountContentCannotBeCleared => "file Mount content cannot be null",
             Self::UnmanagedMountContentRequiresProtection => {
                 "unmanaged file Mount content requires lifecycle.protect: true"
+            }
+            Self::InvalidScheduleTarget => {
+                "Schedule target must be an application, or a Compose with a service_name, in this environment"
+            }
+            Self::InvalidScheduleField => {
+                "Schedule name, cron expression, service name, timezone, or description is invalid"
+            }
+            Self::DuplicateScheduleCollision => "Schedule name is duplicated within one target",
+            Self::ScheduleSecretCannotBeCleared => "Schedule command and script cannot be null",
+            Self::UnmanagedScheduleCommandRequiresProtection => {
+                "an unmanaged Schedule command requires lifecycle.protect: true"
+            }
+            Self::ScheduleComposeServiceMismatch => {
+                "Schedules on one Compose must all use the same service_name"
+            }
+            Self::ScheduleFieldCannotBeCleared => {
+                "Schedule description and timezone cannot be null"
             }
             Self::InvalidExternalSelectorName => {
                 "external selector name must be a non-empty, trimmed value without control characters"

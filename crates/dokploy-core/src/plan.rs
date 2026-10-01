@@ -461,16 +461,18 @@ impl ResourceCheckpoint {
                         return Err(CheckpointMaterializationError::InvalidPropertyShape);
                     }
                 },
-                PropertyPath::FileContent => match value {
-                    OwnedValue::Sensitive(intent) => sensitive.push((
-                        SensitivePropertyPath::parse(&path.to_string())
-                            .expect("write-only paths are canonical sensitive paths"),
-                        intent.fingerprint().clone(),
-                    )),
-                    OwnedValue::Null | OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
-                        return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                PropertyPath::FileContent | PropertyPath::Command | PropertyPath::Script => {
+                    match value {
+                        OwnedValue::Sensitive(intent) => sensitive.push((
+                            SensitivePropertyPath::parse(&path.to_string())
+                                .expect("write-only paths are canonical sensitive paths"),
+                            intent.fingerprint().clone(),
+                        )),
+                        OwnedValue::Null | OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
+                            return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                        }
                     }
-                },
+                }
                 PropertyPath::Password
                 | PropertyPath::RootPassword
                 | PropertyPath::ComposeDocument => match value {
@@ -507,6 +509,12 @@ impl ResourceCheckpoint {
                 | PropertyPath::HostPath
                 | PropertyPath::VolumeName
                 | PropertyPath::FilePath
+                | PropertyPath::ServiceName
+                | PropertyPath::ScheduleName
+                | PropertyPath::CronExpression
+                | PropertyPath::ShellType
+                | PropertyPath::Enabled
+                | PropertyPath::Timezone
                 | PropertyPath::Server
                 | PropertyPath::BuildServer
                 | PropertyPath::Registry

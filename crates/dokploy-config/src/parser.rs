@@ -8,13 +8,13 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 use crate::model::{
     ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
     LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig, PortConfig,
-    PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, SecurityConfig,
-    SourceLocation, ValidationDiagnostic, ValidationIssue, address,
+    PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, ScheduleConfig,
+    SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
 };
 use crate::{
     ConfigValue, DomainConfig, ExternalSelector, Field, Lifecycle, MountSourceConfig,
     MoveDeclaration, NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig,
-    RemovedDeclaration, SecretSource, SourceConfig,
+    RemovedDeclaration, ScheduleShellConfig, SecretSource, SourceConfig,
 };
 
 type ResourceTables<'a> = (
@@ -94,6 +94,9 @@ struct RawEnvironment {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawMount>")]
     mounts: BTreeMap<String, Spanned<RawMount>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawSchedule>")]
+    schedules: BTreeMap<String, Spanned<RawSchedule>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -361,6 +364,37 @@ impl From<RawMountSource> for MountSourceConfig {
             RawMountSource::File { file_path, content } => Self::File { file_path, content },
         }
     }
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawSchedule {
+    #[schemars(schema_with = "schedule_name_schema")]
+    name: String,
+    #[schemars(schema_with = "schedule_target_schema")]
+    target: ResourceAddress,
+    #[serde(default)]
+    #[schemars(schema_with = "schedule_service_name_schema")]
+    service_name: Option<String>,
+    #[schemars(schema_with = "schedule_cron_schema")]
+    cron_expression: String,
+    shell_type: ScheduleShellConfig,
+    enabled: bool,
+    #[serde(default)]
+    #[schemars(schema_with = "schedule_description_schema")]
+    description: Field<String>,
+    #[serde(default)]
+    #[schemars(schema_with = "schedule_timezone_schema")]
+    timezone: Field<String>,
+    #[serde(default)]
+    command: Field<SecretSource>,
+    #[serde(default)]
+    script: Field<SecretSource>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
 }
 
 impl DokployConfig {
@@ -754,6 +788,34 @@ impl DokployConfig {
                     &mut diagnostics,
                 );
             }
+
+            for (name, raw_config) in environment.schedules {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address =
+                    address(ResourceKind::Schedule, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::Schedule(ScheduleConfig {
+                        name: raw_config.name,
+                        target: raw_config.target,
+                        service_name: raw_config.service_name,
+                        cron_expression: raw_config.cron_expression,
+                        shell_type: raw_config.shell_type,
+                        enabled: raw_config.enabled,
+                        description: raw_config.description,
+                        timezone: raw_config.timezone,
+                        command: raw_config.command,
+                        script: raw_config.script,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
         }
 
         validate_resources(&mut resources, &parents, &locations, &mut diagnostics);
@@ -855,6 +917,8 @@ fn validate_resources(
     let mut redirect_collisions = BTreeSet::new();
     let mut security_collisions = BTreeSet::new();
     let mut mount_collisions = BTreeSet::new();
+    let mut schedule_collisions = BTreeSet::new();
+    let mut schedule_compose_services = BTreeMap::new();
 
     for (address, config) in resources.iter_mut() {
         let location = locations
@@ -1063,8 +1127,118 @@ fn validate_resources(
             );
         }
 
+        if let ResourceConfig::Schedule(schedule) = config {
+            validate_schedule(
+                address,
+                schedule,
+                addresses.contains(&schedule.target),
+                parents,
+                &mut schedule_collisions,
+                &mut schedule_compose_services,
+                location,
+                diagnostics,
+            );
+        }
+
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_schedule(
+    address: &ResourceAddress,
+    schedule: &ScheduleConfig,
+    target_exists: bool,
+    parents: &BTreeMap<ResourceAddress, ResourceAddress>,
+    collisions: &mut BTreeSet<(ResourceAddress, Option<String>, String)>,
+    compose_services: &mut BTreeMap<ResourceAddress, Option<String>>,
+    location: SourceLocation,
+    diagnostics: &mut Vec<ValidationDiagnostic>,
+) {
+    let target_kind = schedule.target.kind();
+    let service_shape_valid = match target_kind {
+        ResourceKind::Compose => schedule.service_name.is_some(),
+        ResourceKind::Application => schedule.service_name.is_none(),
+        _ => false,
+    };
+    if !target_kind.is_schedule_target() || !service_shape_valid {
+        emit(
+            diagnostics,
+            ValidationIssue::InvalidScheduleTarget,
+            location,
+        );
+    } else if !target_exists {
+        emit(diagnostics, ValidationIssue::MissingReference, location);
+    } else if parents.get(address) != parents.get(&schedule.target) {
+        emit(
+            diagnostics,
+            ValidationIssue::CrossEnvironmentReference,
+            location,
+        );
+    }
+
+    if !crate::types::valid_schedule_name(&schedule.name)
+        || !crate::types::valid_cron_expression(&schedule.cron_expression)
+        || schedule
+            .service_name
+            .as_deref()
+            .is_some_and(|service| !crate::types::valid_schedule_service_name(service))
+        || matches!(&schedule.timezone, Field::Set(value) if !crate::types::valid_schedule_timezone(value))
+        || matches!(&schedule.description, Field::Set(value) if !crate::types::valid_schedule_description(value))
+    {
+        emit(diagnostics, ValidationIssue::InvalidScheduleField, location);
+    }
+
+    if matches!(schedule.description, Field::Clear) || matches!(schedule.timezone, Field::Clear) {
+        emit(
+            diagnostics,
+            ValidationIssue::ScheduleFieldCannotBeCleared,
+            location,
+        );
+    }
+    if matches!(schedule.command, Field::Clear) || matches!(schedule.script, Field::Clear) {
+        emit(
+            diagnostics,
+            ValidationIssue::ScheduleSecretCannotBeCleared,
+            location,
+        );
+    }
+    if matches!(schedule.command, Field::Unmanaged)
+        && !matches!(schedule.lifecycle.protect(), Field::Set(true))
+    {
+        emit(
+            diagnostics,
+            ValidationIssue::UnmanagedScheduleCommandRequiresProtection,
+            location,
+        );
+    }
+
+    if !collisions.insert((
+        schedule.target.clone(),
+        schedule.service_name.clone(),
+        schedule.name.clone(),
+    )) {
+        emit(
+            diagnostics,
+            ValidationIssue::DuplicateScheduleCollision,
+            location,
+        );
+    }
+    // Dokploy's target-scoped collection read is keyed by the Compose and its
+    // service, so every Schedule on one Compose must name the same service.
+    if target_kind == ResourceKind::Compose {
+        match compose_services.entry(schedule.target.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(schedule.service_name.clone());
+            }
+            Entry::Occupied(entry) if entry.get() != &schedule.service_name => emit(
+                diagnostics,
+                ValidationIssue::ScheduleComposeServiceMismatch,
+                location,
+            ),
+            Entry::Occupied(_) => {}
+        }
     }
 }
 
@@ -1217,7 +1391,8 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Port
         | ResourceKind::Redirect
         | ResourceKind::Security
-        | ResourceKind::Mount => false,
+        | ResourceKind::Mount
+        | ResourceKind::Schedule => false,
     }
 }
 
@@ -1248,6 +1423,10 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
         ResourceKind::Mount => matches!(
             value.as_str(),
             "mount_path" | "host_path" | "volume_name" | "file_path"
+        ),
+        ResourceKind::Schedule => matches!(
+            value.as_str(),
+            "name" | "cron_expression" | "shell_type" | "enabled" | "description" | "timezone"
         ),
         ResourceKind::Domain => matches!(value.as_str(), "host" | "application"),
         ResourceKind::Port => matches!(
@@ -1294,6 +1473,53 @@ fn mount_file_path_schema(_generator: &mut SchemaGenerator) -> Schema {
         "type": "string",
         "minLength": 1,
         "maxLength": 4096
+    })
+}
+
+fn schedule_target_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^(application|compose)\\.[a-z][a-z0-9_-]*$"
+    })
+}
+
+fn schedule_name_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]([A-Za-z0-9 _.:-]*[A-Za-z0-9_.:-])?$",
+        "maxLength": 128
+    })
+}
+
+fn schedule_service_name_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["string", "null"],
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+        "maxLength": 128
+    })
+}
+
+fn schedule_description_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["string", "null"],
+        "minLength": 1,
+        "maxLength": 1024
+    })
+}
+
+fn schedule_timezone_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["string", "null"],
+        "pattern": "^[A-Za-z][A-Za-z0-9_+/-]*$",
+        "maxLength": 64
+    })
+}
+
+fn schedule_cron_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^(@(yearly|annually|monthly|weekly|daily|midnight|hourly)|[A-Za-z0-9*/,?#-]+( [A-Za-z0-9*/,?#-]+){4,5})$",
+        "maxLength": 256
     })
 }
 

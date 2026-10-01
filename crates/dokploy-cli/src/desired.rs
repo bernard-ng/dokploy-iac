@@ -131,6 +131,7 @@ pub struct ExecutionBindings {
     redirect_regexes: BTreeMap<ResourceAddress, String>,
     security_usernames: BTreeMap<ResourceAddress, String>,
     mounts: BTreeMap<ResourceAddress, MountBinding>,
+    schedules: BTreeMap<ResourceAddress, ScheduleBinding>,
     selectors: BTreeMap<(ResourceAddress, PropertyPath), SelectorBinding>,
     external_ids: BTreeMap<(ResourceAddress, PropertyPath), ExternalExecutionId>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
@@ -175,6 +176,12 @@ struct MountBinding {
     target: ResourceAddress,
     mount_type: &'static str,
     mount_path: String,
+}
+
+struct ScheduleBinding {
+    target: ResourceAddress,
+    service_name: Option<String>,
+    name: String,
 }
 
 impl ExecutionBindings {
@@ -262,6 +269,25 @@ impl ExecutionBindings {
         self.mounts
             .get(address)
             .map(|mount| (&mount.target, mount.mount_type, mount.mount_path.as_str()))
+    }
+}
+
+impl ExecutionBindings {
+    /// Returns the typed target, optional Compose service, and name used for Schedule discovery.
+    ///
+    /// The name is the collision key within one target; it is never the logical address.
+    #[must_use]
+    pub fn schedule(
+        &self,
+        address: &ResourceAddress,
+    ) -> Option<(&ResourceAddress, Option<&str>, &str)> {
+        self.schedules.get(address).map(|schedule| {
+            (
+                &schedule.target,
+                schedule.service_name.as_deref(),
+                schedule.name.as_str(),
+            )
+        })
     }
 }
 
@@ -613,6 +639,54 @@ fn compile_desired_with_fingerprints(
                     }
                 }
             }
+            ResourceConfig::Schedule(schedule) => {
+                properties.insert(
+                    PropertyPath::Target,
+                    comparable(serde_json::json!(schedule.target().to_string())),
+                );
+                if let Some(service_name) = schedule.service_name() {
+                    properties.insert(
+                        PropertyPath::ServiceName,
+                        comparable(serde_json::json!(service_name)),
+                    );
+                }
+                properties.insert(
+                    PropertyPath::ScheduleName,
+                    comparable(serde_json::json!(schedule.name())),
+                );
+                properties.insert(
+                    PropertyPath::CronExpression,
+                    comparable(serde_json::json!(schedule.cron_expression())),
+                );
+                properties.insert(
+                    PropertyPath::ShellType,
+                    comparable(serde_json::json!(schedule.shell_type().as_str())),
+                );
+                properties.insert(
+                    PropertyPath::Enabled,
+                    comparable(serde_json::json!(schedule.enabled())),
+                );
+                compile_string_field(
+                    &mut properties,
+                    PropertyPath::Description,
+                    schedule.description(),
+                );
+                compile_string_field(&mut properties, PropertyPath::Timezone, schedule.timezone());
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Command,
+                    schedule.command(),
+                    fingerprints,
+                )?;
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Script,
+                    schedule.script(),
+                    fingerprints,
+                )?;
+            }
         }
 
         let protection = match resource.lifecycle().protect() {
@@ -751,6 +825,16 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
                     },
                 );
             }
+            ResourceConfig::Schedule(schedule) => {
+                bindings.schedules.insert(
+                    address.clone(),
+                    ScheduleBinding {
+                        target: schedule.target().clone(),
+                        service_name: schedule.service_name().map(str::to_owned),
+                        name: schedule.name().to_owned(),
+                    },
+                );
+            }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
@@ -788,6 +872,10 @@ fn compile_dependencies(resource: &ResourceConfig) -> Vec<ResourceAddress> {
 
     if let ResourceConfig::Mount(mount) = resource {
         dependencies.insert(mount.target().clone());
+    }
+
+    if let ResourceConfig::Schedule(schedule) = resource {
+        dependencies.insert(schedule.target().clone());
     }
 
     dependencies.into_iter().collect()

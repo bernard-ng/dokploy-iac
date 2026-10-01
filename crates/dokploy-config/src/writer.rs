@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::{
     ConfigValue, DokployConfig, ExternalSelector, Field, LibSqlNodeConfig, Lifecycle,
     MountSourceConfig, NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig,
-    PropertyPath, ResourceConfig, SecretSource, SourceConfig,
+    PropertyPath, ResourceConfig, ScheduleShellConfig, SecretSource, SourceConfig,
 };
 
 /// A typed, nested document for constructing imported configuration safely.
@@ -311,6 +311,25 @@ impl ConfigDocument {
                         },
                     );
                 }
+                ResourceConfig::Schedule(config) => {
+                    environment.schedules.insert(
+                        address.name().clone(),
+                        ScheduleDocument {
+                            name: config.name.clone(),
+                            target: config.target.clone(),
+                            service_name: config.service_name.clone(),
+                            cron_expression: config.cron_expression.clone(),
+                            shell_type: config.shell_type,
+                            enabled: config.enabled,
+                            description: config.description.clone(),
+                            timezone: config.timezone.clone(),
+                            command: config.command.clone(),
+                            script: config.script.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
                 ResourceConfig::Project(_)
                 | ResourceConfig::Environment(_)
                 | ResourceConfig::Port(_)
@@ -405,6 +424,7 @@ pub struct EnvironmentDocument {
     redis: BTreeMap<ResourceName, RedisDocument>,
     domains: BTreeMap<ResourceName, DomainDocument>,
     mounts: BTreeMap<ResourceName, MountDocument>,
+    schedules: BTreeMap<ResourceName, ScheduleDocument>,
 }
 
 impl EnvironmentDocument {
@@ -491,6 +511,14 @@ impl EnvironmentDocument {
         mount: MountDocument,
     ) -> Result<(), ConfigDocumentError> {
         insert_resource(&mut self.mounts, name, mount, ResourceKind::Mount)
+    }
+
+    pub fn add_schedule(
+        &mut self,
+        name: ResourceName,
+        schedule: ScheduleDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.schedules, name, schedule, ResourceKind::Schedule)
     }
 }
 
@@ -656,6 +684,26 @@ pub struct MountDocument {
     pub target: ResourceAddress,
     pub mount_path: String,
     pub source: MountSourceConfig,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// Schedule properties accepted by an imported document.
+///
+/// The command and script are descriptors only and are normally left
+/// unmanaged by an import.
+#[derive(Clone)]
+pub struct ScheduleDocument {
+    pub name: String,
+    pub target: ResourceAddress,
+    pub service_name: Option<String>,
+    pub cron_expression: String,
+    pub shell_type: ScheduleShellConfig,
+    pub enabled: bool,
+    pub description: Field<String>,
+    pub timezone: Field<String>,
+    pub command: Field<SecretSource>,
+    pub script: Field<SecretSource>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -834,6 +882,12 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
             "mounts",
             &environment.mounts,
             render_mount_document,
+        );
+        render_document_children(
+            &mut output,
+            "schedules",
+            &environment.schedules,
+            render_schedule_document,
         );
         collapse_empty_mapping(&mut output, item_start, 2, name.as_str());
     }
@@ -1028,6 +1082,69 @@ fn render_mount_document(output: &mut String, indent: usize, config: &MountDocum
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
+fn render_schedule_document(output: &mut String, indent: usize, config: &ScheduleDocument) {
+    schedule_fields(
+        output,
+        indent,
+        &ScheduleFields {
+            name: &config.name,
+            target: &config.target,
+            service_name: config.service_name.as_deref(),
+            cron_expression: &config.cron_expression,
+            shell_type: config.shell_type,
+            enabled: config.enabled,
+            description: &config.description,
+            timezone: &config.timezone,
+            command: &config.command,
+            script: &config.script,
+        },
+    );
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+struct ScheduleFields<'a> {
+    name: &'a str,
+    target: &'a ResourceAddress,
+    service_name: Option<&'a str>,
+    cron_expression: &'a str,
+    shell_type: ScheduleShellConfig,
+    enabled: bool,
+    description: &'a Field<String>,
+    timezone: &'a Field<String>,
+    command: &'a Field<SecretSource>,
+    script: &'a Field<SecretSource>,
+}
+
+fn schedule_fields(output: &mut String, indent: usize, fields: &ScheduleFields<'_>) {
+    line(output, indent, "name", &quoted(fields.name));
+    line(
+        output,
+        indent,
+        "target",
+        &quoted(&fields.target.to_string()),
+    );
+    if let Some(service_name) = fields.service_name {
+        line(output, indent, "service_name", &quoted(service_name));
+    }
+    line(
+        output,
+        indent,
+        "cron_expression",
+        &quoted(fields.cron_expression),
+    );
+    line(
+        output,
+        indent,
+        "shell_type",
+        &quoted(fields.shell_type.as_str()),
+    );
+    line(output, indent, "enabled", bool_text(fields.enabled));
+    string_field(output, indent, "description", fields.description);
+    string_field(output, indent, "timezone", fields.timezone);
+    secret_field(output, indent, "command", fields.command);
+    secret_field(output, indent, "script", fields.script);
+}
+
 fn document_common_fields(
     output: &mut String,
     indent: usize,
@@ -1194,6 +1311,14 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             ResourceKind::Mount,
             "mounts",
             render_mount,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::Schedule,
+            "schedules",
+            render_schedule,
         )?;
         collapse_empty_mapping(
             &mut output,
@@ -1473,6 +1598,36 @@ fn render_mount(
     );
     line(output, indent, "mount_path", &quoted(config.mount_path()));
     mount_source_field(output, indent, config.source());
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_schedule(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Schedule(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    schedule_fields(
+        output,
+        indent,
+        &ScheduleFields {
+            name: config.name(),
+            target: config.target(),
+            service_name: config.service_name(),
+            cron_expression: config.cron_expression(),
+            shell_type: config.shell_type(),
+            enabled: config.enabled(),
+            description: config.description(),
+            timezone: config.timezone(),
+            command: config.command(),
+            script: config.script(),
+        },
+    );
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())

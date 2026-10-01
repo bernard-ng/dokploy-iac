@@ -411,7 +411,7 @@ impl JsonSchema for ResourceReference {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security|mount)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security|mount|schedule)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
         })
     }
 }
@@ -851,6 +851,98 @@ fn valid_mount_file_path(value: &str) -> bool {
         && value
             .split('/')
             .all(|segment| !segment.is_empty() && !matches!(segment, "." | ".."))
+}
+
+/// The shell that executes one Schedule command.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ScheduleShellConfig {
+    /// Execute with Bash.
+    Bash,
+    /// Execute with POSIX `sh`.
+    Sh,
+}
+
+impl ScheduleShellConfig {
+    /// Returns the stable shell name used in configuration, state, and plans.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Sh => "sh",
+        }
+    }
+}
+
+const SCHEDULE_CRON_MACROS: &[&str] = &[
+    "@yearly",
+    "@annually",
+    "@monthly",
+    "@weekly",
+    "@daily",
+    "@midnight",
+    "@hourly",
+];
+
+/// Validates the syntactic shape of a Schedule cron expression.
+///
+/// This is deliberately a bounded lexical check, not a cron interpreter: Dokploy
+/// owns the scheduling semantics, and the executor never runs a Schedule.
+pub(crate) fn valid_cron_expression(value: &str) -> bool {
+    if SCHEDULE_CRON_MACROS.contains(&value) {
+        return true;
+    }
+    if value.is_empty() || value.len() > 256 {
+        return false;
+    }
+    let fields: Vec<_> = value.split(' ').collect();
+    (5..=6).contains(&fields.len())
+        && fields.iter().all(|field| {
+            !field.is_empty()
+                && field.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || matches!(character, '*' | '/' | ',' | '-' | '?' | '#')
+                })
+        })
+}
+
+/// Validates a Schedule name, the collision key within one target.
+pub(crate) fn valid_schedule_name(value: &str) -> bool {
+    let mut characters = value.chars();
+    value.len() <= 128
+        && matches!(characters.next(), Some(first) if first.is_ascii_alphanumeric())
+        && !value.ends_with(' ')
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, ' ' | '_' | '.' | ':' | '-')
+        })
+}
+
+/// Validates the Compose service key that scopes a Schedule.
+pub(crate) fn valid_schedule_service_name(value: &str) -> bool {
+    let mut characters = value.chars();
+    value.len() <= 128
+        && matches!(characters.next(), Some(first) if first.is_ascii_alphanumeric())
+        && characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-')
+        })
+}
+
+/// Validates a conservative IANA-style Schedule timezone name.
+pub(crate) fn valid_schedule_timezone(value: &str) -> bool {
+    let mut characters = value.chars();
+    value.len() <= 64
+        && matches!(characters.next(), Some(first) if first.is_ascii_alphabetic())
+        && characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '+' | '-' | '/')
+        })
+}
+
+/// Validates a bounded, control-free, trimmed Schedule description.
+pub(crate) fn valid_schedule_description(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 1024
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 fn valid_path_segment(segment: &str) -> bool {

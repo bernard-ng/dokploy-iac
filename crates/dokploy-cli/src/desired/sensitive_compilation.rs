@@ -275,6 +275,20 @@ fn preflight_sensitive_inputs(
                     );
                 }
             }
+            ResourceConfig::Schedule(schedule) => {
+                if let Field::Set(source) = schedule.command() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Command),
+                        pending_secret_source(source),
+                    );
+                }
+                if let Field::Set(source) = schedule.script() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::Script),
+                        pending_secret_source(source),
+                    );
+                }
+            }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Domain(_)

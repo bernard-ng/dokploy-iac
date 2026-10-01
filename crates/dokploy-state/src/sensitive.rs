@@ -180,6 +180,8 @@ enum SensitivePropertyPathKind {
     RootPassword,
     ComposeDocument,
     FileContent,
+    ScheduleCommand,
+    ScheduleScript,
     EnvironmentVariable(String),
 }
 
@@ -197,6 +199,12 @@ impl SensitivePropertyPath {
         }
         if value == "content" {
             return Ok(Self(SensitivePropertyPathKind::FileContent));
+        }
+        if value == "command" {
+            return Ok(Self(SensitivePropertyPathKind::ScheduleCommand));
+        }
+        if value == "script" {
+            return Ok(Self(SensitivePropertyPathKind::ScheduleScript));
         }
 
         let name = value
@@ -227,12 +235,22 @@ impl SensitivePropertyPath {
         matches!(self.0, SensitivePropertyPathKind::FileContent)
     }
 
+    pub(crate) const fn is_schedule_command(&self) -> bool {
+        matches!(self.0, SensitivePropertyPathKind::ScheduleCommand)
+    }
+
+    pub(crate) const fn is_schedule_script(&self) -> bool {
+        matches!(self.0, SensitivePropertyPathKind::ScheduleScript)
+    }
+
     pub(crate) fn environment_name(&self) -> Option<&str> {
         match &self.0 {
             SensitivePropertyPathKind::Password => None,
             SensitivePropertyPathKind::RootPassword => None,
             SensitivePropertyPathKind::ComposeDocument => None,
             SensitivePropertyPathKind::FileContent => None,
+            SensitivePropertyPathKind::ScheduleCommand => None,
+            SensitivePropertyPathKind::ScheduleScript => None,
             SensitivePropertyPathKind::EnvironmentVariable(name) => Some(name),
         }
     }
@@ -245,6 +263,8 @@ impl fmt::Display for SensitivePropertyPath {
             SensitivePropertyPathKind::RootPassword => formatter.write_str("root_password"),
             SensitivePropertyPathKind::ComposeDocument => formatter.write_str("document"),
             SensitivePropertyPathKind::FileContent => formatter.write_str("content"),
+            SensitivePropertyPathKind::ScheduleCommand => formatter.write_str("command"),
+            SensitivePropertyPathKind::ScheduleScript => formatter.write_str("script"),
             SensitivePropertyPathKind::EnvironmentVariable(name) => {
                 write!(formatter, "environment.{name}")
             }

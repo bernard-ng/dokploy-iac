@@ -654,6 +654,7 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.domain_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
+            ResourceKind::Schedule => return Err(ApplyWorkspaceError::UnsupportedChange),
             ResourceKind::Mount => return Err(ApplyWorkspaceError::UnsupportedChange),
             ResourceKind::Port => {
                 let input = port_create_input(checkpoint, &state)?;
@@ -1264,6 +1265,7 @@ async fn prepare_move_mutation(
                 host,
             )))
         }
+        ResourceKind::Schedule => Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Port
         | ResourceKind::Redirect
         | ResourceKind::Security
@@ -1403,6 +1405,8 @@ async fn delete_remote_resource(
                 .delete(SecurityId::new(remote_id.as_str()))
                 .await,
         ),
+        // A Schedule delete needs its typed target, so it has a dedicated path.
+        ResourceKind::Schedule => None,
         ResourceKind::Mount => Some(
             client
                 .mounts()
@@ -3222,6 +3226,7 @@ async fn execute_existing_change(
             let host = required_string(checkpoint, &PropertyPath::Host)?;
             ExistingMutation::Domain(UpdateDomain::new(DomainId::new(remote_id.as_str()), host))
         }
+        ResourceKind::Schedule => return Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Mount => return Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Port => {
             if selected_paths.iter().any(|path| {
