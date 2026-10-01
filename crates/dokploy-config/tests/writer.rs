@@ -2,8 +2,9 @@ use std::fs;
 
 use dokploy_config::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,
-    DokployConfig, DomainDocument, EnvironmentDocument, Field, MySqlDocument, PostgresDocument,
-    RedisDocument, SourceDocument, render, write,
+    DokployConfig, DomainDocument, EnvironmentDocument, Field, MySqlDocument, PortDocument,
+    PortNumber, PortProtocolConfig, PortPublishModeConfig, PostgresDocument, RedisDocument,
+    SourceDocument, render, write,
 };
 use dokploy_state::{ResourceKind, ResourceName};
 
@@ -390,6 +391,44 @@ fn typed_import_document_uses_strict_semantic_validation() {
         .expect_err("missing reference is rejected by the strict parser");
 
     assert!(matches!(error, ConfigWriteError::GeneratedConfig(_)));
+}
+
+#[test]
+fn typed_document_and_canonical_writer_keep_ports_nested_under_applications() {
+    let mut application = ApplicationDocument::default();
+    application
+        .add_port(
+            name("http"),
+            PortDocument {
+                published_port: PortNumber::new(8080).unwrap(),
+                target_port: PortNumber::new(80).unwrap(),
+                publish_mode: PortPublishModeConfig::Ingress,
+                protocol: PortProtocolConfig::Tcp,
+                depends_on: Vec::new(),
+                lifecycle: Default::default(),
+            },
+        )
+        .expect("Port name is unique");
+    let mut environment = EnvironmentDocument::default();
+    environment
+        .add_application(name("api"), application)
+        .expect("application name is unique");
+    let mut document = ConfigDocument::new(name("platform"));
+    document
+        .add_environment(name("production"), environment)
+        .expect("environment name is unique");
+
+    let rendered = document.render().expect("nested Port document renders");
+
+    assert!(rendered.contains("        ports:\n          http:\n"));
+    assert!(rendered.contains("            published_port: 8080\n"));
+    assert_eq!(
+        ConfigDocument::from_config(&DokployConfig::parse(&rendered).unwrap())
+            .unwrap()
+            .render()
+            .unwrap(),
+        rendered
+    );
 }
 
 fn name(value: &str) -> ResourceName {

@@ -1056,3 +1056,44 @@ environments:
         second.location_of(&"project.platform".parse().unwrap())
     );
 }
+
+#[test]
+fn parses_ports_beneath_their_application_with_required_typed_fields() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        ports:
+          http:
+            published_port: 8080
+            target_port: 80
+            publish_mode: ingress
+            protocol: tcp
+"#,
+    )
+    .expect("valid nested Port configuration");
+    let address: ResourceAddress = "port.http".parse().unwrap();
+    let port = config.resource(&address).unwrap().as_port().unwrap();
+
+    assert_eq!(port.published_port().get(), 8080);
+    assert_eq!(port.target_port().get(), 80);
+    assert_eq!(
+        config.parent_of(&address).unwrap().to_string(),
+        "application.api"
+    );
+
+    for invalid in [
+        "published_port: 0\n            target_port: 80\n            publish_mode: ingress\n            protocol: tcp",
+        "published_port: 8080\n            target_port: 80\n            publish_mode: ingress",
+    ] {
+        let yaml = format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        ports:\n          http:\n            {invalid}\n"
+        );
+        assert!(DokployConfig::parse(&yaml).is_err());
+    }
+}

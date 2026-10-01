@@ -712,6 +712,7 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.domain_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
+            ResourceKind::Port => return Err(ApplyWorkspaceError::UnsupportedChange),
         };
         let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
         state.upsert_resource(change.address().clone(), resource)?;
@@ -1017,6 +1018,7 @@ async fn prepare_move_mutation(
                 host,
             )))
         }
+        ResourceKind::Port => Err(ApplyWorkspaceError::UnsupportedChange),
     }
 }
 
@@ -1139,6 +1141,7 @@ async fn delete_remote_resource(
                 .delete(DomainId::new(remote_id.as_str()))
                 .await,
         ),
+        ResourceKind::Port => None,
     }
 }
 
@@ -2505,6 +2508,7 @@ async fn execute_existing_change(
             let host = required_string(checkpoint, &PropertyPath::Host)?;
             ExistingMutation::Domain(UpdateDomain::new(DomainId::new(remote_id.as_str()), host))
         }
+        ResourceKind::Port => return Err(ApplyWorkspaceError::UnsupportedChange),
     };
 
     let token = journal.start_recoverable_step(

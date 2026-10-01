@@ -1,10 +1,77 @@
-use std::{borrow::Cow, fmt, path::Path, str::FromStr};
+use std::{borrow::Cow, fmt, num::NonZeroU16, path::Path, str::FromStr};
 
 use dokploy_state::ResourceAddress;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, de};
 
 use crate::Field;
+
+/// A nonzero TCP or UDP port number accepted by Dokploy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PortNumber(NonZeroU16);
+
+impl PortNumber {
+    /// Creates a validated nonzero port number.
+    #[must_use]
+    pub const fn new(value: u16) -> Option<Self> {
+        match NonZeroU16::new(value) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    /// Returns the validated numeric port.
+    #[must_use]
+    pub const fn get(self) -> u16 {
+        self.0.get()
+    }
+}
+
+impl<'de> Deserialize<'de> for PortNumber {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = u16::deserialize(deserializer)?;
+        NonZeroU16::new(value)
+            .map(Self)
+            .ok_or_else(|| de::Error::custom("port number must be between 1 and 65535"))
+    }
+}
+
+impl JsonSchema for PortNumber {
+    fn schema_name() -> Cow<'static, str> {
+        "PortNumber".into()
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+        })
+    }
+}
+
+/// The network scope used to publish an application port.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PortPublishModeConfig {
+    /// Publish through Docker Swarm's routing mesh.
+    Ingress,
+    /// Publish directly on the node that runs the task.
+    Host,
+}
+
+/// The transport protocol carried by a published application port.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PortProtocolConfig {
+    /// Transmission Control Protocol.
+    Tcp,
+    /// User Datagram Protocol.
+    Udp,
+}
 
 /// A validated property path used by references and lifecycle rules.
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -131,7 +198,7 @@ impl JsonSchema for ResourceReference {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
         })
     }
 }

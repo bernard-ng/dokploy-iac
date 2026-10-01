@@ -483,7 +483,11 @@ impl ResourceCheckpoint {
                 | PropertyPath::ReplicaSets
                 | PropertyPath::Node
                 | PropertyPath::Host
-                | PropertyPath::Application => {
+                | PropertyPath::Application
+                | PropertyPath::PublishedPort
+                | PropertyPath::TargetPort
+                | PropertyPath::PublishMode
+                | PropertyPath::Protocol => {
                     managed.insert(path.to_string(), materialize_value(value)?);
                 }
                 PropertyPath::DeploymentStatus => {

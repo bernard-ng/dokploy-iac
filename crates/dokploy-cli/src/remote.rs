@@ -536,6 +536,13 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
             )
             .with_containment(MutationMode::StateOnly),
+        ResourceKind::Port => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::PublishedPort)
+            .requiring(PropertyPath::TargetPort)
+            .requiring(PropertyPath::PublishMode)
+            .requiring(PropertyPath::Protocol)
+            .with_default_property(in_place)
+            .with_containment(MutationMode::Replace),
     }
 }
 
@@ -2535,6 +2542,10 @@ fn application_properties(
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -2579,6 +2590,10 @@ fn compose_properties(
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -2875,6 +2890,10 @@ fn postgres_properties(
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3132,6 +3151,10 @@ fn mysql_properties(
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3410,6 +3433,10 @@ fn mariadb_properties(
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3689,6 +3716,10 @@ fn mongo_properties(
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3984,6 +4015,10 @@ fn libsql_properties(
             | PropertyPath::ComposeDocument
             | PropertyPath::Host
             | PropertyPath::Application
+            | PropertyPath::PublishedPort
+            | PropertyPath::TargetPort
+            | PropertyPath::PublishMode
+            | PropertyPath::Protocol
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);

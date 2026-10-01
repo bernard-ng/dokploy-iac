@@ -600,3 +600,46 @@ environments:
         assert!(!format!("{error:?} {error}").contains(canary));
     }
 }
+
+#[test]
+fn compiles_complete_port_ownership_and_application_containment() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        ports:
+          http:
+            published_port: 8080
+            target_port: 80
+            publish_mode: ingress
+            protocol: tcp
+"#,
+    )
+    .expect("valid nested Port configuration");
+
+    let compiled = compile_desired(&config, digest()).expect("Port desired state compiles");
+    let port = &compiled.desired_state().resources()[&"port.http".parse().unwrap()];
+
+    assert_eq!(
+        port.properties().get(&PropertyPath::PublishedPort),
+        Some(&value(serde_json::json!(8080)))
+    );
+    assert_eq!(
+        port.properties().get(&PropertyPath::TargetPort),
+        Some(&value(serde_json::json!(80)))
+    );
+    assert_eq!(
+        port.properties().get(&PropertyPath::PublishMode),
+        Some(&value(serde_json::json!("ingress")))
+    );
+    assert_eq!(
+        port.properties().get(&PropertyPath::Protocol),
+        Some(&value(serde_json::json!("tcp")))
+    );
+    assert_eq!(port.containment().unwrap().to_string(), "application.api");
+}

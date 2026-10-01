@@ -254,6 +254,10 @@ fn property_paths_use_config_compatible_stable_strings() {
         (PropertyPath::SourceBranch, "source.branch"),
         (environment, "environment.FEATURE_FLAG"),
         (PropertyPath::RootPassword, "root_password"),
+        (PropertyPath::PublishedPort, "published_port"),
+        (PropertyPath::TargetPort, "target_port"),
+        (PropertyPath::PublishMode, "publish_mode"),
+        (PropertyPath::Protocol, "protocol"),
         (PropertyPath::DeploymentStatus, "deployment.status"),
     ];
 

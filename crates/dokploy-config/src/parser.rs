@@ -7,12 +7,13 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 
 use crate::model::{
     ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
-    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PostgresConfig, ProjectConfig,
-    RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
+    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PortConfig, PostgresConfig,
+    ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
+    ValidationIssue, address,
 };
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, RemovedDeclaration, SecretSource,
-    SourceConfig,
+    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, PortNumber, PortProtocolConfig,
+    PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
 };
 
 type ResourceTables<'a> = (
@@ -102,6 +103,23 @@ struct RawApplication {
     source: Field<SourceConfig>,
     #[serde(default)]
     environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawPort>")]
+    ports: BTreeMap<String, Spanned<RawPort>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawPort {
+    published_port: PortNumber,
+    target_port: PortNumber,
+    publish_mode: PortPublishModeConfig,
+    protocol: PortProtocolConfig,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -366,6 +384,7 @@ impl DokployConfig {
                 let raw_config = raw_config.value;
                 let child_address =
                     address(ResourceKind::Application, name, location, &mut diagnostics);
+                let application_address = child_address.clone();
                 insert_child_resource(
                     (&mut resources, &mut parents, &mut locations),
                     child_address,
@@ -381,6 +400,28 @@ impl DokployConfig {
                     location,
                     &mut diagnostics,
                 );
+
+                for (name, raw_port) in raw_config.ports {
+                    let port_location = source_location(raw_port.defined);
+                    let raw_port = raw_port.value;
+                    let port_address =
+                        address(ResourceKind::Port, name, port_location, &mut diagnostics);
+                    insert_child_resource(
+                        (&mut resources, &mut parents, &mut locations),
+                        port_address,
+                        application_address.as_ref(),
+                        ResourceConfig::Port(PortConfig {
+                            published_port: raw_port.published_port,
+                            target_port: raw_port.target_port,
+                            publish_mode: raw_port.publish_mode,
+                            protocol: raw_port.protocol,
+                            depends_on: raw_port.depends_on,
+                            lifecycle: raw_port.lifecycle,
+                        }),
+                        port_location,
+                        &mut diagnostics,
+                    );
+                }
             }
 
             for (name, raw_config) in environment.compose {
@@ -867,7 +908,8 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Environment
         | ResourceKind::Compose
         | ResourceKind::LibSql
-        | ResourceKind::Domain => false,
+        | ResourceKind::Domain
+        | ResourceKind::Port => false,
     }
 }
 
@@ -891,6 +933,10 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
         ResourceKind::LibSql => matches!(value.as_str(), "description" | "username"),
         ResourceKind::Redis => false,
         ResourceKind::Domain => matches!(value.as_str(), "host" | "application"),
+        ResourceKind::Port => matches!(
+            value.as_str(),
+            "published_port" | "target_port" | "publish_mode" | "protocol"
+        ),
     }
 }
 

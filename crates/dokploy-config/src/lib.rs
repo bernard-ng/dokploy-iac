@@ -29,16 +29,18 @@ pub use file::{
 };
 pub use model::{
     ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
-    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PostgresConfig, ProjectConfig,
-    RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic, ValidationIssue,
+    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PortConfig, PostgresConfig,
+    ProjectConfig, RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic,
+    ValidationIssue,
 };
 pub use types::{
-    ConfigValue, DomainConfig, GitHubSource, Lifecycle, MoveDeclaration, PropertyPath,
-    RemovedDeclaration, ResourceReference, SecretSource, SecretSourceKind, SourceConfig,
+    ConfigValue, DomainConfig, GitHubSource, Lifecycle, MoveDeclaration, PortNumber,
+    PortProtocolConfig, PortPublishModeConfig, PropertyPath, RemovedDeclaration, ResourceReference,
+    SecretSource, SecretSourceKind, SourceConfig,
 };
 pub use writer::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,
     DomainDocument, EnvironmentDocument, LibSqlDocument, LifecycleDocument, MariaDbDocument,
-    MongoDocument, MySqlDocument, PostgresDocument, ProjectDocument, RedisDocument, SourceDocument,
-    render, write,
+    MongoDocument, MySqlDocument, PortDocument, PostgresDocument, ProjectDocument, RedisDocument,
+    SourceDocument, render, write,
 };

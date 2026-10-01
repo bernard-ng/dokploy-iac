@@ -8,8 +8,8 @@ use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, PropertyPath, ResourceConfig,
-    SecretSource, SourceConfig,
+    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, PortNumber, PortProtocolConfig,
+    PortPublishModeConfig, PropertyPath, ResourceConfig, SecretSource, SourceConfig,
 };
 
 /// A typed, nested document for constructing imported configuration safely.
@@ -126,6 +126,29 @@ impl ConfigDocument {
             if matches!(resource, ResourceConfig::Environment(_)) {
                 continue;
             }
+            if let ResourceConfig::Port(port) = resource {
+                let environment_address = config
+                    .parents
+                    .get(parent)
+                    .ok_or(ConfigWriteError::InconsistentModel)?;
+                let application = document
+                    .environments
+                    .get_mut(environment_address.name())
+                    .and_then(|environment| environment.applications.get_mut(parent.name()))
+                    .ok_or(ConfigWriteError::InconsistentModel)?;
+                application.ports.insert(
+                    address.name().clone(),
+                    PortDocument {
+                        published_port: port.published_port,
+                        target_port: port.target_port,
+                        publish_mode: port.publish_mode,
+                        protocol: port.protocol,
+                        depends_on: port.depends_on.clone(),
+                        lifecycle: lifecycle_document(&port.lifecycle),
+                    },
+                );
+                continue;
+            }
             let environment = document
                 .environments
                 .get_mut(parent.name())
@@ -142,6 +165,7 @@ impl ConfigDocument {
                             environment: config.environment.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
+                            ports: BTreeMap::new(),
                         },
                     );
                 }
@@ -240,7 +264,9 @@ impl ConfigDocument {
                         },
                     );
                 }
-                ResourceConfig::Project(_) | ResourceConfig::Environment(_) => {
+                ResourceConfig::Project(_)
+                | ResourceConfig::Environment(_)
+                | ResourceConfig::Port(_) => {
                     return Err(ConfigWriteError::InconsistentModel);
                 }
             }
@@ -401,6 +427,28 @@ pub struct ApplicationDocument {
     pub replicas: Field<u32>,
     pub source: Field<SourceDocument>,
     pub environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+    pub ports: BTreeMap<ResourceName, PortDocument>,
+}
+
+impl ApplicationDocument {
+    pub fn add_port(
+        &mut self,
+        name: ResourceName,
+        port: PortDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.ports, name, port, ResourceKind::Port)
+    }
+}
+
+/// Port properties accepted by an imported document.
+#[derive(Clone)]
+pub struct PortDocument {
+    pub published_port: PortNumber,
+    pub target_port: PortNumber,
+    pub publish_mode: PortPublishModeConfig,
+    pub protocol: PortProtocolConfig,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -705,6 +753,31 @@ fn render_application_document(output: &mut String, indent: usize, config: &Appl
     document_source_field(output, indent, &config.source);
     environment_field(output, indent, &config.environment);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+    if !config.ports.is_empty() {
+        mapping_header(output, indent, "ports");
+        for (name, port) in &config.ports {
+            mapping_header(output, indent + 2, name.as_str());
+            render_port_document(output, indent + 4, port);
+        }
+    }
+}
+
+fn render_port_document(output: &mut String, indent: usize, config: &PortDocument) {
+    u16_field(
+        output,
+        indent,
+        "published_port",
+        config.published_port.get(),
+    );
+    u16_field(output, indent, "target_port", config.target_port.get());
+    line(
+        output,
+        indent,
+        "publish_mode",
+        port_publish_mode(config.publish_mode),
+    );
+    line(output, indent, "protocol", port_protocol(config.protocol));
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
 fn render_compose_document(output: &mut String, indent: usize, config: &ComposeDocument) {
@@ -994,7 +1067,36 @@ fn render_children(
         let item_start = output.len();
         mapping_header(output, 6, address.name().as_str());
         renderer(output, 8, resource)?;
+        if kind == ResourceKind::Application {
+            render_port_children(output, config, address)?;
+        }
         collapse_empty_mapping(output, item_start, 6, address.name().as_str());
+    }
+
+    Ok(())
+}
+
+fn render_port_children(
+    output: &mut String,
+    config: &DokployConfig,
+    application: &ResourceAddress,
+) -> Result<(), ConfigWriteError> {
+    let ports = config
+        .resources
+        .iter()
+        .filter(|(address, _)| {
+            address.kind() == ResourceKind::Port
+                && config.parents.get(*address) == Some(application)
+        })
+        .collect::<Vec<_>>();
+    if ports.is_empty() {
+        return Ok(());
+    }
+
+    mapping_header(output, 8, "ports");
+    for (address, resource) in ports {
+        mapping_header(output, 10, address.name().as_str());
+        render_port(output, 12, resource)?;
     }
 
     Ok(())
@@ -1014,6 +1116,34 @@ fn render_application(
     source_field(output, indent, &config.source);
     environment_field(output, indent, &config.environment);
     common_fields(output, indent, config.depends_on(), config.lifecycle());
+
+    Ok(())
+}
+
+fn render_port(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Port(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    u16_field(
+        output,
+        indent,
+        "published_port",
+        config.published_port().get(),
+    );
+    u16_field(output, indent, "target_port", config.target_port().get());
+    line(
+        output,
+        indent,
+        "publish_mode",
+        port_publish_mode(config.publish_mode()),
+    );
+    line(output, indent, "protocol", port_protocol(config.protocol()));
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
 }
@@ -1252,6 +1382,24 @@ fn u32_field(output: &mut String, indent: usize, name: &str, field: &Field<u32>)
         Field::Unmanaged => {}
         Field::Clear => line(output, indent, name, "null"),
         Field::Set(value) => line(output, indent, name, &value.to_string()),
+    }
+}
+
+fn u16_field(output: &mut String, indent: usize, name: &str, value: u16) {
+    line(output, indent, name, &value.to_string());
+}
+
+const fn port_publish_mode(value: PortPublishModeConfig) -> &'static str {
+    match value {
+        PortPublishModeConfig::Ingress => "ingress",
+        PortPublishModeConfig::Host => "host",
+    }
+}
+
+const fn port_protocol(value: PortProtocolConfig) -> &'static str {
+    match value {
+        PortProtocolConfig::Tcp => "tcp",
+        PortProtocolConfig::Udp => "udp",
     }
 }
 

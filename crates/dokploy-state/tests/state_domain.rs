@@ -133,6 +133,33 @@ fn remaining_database_state_requires_environment_containment() {
 }
 
 #[test]
+fn port_state_requires_application_containment() {
+    let application: ResourceAddress = "application.api".parse().unwrap();
+    let environment: ResourceAddress = "environment.production".parse().unwrap();
+    let new_state = |containment| {
+        ResourceState::try_new(
+            ResourceKind::Port,
+            RemoteId::new("port-1").unwrap(),
+            false,
+            ManagedInputs::try_from_json(json!({
+                "published_port": 8080,
+                "target_port": 80,
+                "publish_mode": "ingress",
+                "protocol": "tcp"
+            }))
+            .unwrap(),
+            SensitiveInputs::default(),
+            containment,
+            Vec::new(),
+        )
+    };
+
+    assert!(new_state(Some(application)).is_ok());
+    assert!(new_state(Some(environment)).is_err());
+    assert!(new_state(None).is_err());
+}
+
+#[test]
 fn instance_identity_compares_normalized_base_urls() {
     let first = InstanceIdentity::parse("HTTPS://Deploy.Example.com:443/")
         .expect("a valid Dokploy URL must normalize");

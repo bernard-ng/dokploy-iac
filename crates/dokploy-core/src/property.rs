@@ -81,6 +81,14 @@ pub enum PropertyPath {
     Host,
     /// Domain application reference.
     Application,
+    /// Externally published application port.
+    PublishedPort,
+    /// Container target port.
+    TargetPort,
+    /// Docker publication mode.
+    PublishMode,
+    /// Transport protocol.
+    Protocol,
     /// Deployment status, valid only in lifecycle metadata.
     DeploymentStatus,
 }
@@ -158,6 +166,10 @@ impl PropertyPath {
             ),
             ResourceKind::Redis => matches!(self, Self::Password),
             ResourceKind::Domain => matches!(self, Self::Host | Self::Application),
+            ResourceKind::Port => matches!(
+                self,
+                Self::PublishedPort | Self::TargetPort | Self::PublishMode | Self::Protocol
+            ),
         }
     }
 }
@@ -183,6 +195,10 @@ impl fmt::Display for PropertyPath {
             Self::ComposeDocument => formatter.write_str("document"),
             Self::Host => formatter.write_str("host"),
             Self::Application => formatter.write_str("application"),
+            Self::PublishedPort => formatter.write_str("published_port"),
+            Self::TargetPort => formatter.write_str("target_port"),
+            Self::PublishMode => formatter.write_str("publish_mode"),
+            Self::Protocol => formatter.write_str("protocol"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
         }
     }
@@ -208,6 +224,10 @@ impl FromStr for PropertyPath {
             "document" => Ok(Self::ComposeDocument),
             "host" => Ok(Self::Host),
             "application" => Ok(Self::Application),
+            "published_port" => Ok(Self::PublishedPort),
+            "target_port" => Ok(Self::TargetPort),
+            "publish_mode" => Ok(Self::PublishMode),
+            "protocol" => Ok(Self::Protocol),
             "deployment.status" => Ok(Self::DeploymentStatus),
             _ => {
                 let Some(name) = value.strip_prefix("environment.") else {

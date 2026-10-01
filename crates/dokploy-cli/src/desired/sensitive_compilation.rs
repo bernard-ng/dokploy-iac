@@ -255,7 +255,8 @@ fn preflight_sensitive_inputs(
             }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
-            | ResourceConfig::Domain(_) => {}
+            | ResourceConfig::Domain(_)
+            | ResourceConfig::Port(_) => {}
         }
     }
 

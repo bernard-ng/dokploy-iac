@@ -5,8 +5,8 @@ use schemars::Schema;
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, RemovedDeclaration, SecretSource,
-    SourceConfig,
+    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, PortNumber, PortProtocolConfig,
+    PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
 };
 
 /// A fully parsed and semantically validated `dokploy.yaml` document.
@@ -109,6 +109,7 @@ pub enum ResourceConfig {
     LibSql(LibSqlConfig),
     Redis(RedisConfig),
     Domain(DomainConfig),
+    Port(PortConfig),
 }
 
 impl ResourceConfig {
@@ -126,6 +127,7 @@ impl ResourceConfig {
             Self::LibSql(_) => ResourceKind::LibSql,
             Self::Redis(_) => ResourceKind::Redis,
             Self::Domain(_) => ResourceKind::Domain,
+            Self::Port(_) => ResourceKind::Port,
         }
     }
 
@@ -218,6 +220,14 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_port(&self) -> Option<&PortConfig> {
+        match self {
+            Self::Port(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn depends_on(&self) -> &[ResourceAddress] {
         match self {
             Self::Project(config) => &config.depends_on,
@@ -231,6 +241,7 @@ impl ResourceConfig {
             Self::LibSql(config) => &config.depends_on,
             Self::Redis(config) => &config.depends_on,
             Self::Domain(config) => &config.depends_on,
+            Self::Port(config) => &config.depends_on,
         }
     }
 
@@ -248,6 +259,7 @@ impl ResourceConfig {
             Self::LibSql(config) => &config.lifecycle,
             Self::Redis(config) => &config.lifecycle,
             Self::Domain(config) => &config.lifecycle,
+            Self::Port(config) => &config.lifecycle,
         }
     }
 
@@ -264,6 +276,7 @@ impl ResourceConfig {
             Self::LibSql(config) => &mut config.lifecycle,
             Self::Redis(config) => &mut config.lifecycle,
             Self::Domain(config) => &mut config.lifecycle,
+            Self::Port(config) => &mut config.lifecycle,
         }
     }
 
@@ -280,6 +293,7 @@ impl ResourceConfig {
             Self::LibSql(config) => &mut config.depends_on,
             Self::Redis(config) => &mut config.depends_on,
             Self::Domain(config) => &mut config.depends_on,
+            Self::Port(config) => &mut config.depends_on,
         }
     }
 
@@ -355,7 +369,7 @@ impl ResourceConfig {
                     secrets.push(secret);
                 }
             }
-            Self::Project(_) | Self::Environment(_) | Self::Domain(_) => {}
+            Self::Project(_) | Self::Environment(_) | Self::Domain(_) | Self::Port(_) => {}
         }
         secrets
     }
@@ -486,6 +500,41 @@ impl ApplicationConfig {
 }
 
 redacted_debug!(ApplicationConfig, "ApplicationConfig");
+
+/// Complete declarative inputs for one application Port.
+#[derive(Clone, Eq, PartialEq)]
+pub struct PortConfig {
+    pub(crate) published_port: PortNumber,
+    pub(crate) target_port: PortNumber,
+    pub(crate) publish_mode: PortPublishModeConfig,
+    pub(crate) protocol: PortProtocolConfig,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl PortConfig {
+    #[must_use]
+    pub const fn published_port(&self) -> PortNumber {
+        self.published_port
+    }
+
+    #[must_use]
+    pub const fn target_port(&self) -> PortNumber {
+        self.target_port
+    }
+
+    #[must_use]
+    pub const fn publish_mode(&self) -> PortPublishModeConfig {
+        self.publish_mode
+    }
+
+    #[must_use]
+    pub const fn protocol(&self) -> PortProtocolConfig {
+        self.protocol
+    }
+}
+
+redacted_debug!(PortConfig, "PortConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct ComposeConfig {

@@ -363,6 +363,30 @@ fn compile_desired_with_fingerprints(
                     properties.insert(PropertyPath::Application, application);
                 }
             }
+            ResourceConfig::Port(port) => {
+                properties.insert(
+                    PropertyPath::PublishedPort,
+                    comparable(serde_json::json!(port.published_port().get())),
+                );
+                properties.insert(
+                    PropertyPath::TargetPort,
+                    comparable(serde_json::json!(port.target_port().get())),
+                );
+                properties.insert(
+                    PropertyPath::PublishMode,
+                    comparable(serde_json::json!(match port.publish_mode() {
+                        dokploy_config::PortPublishModeConfig::Ingress => "ingress",
+                        dokploy_config::PortPublishModeConfig::Host => "host",
+                    })),
+                );
+                properties.insert(
+                    PropertyPath::Protocol,
+                    comparable(serde_json::json!(match port.protocol() {
+                        dokploy_config::PortProtocolConfig::Tcp => "tcp",
+                        dokploy_config::PortProtocolConfig::Udp => "udp",
+                    })),
+                );
+            }
         }
 
         let protection = match resource.lifecycle().protect() {
@@ -461,7 +485,8 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
             | ResourceConfig::MariaDb(_)
             | ResourceConfig::Mongo(_)
             | ResourceConfig::LibSql(_)
-            | ResourceConfig::Redis(_) => {}
+            | ResourceConfig::Redis(_)
+            | ResourceConfig::Port(_) => {}
         }
     }
 
