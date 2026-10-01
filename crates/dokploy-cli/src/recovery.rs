@@ -206,6 +206,20 @@ async fn decision_for_step(
         DiscoveryAuthority::reconciliation(),
     )
     .await?;
+    // A selector that no longer names exactly one record cannot prove which external
+    // record an uncertain step selected, so the operator must decide.
+    if compiled
+        .bindings()
+        .external_selectors()
+        .filter(|(address, _, _, _)| *address == step.address())
+        .any(|(address, path, _, _)| {
+            remote
+                .external_resolution(address, path)
+                .is_some_and(|resolution| !resolution.is_resolved())
+        })
+    {
+        return Err(RecoverWorkspaceError::ManualIntervention);
+    }
     let observation = remote
         .observation(step.address())
         .ok_or(RecoverWorkspaceError::ManualIntervention)?;

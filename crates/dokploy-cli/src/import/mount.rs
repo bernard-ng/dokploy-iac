@@ -150,8 +150,9 @@ async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &application.environment_id).await?;
             let address = address(ResourceKind::Application, &application.name)?;
+            let associations = imported_associations(client, &application).await?;
             Ok((
-                build_application(project, environment, application, &address)?,
+                build_application(project, environment, application, &associations, &address)?,
                 address,
             ))
         }

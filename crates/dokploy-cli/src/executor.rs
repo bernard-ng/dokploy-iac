@@ -16,9 +16,10 @@ use dokploy_sdk::{
     CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
     CreateSecurity, Dokploy, DomainId, EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode,
     MariaDbId, MongoId, MySqlId, Nullable, PortId, PortProtocol, PostgresId, ProjectId,
-    PublishMode, RedirectId, RedisId, SecurityId, UpdateApplication, UpdateCompose, UpdateDomain,
-    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePort,
-    UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSecurity,
+    PublishMode, RedirectId, RedisId, RegistryId, SecurityId, ServerId, ServerPlacement,
+    UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
+    UpdateMongo, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect,
+    UpdateRedis, UpdateSecurity,
 };
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
@@ -30,7 +31,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::desired::{CompileDesiredError, compile_desired_for_instance};
+use crate::desired::{CompileDesiredError, ExternalExecutionId, compile_desired_for_instance};
 
 mod mount;
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
@@ -226,6 +227,7 @@ async fn apply_workspace_with_expectation(
     )
     .await?;
     let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
+    compiled.bind_external_resolutions(&remote);
 
     if let Some(saved_plan) = saved_plan {
         let fingerprinter = SensitiveFingerprinter::load(instance.clone())
@@ -241,6 +243,7 @@ async fn apply_workspace_with_expectation(
         return Err(ApplyWorkspaceError::PlanBlocked);
     }
     preflight(&plan)?;
+    preflight_replacements(&plan, &state)?;
     if plan.changes().is_empty() {
         return Ok(ApplySummary { applied: 0 });
     }
@@ -445,92 +448,19 @@ async fn apply_workspace_with_expectation(
                 }
             }
             ResourceKind::Application => {
-                let parent = checkpoint
-                    .containment()
-                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
-                let parent_id = state
-                    .resource(parent)
-                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
-                    .remote_id();
-                let input = CreateApplication::new(
-                    change.address().name().as_str(),
-                    EnvironmentId::new(parent_id.as_str()),
-                );
-                let created = match client.applications().create(input).await {
-                    Ok(created) => created,
-                    Err(error) => {
-                        let code = failure_code(&error);
-                        fail_if_definitive(&mut journal, token, code)?;
-                        return Err(ApplyWorkspaceError::RemoteMutation { code });
-                    }
-                };
-                let remote_id = RemoteId::new(created.application_id().as_str())
-                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
-                let property_paths = checkpoint
-                    .property_paths()
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                if property_paths.is_empty() {
-                    remote_id
-                } else {
-                    let interim = minimal_resource_state(
-                        ResourceKind::Application,
-                        checkpoint,
-                        remote_id.clone(),
-                    )?;
-                    state.upsert_resource(change.address().clone(), interim)?;
-                    journal.succeed(token, Some(remote_id.clone()), &state)?;
-
-                    let update = application_update_input(
-                        &mut compiled,
-                        change.address(),
-                        checkpoint,
-                        created.application_id().clone(),
-                        &property_paths,
-                        None,
-                    )?;
-                    let before = state
-                        .resource(change.address())
-                        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
-                        .clone();
-                    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
-                    let update_token = journal.start_recoverable_step(
-                        change.address().clone(),
-                        JournalAction::Update,
-                        ExpectedCheckpoint::update(before, resource.clone())?,
-                    )?;
-                    if let Err(error) = client.applications().update(update).await {
-                        let code = failure_code(&error);
-                        fail_if_definitive(&mut journal, update_token, code)?;
-                        return Err(ApplyWorkspaceError::RemoteMutation { code });
-                    }
-                    state.upsert_resource(change.address().clone(), resource.clone())?;
-                    journal.succeed(update_token, Some(remote_id.clone()), &state)?;
-
-                    if application_requires_deploy(property_paths.iter()) {
-                        let deploy_token = journal.start_recoverable_step(
-                            change.address().clone(),
-                            JournalAction::Deploy,
-                            ExpectedCheckpoint::update(resource.clone(), resource.clone())?,
-                        )?;
-                        if let Err(error) = client
-                            .applications()
-                            .deploy(created.application_id().clone())
-                            .await
-                        {
-                            let code = failure_code(&error);
-                            fail_if_definitive(&mut journal, deploy_token, code)?;
-                            return Err(ApplyWorkspaceError::RemoteMutation { code });
-                        }
-                        state.upsert_resource(change.address().clone(), resource)?;
-                        journal.succeed(deploy_token, Some(remote_id), &state)?;
-                    }
-
-                    applied += 1;
-                    change_index += 1;
-                    continue;
-                }
+                execute_application_create(
+                    client,
+                    &mut compiled,
+                    change,
+                    checkpoint,
+                    &mut state,
+                    &mut journal,
+                    token,
+                )
+                .await?;
+                applied += 1;
+                change_index += 1;
+                continue;
             }
             ResourceKind::Compose => {
                 let environment_id = checkpoint_environment_id(checkpoint, &state)?;
@@ -811,6 +741,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Redirect
                     | ResourceKind::Security
                     | ResourceKind::Mount
+                    | ResourceKind::Application
             ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
         }
     }) {
@@ -818,6 +749,259 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
     } else {
         Err(ApplyWorkspaceError::UnsupportedChange)
     }
+}
+
+/// Refuses an application replacement that would orphan durable dependents.
+///
+/// Deleting an application removes its Ports and detaches its Domains in
+/// Dokploy, while the planner does not cascade a replacement to them. Until a
+/// cascading replacement is proven, any contained or dependent resource in
+/// durable state blocks the replacement before the first remote mutation.
+fn preflight_replacements(plan: &Plan, state: &StateFile) -> Result<(), ApplyWorkspaceError> {
+    for change in plan.changes().iter().filter(|change| {
+        change.kind() == ChangeKind::Replace && change.address().kind() == ResourceKind::Application
+    }) {
+        if application_has_dependents(state, change.address()) {
+            return Err(ApplyWorkspaceError::ReplacementBlockedByDependents);
+        }
+    }
+
+    Ok(())
+}
+
+fn application_has_dependents(state: &StateFile, application: &ResourceAddress) -> bool {
+    state.resources().iter().any(|(address, resource)| {
+        address != application
+            && (resource.containment() == Some(application)
+                || resource.dependencies().contains(application))
+    })
+}
+
+/// Returns the application properties written by `application.update` after create.
+///
+/// The primary server is accepted only by `application.create`, so it never
+/// takes part in the follow-up update.
+fn application_update_paths(checkpoint: &dokploy_core::ResourceCheckpoint) -> Vec<PropertyPath> {
+    checkpoint
+        .property_paths()
+        .into_iter()
+        .filter(|path| **path != PropertyPath::Server)
+        .cloned()
+        .collect()
+}
+
+fn server_placement(
+    compiled: &crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+) -> Result<ServerPlacement, ApplyWorkspaceError> {
+    match compiled
+        .bindings()
+        .external_id(address, &PropertyPath::Server)
+    {
+        Some(ExternalExecutionId::Local) => Ok(ServerPlacement::Local),
+        Some(ExternalExecutionId::Remote(remote_id)) => {
+            Ok(ServerPlacement::Server(ServerId::new(remote_id.as_str())))
+        }
+        None => Err(ApplyWorkspaceError::ExternalResolutionMissing),
+    }
+}
+
+fn nullable_association<T>(
+    compiled: &crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    path: &PropertyPath,
+    value: CheckpointValueRef<'_>,
+    identity: fn(&str) -> T,
+) -> Result<Nullable<T>, ApplyWorkspaceError> {
+    match value {
+        CheckpointValueRef::Null => Ok(Nullable::Null),
+        CheckpointValueRef::NonSensitive(_) => {
+            match compiled.bindings().external_id(address, path) {
+                Some(ExternalExecutionId::Remote(remote_id)) => {
+                    Ok(Nullable::Value(identity(remote_id.as_str())))
+                }
+                Some(ExternalExecutionId::Local) | None => {
+                    Err(ApplyWorkspaceError::ExternalResolutionMissing)
+                }
+            }
+        }
+        CheckpointValueRef::EmptyCollection | CheckpointValueRef::Sensitive => {
+            Err(ApplyWorkspaceError::InvalidCheckpoint)
+        }
+    }
+}
+
+/// Creates one application, applies its post-create properties, and checkpoints it.
+///
+/// The step `token` was started by the caller with the matching recovery target.
+async fn execute_application_create(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+    token: StepToken,
+) -> Result<(), ApplyWorkspaceError> {
+    let parent = checkpoint
+        .containment()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let parent_id = state
+        .resource(parent)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .remote_id();
+    let mut input = CreateApplication::new(
+        change.address().name().as_str(),
+        EnvironmentId::new(parent_id.as_str()),
+    );
+    if checkpoint.property(&PropertyPath::Server).is_some() {
+        input = input.with_server_placement(server_placement(compiled, change.address())?);
+    }
+    let created = match client.applications().create(input).await {
+        Ok(created) => created,
+        Err(error) => {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+    };
+    let remote_id = RemoteId::new(created.application_id().as_str())
+        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+    if checkpoint.property_paths().is_empty() {
+        let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+        state.upsert_resource(change.address().clone(), resource)?;
+        journal.succeed(token, Some(remote_id), state)?;
+        return Ok(());
+    }
+
+    // The recoverable create target is minimal so an uncertain create can be adopted
+    // from authoritative collection identity alone; owned properties follow in a
+    // second journaled step.
+    let property_paths = application_update_paths(checkpoint);
+    let interim = minimal_resource_state(ResourceKind::Application, checkpoint, remote_id.clone())?;
+    state.upsert_resource(change.address().clone(), interim)?;
+    journal.succeed(token, Some(remote_id.clone()), state)?;
+
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+    let update_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Update,
+        ExpectedCheckpoint::update(before, resource.clone())?,
+    )?;
+    // A placement-only application has nothing left to write: the server was sent at
+    // create, so this step only records the proven ownership.
+    if !property_paths.is_empty() {
+        let update = application_update_input(
+            compiled,
+            change.address(),
+            checkpoint,
+            created.application_id().clone(),
+            &property_paths,
+            None,
+        )?;
+        if let Err(error) = client.applications().update(update).await {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, update_token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+    }
+    state.upsert_resource(change.address().clone(), resource.clone())?;
+    journal.succeed(update_token, Some(remote_id.clone()), state)?;
+
+    if application_requires_deploy(property_paths.iter()) {
+        let deploy_token = journal.start_recoverable_step(
+            change.address().clone(),
+            JournalAction::Deploy,
+            ExpectedCheckpoint::update(resource.clone(), resource.clone())?,
+        )?;
+        if let Err(error) = client
+            .applications()
+            .deploy(created.application_id().clone())
+            .await
+        {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, deploy_token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+        state.upsert_resource(change.address().clone(), resource)?;
+        journal.succeed(deploy_token, Some(remote_id), state)?;
+    }
+
+    Ok(())
+}
+
+/// Replaces an application whose create-only server placement changed.
+///
+/// The old application is deleted before its replacement is created, with both
+/// steps journaled and recoverable. Placement is resolved and dependents are
+/// checked before the destructive step so a stale selector cannot strand the
+/// workspace without an application.
+async fn execute_application_replacement(
+    client: &Dokploy,
+    compiled: &mut crate::desired::CompiledDesired,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    if application_has_dependents(state, change.address()) {
+        return Err(ApplyWorkspaceError::ReplacementBlockedByDependents);
+    }
+    if checkpoint.property(&PropertyPath::Server).is_some() {
+        server_placement(compiled, change.address())?;
+    }
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let delete_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Delete,
+        ExpectedCheckpoint::remove(before.clone()),
+    )?;
+    if let Err(error) = client
+        .applications()
+        .delete(ApplicationId::new(before.remote_id().as_str()))
+        .await
+        && !is_already_missing(&error)
+    {
+        let code = failure_code(&error);
+        fail_if_definitive(journal, delete_token, code)?;
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+    state.remove_resource(change.address())?;
+    journal.succeed(delete_token, None, state)?;
+
+    let placeholder = RemoteId::new("recovery-pending")
+        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+    let recovery_target = if checkpoint.property_paths().is_empty() {
+        checkpoint.materialize(change.address(), placeholder)?
+    } else {
+        minimal_resource_state(ResourceKind::Application, checkpoint, placeholder)?
+    };
+    let create_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Create,
+        ExpectedCheckpoint::create(recovery_target)?,
+    )?;
+
+    execute_application_create(
+        client,
+        compiled,
+        change,
+        checkpoint,
+        state,
+        journal,
+        create_token,
+    )
+    .await
 }
 
 async fn execute_move_change(
@@ -1621,6 +1805,50 @@ fn application_update_input(
         input = input.with_environment(environment);
     }
 
+    for path in [
+        PropertyPath::BuildServer,
+        PropertyPath::Registry,
+        PropertyPath::BuildRegistry,
+        PropertyPath::RollbackRegistry,
+    ] {
+        if !selected_paths.contains(&path) {
+            continue;
+        }
+        let Some(value) = checkpoint.property(&path) else {
+            continue;
+        };
+        input = match path {
+            PropertyPath::BuildServer => input.with_build_server(nullable_association(
+                compiled,
+                address,
+                &path,
+                value,
+                |id: &str| ServerId::new(id),
+            )?),
+            PropertyPath::Registry => input.with_registry(nullable_association(
+                compiled,
+                address,
+                &path,
+                value,
+                |id: &str| RegistryId::new(id),
+            )?),
+            PropertyPath::BuildRegistry => input.with_build_registry(nullable_association(
+                compiled,
+                address,
+                &path,
+                value,
+                |id: &str| RegistryId::new(id),
+            )?),
+            _ => input.with_rollback_registry(nullable_association(
+                compiled,
+                address,
+                &path,
+                value,
+                |id: &str| RegistryId::new(id),
+            )?),
+        };
+    }
+
     Ok(input)
 }
 
@@ -2331,6 +2559,11 @@ async fn execute_delete_before_create_replacement(
         && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
     {
         return mount::execute_mount_replacement(client, compiled, change, state, journal).await;
+    }
+    if change.address().kind() == ResourceKind::Application
+        && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return execute_application_replacement(client, compiled, change, state, journal).await;
     }
     if change.address().kind() != ResourceKind::LibSql
         || change.replacement_order() != Some(ReplacementOrder::DeleteBeforeCreate)
@@ -3246,6 +3479,10 @@ pub enum ApplyWorkspaceError {
     UnsupportedChange,
     #[error("the planned checkpoint is invalid for execution")]
     InvalidCheckpoint,
+    #[error("a planned external selector has no fresh resolved identity")]
+    ExternalResolutionMissing,
+    #[error("replacing the application would orphan resources that depend on it")]
+    ReplacementBlockedByDependents,
     #[error("Dokploy returned an invalid physical identity")]
     InvalidRemoteIdentity,
     #[error("the remote mutation failed with {code:?}")]

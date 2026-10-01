@@ -34,6 +34,9 @@ pub fn render(plan: &Plan, output: &mut dyn Write) -> std::io::Result<()> {
         if let Some(property) = diagnostic.property() {
             write!(output, " property={property}")?;
         }
+        if let Some(failure) = diagnostic.selector_failure() {
+            write!(output, " selector={}", failure.as_str())?;
+        }
         writeln!(output)?;
     }
 

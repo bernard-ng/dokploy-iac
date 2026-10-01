@@ -6,6 +6,7 @@ pub mod credentials;
 mod declarative;
 pub mod desired;
 pub mod executor;
+pub mod external;
 mod imperative;
 mod imperative_generated;
 pub mod import;

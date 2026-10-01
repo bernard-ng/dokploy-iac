@@ -13,14 +13,15 @@ use std::{
 };
 
 use dokploy_config::{
-    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, MountSourceConfig, ResourceConfig,
-    SourceConfig,
+    ConfigValue, DokployConfig, ExternalSelector, Field, LibSqlNodeConfig, MountSourceConfig,
+    ResourceConfig, SelectorKind, SourceConfig,
 };
 use dokploy_core::{
-    ConfigDigest, DesiredResource, DesiredState, DesiredStateError, MoveDirective, OwnedValue,
-    PropertyPath, ProtectionIntent, RemovalDirective, SensitiveIntent,
+    ConfigDigest, DesiredResource, DesiredState, DesiredStateError, ExternalResolution,
+    MoveDirective, OwnedValue, PropertyPath, ProtectionIntent, RemoteState, RemovalDirective,
+    SensitiveIntent,
 };
-use dokploy_state::{InstanceIdentity, ResourceAddress, SensitiveFingerprint, StateFile};
+use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, SensitiveFingerprint, StateFile};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -57,6 +58,35 @@ impl CompiledDesired {
         self.bindings
             .sensitive
             .remove(&(address.clone(), path.clone()))
+    }
+
+    /// Copies freshly resolved external identities into the execution sidecar.
+    ///
+    /// Only selectors that resolved uniquely are retained, so execution fails
+    /// closed for anything the plan could not have been applyable with. The
+    /// identities are non-serializable and never appear in debug output.
+    pub fn bind_external_resolutions(&mut self, remote: &RemoteState) {
+        let mut resolved = BTreeMap::new();
+        for (address, path) in self.bindings.selectors.keys() {
+            match remote.external_resolution(address, path) {
+                Some(ExternalResolution::Local) => {
+                    resolved.insert((address.clone(), path.clone()), ExternalExecutionId::Local);
+                }
+                Some(ExternalResolution::Resolved(remote_id)) => {
+                    resolved.insert(
+                        (address.clone(), path.clone()),
+                        ExternalExecutionId::Remote(remote_id.clone()),
+                    );
+                }
+                Some(
+                    ExternalResolution::Unmatched
+                    | ExternalResolution::Ambiguous
+                    | ExternalResolution::Unavailable(_),
+                )
+                | None => {}
+            }
+        }
+        self.bindings.external_ids = resolved;
     }
 
     /// Builds the synthetic empty desired state used by workspace destruction.
@@ -101,7 +131,36 @@ pub struct ExecutionBindings {
     redirect_regexes: BTreeMap<ResourceAddress, String>,
     security_usernames: BTreeMap<ResourceAddress, String>,
     mounts: BTreeMap<ResourceAddress, MountBinding>,
+    selectors: BTreeMap<(ResourceAddress, PropertyPath), SelectorBinding>,
+    external_ids: BTreeMap<(ResourceAddress, PropertyPath), ExternalExecutionId>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
+}
+
+/// One configured external selector and the kind of record it selects.
+#[derive(Clone)]
+struct SelectorBinding {
+    kind: SelectorKind,
+    selector: ExternalSelector,
+}
+
+/// A freshly resolved external identity retained only for execution.
+///
+/// The value is non-serializable and redacted from debug output.
+#[derive(Clone)]
+pub enum ExternalExecutionId {
+    /// The explicit local server, which is sent to Dokploy as JSON null.
+    Local,
+    /// One resolved external record.
+    Remote(RemoteId),
+}
+
+impl fmt::Debug for ExternalExecutionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local => formatter.write_str("ExternalExecutionId::Local"),
+            Self::Remote(_) => formatter.write_str("ExternalExecutionId::Remote([REDACTED])"),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -147,6 +206,35 @@ impl ExecutionBindings {
     #[must_use]
     pub fn security_username(&self, address: &ResourceAddress) -> Option<&str> {
         self.security_usernames.get(address).map(String::as_str)
+    }
+
+    /// Returns every configured external selector as `(address, property, kind, selector)`.
+    pub fn external_selectors(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &ResourceAddress,
+            &PropertyPath,
+            SelectorKind,
+            &ExternalSelector,
+        ),
+    > {
+        self.selectors
+            .iter()
+            .map(|((address, path), binding)| (address, path, binding.kind, &binding.selector))
+    }
+
+    /// Returns the freshly resolved external identity for one selector property.
+    ///
+    /// The result is available only after [`CompiledDesired::bind_external_resolutions`]
+    /// and only for selectors that resolved to exactly one usable identity.
+    #[must_use]
+    pub fn external_id(
+        &self,
+        address: &ResourceAddress,
+        path: &PropertyPath,
+    ) -> Option<&ExternalExecutionId> {
+        self.external_ids.get(&(address.clone(), path.clone()))
     }
 
     /// Returns the complete non-secret Port input for collision and execution checks.
@@ -310,6 +398,18 @@ fn compile_desired_with_fingerprints(
                     application.environment(),
                     fingerprints,
                 )?;
+                for (path, field) in [
+                    (PropertyPath::Server, application.server()),
+                    (PropertyPath::BuildServer, application.build_server()),
+                    (PropertyPath::Registry, application.registry()),
+                    (PropertyPath::BuildRegistry, application.build_registry()),
+                    (
+                        PropertyPath::RollbackRegistry,
+                        application.rollback_registry(),
+                    ),
+                ] {
+                    compile_selector_field(&mut properties, path, field);
+                }
             }
             ResourceConfig::Compose(compose) => {
                 compile_string_field(
@@ -591,6 +691,18 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
     };
 
     for (address, resource) in config.resources() {
+        for (name, kind, selector) in resource.external_selectors() {
+            let path: PropertyPath = name
+                .parse()
+                .expect("configured selector properties are in the planner vocabulary");
+            bindings.selectors.insert(
+                (address.clone(), path),
+                SelectorBinding {
+                    kind,
+                    selector: selector.clone(),
+                },
+            );
+        }
         match resource {
             ResourceConfig::Domain(domain) => {
                 if let Some(host) = domain.host().as_set() {
@@ -703,6 +815,19 @@ fn compile_bool_field(
         Field::Unmanaged => return,
         Field::Clear => OwnedValue::Null,
         Field::Set(value) => comparable(serde_json::json!(value)),
+    };
+    properties.insert(path, value);
+}
+
+fn compile_selector_field(
+    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+    path: PropertyPath,
+    field: &Field<ExternalSelector>,
+) {
+    let value = match field {
+        Field::Unmanaged => return,
+        Field::Clear => OwnedValue::Null,
+        Field::Set(selector) => OwnedValue::Value(crate::external::selector_value(selector)),
     };
     properties.insert(path, value);
 }

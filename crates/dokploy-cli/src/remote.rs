@@ -2,16 +2,18 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use dokploy_config::SelectorKind;
 use dokploy_core::{
-    ComparableValue, MutationContract, MutationMode, PropertyMutation, PropertyObservation,
-    PropertyPath, PropertyUnknownReason, RemoteFailureKind, RemoteObservation, RemoteResource,
-    RemoteState, RemoteStateError, ReplacementOrder,
+    ComparableValue, ExternalResolution, MutationContract, MutationMode, PropertyMutation,
+    PropertyObservation, PropertyPath, PropertyUnknownReason, RemoteFailureKind, RemoteObservation,
+    RemoteResource, RemoteState, RemoteStateError, ReplacementOrder,
 };
 use dokploy_sdk::{ApplicationEnvironmentShape, Dokploy, Error as SdkError, ResponseField};
 use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, ResourceKind, StateFile};
 use thiserror::Error;
 
 use crate::desired::CompiledDesired;
+use crate::external::ExternalDirectory;
 
 mod leaf;
 mod mount;
@@ -515,12 +517,14 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(environments);
+    let externals = ExternalDirectory::load(client, &required_external_kinds(compiled)).await;
     let applications = discover_application_observations(
         client,
         compiled,
         state,
         &observations,
         authority.applications,
+        &externals,
     )
     .await?;
     observations.extend(applications);
@@ -589,8 +593,58 @@ pub async fn discover_remote(
     .await?;
     observations.extend(mounts);
 
+    let resolutions = external_resolutions(compiled, &externals, &observations);
     remote_state_with_contracts(state.instance().clone(), observations)
+        .and_then(|remote| remote.with_external_resolutions(resolutions))
         .map_err(DiscoverRemoteError::InvalidRemoteState)
+}
+
+/// Returns the external record kinds that desired, non-ignored selectors require.
+fn required_external_kinds(compiled: &CompiledDesired) -> BTreeSet<SelectorKind> {
+    compiled
+        .bindings()
+        .external_selectors()
+        .filter(|(address, path, _, _)| selector_is_managed(compiled, address, path))
+        .map(|(_, _, kind, _)| kind)
+        .collect()
+}
+
+/// Returns whether a configured selector participates in planning for its resource.
+fn selector_is_managed(
+    compiled: &CompiledDesired,
+    address: &ResourceAddress,
+    path: &PropertyPath,
+) -> bool {
+    compiled
+        .desired_state()
+        .resources()
+        .get(address)
+        .is_some_and(|resource| !resource.ignored_changes().contains(path))
+}
+
+/// Resolves every managed desired selector against the fresh external collections.
+///
+/// Resolutions are keyed by the desired logical address and property. Only
+/// addresses that were observed receive one, which keeps the attachment total.
+fn external_resolutions(
+    compiled: &CompiledDesired,
+    externals: &ExternalDirectory,
+    observations: &[(ResourceAddress, RemoteObservation)],
+) -> Vec<((ResourceAddress, PropertyPath), ExternalResolution)> {
+    let observed: BTreeSet<_> = observations.iter().map(|(address, _)| address).collect();
+    compiled
+        .bindings()
+        .external_selectors()
+        .filter(|(address, path, _, _)| {
+            observed.contains(address) && selector_is_managed(compiled, address, path)
+        })
+        .map(|(address, path, kind, selector)| {
+            (
+                (address.clone(), path.clone()),
+                externals.resolve(kind, selector),
+            )
+        })
+        .collect()
 }
 
 fn remote_state_with_contracts(
@@ -618,6 +672,15 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
         ResourceKind::Application => {
             MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
                 .with_default_property(in_place)
+                // Dokploy accepts the primary server only while creating an
+                // application, so a changed placement replaces the resource.
+                // The nullable build-server and registry associations are
+                // proven by `application.update` and change in place.
+                .allowing_on_create(PropertyPath::Server)
+                .with_property(
+                    PropertyPath::Server,
+                    PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+                )
                 .with_containment(MutationMode::InPlace)
         }
         ResourceKind::Compose => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
@@ -2576,6 +2639,7 @@ async fn discover_application_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: ApplicationTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -2657,7 +2721,7 @@ async fn discover_application_observations(
                     } else {
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            application_properties(&address, compiled, &application),
+                            application_properties(&address, compiled, &application, externals),
                         ))
                     }
                 }
@@ -3046,6 +3110,7 @@ fn application_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     application: &dokploy_sdk::ApplicationDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -3070,6 +3135,37 @@ fn application_properties(
             PropertyPath::EnvironmentVariable(_) => {
                 observe_environment_child(&application.environment)
             }
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&application.server_id, dokploy_sdk::ServerId::as_str),
+            ),
+            PropertyPath::BuildServer => externals.observe_association(
+                SelectorKind::Server,
+                false,
+                response_str(&application.build_server_id, dokploy_sdk::ServerId::as_str),
+            ),
+            PropertyPath::Registry => externals.observe_association(
+                SelectorKind::Registry,
+                false,
+                response_str(&application.registry_id, dokploy_sdk::RegistryId::as_str),
+            ),
+            PropertyPath::BuildRegistry => externals.observe_association(
+                SelectorKind::Registry,
+                false,
+                response_str(
+                    &application.build_registry_id,
+                    dokploy_sdk::RegistryId::as_str,
+                ),
+            ),
+            PropertyPath::RollbackRegistry => externals.observe_association(
+                SelectorKind::Registry,
+                false,
+                response_str(
+                    &application.rollback_registry_id,
+                    dokploy_sdk::RegistryId::as_str,
+                ),
+            ),
             PropertyPath::Database
             | PropertyPath::Username
             | PropertyPath::Password
@@ -3093,17 +3189,23 @@ fn application_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
-            | PropertyPath::BuildServer
-            | PropertyPath::Registry
-            | PropertyPath::BuildRegistry
-            | PropertyPath::RollbackRegistry
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
     }
 
     properties
+}
+
+fn response_str<'a, T>(
+    field: &'a ResponseField<T>,
+    as_str: fn(&'a T) -> &'a str,
+) -> ResponseField<&'a str> {
+    match field {
+        ResponseField::NotReturned => ResponseField::NotReturned,
+        ResponseField::Null => ResponseField::Null,
+        ResponseField::Value(value) => ResponseField::Value(as_str(value)),
+    }
 }
 
 fn compose_properties(

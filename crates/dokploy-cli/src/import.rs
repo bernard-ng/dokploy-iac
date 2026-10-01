@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use dokploy_config::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigWriteError, DomainDocument,
-    EnvironmentDocument, Field, LibSqlDocument, LibSqlNodeConfig, LifecycleDocument,
-    MariaDbDocument, MongoDocument, MySqlDocument, NonEmptyText, PortDocument, PortNumber,
-    PortProtocolConfig, PortPublishModeConfig, PostgresDocument, RedirectDocument, RedisDocument,
-    SecurityDocument, SourceDocument,
+    EnvironmentDocument, ExternalSelector, Field, LibSqlDocument, LibSqlNodeConfig,
+    LifecycleDocument, MariaDbDocument, MongoDocument, MySqlDocument, NonEmptyText, PortDocument,
+    PortNumber, PortProtocolConfig, PortPublishModeConfig, PostgresDocument, RedirectDocument,
+    RedisDocument, SecurityDocument, SelectorKind, SourceDocument,
 };
 use dokploy_sdk::{
     ApplicationDetails, ApplicationId, ComposeId, Dokploy, DomainId, EnvironmentDetails,
@@ -23,6 +23,7 @@ use dokploy_state::{
 use thiserror::Error;
 
 use crate::cli::ImportKind;
+use crate::external::ExternalDirectory;
 
 mod mount;
 
@@ -424,7 +425,8 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_application(project, environment, application, target)
+            let associations = imported_associations(client, &application).await?;
+            build_application(project, environment, application, &associations, target)
         }
         ImportKind::Compose => {
             let requested_id = ComposeId::new(remote_id);
@@ -534,7 +536,15 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_domain(project, environment, application, domain, target)
+            let associations = imported_associations(client, &application).await?;
+            build_domain(
+                project,
+                environment,
+                application,
+                &associations,
+                domain,
+                target,
+            )
         }
         ImportKind::Port => {
             let requested_id = PortId::new(remote_id);
@@ -559,7 +569,15 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_port(project, environment, application, port, target)
+            let associations = imported_associations(client, &application).await?;
+            build_port(
+                project,
+                environment,
+                application,
+                &associations,
+                port,
+                target,
+            )
         }
         ImportKind::Redirect => {
             let requested_id = RedirectId::new(remote_id);
@@ -584,7 +602,15 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_redirect(project, environment, application, redirect, target)
+            let associations = imported_associations(client, &application).await?;
+            build_redirect(
+                project,
+                environment,
+                application,
+                &associations,
+                redirect,
+                target,
+            )
         }
         ImportKind::Security => {
             let requested_id = SecurityId::new(remote_id);
@@ -609,7 +635,15 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_security(project, environment, application, entry, target)
+            let associations = imported_associations(client, &application).await?;
+            build_security(
+                project,
+                environment,
+                application,
+                &associations,
+                entry,
+                target,
+            )
         }
         ImportKind::Mount => mount::discover_mount(client, remote_id, target).await,
     }
@@ -752,6 +786,7 @@ fn build_application(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     application: ApplicationDetails,
+    associations: &ImportedAssociations,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -759,7 +794,7 @@ fn build_application(
     let mut imported = build_project(project, &project_address)?;
     let mut environment_config = EnvironmentDocument::default();
     environment_config.description = response_field(&environment.description);
-    let (application_config, inputs) = application_config(&application);
+    let (application_config, inputs) = application_config(&application, associations);
     environment_config.add_application(target.name().clone(), application_config)?;
     imported
         .document
@@ -792,6 +827,7 @@ fn build_port(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     application: ApplicationDetails,
+    associations: &ImportedAssociations,
     port: PortDetails,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
@@ -801,7 +837,8 @@ fn build_port(
     let mut imported = build_project(project, &project_address)?;
     let mut environment_config = EnvironmentDocument::default();
     environment_config.description = response_field(&environment.description);
-    let (mut application_config, application_inputs) = application_config(&application);
+    let (mut application_config, application_inputs) =
+        application_config(&application, associations);
     application_config.add_port(
         target.name().clone(),
         PortDocument {
@@ -879,6 +916,7 @@ fn build_redirect(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     application: ApplicationDetails,
+    associations: &ImportedAssociations,
     redirect: RedirectDetails,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
@@ -888,7 +926,8 @@ fn build_redirect(
     let mut imported = build_project(project, &project_address)?;
     let mut environment_config = EnvironmentDocument::default();
     environment_config.description = response_field(&environment.description);
-    let (mut application_config, application_inputs) = application_config(&application);
+    let (mut application_config, application_inputs) =
+        application_config(&application, associations);
     application_config.add_redirect(
         target.name().clone(),
         RedirectDocument {
@@ -954,6 +993,7 @@ fn build_security(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     application: ApplicationDetails,
+    associations: &ImportedAssociations,
     entry: SecurityDetails,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
@@ -963,7 +1003,8 @@ fn build_security(
     let mut imported = build_project(project, &project_address)?;
     let mut environment_config = EnvironmentDocument::default();
     environment_config.description = response_field(&environment.description);
-    let (mut application_config, application_inputs) = application_config(&application);
+    let (mut application_config, application_inputs) =
+        application_config(&application, associations);
     application_config.add_security(
         target.name().clone(),
         SecurityDocument {
@@ -1380,11 +1421,18 @@ fn build_domain(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     application: ApplicationDetails,
+    associations: &ImportedAssociations,
     domain: dokploy_sdk::DomainDetails,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let application_address = address(ResourceKind::Application, &application.name)?;
-    let mut imported = build_application(project, environment, application, &application_address)?;
+    let mut imported = build_application(
+        project,
+        environment,
+        application,
+        associations,
+        &application_address,
+    )?;
     let environment_address = imported
         .resources
         .iter()
@@ -1443,14 +1491,110 @@ fn push_environment_state(
     Ok(())
 }
 
+/// Exact names of the external records an imported application is attached to.
+///
+/// Physical server and registry identities never enter the imported document or
+/// state; each existing association is written as a stable name selector.
+#[derive(Default)]
+struct ImportedAssociations {
+    server: Option<String>,
+    build_server: Option<String>,
+    registry: Option<String>,
+    build_registry: Option<String>,
+    rollback_registry: Option<String>,
+}
+
+/// Reads fresh minimal collections only when the application has an association.
+///
+/// An identity that is unknown, unreadable, or whose name is shared by another
+/// record cannot be written back as an unambiguous selector, so the import fails
+/// closed instead of guessing.
+async fn imported_associations(
+    client: &Dokploy,
+    application: &ApplicationDetails,
+) -> Result<ImportedAssociations, ImportError> {
+    fn id<T>(field: &ResponseField<T>, as_str: fn(&T) -> &str) -> Option<String> {
+        match field {
+            ResponseField::Value(value) => Some(as_str(value).to_owned()),
+            ResponseField::NotReturned | ResponseField::Null => None,
+        }
+    }
+    let server = id(&application.server_id, dokploy_sdk::ServerId::as_str);
+    let build_server = id(&application.build_server_id, dokploy_sdk::ServerId::as_str);
+    let registry = id(&application.registry_id, dokploy_sdk::RegistryId::as_str);
+    let build_registry = id(
+        &application.build_registry_id,
+        dokploy_sdk::RegistryId::as_str,
+    );
+    let rollback_registry = id(
+        &application.rollback_registry_id,
+        dokploy_sdk::RegistryId::as_str,
+    );
+
+    let mut kinds = std::collections::BTreeSet::new();
+    if server.is_some() || build_server.is_some() {
+        kinds.insert(SelectorKind::Server);
+    }
+    if registry.is_some() || build_registry.is_some() || rollback_registry.is_some() {
+        kinds.insert(SelectorKind::Registry);
+    }
+    if kinds.is_empty() {
+        return Ok(ImportedAssociations::default());
+    }
+
+    let directory = ExternalDirectory::load(client, &kinds).await;
+    let name = |kind, id: Option<String>| -> Result<Option<String>, ImportError> {
+        id.map(|id| {
+            directory
+                .unique_name_of(kind, &id)
+                .map(str::to_owned)
+                .ok_or(ImportError::ExternalAssociation)
+        })
+        .transpose()
+    };
+
+    Ok(ImportedAssociations {
+        server: name(SelectorKind::Server, server)?,
+        build_server: name(SelectorKind::Server, build_server)?,
+        registry: name(SelectorKind::Registry, registry)?,
+        build_registry: name(SelectorKind::Registry, build_registry)?,
+        rollback_registry: name(SelectorKind::Registry, rollback_registry)?,
+    })
+}
+
 fn application_config(
     application: &ApplicationDetails,
+    associations: &ImportedAssociations,
 ) -> (
     ApplicationDocument,
     serde_json::Map<String, serde_json::Value>,
 ) {
     let mut config = ApplicationDocument::default();
     let mut inputs = serde_json::Map::new();
+    for (name, selected, field) in [
+        ("server", &associations.server, &mut config.server),
+        (
+            "build_server",
+            &associations.build_server,
+            &mut config.build_server,
+        ),
+        ("registry", &associations.registry, &mut config.registry),
+        (
+            "build_registry",
+            &associations.build_registry,
+            &mut config.build_registry,
+        ),
+        (
+            "rollback_registry",
+            &associations.rollback_registry,
+            &mut config.rollback_registry,
+        ),
+    ] {
+        if let Some(selected) = selected {
+            *field = Field::Set(ExternalSelector::named(selected));
+            inputs.insert(name.to_owned(), serde_json::json!({ "name": selected }));
+        }
+    }
     config.description = response_field(&application.description);
     config.replicas = response_field(&application.replicas);
     insert_response(&mut inputs, "description", &application.description);
@@ -1625,6 +1769,10 @@ pub enum ImportError {
     InvalidLibSqlNode,
     #[error("the remote resource topology is invalid")]
     InvalidRemoteTopology,
+    #[error(
+        "an external server or registry association is unknown, unreadable, or has a name shared by another record"
+    )]
+    ExternalAssociation,
     #[error("no importable resources are visible")]
     NoVisibleResources,
     #[error("the interactive import selection is invalid")]
