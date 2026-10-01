@@ -43,6 +43,10 @@ def normalized_scalar:
     if .value == null then . else .value = "security-1" end
   elif .key == "scheduleId" then
     if .value == null then . else .value = "schedule-1" end
+  elif .key == "backupId" then
+    if .value == null then . else .value = "backup-1" end
+  elif .key == "destinationId" then
+    if .value == null then . else .value = "destination-1" end
   elif .key == "volumeName" then
     if .value == null then . else .value = "volume-1" end
   elif .key == "organizationId" then
@@ -190,6 +194,10 @@ walk(
         and (.name | startswith("schedule-sdk-contract-"))
       then
         .name = "Schedule SDK Contract Test"
+      elif has("projectId") and has("name")
+        and (.name | startswith("backup-sdk-contract-"))
+      then
+        .name = "Backup SDK Contract Test"
       else
         .
       end

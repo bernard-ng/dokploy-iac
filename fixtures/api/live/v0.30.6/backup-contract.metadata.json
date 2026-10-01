@@ -1,0 +1,51 @@
+{
+  "authoritativeCollection": "target.one.backups",
+  "capturedAt": "2026-10-01",
+  "cleanupEvidence": {
+    "oneStatus": 404,
+    "projectOneStatus": 404,
+    "targetBackupsEmpty": true
+  },
+  "collisionKey": "target+destination+prefix+database+service",
+  "createIdentity": {
+    "directVerified": true,
+    "exactlyOneNewId": true,
+    "parentVerified": true,
+    "setDifference": true
+  },
+  "deployed": false,
+  "destination": {
+    "createdWithoutTestConnection": true,
+    "removed": true
+  },
+  "destinationContacted": false,
+  "enabled": false,
+  "endpoints": [
+    "backup.create",
+    "backup.one",
+    "backup.update",
+    "backup.remove"
+  ],
+  "executed": false,
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "role": "owner",
+  "sanitized": true,
+  "supportedTargets": [
+    "postgres",
+    "mysql",
+    "mariadb",
+    "mongo",
+    "libsql"
+  ],
+  "unsupportedTargets": [
+    "compose",
+    "web-server"
+  ],
+  "update": {
+    "allMutableFieldsPersisted": true,
+    "directVerified": true,
+    "parentVerified": true,
+    "targetImmutable": true
+  },
+  "version": "v0.30.6"
+}

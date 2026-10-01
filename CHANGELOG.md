@@ -35,6 +35,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add a typed database Backup SDK contract for PostgreSQL, MySQL, MariaDB,
+  MongoDB, and LibSQL targets, with safe destination validation, bounded
+  authoritative collections, set-difference identity proof, single-attempt
+  mutations, transactional sanitized fixtures, and a disabled live lifecycle
+  that proves zero deployment, execution, or destination traffic.
 - Add end-to-end declarative LibSQL reconciliation with authoritative
   `project.one` topology, direct-read agreement, safe identity proof for the
   no-ID create response, separate metadata and password recovery steps,

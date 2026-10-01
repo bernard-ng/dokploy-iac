@@ -1,0 +1,27 @@
+{
+  "applicationStatus": "idle",
+  "backups": [
+    {
+      "backupId": "backup-1",
+      "backupType": "database",
+      "composeId": null,
+      "database": "postgres",
+      "databaseType": "postgres",
+      "destinationId": "destination-1",
+      "enabled": false,
+      "includeEncryptionKey": true,
+      "keepLatestCount": 2,
+      "libsqlId": null,
+      "mariadbId": null,
+      "metadata": null,
+      "mongoId": null,
+      "mysqlId": null,
+      "postgresId": "postgres-1",
+      "prefix": "/contract-created/",
+      "schedule": "17 3 * * *",
+      "serviceName": null
+    }
+  ],
+  "deployments": null,
+  "postgresId": "postgres-1"
+}

@@ -160,6 +160,12 @@ durable state semantics.
   delete-before-create order.
 - Mounts, ports, redirects, security entries, backups, and schedules use the
   shared typed-target and external-selector model in ADR 0026.
+- Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
+  MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
+  `target.one.backups` collections, mutations prove identity and target
+  agreement, and disabled live evidence covers all mutable fields without
+  deployment, execution, or destination traffic. Compose and web-server
+  Backups remain unsupported.
 - Completion still requires declarative reconciliation plus unit, sanitized
   fixture, and live create-update-delete evidence for every listed adapter and
   server or registry association.

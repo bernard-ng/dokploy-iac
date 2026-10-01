@@ -202,6 +202,17 @@ required_schedule_fixtures=(
     "schedule-contract.metadata.json"
 )
 
+required_backup_fixtures=(
+    "backup-one.created.owner.json"
+    "postgres-one.backup-created.owner.json"
+    "backup-one.updated.owner.json"
+    "postgres-one.backup-updated.owner.json"
+    "backup-one.deleted.owner.json"
+    "postgres-one.backup-deleted.owner.json"
+    "project-one.backup-deleted.owner.json"
+    "backup-contract.metadata.json"
+)
+
 required_external_selector_fixtures=(
     "server-all.selectors.json"
     "registry-all.selectors.json"
@@ -289,6 +300,13 @@ done
 for fixture_name in "${required_schedule_fixtures[@]}"; do
     if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
         echo "Missing Schedule contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_backup_fixtures[@]}"; do
+    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+        echo "Missing Backup contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1547,6 +1565,134 @@ fi
 
 if grep -R -E -q 'schedule-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Schedule project name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .backupId == "backup-1"
+    and .postgresId == "postgres-1"
+    and .destinationId == "destination-1"
+    and .schedule == "17 3 * * *"
+    and .enabled == false
+    and .prefix == "/contract-created/"
+    and .database == "postgres"
+    and .keepLatestCount == 2
+    and .includeEncryptionKey == true
+    and .backupType == "database"
+    and .databaseType == "postgres"
+    and .composeId == null
+    and .serviceName == null
+    and .metadata == null
+' "$versioned_fixture_directory/backup-one.created.owner.json" >/dev/null; then
+    echo "Created Backup detail fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .postgresId == "postgres-1"
+    and .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.backups | length) == 1
+    and .backups[0].backupId == "backup-1"
+    and .backups[0].destinationId == "destination-1"
+    and .backups[0].prefix == "/contract-created/"
+    and (.backups[0] | has("destination") | not)
+    and (.backups[0] | has("postgres") | not)
+' "$versioned_fixture_directory/postgres-one.backup-created.owner.json" >/dev/null; then
+    echo "Created Backup authoritative parent fixture is unsafe or incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .backupId == "backup-1"
+    and .postgresId == "postgres-1"
+    and .destinationId == "destination-1"
+    and .schedule == "*/1 * * * *"
+    and .enabled == false
+    and .prefix == "/contract-updated/"
+    and .database == "postgres-updated"
+    and .keepLatestCount == 3
+    and .includeEncryptionKey == false
+' "$versioned_fixture_directory/backup-one.updated.owner.json" >/dev/null; then
+    echo "Updated Backup detail fixture does not preserve all mutable fields." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.backups | length) == 1
+    and .backups[0].backupId == "backup-1"
+    and .backups[0].schedule == "*/1 * * * *"
+    and .backups[0].prefix == "/contract-updated/"
+    and .backups[0].database == "postgres-updated"
+    and .backups[0].keepLatestCount == 3
+    and .backups[0].includeEncryptionKey == false
+' "$versioned_fixture_directory/postgres-one.backup-updated.owner.json" >/dev/null; then
+    echo "Updated Backup authoritative parent fixture is incomplete." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "backup.one"
+' "$versioned_fixture_directory/backup-one.deleted.owner.json" >/dev/null; then
+    echo "Deleted Backup lookup fixture is not a 404." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .applicationStatus == "idle"
+    and (.deployments | length) == 0
+    and (.backups | length) == 0
+' "$versioned_fixture_directory/postgres-one.backup-deleted.owner.json" >/dev/null; then
+    echo "Backup target retained Backup or deployment state after deletion." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .code == "NOT_FOUND"
+    and .data.httpStatus == 404
+    and .data.path == "project.one"
+' "$versioned_fixture_directory/project-one.backup-deleted.owner.json" >/dev/null; then
+    echo "Backup disposable project cleanup is not proven." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .version == "v0.30.6"
+    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+    and .sanitized == true
+    and .deployed == false
+    and .executed == false
+    and .destinationContacted == false
+    and .enabled == false
+    and .supportedTargets == ["postgres", "mysql", "mariadb", "mongo", "libsql"]
+    and .unsupportedTargets == ["compose", "web-server"]
+    and .authoritativeCollection == "target.one.backups"
+    and .collisionKey == "target+destination+prefix+database+service"
+    and .createIdentity.setDifference == true
+    and .createIdentity.exactlyOneNewId == true
+    and .createIdentity.directVerified == true
+    and .createIdentity.parentVerified == true
+    and .update.allMutableFieldsPersisted == true
+    and .update.targetImmutable == true
+    and .update.directVerified == true
+    and .update.parentVerified == true
+    and .cleanupEvidence.oneStatus == 404
+    and .cleanupEvidence.targetBackupsEmpty == true
+    and .cleanupEvidence.projectOneStatus == 404
+    and .destination.createdWithoutTestConnection == true
+    and .destination.removed == true
+    and .endpoints == ["backup.create", "backup.one", "backup.update", "backup.remove"]
+' "$versioned_fixture_directory/backup-contract.metadata.json" >/dev/null; then
+    echo "Backup metadata does not prove the safe lifecycle and cleanup contract." >&2
+    exit 1
+fi
+
+if grep -R -E -q 'backup-sdk-contract-[0-9]' "$fixture_directory"; then
+    echo "Live fixtures contain an unsanitized disposable Backup project name." >&2
     exit 1
 fi
 

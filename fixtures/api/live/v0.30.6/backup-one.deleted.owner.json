@@ -1,0 +1,10 @@
+{
+  "code": "NOT_FOUND",
+  "data": {
+    "code": "NOT_FOUND",
+    "httpStatus": 404,
+    "path": "backup.one",
+    "zodError": null
+  },
+  "message": "Backup not found"
+}

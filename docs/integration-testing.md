@@ -364,6 +364,41 @@ It verifies safe reads, collision preflight, all-field disabled updates,
 authoritative deletion, absence of executions or deployments, and complete
 project cleanup.
 
+## Disposable Backup contract capture
+
+Capture the database Backup contract against the pinned local instance with:
+
+```bash
+scripts/integration/capture-backup-contract.sh
+```
+
+The command creates a disposable undeployed PostgreSQL target and two inert
+backup destinations. It never calls `destination.testConnection`. Both
+destinations point to a loopback tripwire, and the Backup stays disabled for
+the entire create, direct and authoritative read, all-field update, delete,
+and absence lifecycle. The run fails if the target deploys, a Backup execution
+appears, or either destination receives a connection.
+
+The capture publishes only allowlisted Backup fields. Nested target and
+destination records are excluded rather than merely redacted. The complete
+candidate fixture tree must pass the contract checker, local API-key scan, and
+generated database and destination credential canary scan before it replaces
+the tracked fixture directory. Interrupted publication restores the previous
+tree. Cleanup removes the disposable project, both destinations, and the
+tripwire through their exact run-scoped identities.
+
+Exercise the public SDK adapter through the same disabled lifecycle with:
+
+```bash
+scripts/integration/test-backup-sdk.sh
+```
+
+The wrapper verifies create identity discovery, direct and parent agreement,
+destination replacement and every other mutable field, delete, authoritative
+absence, zero tripwire contacts, and complete cleanup. On failure, raw headers,
+requests, responses, and logs are erased; only an allowlisted boolean/count
+evidence projection remains.
+
 ## Live SDK contract tests
 
 After the populated fixtures have been captured, exercise the public SDK

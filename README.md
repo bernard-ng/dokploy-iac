@@ -47,6 +47,8 @@ about ownership, drift, secrets, remote identity, and recovery.
 - Generated request bindings kept private behind a handwritten SDK.
 - Stable typed identifiers and tolerant runtime response models for critical
   reconciliation reads.
+- Bounded, secret-safe database Backup reads and single-attempt mutations with
+  authoritative target collections and explicit outcome-unknown recovery.
 - Contract tests backed by sanitized responses captured from a digest-pinned
   Dokploy `v0.30.6` instance.
 

@@ -11,6 +11,10 @@ use dokploy_sdk::{
 
 const DESTINATIONS: &str = r#"[{"destinationId":"destination-1","name":"inert"},{"destinationId":"destination-2","name":"inert-updated"}]"#;
 const SECRET_CANARY: &str = "backup-secret-canary-do-not-leak";
+const BACKUP_FIXTURE: &str =
+    include_str!("../../../fixtures/api/live/v0.30.6/backup-one.created.owner.json");
+const BACKUP_PARENT_FIXTURE: &str =
+    include_str!("../../../fixtures/api/live/v0.30.6/postgres-one.backup-created.owner.json");
 
 struct TestServer {
     url: String,
@@ -217,6 +221,36 @@ fn update_input(target: BackupTarget) -> UpdateBackup {
 fn request_body(request: &str) -> serde_json::Value {
     let body = request.split_once("\r\n\r\n").unwrap().1;
     serde_json::from_str(body).unwrap()
+}
+
+#[tokio::test]
+async fn captured_v0306_backup_fixtures_decode_through_safe_public_models() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", BACKUP_FIXTURE),
+        ("200 OK", DESTINATIONS),
+        ("200 OK", BACKUP_PARENT_FIXTURE),
+        ("200 OK", BACKUP_PARENT_FIXTURE),
+    ]);
+    let client = client(&server);
+
+    let direct = client
+        .backups()
+        .get(BackupId::new("backup-1"))
+        .await
+        .expect("captured direct fixture decodes");
+    let collection = client
+        .backups()
+        .by_target(BackupTarget::Postgres(PostgresId::new("postgres-1")))
+        .await
+        .expect("captured authoritative fixture decodes");
+
+    assert_eq!(direct.backup_id.as_str(), "backup-1");
+    assert_eq!(direct.enabled, Some(false));
+    assert_eq!(direct.keep_latest_count.map(NonZeroU32::get), Some(2));
+    assert_eq!(collection.backups(), [direct]);
+    assert!(!format!("{collection:?}").contains("password"));
+    assert!(!format!("{collection:?}").contains("accessKey"));
+    assert_eq!(server.finish().len(), 4);
 }
 
 #[tokio::test]
