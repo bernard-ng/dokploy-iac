@@ -246,7 +246,7 @@ impl JsonSchema for ResourceReference {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security|mount)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
         })
     }
 }
@@ -616,6 +616,76 @@ impl fmt::Debug for DomainConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("DomainConfig([REDACTED])")
     }
+}
+
+/// The storage mechanism and its type-specific source for one Mount.
+///
+/// File content is only a deferred secret descriptor. Omitting it leaves the
+/// remote file bytes unmanaged, which is how imported file Mounts are adopted.
+#[derive(Clone, Eq, PartialEq)]
+pub enum MountSourceConfig {
+    /// A host bind mount.
+    Bind { host_path: String },
+    /// A named Docker volume.
+    Volume { volume_name: String },
+    /// A file materialized by Dokploy from opaque content.
+    File {
+        file_path: String,
+        content: Field<SecretSource>,
+    },
+}
+
+impl MountSourceConfig {
+    /// Returns the stable storage mechanism name.
+    #[must_use]
+    pub const fn type_name(&self) -> &'static str {
+        match self {
+            Self::Bind { .. } => "bind",
+            Self::Volume { .. } => "volume",
+            Self::File { .. } => "file",
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        match self {
+            Self::Bind { host_path } => valid_absolute_path(host_path),
+            Self::Volume { volume_name } => valid_volume_name(volume_name),
+            Self::File { file_path, .. } => valid_mount_file_path(file_path),
+        }
+    }
+}
+
+impl fmt::Debug for MountSourceConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MountSourceConfig([REDACTED])")
+    }
+}
+
+pub(crate) fn valid_absolute_path(value: &str) -> bool {
+    value.starts_with('/')
+        && value.len() > 1
+        && value.len() <= 4096
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_volume_name(value: &str) -> bool {
+    let mut characters = value.chars();
+    value.len() <= 255
+        && matches!(characters.next(), Some(first) if first.is_ascii_alphanumeric())
+        && characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-')
+        })
+}
+
+fn valid_mount_file_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 4096
+        && !value.starts_with('/')
+        && !value.contains('\\')
+        && !value.chars().any(char::is_control)
+        && value
+            .split('/')
+            .all(|segment| !segment.is_empty() && !matches!(segment, "." | ".."))
 }
 
 fn valid_path_segment(segment: &str) -> bool {

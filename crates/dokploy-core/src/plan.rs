@@ -461,6 +461,16 @@ impl ResourceCheckpoint {
                         return Err(CheckpointMaterializationError::InvalidPropertyShape);
                     }
                 },
+                PropertyPath::FileContent => match value {
+                    OwnedValue::Sensitive(intent) => sensitive.push((
+                        SensitivePropertyPath::parse(&path.to_string())
+                            .expect("write-only paths are canonical sensitive paths"),
+                        intent.fingerprint().clone(),
+                    )),
+                    OwnedValue::Null | OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
+                        return Err(CheckpointMaterializationError::InvalidPropertyShape);
+                    }
+                },
                 PropertyPath::Password
                 | PropertyPath::RootPassword
                 | PropertyPath::ComposeDocument => match value {
@@ -490,7 +500,13 @@ impl ResourceCheckpoint {
                 | PropertyPath::Protocol
                 | PropertyPath::Regex
                 | PropertyPath::Replacement
-                | PropertyPath::Permanent => {
+                | PropertyPath::Permanent
+                | PropertyPath::Target
+                | PropertyPath::MountType
+                | PropertyPath::MountPath
+                | PropertyPath::HostPath
+                | PropertyPath::VolumeName
+                | PropertyPath::FilePath => {
                     managed.insert(path.to_string(), materialize_value(value)?);
                 }
                 PropertyPath::DeploymentStatus => {

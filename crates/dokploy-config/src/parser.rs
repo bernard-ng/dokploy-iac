@@ -7,13 +7,14 @@ use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 
 use crate::model::{
     ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
-    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PortConfig, PostgresConfig,
-    ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, SecurityConfig, SourceLocation,
-    ValidationDiagnostic, ValidationIssue, address,
+    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig, PortConfig,
+    PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, SecurityConfig,
+    SourceLocation, ValidationDiagnostic, ValidationIssue, address,
 };
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, NonEmptyText, PortNumber,
-    PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
+    ConfigValue, DomainConfig, Field, Lifecycle, MountSourceConfig, MoveDeclaration, NonEmptyText,
+    PortNumber, PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource,
+    SourceConfig,
 };
 
 type ResourceTables<'a> = (
@@ -90,6 +91,9 @@ struct RawEnvironment {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawDomain>")]
     domains: BTreeMap<String, Spanned<RawDomain>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawMount>")]
+    mounts: BTreeMap<String, Spanned<RawMount>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -303,6 +307,50 @@ struct RawDomain {
     depends_on: Vec<ResourceAddress>,
     #[serde(default)]
     lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawMount {
+    #[schemars(schema_with = "mount_target_schema")]
+    target: ResourceAddress,
+    #[schemars(schema_with = "mount_absolute_path_schema")]
+    mount_path: String,
+    source: RawMountSource,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum RawMountSource {
+    Bind {
+        #[schemars(schema_with = "mount_absolute_path_schema")]
+        host_path: String,
+    },
+    Volume {
+        #[schemars(schema_with = "mount_volume_name_schema")]
+        volume_name: String,
+    },
+    File {
+        #[schemars(schema_with = "mount_file_path_schema")]
+        file_path: String,
+        #[serde(default)]
+        content: Field<SecretSource>,
+    },
+}
+
+impl From<RawMountSource> for MountSourceConfig {
+    fn from(value: RawMountSource) -> Self {
+        match value {
+            RawMountSource::Bind { host_path } => Self::Bind { host_path },
+            RawMountSource::Volume { volume_name } => Self::Volume { volume_name },
+            RawMountSource::File { file_path, content } => Self::File { file_path, content },
+        }
+    }
 }
 
 impl DokployConfig {
@@ -671,6 +719,26 @@ impl DokployConfig {
                     &mut diagnostics,
                 );
             }
+
+            for (name, raw_config) in environment.mounts {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address = address(ResourceKind::Mount, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::Mount(MountConfig {
+                        target: raw_config.target,
+                        mount_path: raw_config.mount_path,
+                        source: raw_config.source.into(),
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
         }
 
         validate_resources(&mut resources, &parents, &locations, &mut diagnostics);
@@ -771,6 +839,7 @@ fn validate_resources(
     let mut port_collisions = BTreeSet::new();
     let mut redirect_collisions = BTreeSet::new();
     let mut security_collisions = BTreeSet::new();
+    let mut mount_collisions = BTreeSet::new();
 
     for (address, config) in resources.iter_mut() {
         let location = locations
@@ -939,8 +1008,70 @@ fn validate_resources(
             }
         }
 
+        if let ResourceConfig::Mount(mount) = config {
+            validate_mount(
+                address,
+                mount,
+                addresses.contains(&mount.target),
+                parents,
+                &mut mount_collisions,
+                location,
+                diagnostics,
+            );
+        }
+
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
+    }
+}
+
+fn validate_mount(
+    address: &ResourceAddress,
+    mount: &MountConfig,
+    target_exists: bool,
+    parents: &BTreeMap<ResourceAddress, ResourceAddress>,
+    collisions: &mut BTreeSet<(ResourceAddress, String)>,
+    location: SourceLocation,
+    diagnostics: &mut Vec<ValidationDiagnostic>,
+) {
+    if !mount.target.kind().is_mount_target() {
+        emit(diagnostics, ValidationIssue::InvalidMountTarget, location);
+    } else if !target_exists {
+        emit(diagnostics, ValidationIssue::MissingReference, location);
+    } else if parents.get(address) != parents.get(&mount.target) {
+        emit(
+            diagnostics,
+            ValidationIssue::CrossEnvironmentReference,
+            location,
+        );
+    }
+
+    if !crate::types::valid_absolute_path(&mount.mount_path) || !mount.source.is_valid() {
+        emit(diagnostics, ValidationIssue::InvalidMountField, location);
+    }
+
+    if let MountSourceConfig::File { content, .. } = &mount.source {
+        match content {
+            Field::Clear => emit(
+                diagnostics,
+                ValidationIssue::MountContentCannotBeCleared,
+                location,
+            ),
+            Field::Unmanaged if !matches!(mount.lifecycle.protect(), Field::Set(true)) => emit(
+                diagnostics,
+                ValidationIssue::UnmanagedMountContentRequiresProtection,
+                location,
+            ),
+            Field::Unmanaged | Field::Set(_) => {}
+        }
+    }
+
+    if !collisions.insert((mount.target.clone(), mount.mount_path.clone())) {
+        emit(
+            diagnostics,
+            ValidationIssue::DuplicateMountCollision,
+            location,
+        );
     }
 }
 
@@ -1042,7 +1173,8 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Domain
         | ResourceKind::Port
         | ResourceKind::Redirect
-        | ResourceKind::Security => false,
+        | ResourceKind::Security
+        | ResourceKind::Mount => false,
     }
 }
 
@@ -1065,6 +1197,10 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
         ResourceKind::Mongo => matches!(value.as_str(), "username" | "replica_sets"),
         ResourceKind::LibSql => matches!(value.as_str(), "description" | "username"),
         ResourceKind::Redis => false,
+        ResourceKind::Mount => matches!(
+            value.as_str(),
+            "mount_path" | "host_path" | "volume_name" | "file_path"
+        ),
         ResourceKind::Domain => matches!(value.as_str(), "host" | "application"),
         ResourceKind::Port => matches!(
             value.as_str(),
@@ -1079,6 +1215,37 @@ fn version_schema(_generator: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "type": "integer",
         "const": 1
+    })
+}
+
+fn mount_target_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^(application|compose|postgres|mysql|mariadb|mongo|libsql|redis)\\.[a-z][a-z0-9_-]*$"
+    })
+}
+
+fn mount_absolute_path_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^/.+",
+        "maxLength": 4096
+    })
+}
+
+fn mount_volume_name_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+        "maxLength": 255
+    })
+}
+
+fn mount_file_path_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
     })
 }
 

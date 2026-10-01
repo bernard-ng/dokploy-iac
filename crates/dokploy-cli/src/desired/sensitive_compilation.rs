@@ -12,7 +12,9 @@ use std::{
     path::Path,
 };
 
-use dokploy_config::{ConfigValue, DokployConfig, Field, ResourceConfig, SecretSource};
+use dokploy_config::{
+    ConfigValue, DokployConfig, Field, MountSourceConfig, ResourceConfig, SecretSource,
+};
 use dokploy_core::{ConfigDigest, PropertyPath};
 use dokploy_state::{
     InstanceIdentity, ResourceAddress, SensitiveFingerprint, SensitivePropertyPath,
@@ -257,6 +259,18 @@ fn preflight_sensitive_inputs(
                 if let Field::Set(source) = security.password() {
                     inputs.insert(
                         (address.clone(), PropertyPath::Password),
+                        pending_secret_source(source),
+                    );
+                }
+            }
+            ResourceConfig::Mount(mount) => {
+                if let MountSourceConfig::File {
+                    content: Field::Set(source),
+                    ..
+                } = mount.source()
+                {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::FileContent),
                         pending_secret_source(source),
                     );
                 }

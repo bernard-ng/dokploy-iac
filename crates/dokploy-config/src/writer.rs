@@ -8,9 +8,9 @@ use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, NonEmptyText, PortNumber,
-    PortProtocolConfig, PortPublishModeConfig, PropertyPath, ResourceConfig, SecretSource,
-    SourceConfig,
+    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, MountSourceConfig,
+    NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig, PropertyPath,
+    ResourceConfig, SecretSource, SourceConfig,
 };
 
 /// A typed, nested document for constructing imported configuration safely.
@@ -294,6 +294,18 @@ impl ConfigDocument {
                         },
                     );
                 }
+                ResourceConfig::Mount(config) => {
+                    environment.mounts.insert(
+                        address.name().clone(),
+                        MountDocument {
+                            target: config.target.clone(),
+                            mount_path: config.mount_path.clone(),
+                            source: config.source.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
                 ResourceConfig::Project(_)
                 | ResourceConfig::Environment(_)
                 | ResourceConfig::Port(_)
@@ -387,6 +399,7 @@ pub struct EnvironmentDocument {
     libsql: BTreeMap<ResourceName, LibSqlDocument>,
     redis: BTreeMap<ResourceName, RedisDocument>,
     domains: BTreeMap<ResourceName, DomainDocument>,
+    mounts: BTreeMap<ResourceName, MountDocument>,
 }
 
 impl EnvironmentDocument {
@@ -465,6 +478,14 @@ impl EnvironmentDocument {
         domain: DomainDocument,
     ) -> Result<(), ConfigDocumentError> {
         insert_resource(&mut self.domains, name, domain, ResourceKind::Domain)
+    }
+
+    pub fn add_mount(
+        &mut self,
+        name: ResourceName,
+        mount: MountDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.mounts, name, mount, ResourceKind::Mount)
     }
 }
 
@@ -615,6 +636,16 @@ pub struct RedisDocument {
 pub struct DomainDocument {
     pub host: Field<String>,
     pub application: Field<ResourceAddress>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// Mount properties accepted by an imported document.
+#[derive(Clone)]
+pub struct MountDocument {
+    pub target: ResourceAddress,
+    pub mount_path: String,
+    pub source: MountSourceConfig,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -788,6 +819,12 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
             &environment.domains,
             render_domain_document,
         );
+        render_document_children(
+            &mut output,
+            "mounts",
+            &environment.mounts,
+            render_mount_document,
+        );
         collapse_empty_mapping(&mut output, item_start, 2, name.as_str());
     }
 
@@ -959,6 +996,18 @@ fn render_domain_document(output: &mut String, indent: usize, config: &DomainDoc
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
+fn render_mount_document(output: &mut String, indent: usize, config: &MountDocument) {
+    line(
+        output,
+        indent,
+        "target",
+        &quoted(&config.target.to_string()),
+    );
+    line(output, indent, "mount_path", &quoted(&config.mount_path));
+    mount_source_field(output, indent, &config.source);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
 fn document_common_fields(
     output: &mut String,
     indent: usize,
@@ -1117,6 +1166,14 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             ResourceKind::Domain,
             "domains",
             render_domain,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::Mount,
+            "mounts",
+            render_mount,
         )?;
         collapse_empty_mapping(
             &mut output,
@@ -1367,6 +1424,45 @@ fn render_security(
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
+}
+
+fn render_mount(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Mount(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    line(
+        output,
+        indent,
+        "target",
+        &quoted(&config.target().to_string()),
+    );
+    line(output, indent, "mount_path", &quoted(config.mount_path()));
+    mount_source_field(output, indent, config.source());
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn mount_source_field(output: &mut String, indent: usize, source: &MountSourceConfig) {
+    mapping_header(output, indent, "source");
+    line(output, indent + 2, "type", &quoted(source.type_name()));
+    match source {
+        MountSourceConfig::Bind { host_path } => {
+            line(output, indent + 2, "host_path", &quoted(host_path));
+        }
+        MountSourceConfig::Volume { volume_name } => {
+            line(output, indent + 2, "volume_name", &quoted(volume_name));
+        }
+        MountSourceConfig::File { file_path, content } => {
+            line(output, indent + 2, "file_path", &quoted(file_path));
+            secret_field(output, indent + 2, "content", content);
+        }
+    }
 }
 
 fn render_compose(

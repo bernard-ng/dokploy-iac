@@ -13,7 +13,8 @@ use std::{
 };
 
 use dokploy_config::{
-    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, ResourceConfig, SourceConfig,
+    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, MountSourceConfig, ResourceConfig,
+    SourceConfig,
 };
 use dokploy_core::{
     ConfigDigest, DesiredResource, DesiredState, DesiredStateError, MoveDirective, OwnedValue,
@@ -99,6 +100,7 @@ pub struct ExecutionBindings {
     ports: BTreeMap<ResourceAddress, PortBinding>,
     redirect_regexes: BTreeMap<ResourceAddress, String>,
     security_usernames: BTreeMap<ResourceAddress, String>,
+    mounts: BTreeMap<ResourceAddress, MountBinding>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
 }
 
@@ -108,6 +110,12 @@ struct PortBinding {
     target_port: u16,
     publish_mode: &'static str,
     protocol: &'static str,
+}
+
+struct MountBinding {
+    target: ResourceAddress,
+    mount_type: &'static str,
+    mount_path: String,
 }
 
 impl ExecutionBindings {
@@ -155,6 +163,17 @@ impl ExecutionBindings {
                 port.protocol,
             )
         })
+    }
+
+    /// Returns the typed target, storage type, and path used for Mount identity discovery.
+    #[must_use]
+    pub fn mount(
+        &self,
+        address: &ResourceAddress,
+    ) -> Option<(&ResourceAddress, &'static str, &str)> {
+        self.mounts
+            .get(address)
+            .map(|mount| (&mount.target, mount.mount_type, mount.mount_path.as_str()))
     }
 }
 
@@ -453,6 +472,47 @@ fn compile_desired_with_fingerprints(
                     fingerprints,
                 )?;
             }
+            ResourceConfig::Mount(mount) => {
+                properties.insert(
+                    PropertyPath::Target,
+                    comparable(serde_json::json!(mount.target().to_string())),
+                );
+                properties.insert(
+                    PropertyPath::MountType,
+                    comparable(serde_json::json!(mount.source().type_name())),
+                );
+                properties.insert(
+                    PropertyPath::MountPath,
+                    comparable(serde_json::json!(mount.mount_path())),
+                );
+                match mount.source() {
+                    MountSourceConfig::Bind { host_path } => {
+                        properties.insert(
+                            PropertyPath::HostPath,
+                            comparable(serde_json::json!(host_path)),
+                        );
+                    }
+                    MountSourceConfig::Volume { volume_name } => {
+                        properties.insert(
+                            PropertyPath::VolumeName,
+                            comparable(serde_json::json!(volume_name)),
+                        );
+                    }
+                    MountSourceConfig::File { file_path, content } => {
+                        properties.insert(
+                            PropertyPath::FilePath,
+                            comparable(serde_json::json!(file_path)),
+                        );
+                        compile_sensitive_field(
+                            &mut properties,
+                            address,
+                            PropertyPath::FileContent,
+                            content,
+                            fingerprints,
+                        )?;
+                    }
+                }
+            }
         }
 
         let protection = match resource.lifecycle().protect() {
@@ -569,6 +629,16 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
                     .security_usernames
                     .insert(address.clone(), security.username().as_str().to_owned());
             }
+            ResourceConfig::Mount(mount) => {
+                bindings.mounts.insert(
+                    address.clone(),
+                    MountBinding {
+                        target: mount.target().clone(),
+                        mount_type: mount.source().type_name(),
+                        mount_path: mount.mount_path().to_owned(),
+                    },
+                );
+            }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
@@ -602,6 +672,10 @@ fn compile_dependencies(resource: &ResourceConfig) -> Vec<ResourceAddress> {
         && let Field::Set(application) = domain.application()
     {
         dependencies.insert(application.clone());
+    }
+
+    if let ResourceConfig::Mount(mount) = resource {
+        dependencies.insert(mount.target().clone());
     }
 
     dependencies.into_iter().collect()

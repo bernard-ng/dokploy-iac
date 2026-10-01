@@ -447,6 +447,9 @@ fn property_paths_overlap(left: &PropertyPath, right: &PropertyPath) -> bool {
 }
 
 fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
+    if matches!(path, PropertyPath::FileContent) {
+        return matches!(value, OwnedValue::Sensitive(_));
+    }
     if path.is_sensitive() {
         return matches!(value, OwnedValue::Null | OwnedValue::Sensitive(_));
     }
@@ -464,6 +467,18 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
         PropertyPath::Permanent => {
             matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
         }
+        PropertyPath::Target => matches!(
+            value,
+            OwnedValue::Value(value) if mount_target_text_valid(value.as_json())
+        ),
+        PropertyPath::MountType => port_string_value_valid(value, &["bind", "volume", "file"]),
+        PropertyPath::MountPath
+        | PropertyPath::HostPath
+        | PropertyPath::VolumeName
+        | PropertyPath::FilePath => matches!(
+            value,
+            OwnedValue::Value(value) if mount_text_valid(value.as_json())
+        ),
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
     }
 }
@@ -485,6 +500,21 @@ fn non_empty_string_value_valid(value: &OwnedValue) -> bool {
         OwnedValue::Value(value)
             if value.as_json().as_str().is_some_and(|text| !text.is_empty())
     )
+}
+
+/// Returns whether a JSON value is one logical address inside the closed Mount target union.
+fn mount_target_text_valid(value: &serde_json::Value) -> bool {
+    value
+        .as_str()
+        .and_then(|text| text.parse::<ResourceAddress>().ok())
+        .is_some_and(|address| address.kind().is_mount_target())
+}
+
+/// Returns whether a JSON value is a bounded, control-free, nonempty Mount string.
+fn mount_text_valid(value: &serde_json::Value) -> bool {
+    value.as_str().is_some_and(|text| {
+        !text.is_empty() && text.len() <= 4096 && !text.chars().any(char::is_control)
+    })
 }
 
 fn port_number_value_valid(value: &OwnedValue) -> bool {
@@ -1310,8 +1340,34 @@ fn validate_remote_resource(
                     }
                     PropertyObservation::KnownAbsent => false,
                 },
+                PropertyPath::Target => match observation {
+                    PropertyObservation::Known(value) => mount_target_text_valid(value.as_json()),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => false,
+                },
                 PropertyPath::Username if address.kind() == ResourceKind::Security => {
                     non_empty_observation_valid(observation)
+                }
+                PropertyPath::MountType => {
+                    port_observation_string_valid(observation, &["bind", "volume", "file"])
+                }
+                PropertyPath::MountPath => match observation {
+                    PropertyObservation::Known(value) => mount_text_valid(value.as_json()),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => false,
+                },
+                PropertyPath::HostPath | PropertyPath::VolumeName | PropertyPath::FilePath => {
+                    match observation {
+                        PropertyObservation::Known(value) => mount_text_valid(value.as_json()),
+                        PropertyObservation::Unknown(reason) => {
+                            *reason != PropertyUnknownReason::Sensitive
+                        }
+                        PropertyObservation::KnownAbsent => true,
+                    }
                 }
                 _ => !matches!(
                     observation,

@@ -24,6 +24,7 @@ pub enum ResourceKind {
     Port,
     Redirect,
     Security,
+    Mount,
 }
 
 impl ResourceKind {
@@ -45,6 +46,7 @@ impl ResourceKind {
             Self::Port => "port",
             Self::Redirect => "redirect",
             Self::Security => "security",
+            Self::Mount => "mount",
         }
     }
 
@@ -62,9 +64,29 @@ impl ResourceKind {
             | Self::Mongo
             | Self::LibSql
             | Self::Redis
-            | Self::Domain => Some(Self::Environment),
+            | Self::Domain
+            | Self::Mount => Some(Self::Environment),
             Self::Port | Self::Redirect | Self::Security => Some(Self::Application),
         }
+    }
+
+    /// Returns whether a Mount may target resources of this kind.
+    ///
+    /// This is the closed target union shared by configuration, planner
+    /// snapshots, and the Dokploy adapter.
+    #[must_use]
+    pub const fn is_mount_target(self) -> bool {
+        matches!(
+            self,
+            Self::Application
+                | Self::Compose
+                | Self::Postgres
+                | Self::MySql
+                | Self::MariaDb
+                | Self::Mongo
+                | Self::LibSql
+                | Self::Redis
+        )
     }
 }
 
@@ -105,6 +127,7 @@ impl FromStr for ResourceKind {
             "port" => Ok(Self::Port),
             "redirect" => Ok(Self::Redirect),
             "security" => Ok(Self::Security),
+            "mount" => Ok(Self::Mount),
             _ => Err(ResourceKindParseError {
                 value: value.to_owned(),
             }),

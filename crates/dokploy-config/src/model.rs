@@ -5,8 +5,9 @@ use schemars::Schema;
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MoveDeclaration, NonEmptyText, PortNumber,
-    PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource, SourceConfig,
+    ConfigValue, DomainConfig, Field, Lifecycle, MountSourceConfig, MoveDeclaration, NonEmptyText,
+    PortNumber, PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource,
+    SourceConfig,
 };
 
 /// A fully parsed and semantically validated `dokploy.yaml` document.
@@ -112,6 +113,7 @@ pub enum ResourceConfig {
     Port(PortConfig),
     Redirect(RedirectConfig),
     Security(SecurityConfig),
+    Mount(MountConfig),
 }
 
 impl ResourceConfig {
@@ -132,6 +134,7 @@ impl ResourceConfig {
             Self::Port(_) => ResourceKind::Port,
             Self::Redirect(_) => ResourceKind::Redirect,
             Self::Security(_) => ResourceKind::Security,
+            Self::Mount(_) => ResourceKind::Mount,
         }
     }
 
@@ -248,6 +251,14 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_mount(&self) -> Option<&MountConfig> {
+        match self {
+            Self::Mount(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn depends_on(&self) -> &[ResourceAddress] {
         match self {
             Self::Project(config) => &config.depends_on,
@@ -264,6 +275,7 @@ impl ResourceConfig {
             Self::Port(config) => &config.depends_on,
             Self::Redirect(config) => &config.depends_on,
             Self::Security(config) => &config.depends_on,
+            Self::Mount(config) => &config.depends_on,
         }
     }
 
@@ -284,6 +296,7 @@ impl ResourceConfig {
             Self::Port(config) => &config.lifecycle,
             Self::Redirect(config) => &config.lifecycle,
             Self::Security(config) => &config.lifecycle,
+            Self::Mount(config) => &config.lifecycle,
         }
     }
 
@@ -303,6 +316,7 @@ impl ResourceConfig {
             Self::Port(config) => &mut config.lifecycle,
             Self::Redirect(config) => &mut config.lifecycle,
             Self::Security(config) => &mut config.lifecycle,
+            Self::Mount(config) => &mut config.lifecycle,
         }
     }
 
@@ -322,6 +336,7 @@ impl ResourceConfig {
             Self::Port(config) => &mut config.depends_on,
             Self::Redirect(config) => &mut config.depends_on,
             Self::Security(config) => &mut config.depends_on,
+            Self::Mount(config) => &mut config.depends_on,
         }
     }
 
@@ -399,6 +414,15 @@ impl ResourceConfig {
             }
             Self::Security(config) => {
                 if let Field::Set(secret) = &config.password {
+                    secrets.push(secret);
+                }
+            }
+            Self::Mount(config) => {
+                if let MountSourceConfig::File {
+                    content: Field::Set(secret),
+                    ..
+                } = &config.source
+                {
                     secrets.push(secret);
                 }
             }
@@ -629,6 +653,41 @@ impl SecurityConfig {
 }
 
 redacted_debug!(SecurityConfig, "SecurityConfig");
+/// Complete declarative inputs for one Mount on an application, Compose
+/// project, or supported database.
+///
+/// The target is an owned property and inferred dependency, not a containment
+/// parent. Mounts are contained by their environment like Domains.
+#[derive(Clone, Eq, PartialEq)]
+pub struct MountConfig {
+    pub(crate) target: ResourceAddress,
+    pub(crate) mount_path: String,
+    pub(crate) source: MountSourceConfig,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl MountConfig {
+    /// Returns the logical address of the mounted service.
+    #[must_use]
+    pub const fn target(&self) -> &ResourceAddress {
+        &self.target
+    }
+
+    /// Returns the absolute path inside the target service.
+    #[must_use]
+    pub fn mount_path(&self) -> &str {
+        &self.mount_path
+    }
+
+    /// Returns the typed storage source.
+    #[must_use]
+    pub const fn source(&self) -> &MountSourceConfig {
+        &self.source
+    }
+}
+
+redacted_debug!(MountConfig, "MountConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct ComposeConfig {
@@ -877,6 +936,11 @@ pub enum ValidationIssue {
     DuplicateRedirectCollision,
     SecurityPasswordCannotBeCleared,
     DuplicateSecurityCollision,
+    InvalidMountTarget,
+    InvalidMountField,
+    DuplicateMountCollision,
+    MountContentCannotBeCleared,
+    UnmanagedMountContentRequiresProtection,
 }
 
 impl ValidationIssue {
@@ -912,6 +976,11 @@ impl ValidationIssue {
             Self::DuplicateRedirectCollision => "DOKCFG026",
             Self::SecurityPasswordCannotBeCleared => "DOKCFG027",
             Self::DuplicateSecurityCollision => "DOKCFG028",
+            Self::InvalidMountTarget => "DOKCFG040",
+            Self::InvalidMountField => "DOKCFG041",
+            Self::DuplicateMountCollision => "DOKCFG042",
+            Self::MountContentCannotBeCleared => "DOKCFG043",
+            Self::UnmanagedMountContentRequiresProtection => "DOKCFG044",
         }
     }
 
@@ -954,6 +1023,15 @@ impl ValidationIssue {
             Self::SecurityPasswordCannotBeCleared => "Security password cannot be null",
             Self::DuplicateSecurityCollision => {
                 "security username is duplicated within one application"
+            }
+            Self::InvalidMountTarget => {
+                "Mount target must be an application, Compose, or database in this environment"
+            }
+            Self::InvalidMountField => "Mount path, source, or name is invalid",
+            Self::DuplicateMountCollision => "Mount path is duplicated within one target",
+            Self::MountContentCannotBeCleared => "file Mount content cannot be null",
+            Self::UnmanagedMountContentRequiresProtection => {
+                "unmanaged file Mount content requires lifecycle.protect: true"
             }
         }
     }

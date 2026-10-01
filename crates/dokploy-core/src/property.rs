@@ -95,6 +95,20 @@ pub enum PropertyPath {
     Replacement,
     /// Whether a Redirect is permanent.
     Permanent,
+    /// Mount target service reference.
+    Target,
+    /// Mount storage mechanism.
+    MountType,
+    /// Mount path inside the target service.
+    MountPath,
+    /// Bind Mount host path.
+    HostPath,
+    /// Volume Mount name.
+    VolumeName,
+    /// File Mount relative file path.
+    FilePath,
+    /// Opaque, write-only file Mount content.
+    FileContent,
     /// Deployment status, valid only in lifecycle metadata.
     DeploymentStatus,
 }
@@ -117,6 +131,7 @@ impl PropertyPath {
             Self::Password
                 | Self::RootPassword
                 | Self::ComposeDocument
+                | Self::FileContent
                 | Self::EnvironmentVariable(_)
         )
     }
@@ -180,6 +195,16 @@ impl PropertyPath {
                 matches!(self, Self::Regex | Self::Replacement | Self::Permanent)
             }
             ResourceKind::Security => matches!(self, Self::Username | Self::Password),
+            ResourceKind::Mount => matches!(
+                self,
+                Self::Target
+                    | Self::MountType
+                    | Self::MountPath
+                    | Self::HostPath
+                    | Self::VolumeName
+                    | Self::FilePath
+                    | Self::FileContent
+            ),
         }
     }
 }
@@ -212,6 +237,13 @@ impl fmt::Display for PropertyPath {
             Self::Regex => formatter.write_str("regex"),
             Self::Replacement => formatter.write_str("replacement"),
             Self::Permanent => formatter.write_str("permanent"),
+            Self::Target => formatter.write_str("target"),
+            Self::MountType => formatter.write_str("mount_type"),
+            Self::MountPath => formatter.write_str("mount_path"),
+            Self::HostPath => formatter.write_str("host_path"),
+            Self::VolumeName => formatter.write_str("volume_name"),
+            Self::FilePath => formatter.write_str("file_path"),
+            Self::FileContent => formatter.write_str("content"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
         }
     }
@@ -244,6 +276,13 @@ impl FromStr for PropertyPath {
             "regex" => Ok(Self::Regex),
             "replacement" => Ok(Self::Replacement),
             "permanent" => Ok(Self::Permanent),
+            "target" => Ok(Self::Target),
+            "mount_type" => Ok(Self::MountType),
+            "mount_path" => Ok(Self::MountPath),
+            "host_path" => Ok(Self::HostPath),
+            "volume_name" => Ok(Self::VolumeName),
+            "file_path" => Ok(Self::FilePath),
+            "content" => Ok(Self::FileContent),
             "deployment.status" => Ok(Self::DeploymentStatus),
             _ => {
                 let Some(name) = value.strip_prefix("environment.") else {

@@ -642,6 +642,28 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
             )
             .with_containment(MutationMode::StateOnly),
+        ResourceKind::Mount => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Target)
+            .requiring(PropertyPath::MountType)
+            .requiring(PropertyPath::MountPath)
+            .allowing_on_create(PropertyPath::HostPath)
+            .allowing_on_create(PropertyPath::VolumeName)
+            .allowing_on_create(PropertyPath::FilePath)
+            .allowing_on_create(PropertyPath::FileContent)
+            .with_property(
+                PropertyPath::Target,
+                PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+            )
+            .with_property(
+                PropertyPath::MountType,
+                PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+            )
+            .with_property(PropertyPath::MountPath, in_place)
+            .with_property(PropertyPath::HostPath, set_only)
+            .with_property(PropertyPath::VolumeName, set_only)
+            .with_property(PropertyPath::FilePath, set_only)
+            .with_property(PropertyPath::FileContent, set_only)
+            .with_containment(MutationMode::StateOnly),
         ResourceKind::Port => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::PublishedPort)
             .requiring(PropertyPath::TargetPort)
@@ -3026,6 +3048,13 @@ fn application_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3077,6 +3106,13 @@ fn compose_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3380,6 +3416,13 @@ fn postgres_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3644,6 +3687,13 @@ fn mysql_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3929,6 +3979,13 @@ fn mariadb_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4215,6 +4272,13 @@ fn mongo_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4517,6 +4581,13 @@ fn libsql_properties(
             | PropertyPath::TargetPort
             | PropertyPath::PublishMode
             | PropertyPath::Protocol
+            | PropertyPath::Target
+            | PropertyPath::MountType
+            | PropertyPath::MountPath
+            | PropertyPath::HostPath
+            | PropertyPath::VolumeName
+            | PropertyPath::FilePath
+            | PropertyPath::FileContent
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
