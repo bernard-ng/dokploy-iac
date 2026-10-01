@@ -8,9 +8,9 @@ use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DokployConfig, Field, LibSqlNodeConfig, Lifecycle, MountSourceConfig,
-    NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig, PropertyPath,
-    ResourceConfig, SecretSource, SourceConfig,
+    ConfigValue, DokployConfig, ExternalSelector, Field, LibSqlNodeConfig, Lifecycle,
+    MountSourceConfig, NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig,
+    PropertyPath, ResourceConfig, SecretSource, SourceConfig,
 };
 
 /// A typed, nested document for constructing imported configuration safely.
@@ -191,6 +191,11 @@ impl ConfigDocument {
                             replicas: config.replicas.clone(),
                             source: source_document(&config.source),
                             environment: config.environment.clone(),
+                            server: config.server.clone(),
+                            build_server: config.build_server.clone(),
+                            registry: config.registry.clone(),
+                            build_registry: config.build_registry.clone(),
+                            rollback_registry: config.rollback_registry.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                             ports: BTreeMap::new(),
@@ -496,6 +501,11 @@ pub struct ApplicationDocument {
     pub replicas: Field<u32>,
     pub source: Field<SourceDocument>,
     pub environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    pub server: Field<ExternalSelector>,
+    pub build_server: Field<ExternalSelector>,
+    pub registry: Field<ExternalSelector>,
+    pub build_registry: Field<ExternalSelector>,
+    pub rollback_registry: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
     pub ports: BTreeMap<ResourceName, PortDocument>,
@@ -876,6 +886,16 @@ fn render_application_document(output: &mut String, indent: usize, config: &Appl
     u32_field(output, indent, "replicas", &config.replicas);
     document_source_field(output, indent, &config.source);
     environment_field(output, indent, &config.environment);
+    selector_field(output, indent, "server", &config.server);
+    selector_field(output, indent, "build_server", &config.build_server);
+    selector_field(output, indent, "registry", &config.registry);
+    selector_field(output, indent, "build_registry", &config.build_registry);
+    selector_field(
+        output,
+        indent,
+        "rollback_registry",
+        &config.rollback_registry,
+    );
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
     if !config.ports.is_empty() {
         mapping_header(output, indent, "ports");
@@ -1350,6 +1370,16 @@ fn render_application(
     u32_field(output, indent, "replicas", &config.replicas);
     source_field(output, indent, &config.source);
     environment_field(output, indent, &config.environment);
+    selector_field(output, indent, "server", &config.server);
+    selector_field(output, indent, "build_server", &config.build_server);
+    selector_field(output, indent, "registry", &config.registry);
+    selector_field(output, indent, "build_registry", &config.build_registry);
+    selector_field(
+        output,
+        indent,
+        "rollback_registry",
+        &config.rollback_registry,
+    );
     common_fields(output, indent, config.depends_on(), config.lifecycle());
 
     Ok(())
@@ -1763,6 +1793,22 @@ fn secret_field(output: &mut String, indent: usize, name: &str, field: &Field<Se
         Field::Set(secret) => {
             mapping_header(output, indent, name);
             render_secret(output, indent + 2, secret);
+        }
+    }
+}
+
+fn selector_field(output: &mut String, indent: usize, name: &str, field: &Field<ExternalSelector>) {
+    match field {
+        Field::Unmanaged => {}
+        Field::Clear => line(output, indent, name, "null"),
+        Field::Set(selector) => {
+            mapping_header(output, indent, name);
+            match selector {
+                ExternalSelector::Local => line(output, indent + 2, "local", "true"),
+                ExternalSelector::Named(selector) => {
+                    line(output, indent + 2, "name", &quoted(selector.as_str()));
+                }
+            }
         }
     }
 }

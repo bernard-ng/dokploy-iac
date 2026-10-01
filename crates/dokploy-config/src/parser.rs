@@ -12,9 +12,9 @@ use crate::model::{
     SourceLocation, ValidationDiagnostic, ValidationIssue, address,
 };
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MountSourceConfig, MoveDeclaration, NonEmptyText,
-    PortNumber, PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource,
-    SourceConfig,
+    ConfigValue, DomainConfig, ExternalSelector, Field, Lifecycle, MountSourceConfig,
+    MoveDeclaration, NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig,
+    RemovedDeclaration, SecretSource, SourceConfig,
 };
 
 type ResourceTables<'a> = (
@@ -107,6 +107,16 @@ struct RawApplication {
     source: Field<SourceConfig>,
     #[serde(default)]
     environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    #[serde(default)]
+    server: Field<ExternalSelector>,
+    #[serde(default)]
+    build_server: Field<ExternalSelector>,
+    #[serde(default)]
+    registry: Field<ExternalSelector>,
+    #[serde(default)]
+    build_registry: Field<ExternalSelector>,
+    #[serde(default)]
+    rollback_registry: Field<ExternalSelector>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -474,6 +484,11 @@ impl DokployConfig {
                         replicas: raw_config.replicas,
                         source: raw_config.source,
                         environment: raw_config.environment,
+                        server: raw_config.server,
+                        build_server: raw_config.build_server,
+                        registry: raw_config.registry,
+                        build_registry: raw_config.build_registry,
+                        rollback_registry: raw_config.rollback_registry,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -961,6 +976,34 @@ fn validate_resources(
             );
         }
 
+        for (property, kind, selector) in config.external_selectors() {
+            if selector.name_is_invalid() {
+                emit(
+                    diagnostics,
+                    ValidationIssue::InvalidExternalSelectorName,
+                    location,
+                );
+            }
+            // `local` selects Dokploy's own host, which only primary server placement can
+            // express; an absent build server is `null`, never `local`.
+            if selector.is_local() && !(kind.allows_local() && property == "server") {
+                emit(
+                    diagnostics,
+                    ValidationIssue::LocalSelectorUnsupported,
+                    location,
+                );
+            }
+        }
+        if let ResourceConfig::Application(application) = config
+            && matches!(application.server, Field::Clear)
+        {
+            emit(
+                diagnostics,
+                ValidationIssue::ServerPlacementCannotBeCleared,
+                location,
+            );
+        }
+
         if let ResourceConfig::Port(port) = config {
             let parent = parents
                 .get(address)
@@ -1188,6 +1231,11 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
                 | "replicas"
                 | "source.repository"
                 | "source.branch"
+                | "server"
+                | "build_server"
+                | "registry"
+                | "build_registry"
+                | "rollback_registry"
                 | "deployment.status"
         ),
         ResourceKind::Compose => value == "description",

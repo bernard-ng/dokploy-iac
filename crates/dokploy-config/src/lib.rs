@@ -34,9 +34,10 @@ pub use model::{
     SourceLocation, ValidationDiagnostic, ValidationIssue,
 };
 pub use types::{
-    ConfigValue, DomainConfig, GitHubSource, Lifecycle, MountSourceConfig, MoveDeclaration,
-    NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig, PropertyPath,
-    RemovedDeclaration, ResourceReference, SecretSource, SecretSourceKind, SourceConfig,
+    ConfigValue, DomainConfig, ExternalName, ExternalSelector, GitHubSource, Lifecycle,
+    MountSourceConfig, MoveDeclaration, NonEmptyText, PortNumber, PortProtocolConfig,
+    PortPublishModeConfig, PropertyPath, RemovedDeclaration, ResourceReference, SecretSource,
+    SecretSourceKind, SelectorKind, SourceConfig,
 };
 pub use writer::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,

@@ -5,9 +5,9 @@ use schemars::Schema;
 use thiserror::Error;
 
 use crate::{
-    ConfigValue, DomainConfig, Field, Lifecycle, MountSourceConfig, MoveDeclaration, NonEmptyText,
-    PortNumber, PortProtocolConfig, PortPublishModeConfig, RemovedDeclaration, SecretSource,
-    SourceConfig,
+    ConfigValue, DomainConfig, ExternalSelector, Field, Lifecycle, MountSourceConfig,
+    MoveDeclaration, NonEmptyText, PortNumber, PortProtocolConfig, PortPublishModeConfig,
+    RemovedDeclaration, SecretSource, SourceConfig,
 };
 
 /// A fully parsed and semantically validated `dokploy.yaml` document.
@@ -435,6 +435,40 @@ impl ResourceConfig {
         secrets
     }
 
+    /// Returns every configured external selector with its kind and property name.
+    #[must_use]
+    pub fn external_selectors(
+        &self,
+    ) -> Vec<(&'static str, crate::SelectorKind, &ExternalSelector)> {
+        let mut selectors = Vec::new();
+        if let Self::Application(config) = self {
+            for (name, kind, field) in [
+                ("server", crate::SelectorKind::Server, &config.server),
+                (
+                    "build_server",
+                    crate::SelectorKind::Server,
+                    &config.build_server,
+                ),
+                ("registry", crate::SelectorKind::Registry, &config.registry),
+                (
+                    "build_registry",
+                    crate::SelectorKind::Registry,
+                    &config.build_registry,
+                ),
+                (
+                    "rollback_registry",
+                    crate::SelectorKind::Registry,
+                    &config.rollback_registry,
+                ),
+            ] {
+                if let Field::Set(selector) = field {
+                    selectors.push((name, kind, selector));
+                }
+            }
+        }
+        selectors
+    }
+
     pub(crate) fn environment_names_valid(&self) -> bool {
         match self {
             Self::Application(config) => config.environment.as_set().is_none_or(|variables| {
@@ -524,6 +558,11 @@ pub struct ApplicationConfig {
     pub(crate) replicas: Field<u32>,
     pub(crate) source: Field<SourceConfig>,
     pub(crate) environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    pub(crate) server: Field<ExternalSelector>,
+    pub(crate) build_server: Field<ExternalSelector>,
+    pub(crate) registry: Field<ExternalSelector>,
+    pub(crate) build_registry: Field<ExternalSelector>,
+    pub(crate) rollback_registry: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
@@ -547,6 +586,40 @@ impl ApplicationConfig {
     #[must_use]
     pub const fn environment(&self) -> &Field<BTreeMap<String, Field<ConfigValue>>> {
         &self.environment
+    }
+
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when an application is created, so a
+    /// changed placement replaces the application. `null` is rejected because
+    /// local placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
+    /// Returns the nullable build-server selector, changeable in place.
+    #[must_use]
+    pub const fn build_server(&self) -> &Field<ExternalSelector> {
+        &self.build_server
+    }
+
+    /// Returns the nullable runtime image registry selector, changeable in place.
+    #[must_use]
+    pub const fn registry(&self) -> &Field<ExternalSelector> {
+        &self.registry
+    }
+
+    /// Returns the nullable build image registry selector, changeable in place.
+    #[must_use]
+    pub const fn build_registry(&self) -> &Field<ExternalSelector> {
+        &self.build_registry
+    }
+
+    /// Returns the nullable rollback image registry selector, changeable in place.
+    #[must_use]
+    pub const fn rollback_registry(&self) -> &Field<ExternalSelector> {
+        &self.rollback_registry
     }
 
     #[must_use]
@@ -941,6 +1014,9 @@ pub enum ValidationIssue {
     DuplicateMountCollision,
     MountContentCannotBeCleared,
     UnmanagedMountContentRequiresProtection,
+    InvalidExternalSelectorName,
+    LocalSelectorUnsupported,
+    ServerPlacementCannotBeCleared,
 }
 
 impl ValidationIssue {
@@ -981,6 +1057,9 @@ impl ValidationIssue {
             Self::DuplicateMountCollision => "DOKCFG042",
             Self::MountContentCannotBeCleared => "DOKCFG043",
             Self::UnmanagedMountContentRequiresProtection => "DOKCFG044",
+            Self::InvalidExternalSelectorName => "DOKCFG029",
+            Self::LocalSelectorUnsupported => "DOKCFG030",
+            Self::ServerPlacementCannotBeCleared => "DOKCFG031",
         }
     }
 
@@ -1032,6 +1111,15 @@ impl ValidationIssue {
             Self::MountContentCannotBeCleared => "file Mount content cannot be null",
             Self::UnmanagedMountContentRequiresProtection => {
                 "unmanaged file Mount content requires lifecycle.protect: true"
+            }
+            Self::InvalidExternalSelectorName => {
+                "external selector name must be a non-empty, trimmed value without control characters"
+            }
+            Self::LocalSelectorUnsupported => {
+                "the local selector is supported only for server placement"
+            }
+            Self::ServerPlacementCannotBeCleared => {
+                "server placement cannot be null; use `local: true` for the local server"
             }
         }
     }

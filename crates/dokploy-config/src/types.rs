@@ -121,6 +121,171 @@ pub enum PortProtocolConfig {
     Udp,
 }
 
+/// The external infrastructure families that configuration can select by name.
+///
+/// Servers, registries, and backup destinations are owned outside the
+/// workspace. Configuration selects them with a stable local-or-named
+/// selector and never stores their physical identities.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SelectorKind {
+    /// A Dokploy server that runs or builds services.
+    Server,
+    /// A container image registry.
+    Registry,
+    /// A backup destination.
+    Destination,
+}
+
+impl SelectorKind {
+    /// Returns whether the explicit `local` selector has a meaning for this kind.
+    ///
+    /// Only servers have a local form: Dokploy's own host. A registry or backup
+    /// destination is either absent (cleared) or selected by exact name.
+    #[must_use]
+    pub const fn allows_local(self) -> bool {
+        matches!(self, Self::Server)
+    }
+}
+
+/// The exact, case-sensitive name of one external record.
+///
+/// The value is intentionally redacted from debug output because names are
+/// operator-chosen infrastructure identifiers.
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ExternalName(String);
+
+impl ExternalName {
+    /// The maximum accepted name length in bytes.
+    pub const MAX_BYTES: usize = 256;
+
+    /// Returns the exact name used for matching.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.0.is_empty()
+            && self.0.len() <= Self::MAX_BYTES
+            && self.0.trim() == self.0
+            && !self.0.chars().any(char::is_control)
+    }
+}
+
+impl fmt::Debug for ExternalName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ExternalName([REDACTED])")
+    }
+}
+
+/// A stable selector for one external record: the local host or an exact name.
+///
+/// The YAML forms are `{ local: true }` and `{ name: "edge-1" }`. An object
+/// form keeps a record that is literally named `local` unambiguous.
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ExternalSelector {
+    /// Dokploy's own host; valid only for server placement.
+    Local,
+    /// The one external record with this exact name.
+    Named(ExternalName),
+}
+
+impl ExternalSelector {
+    /// Selects an external record by exact name.
+    ///
+    /// The name is validated when the document is parsed; construction itself
+    /// is infallible so typed importers can hand over unvalidated names that
+    /// the canonical writer then rejects through the strict parser.
+    #[must_use]
+    pub fn named(name: impl Into<String>) -> Self {
+        Self::Named(ExternalName(name.into()))
+    }
+
+    /// Returns the exact name for a named selector.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Local => None,
+            Self::Named(name) => Some(name.as_str()),
+        }
+    }
+
+    /// Returns whether this is the explicit local selector.
+    #[must_use]
+    pub const fn is_local(&self) -> bool {
+        matches!(self, Self::Local)
+    }
+
+    pub(crate) fn name_is_invalid(&self) -> bool {
+        matches!(self, Self::Named(name) if !name.is_valid())
+    }
+}
+
+impl fmt::Debug for ExternalSelector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Local => formatter.write_str("ExternalSelector::Local"),
+            Self::Named(_) => formatter.write_str("ExternalSelector::Named([REDACTED])"),
+        }
+    }
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawExternalSelector {
+    #[serde(default)]
+    local: Field<bool>,
+    #[serde(default)]
+    name: Field<String>,
+}
+
+impl<'de> Deserialize<'de> for ExternalSelector {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = RawExternalSelector::deserialize(deserializer)?;
+        match (raw.local, raw.name) {
+            (Field::Set(true), Field::Unmanaged) => Ok(Self::Local),
+            (Field::Unmanaged, Field::Set(name)) => Ok(Self::Named(ExternalName(name))),
+            _ => Err(de::Error::custom(
+                "external selector must contain exactly one of `local: true` or a non-null `name`",
+            )),
+        }
+    }
+}
+
+impl JsonSchema for ExternalSelector {
+    fn schema_name() -> Cow<'static, str> {
+        "ExternalSelector".into()
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": { "local": { "const": true } },
+                    "required": ["local"],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                }
+            ]
+        })
+    }
+}
+
 /// A validated property path used by references and lifecycle rules.
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PropertyPath(Vec<String>);
