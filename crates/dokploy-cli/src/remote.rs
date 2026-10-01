@@ -17,7 +17,9 @@ use crate::external::ExternalDirectory;
 
 mod leaf;
 mod mount;
+mod schedule;
 pub(crate) use mount::{mount_service_target, mount_type_label};
+pub(crate) use schedule::{schedule_sdk_target, shell_label, stored_schedule_target};
 
 /// Whether `project.all` is known to contain every project visible to reconciliation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -154,6 +156,15 @@ pub enum MountTopologyAuthority {
     Partial,
 }
 
+/// Whether an exact target's Schedule collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduleTopologyAuthority {
+    /// Absence from `schedule.list` proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -187,6 +198,8 @@ pub struct DiscoveryAuthority {
     pub security: SecurityTopologyAuthority,
     /// Completeness of each exact target's Mount collection.
     pub mounts: MountTopologyAuthority,
+    /// Completeness of each exact target's Schedule collection.
+    pub schedules: ScheduleTopologyAuthority,
 }
 
 impl DiscoveryAuthority {
@@ -209,6 +222,7 @@ impl DiscoveryAuthority {
             redirects: RedirectTopologyAuthority::Authoritative,
             security: SecurityTopologyAuthority::Authoritative,
             mounts: MountTopologyAuthority::Authoritative,
+            schedules: ScheduleTopologyAuthority::Authoritative,
         }
     }
 }
@@ -450,6 +464,21 @@ pub enum DiscoverRemoteError {
     /// Direct and authoritative target Mount reads contradict each other.
     #[error("DOKREM084: Mount read endpoints returned conflicting topology")]
     MountTopologyConflict,
+    /// A Schedule has no valid typed target binding.
+    #[error("DOKREM090: Schedule target binding is unavailable")]
+    ScheduleTarget,
+    /// A Schedule physical identity does not satisfy the state contract.
+    #[error("DOKREM091: Schedule topology contains an invalid remote identity")]
+    InvalidScheduleId,
+    /// More than one Schedule occupies one target-scoped name.
+    #[error("DOKREM092: Schedule topology contains a duplicate target-scoped name")]
+    DuplicateScheduleCollision,
+    /// More than one logical address resolves to the same Schedule identity.
+    #[error("DOKREM093: Schedule topology contains a duplicate remote identity")]
+    DuplicateScheduleId,
+    /// Direct and authoritative target Schedule reads contradict each other.
+    #[error("DOKREM094: Schedule read endpoints returned conflicting topology")]
+    ScheduleTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -592,6 +621,15 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(mounts);
+    let schedules = schedule::discover_schedule_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.schedules,
+    )
+    .await?;
+    observations.extend(schedules);
 
     let resolutions = external_resolutions(compiled, &externals, &observations);
     remote_state_with_contracts(state.instance().clone(), observations)

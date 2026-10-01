@@ -34,6 +34,7 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::desired::{CompileDesiredError, ExternalExecutionId, compile_desired_for_instance};
 
 mod mount;
+mod schedule;
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
 use crate::saved_plan::{SavedPlan, SavedPlanError};
 use crate::sensitive::SensitiveFingerprinter;
@@ -316,6 +317,19 @@ async fn apply_workspace_with_expectation(
         if change.address().kind() == ResourceKind::Mount {
             mount::execute_mount_create(client, &mut compiled, change, &mut state, &mut journal)
                 .await?;
+            applied += 1;
+            change_index += 1;
+            continue;
+        }
+        if change.address().kind() == ResourceKind::Schedule {
+            schedule::execute_schedule_create(
+                client,
+                &mut compiled,
+                change,
+                &mut state,
+                &mut journal,
+            )
+            .await?;
             applied += 1;
             change_index += 1;
             continue;
@@ -729,6 +743,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Redirect
                     | ResourceKind::Security
                     | ResourceKind::Mount
+                    | ResourceKind::Schedule
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
@@ -742,6 +757,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Redirect
                     | ResourceKind::Security
                     | ResourceKind::Mount
+                    | ResourceKind::Schedule
                     | ResourceKind::Application
             ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
         }
@@ -1281,6 +1297,9 @@ async fn execute_removal_change(
 ) -> Result<(), ApplyWorkspaceError> {
     if !change.checkpoint().is_absent() {
         return Err(ApplyWorkspaceError::InvalidCheckpoint);
+    }
+    if change.address().kind() == ResourceKind::Schedule && change.kind() == ChangeKind::Delete {
+        return schedule::execute_schedule_delete(client, change, state, journal).await;
     }
     let before = state
         .resource(change.address())
@@ -2564,6 +2583,12 @@ async fn execute_delete_before_create_replacement(
     {
         return mount::execute_mount_replacement(client, compiled, change, state, journal).await;
     }
+    if change.address().kind() == ResourceKind::Schedule
+        && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return schedule::execute_schedule_replacement(client, compiled, change, state, journal)
+            .await;
+    }
     if change.address().kind() == ResourceKind::Application
         && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
     {
@@ -3063,6 +3088,9 @@ async fn execute_existing_change(
     }
     if change.address().kind() == ResourceKind::Mount && change.kind() == ChangeKind::Update {
         return mount::execute_mount_update(client, compiled, change, state, journal).await;
+    }
+    if change.address().kind() == ResourceKind::Schedule && change.kind() == ChangeKind::Update {
+        return schedule::execute_schedule_update(client, compiled, change, state, journal).await;
     }
 
     if !matches!(change.kind(), ChangeKind::Update | ChangeKind::Reparent) {

@@ -9,7 +9,8 @@ use dokploy_cli::remote::{
     DiscoveryAuthority, DomainTopologyAuthority, EnvironmentTopologyAuthority,
     LibSqlTopologyAuthority, MariaDbTopologyAuthority, MongoTopologyAuthority,
     MountTopologyAuthority, MySqlTopologyAuthority, PortTopologyAuthority,
-    PostgresTopologyAuthority, ProjectTopologyAuthority, RedisTopologyAuthority, discover_remote,
+    PostgresTopologyAuthority, ProjectTopologyAuthority, RedisTopologyAuthority,
+    ScheduleTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -119,6 +120,7 @@ fn authoritative() -> DiscoveryAuthority {
         ports: PortTopologyAuthority::Authoritative,
         redirects: dokploy_cli::remote::RedirectTopologyAuthority::Authoritative,
         security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
+        schedules: ScheduleTopologyAuthority::Authoritative,
         mounts: MountTopologyAuthority::Authoritative,
     }
 }
@@ -453,6 +455,7 @@ environments:
         ports: PortTopologyAuthority::Authoritative,
         redirects: dokploy_cli::remote::RedirectTopologyAuthority::Authoritative,
         security: dokploy_cli::remote::SecurityTopologyAuthority::Authoritative,
+        schedules: ScheduleTopologyAuthority::Authoritative,
         mounts: MountTopologyAuthority::Authoritative,
     };
 

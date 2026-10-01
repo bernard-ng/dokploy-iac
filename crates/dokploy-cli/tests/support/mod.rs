@@ -21,6 +21,22 @@ pub enum Reply {
     Json(&'static str, String),
     /// Close the connection without responding, simulating an unknown outcome.
     Drop,
+    /// Choose a reply from the full request log (including the current request).
+    Dynamic(ReplyChooser),
+}
+
+/// Chooses a reply from the request log.
+pub type ReplyChooser = Arc<dyn Fn(&[String]) -> Reply + Send + Sync>;
+
+/// Replies with `before` until a request starting with `prefix` has been seen, then `after`.
+pub fn switch_after(prefix: &'static str, before: Reply, after: Reply) -> Reply {
+    Reply::Dynamic(Arc::new(move |log| {
+        if log.iter().any(|request| request.starts_with(prefix)) {
+            after.clone()
+        } else {
+            before.clone()
+        }
+    }))
 }
 
 pub fn ok(body: impl Into<String>) -> Reply {
@@ -104,7 +120,17 @@ impl Router {
                             Reply::Json("501 Not Implemented", r#"{"message":"unrouted"}"#.into())
                         }
                     };
+                    let reply = match reply {
+                        Reply::Dynamic(choose) => {
+                            let snapshot = log.lock().unwrap().clone();
+                            choose(&snapshot)
+                        }
+                        other => other,
+                    };
                     match reply {
+                        Reply::Dynamic(_) => {
+                            unreachable!("a dynamic reply resolves to a concrete one")
+                        }
                         Reply::Json(status, body) => {
                             let _ = write!(
                                 stream,
@@ -269,4 +295,49 @@ pub fn list<S: AsRef<str>>(mounts: impl IntoIterator<Item = S>) -> String {
         .map(|mount| mount.as_ref().to_owned())
         .collect::<Vec<_>>();
     format!("[{}]", mounts.join(","))
+}
+
+/// How a Schedule fixture is attached to its target.
+pub enum ScheduleTargetFixture<'a> {
+    Application(&'a str),
+    Compose(&'a str, &'a str),
+}
+
+/// A complete Schedule record as returned by `schedule.one`, `schedule.list`, and mutations.
+#[allow(clippy::too_many_arguments)]
+pub fn schedule_record(
+    id: &str,
+    target: ScheduleTargetFixture<'_>,
+    name: &str,
+    cron: &str,
+    shell: &str,
+    enabled: bool,
+    command: &str,
+    script: Option<&str>,
+    description: Option<&str>,
+    timezone: Option<&str>,
+) -> String {
+    let (schedule_type, application_id, compose_id, service_name) = match target {
+        ScheduleTargetFixture::Application(id) => ("application", Some(id), None, None),
+        ScheduleTargetFixture::Compose(id, service) => ("compose", None, Some(id), Some(service)),
+    };
+    serde_json::json!({
+        "scheduleId": id,
+        "name": name,
+        "description": description,
+        "cronExpression": cron,
+        "shellType": shell,
+        "scheduleType": schedule_type,
+        "command": command,
+        "script": script,
+        "applicationId": application_id,
+        "composeId": compose_id,
+        "serverId": null,
+        "serviceName": service_name,
+        "enabled": enabled,
+        "timezone": timezone,
+        "appName": "runtime-name",
+        "deployments": []
+    })
+    .to_string()
 }

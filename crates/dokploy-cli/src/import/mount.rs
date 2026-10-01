@@ -137,7 +137,7 @@ async fn environment_and_project(
     Ok((environment, project))
 }
 
-async fn import_target(
+pub(super) async fn import_target(
     client: &Dokploy,
     target: &ServiceTarget,
 ) -> Result<(ImportedWorkspace, ResourceAddress), ImportError> {

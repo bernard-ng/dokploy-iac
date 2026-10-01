@@ -26,6 +26,7 @@ use crate::cli::ImportKind;
 use crate::external::ExternalDirectory;
 
 mod mount;
+mod schedule;
 
 const INTERACTIVE_LIBSQL_ITEM_LIMIT: usize = 10_000;
 
@@ -319,6 +320,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Redirect => "redirect",
         ImportKind::Security => "security",
         ImportKind::Mount => "mount",
+        ImportKind::Schedule => "schedule",
     }
 }
 
@@ -646,6 +648,7 @@ async fn discover(
             )
         }
         ImportKind::Mount => mount::discover_mount(client, remote_id, target).await,
+        ImportKind::Schedule => schedule::discover_schedule(client, remote_id, target).await,
     }
 }
 
@@ -1727,6 +1730,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Redirect => ResourceKind::Redirect,
         ImportKind::Security => ResourceKind::Security,
         ImportKind::Mount => ResourceKind::Mount,
+        ImportKind::Schedule => ResourceKind::Schedule,
     }
 }
 

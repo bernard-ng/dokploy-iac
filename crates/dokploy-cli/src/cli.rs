@@ -216,6 +216,7 @@ pub enum ImportKind {
     Redirect,
     Security,
     Mount,
+    Schedule,
 }
 
 #[derive(Subcommand)]
