@@ -1959,7 +1959,9 @@ impl DatabaseMutation {
                     .libsql()
                     .get(created.libsql_id().clone())
                     .await
-                    .map_err(DatabaseMutationFailure::Sdk)?;
+                    .map_err(|error| {
+                        DatabaseMutationFailure::OutcomeUnknown(failure_code(&error))
+                    })?;
                 if details.libsql_id != *created.libsql_id()
                     || details.environment_id != environment_id
                     || details.name != name
@@ -2024,6 +2026,7 @@ impl DatabaseMutation {
 
 enum DatabaseMutationFailure {
     Sdk(SdkError),
+    OutcomeUnknown(FailureCode),
     InvalidIdentity,
     Internal,
 }
@@ -2032,12 +2035,16 @@ impl DatabaseMutationFailure {
     fn code(&self) -> FailureCode {
         match self {
             Self::Sdk(error) => failure_code(error),
+            Self::OutcomeUnknown(code) => *code,
             Self::InvalidIdentity | Self::Internal => FailureCode::Internal,
         }
     }
 
     fn is_definitive(&self) -> bool {
-        matches!(self, Self::Sdk(error) if failure_code(error) != FailureCode::TransportOutcomeUnknown)
+        match self {
+            Self::Sdk(error) => failure_code(error) != FailureCode::TransportOutcomeUnknown,
+            Self::OutcomeUnknown(_) | Self::InvalidIdentity | Self::Internal => false,
+        }
     }
 }
 

@@ -997,6 +997,123 @@ async fn libsql_replacement_checkpoints_delete_before_an_uncertain_create_prefli
 }
 
 #[tokio::test]
+async fn libsql_post_create_topology_transport_failure_stays_recoverable() {
+    let empty = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[]}]}"#;
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", empty),
+        ("200 OK", "true"),
+    ]);
+    let directory = tempfile::tempdir().unwrap();
+    let config = write_libsql_primary_config(directory.path(), "post-topology-canary");
+
+    let result = apply_workspace(&server.client(), &config).await;
+    assert!(matches!(
+        result,
+        Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
+        })
+    ));
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    let journal = operation_journal(directory.path());
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("post-topology-canary"));
+    let requests = server.finish();
+    assert_eq!(requests.len(), 5);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/libsql.create "))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn libsql_post_create_direct_proof_transport_failure_stays_recoverable() {
+    let empty = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[]}]}"#;
+    let populated = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[{"libsqlId":"libsql-1","name":"main","appName":"main"}]}]}"#;
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", empty),
+        ("200 OK", "true"),
+        ("200 OK", populated),
+    ]);
+    let directory = tempfile::tempdir().unwrap();
+    let config = write_libsql_primary_config(directory.path(), "direct-proof-canary");
+
+    let result = apply_workspace(&server.client(), &config).await;
+    assert!(matches!(
+        result,
+        Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::Internal
+        })
+    ));
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    let journal = operation_journal(directory.path());
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("direct-proof-canary"));
+    let requests = server.finish();
+    assert_eq!(requests.len(), 6);
+    assert!(requests[5].starts_with("GET /api/libsql.one?"));
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/libsql.create "))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn libsql_definite_create_rejection_closes_the_journal_step() {
+    let empty = r#"{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"projectId":"project-1","libsql":[]}]}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", empty),
+        ("400 Bad Request", r#"{"message":"rejected"}"#),
+    ]);
+    let directory = tempfile::tempdir().unwrap();
+    let config = write_libsql_primary_config(directory.path(), "rejected-create-canary");
+
+    let result = apply_workspace(&server.client(), &config).await;
+    assert!(matches!(
+        result,
+        Err(dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::Validation
+        })
+    ));
+    let store = StateStore::new(
+        directory.path(),
+        InstanceIdentity::parse(&server.url).unwrap(),
+    )
+    .unwrap();
+    match store.recovery_status().unwrap() {
+        RecoveryStatus::RecoveryRequired(summary) => assert_eq!(
+            summary.reason(),
+            &dokploy_state::RecoveryReason::Failed(dokploy_state::FailureCode::Validation)
+        ),
+        RecoveryStatus::Clean => panic!("a rejected create must leave failed recovery evidence"),
+    }
+    let journal = operation_journal(directory.path());
+    assert!(journal.contains("stepFailed"));
+    assert!(!journal.contains("rejected-create-canary"));
+    assert_eq!(server.finish().len(), 4);
+}
+
+#[tokio::test]
 async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
     let server = TestServer::respond_then_drop(vec![
         ("200 OK", "[]"),
@@ -1518,6 +1635,40 @@ fn assert_recovery_step_in_progress(workspace: &std::path::Path, server_url: &st
         ),
         RecoveryStatus::Clean => panic!("unknown mutation outcome must require recovery"),
     }
+}
+
+fn write_libsql_primary_config(workspace: &std::path::Path, secret: &str) -> std::path::PathBuf {
+    fs::write(workspace.join("password"), secret).unwrap();
+    let config = workspace.join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project: { name: platform }\n",
+            "environments:\n",
+            "  production:\n",
+            "    libsql:\n",
+            "      main:\n",
+            "        username: app\n",
+            "        password: { file: password }\n",
+            "        node: { type: primary }\n",
+        ),
+    )
+    .unwrap();
+
+    config
+}
+
+fn operation_journal(workspace: &std::path::Path) -> String {
+    fs::read_dir(workspace.join(".dokploy/journal"))
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.ok()?.path();
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+                .then(|| fs::read_to_string(path).unwrap())
+        })
+        .expect("journal exists")
 }
 
 impl ConcurrentDatabaseServer {
