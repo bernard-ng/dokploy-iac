@@ -152,10 +152,12 @@ durable state semantics.
   outcome-unknown recovery, protected import, and disposable live acceptance.
   Username and replica-set mode update in place; post-create password changes
   remain blocked.
-- LibSQL shares the central declarative vocabulary: environment containment,
-  strict canonical configuration, descriptor-only secret fingerprints, and an
-  atomic primary-or-replica node property. Planning, apply, recovery, and
-  import remain unavailable until its remote adapter is proven.
+- LibSQL is declarative end to end with authoritative `project.one` topology,
+  direct-read agreement, collision detection, safe identity proof for the
+  no-ID create response, journaled updates, explicit recovery, and protected
+  import. Description, username, and password update in place. Changing the
+  atomic primary-or-replica node replaces the undeployed record in
+  delete-before-create order.
 - Mounts, ports, redirects, security entries, backups, and schedules use the
   shared typed-target and external-selector model in ADR 0026.
 - Completion still requires declarative reconciliation plus unit, sanitized

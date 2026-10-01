@@ -34,6 +34,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative LibSQL reconciliation with authoritative
+  `project.one` topology, direct-read agreement, safe identity proof for the
+  no-ID create response, separate metadata and password recovery steps,
+  delete-before-create node replacement, protected secret-free import, and
+  disposable live acceptance.
 - Add bounded, typed, secret-safe external selector reads for Dokploy servers,
   container registries, and backup destinations, with duplicate-ID rejection,
   ambiguity-preserving names, inert live verification, and sanitized fixtures.

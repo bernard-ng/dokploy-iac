@@ -478,6 +478,32 @@ streams, configuration, state, and journals for the original and rejected
 passwords. Cleanup verifies project and database absence, retains owner-only
 evidence if any proof fails, and never deploys the database.
 
+## Live LibSQL declarative apply test
+
+Verify LibSQL reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-libsql-apply.sh
+```
+
+The check creates a disposable project, environment, and undeployed primary
+LibSQL record from an environment-backed one-shot password. It requires a
+fresh no-op plan, updates description and username in place, rotates the
+password through a separate journaled mutation, and proves convergence after
+each step.
+
+It then changes the atomic node to a replica, verifies delete-before-create
+replacement with a new physical identity, and proves that the old identity is
+absent. The final apply removes the replica. The check confirms absence through
+both `libsql.one` and the exact environment in `project.one`, removes the
+durable state entry, and requires a final no-op plan. It scans every captured
+command stream, configuration, state file, and journal for both passwords and
+the ephemeral fingerprint key. Because `libsql.one` returns the database
+password, direct proof responses are reduced atomically to the allowlisted
+identity, node, and status fields before they can become retained evidence.
+Cleanup verifies project and database absence, retains owner-only evidence if
+any proof fails, and never deploys the database.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector
