@@ -661,6 +661,44 @@ async fn redirect_update_and_delete_require_postflight_proof() {
         1
     );
 
+    let updated = REDIRECT_RESPONSE
+        .replace("^/old/(.*)$", "^/legacy$")
+        .replace("/new/$1", "/current")
+        .replace("\"permanent\":false", "\"permanent\":true");
+    let concurrent = updated.replace("redirect-1", "redirect-2");
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(&format!("{updated},{concurrent}"))),
+    ]);
+    let error = client(&update_server)
+        .redirects()
+        .update(UpdateRedirect::new(
+            RedirectId::new("redirect-1"),
+            "^/legacy$",
+            "/current",
+            true,
+        ))
+        .await
+        .expect_err("a concurrent postflight regex collision is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "redirects.update",
+            ..
+        }
+    ));
+    let requests = update_server.finish_all();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/redirects.update "))
+            .count(),
+        1
+    );
+
     let delete_server = TestServer::respond_in_sequence(vec![
         ("200 OK", REDIRECT_RESPONSE),
         ("200 OK", parent_with(REDIRECT_RESPONSE)),

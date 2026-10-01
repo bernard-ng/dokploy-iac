@@ -1038,11 +1038,12 @@ impl Dokploy {
             .redirects_by_application(&existing.application_id)
             .await
             .map_err(|_| post_mutation_proof_unknown(REDIRECTS_UPDATE))?;
-        let updated = after
+        let matching_regex = after
             .redirects()
             .iter()
-            .find(|redirect| redirect.redirect_id == *input.redirect_id());
-        if !updated.is_some_and(|redirect| input.matches(redirect)) {
+            .filter(|redirect| redirect.regex == input.regex())
+            .collect::<Vec<_>>();
+        if !matches!(matching_regex.as_slice(), [updated] if input.matches(updated)) {
             return Err(post_mutation_proof_unknown(REDIRECTS_UPDATE));
         }
 
