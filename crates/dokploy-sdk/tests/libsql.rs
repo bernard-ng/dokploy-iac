@@ -56,10 +56,29 @@ const POPULATED_TOPOLOGY: &str = r#"{
     }]
 }"#;
 
+const AMBIGUOUS_TOPOLOGY: &str = r#"{
+    "projectId":"project-1",
+    "name":"project",
+    "environments":[{
+        "environmentId":"environment-1",
+        "name":"production",
+        "isDefault":true,
+        "libsql":[
+            {"libsqlId":"libsql-1","name":"main","appName":"main-one"},
+            {"libsqlId":"libsql-2","name":"main","appName":"main-two"}
+        ]
+    }]
+}"#;
+
 struct TestServer {
     url: String,
     requests: Receiver<Vec<String>>,
     thread: JoinHandle<()>,
+}
+
+enum ResponseAction {
+    Json(&'static str, &'static str),
+    Drop,
 }
 
 impl TestServer {
@@ -117,6 +136,40 @@ impl TestServer {
                 body
             )
             .expect("response is writable");
+        });
+
+        Self {
+            url: format!("http://{address}"),
+            requests,
+            thread,
+        }
+    }
+
+    fn respond_with_actions(actions: Vec<ResponseAction>) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("test server binds");
+        let address = listener.local_addr().expect("test server has an address");
+        let (sender, requests) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            let mut received_requests = Vec::new();
+
+            for action in actions {
+                let (mut stream, _) = listener.accept().expect("test server accepts a request");
+                let bytes = read_request(&mut stream);
+                received_requests.push(String::from_utf8(bytes).expect("request is UTF-8"));
+                if let ResponseAction::Json(status, body) = action {
+                    write!(
+                        stream,
+                        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .expect("response is writable");
+                }
+            }
+
+            sender
+                .send(received_requests)
+                .expect("test receives the requests");
         });
 
         Self {
@@ -258,6 +311,7 @@ async fn libsql_by_environment_fails_closed_when_the_scope_is_not_authoritative(
     let cases = [
         r#"{"projectId":"project-1","name":"project","environments":[]}"#,
         r#"{"projectId":"project-1","name":"project","environments":[{"environmentId":"environment-1","name":"one","isDefault":true,"libsql":[]},{"environmentId":"environment-1","name":"duplicate","isDefault":false,"libsql":[]}]}"#,
+        r#"{"projectId":"project-1","name":"project","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"libsql":[{"libsqlId":"libsql-1"}]}]}"#,
         oversized_topology(),
     ];
 
@@ -357,11 +411,95 @@ async fn libsql_create_fails_closed_on_preexisting_or_missing_identity() {
         .expect_err("a missing post-create identity must fail closed");
     assert!(matches!(
         missing,
-        Error::UnexpectedResponse {
-            operation: "libsql.create"
+        Error::OutcomeUnknown {
+            operation: "libsql.create",
+            ..
         }
     ));
     missing_server.finish_all();
+}
+
+#[tokio::test]
+async fn libsql_create_marks_unproven_post_mutation_results_outcome_unknown_without_retrying_post()
+{
+    for mutation_response in ["false", "{"] {
+        let server = TestServer::respond_in_sequence(vec![EMPTY_TOPOLOGY, mutation_response]);
+        let error = client(&server.url)
+            .libsql()
+            .create(create_input())
+            .await
+            .expect_err("false or malformed create responses cannot prove mutation outcome");
+
+        assert!(matches!(
+            error,
+            Error::OutcomeUnknown {
+                operation: "libsql.create",
+                ..
+            }
+        ));
+        assert_one_create_request(&server.finish_all());
+    }
+
+    let ambiguous_server =
+        TestServer::respond_in_sequence(vec![EMPTY_TOPOLOGY, "true", AMBIGUOUS_TOPOLOGY]);
+    let ambiguous = client(&ambiguous_server.url)
+        .libsql()
+        .create(create_input())
+        .await
+        .expect_err("ambiguous postflight identity requires recovery");
+    assert!(matches!(
+        ambiguous,
+        Error::OutcomeUnknown {
+            operation: "libsql.create",
+            ..
+        }
+    ));
+    assert_one_create_request(&ambiguous_server.finish_all());
+}
+
+#[tokio::test]
+async fn libsql_create_sanitizes_postflight_transport_and_api_failures_as_outcome_unknown() {
+    let api_server = TestServer::respond_with_actions(vec![
+        ResponseAction::Json("200 OK", EMPTY_TOPOLOGY),
+        ResponseAction::Json("200 OK", "true"),
+        ResponseAction::Json("500 Internal Server Error", r#"{"message":"first"}"#),
+        ResponseAction::Json("500 Internal Server Error", r#"{"message":"second"}"#),
+        ResponseAction::Json("500 Internal Server Error", r#"{"message":"third"}"#),
+    ]);
+    let api_error = client(&api_server.url)
+        .libsql()
+        .create(create_input())
+        .await
+        .expect_err("postflight 5xx cannot prove the accepted create");
+    assert!(matches!(
+        api_error,
+        Error::OutcomeUnknown {
+            operation: "libsql.create",
+            ..
+        }
+    ));
+    assert_one_create_request(&api_server.finish_all());
+
+    let transport_server = TestServer::respond_with_actions(vec![
+        ResponseAction::Json("200 OK", EMPTY_TOPOLOGY),
+        ResponseAction::Json("200 OK", "true"),
+        ResponseAction::Drop,
+        ResponseAction::Drop,
+        ResponseAction::Drop,
+    ]);
+    let transport_error = client(&transport_server.url)
+        .libsql()
+        .create(create_input())
+        .await
+        .expect_err("dropped postflight reads cannot prove the accepted create");
+    assert!(matches!(
+        transport_error,
+        Error::OutcomeUnknown {
+            operation: "libsql.create",
+            ..
+        }
+    ));
+    assert_one_create_request(&transport_server.finish_all());
 }
 
 #[tokio::test]
@@ -523,6 +661,17 @@ fn assert_authenticated(request: &str) {
         request
             .to_ascii_lowercase()
             .contains("x-api-key: test-api-key")
+    );
+}
+
+fn assert_one_create_request(requests: &[String]) {
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/libsql.create "))
+            .count(),
+        1,
+        "LibSQL create must never be retried"
     );
 }
 

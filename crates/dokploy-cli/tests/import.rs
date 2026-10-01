@@ -119,6 +119,60 @@ async fn interactive_discovery_distinguishes_duplicate_names_by_remote_identity(
 }
 
 #[tokio::test]
+async fn interactive_discovery_enriches_sparse_libsql_ids_without_inventing_names() {
+    let topology =
+        include_str!("../../../fixtures/api/live/v0.30.6/project-all.libsql-sparse.owner.json");
+    let libsql = r#"{
+        "libsqlId":"libsql-1","environmentId":"environment-1",
+        "name":"Remote database","appName":"remote-db",
+        "dockerImage":"ghcr.io/tursodatabase/libsql-server:v0.24.32",
+        "databasePassword":"password-canary"
+    }"#;
+    let empty_search = r#"{"items":[],"total":0}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        topology,
+        empty_search,
+        empty_search,
+        empty_search,
+        libsql,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .unwrap();
+    let mut prompter = FakePrompter {
+        selected: 2,
+        address: String::new(),
+        choices: Vec::new(),
+    };
+
+    let selection = select_with_prompter(
+        &client,
+        std::path::PathBuf::from("dokploy.yaml"),
+        &mut prompter,
+    )
+    .await
+    .expect("sparse LibSQL identity is enriched by a direct safe read");
+
+    assert_eq!(selection.kind, ImportKind::LibSql);
+    assert_eq!(selection.remote_id, "libsql-1");
+    assert_eq!(selection.address.to_string(), "libsql.remote-database");
+    assert!(prompter.choices[2].contains("Remote database"));
+    assert!(!prompter.choices[2].contains("unnamed"));
+    assert!(
+        prompter
+            .choices
+            .iter()
+            .all(|choice| !choice.contains("password-canary"))
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 5);
+    assert!(requests[0].starts_with("GET /api/project.all"));
+    assert!(requests[4].starts_with("GET /api/libsql.one?libsqlId=libsql-1"));
+}
+
+#[tokio::test]
 async fn interactive_import_fails_before_discovery_without_a_terminal() {
     let workspace = tempfile::tempdir().unwrap();
     let repository = ConfigRepository::new(workspace.path().join("config.toml"));
@@ -317,7 +371,7 @@ async fn mysql_import_is_protected_two_secret_free_and_immediately_convergent() 
     let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
     let project =
         r#"{"projectId":"project-1","name":"platform","description":"Platform","environments":[]}"#;
-    let project_topology = r#"[{"projectId":"project-1","name":"platform","description":"Platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[],"postgres":[],"redis":[]}]}]"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","description":"Platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[],"postgres":[],"redis":[],"libsql":[{"libsqlId":"libsql-1"}]}]}]"#;
     let environment_collection =
         r#"[{"environmentId":"environment-1","name":"production","description":"Production"}]"#;
     let mysql_collection = r#"{"items":[{"mysqlId":"mysql-1","environmentId":"environment-1","name":"Remote database"}],"total":1}"#;

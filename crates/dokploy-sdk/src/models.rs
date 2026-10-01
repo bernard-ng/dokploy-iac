@@ -4207,6 +4207,42 @@ pub struct LibSqlSearchItem {
     pub server_id: Option<ServerId>,
 }
 
+/// Sparse LibSQL identity embedded by `project.all`.
+///
+/// Dokploy `v0.30.6` returns only `libsqlId` at this boundary. Rich names and
+/// application metadata remain exclusive to `project.one` and `libsql.one`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibSqlTopologySummary {
+    pub libsql_id: LibSqlId,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub app_name: Option<String>,
+    #[serde(default)]
+    pub application_status: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub server_id: Option<ServerId>,
+}
+
+impl LibSqlTopologySummary {
+    pub(crate) fn into_search_item(self) -> Option<LibSqlSearchItem> {
+        let name = self.name.filter(|name| !name.is_empty())?;
+        let app_name = self.app_name.filter(|app_name| !app_name.is_empty())?;
+
+        Some(LibSqlSearchItem {
+            libsql_id: self.libsql_id,
+            name,
+            app_name,
+            application_status: self.application_status,
+            description: self.description,
+            server_id: self.server_id,
+        })
+    }
+}
+
 /// The authoritative LibSQL collection nested under one exact environment.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LibSqlCollection {
@@ -4547,7 +4583,7 @@ pub struct EnvironmentTopology {
     #[serde(default)]
     pub redis: Vec<RedisSummary>,
     #[serde(default)]
-    pub libsql: Vec<LibSqlSearchItem>,
+    pub libsql: Vec<LibSqlTopologySummary>,
 }
 
 /// A safe subset of the response returned by `environment.one`.

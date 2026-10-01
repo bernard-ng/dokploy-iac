@@ -1509,9 +1509,18 @@ impl Dokploy {
             });
         }
 
-        Ok(LibSqlCollection {
-            libsql: environment.libsql,
-        })
+        let Some(libsql) = environment
+            .libsql
+            .into_iter()
+            .map(crate::models::LibSqlTopologySummary::into_search_item)
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Err(Error::UnexpectedResponse {
+                operation: PROJECT_ONE.operation(),
+            });
+        };
+
+        Ok(LibSqlCollection { libsql })
     }
 
     pub(crate) async fn libsql_create(&self, input: CreateLibSql) -> Result<CreatedLibSql, Error> {
@@ -1536,14 +1545,13 @@ impl Dokploy {
 
         let created: bool = self.mutate_body_json(LIBSQL_CREATE, &input).await?;
         if !created {
-            return Err(Error::UnexpectedResponse {
-                operation: LIBSQL_CREATE.operation(),
-            });
+            return Err(post_mutation_proof_unknown(LIBSQL_CREATE));
         }
 
         let after = self
             .libsql_by_environment(input.project_id().as_str(), input.environment_id().as_str())
-            .await?;
+            .await
+            .map_err(|_| post_mutation_proof_unknown(LIBSQL_CREATE))?;
         let matches = after
             .libsql()
             .iter()
@@ -1553,9 +1561,7 @@ impl Dokploy {
             return Ok(CreatedLibSql::new(created.libsql_id.clone()));
         }
 
-        Err(Error::UnexpectedResponse {
-            operation: LIBSQL_CREATE.operation(),
-        })
+        Err(post_mutation_proof_unknown(LIBSQL_CREATE))
     }
 
     pub(crate) async fn libsql_update(&self, input: UpdateLibSql) -> Result<(), Error> {

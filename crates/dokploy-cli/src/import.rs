@@ -1,6 +1,6 @@
 //! Read-only adoption of existing Dokploy resources into one new workspace.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use dokploy_config::{
@@ -20,6 +20,8 @@ use dokploy_state::{
 use thiserror::Error;
 
 use crate::cli::ImportKind;
+
+const INTERACTIVE_LIBSQL_ITEM_LIMIT: usize = 10_000;
 
 /// A complete noninteractive import selection.
 pub struct ImportRequest {
@@ -73,6 +75,23 @@ pub async fn select_with_prompter(
     prompter: &mut dyn ImportPrompter,
 ) -> Result<ImportRequest, ImportError> {
     let topology = client.projects().all().await?;
+    let mut libsql_ids = HashSet::new();
+    let mut libsql_count = 0_usize;
+    for project in topology.projects() {
+        for environment in &project.environments {
+            for database in &environment.libsql {
+                libsql_count = libsql_count
+                    .checked_add(1)
+                    .ok_or(ImportError::InvalidRemoteTopology)?;
+                if libsql_count > INTERACTIVE_LIBSQL_ITEM_LIMIT
+                    || database.libsql_id.as_str().is_empty()
+                    || !libsql_ids.insert(database.libsql_id.as_str())
+                {
+                    return Err(ImportError::InvalidRemoteTopology);
+                }
+            }
+        }
+    }
     let mut choices = Vec::new();
     for project in topology.projects() {
         choices.push(ImportChoice::new(
@@ -149,10 +168,17 @@ pub async fn select_with_prompter(
                 ));
             }
             for database in &environment.libsql {
+                let details = client.libsql().get(database.libsql_id.clone()).await?;
+                if details.libsql_id != database.libsql_id
+                    || details.environment_id != environment.environment_id
+                    || details.name.is_empty()
+                {
+                    return Err(ImportError::InvalidRemoteTopology);
+                }
                 choices.push(ImportChoice::new(
                     ImportKind::LibSql,
-                    database.libsql_id.as_str(),
-                    &database.name,
+                    details.libsql_id.as_str(),
+                    &details.name,
                 ));
             }
             for database in &environment.redis {
@@ -1062,6 +1088,8 @@ pub enum ImportError {
     MissingContainment,
     #[error("the selected LibSQL node topology is invalid")]
     InvalidLibSqlNode,
+    #[error("the remote resource topology is invalid")]
+    InvalidRemoteTopology,
     #[error("no importable resources are visible")]
     NoVisibleResources,
     #[error("the interactive import selection is invalid")]
