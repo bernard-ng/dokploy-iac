@@ -43,6 +43,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative Mount reconciliation for application, Compose,
+  and database targets with a typed target union, bind, volume, and file
+  sources, descriptor-only fingerprinted file content, target-scoped
+  mount-path collision rejection, authoritative per-target discovery with
+  direct-read agreement, in-place path and source updates, delete-before-create
+  replacement on target or storage-type change, journaled outcome-unknown
+  recovery with manual intervention for unprovable content rotation, protected
+  import with the target ancestry, and an undeployed, canary-scanned disposable
+  live acceptance (ADR 0044).
 - Add end-to-end declarative Redirect reconciliation for application-contained
   regular expression, replacement, and permanence with duplicate regular
   expression rejection, authoritative `application.one` discovery with

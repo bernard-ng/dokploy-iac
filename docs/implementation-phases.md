@@ -180,8 +180,15 @@ durable state semantics.
   fail-closed updates that require the declared password, manual recovery for
   unprovable password rotation, and secret-free protected import (ADR 0043).
   Both disposable live acceptances never deploy the application.
-- Mounts, backups, and schedules use the shared typed-target and
-  external-selector model in ADR 0026.
+- Mounts are declarative end to end as environment-contained resources whose
+  typed target (application, Compose, or a supported database) is an owned
+  property and inferred dependency, with authoritative per-target discovery,
+  direct-read agreement, descriptor-only fingerprinted file content, fresh-read
+  complete-replacement updates, delete-before-create replacement on target or
+  storage-type change, explicit recovery, and protected import (ADR 0044). The
+  disposable live acceptance never deploys a target.
+- Backups and schedules use the shared typed-target and external-selector
+  model in ADR 0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
   MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
   `target.one.backups` collections, mutations prove identity and target

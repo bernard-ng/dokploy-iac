@@ -636,6 +636,39 @@ evidence, state, journals, and plan output; cleanup proves project and every
 observed identity absent and discards the private directory. The sanitization
 self-test proves the scanner fails on a seeded password canary and API key.
 
+## Live Mount declarative apply test
+
+Verify Mount reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-mount-apply.sh
+scripts/integration/test-mount-evidence-sanitization.sh
+```
+
+The apply check creates a disposable project, environment, two undeployed
+applications, and an undeployed raw Compose service, then three Mounts: a
+volume Mount on the first application, a volume Mount on the Compose service,
+and a file Mount whose content comes from a private file descriptor. It
+requires an immediate no-op plan and proves each exact record, the exact remote
+file content, and each target's authoritative `mounts.listByServiceId`
+collection.
+
+One apply then edits the volume path in place and rotates the file content
+while proving every physical identity is unchanged. Changing the target
+application and then the storage type (volume to bind) each prove
+delete-before-create replacement, a new identity, and absence of the old one
+through `mounts.one` (HTTP 404). A declarative removal proves identity and
+collection absence, removes the durable state entry, and requires a no-op plan.
+The check then creates a Mount out of band, adopts it through protected import
+into a separate workspace, and requires an immediate no-op plan. Every touched
+application and the Compose service must report zero deployments. Raw responses
+and the content files stay in a private directory that cleanup discards;
+retained evidence is reduced to an allowlist, and generated content canaries and
+the integration API key are scanned across all retained evidence, state,
+journals, and plan output. Cleanup proves the project and every observed Mount
+identity absent. The sanitization self-test proves the scanner fails on a
+seeded content canary and API key.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector
