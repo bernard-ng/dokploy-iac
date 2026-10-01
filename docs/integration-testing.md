@@ -705,6 +705,42 @@ the project and every record carrying the run prefix and proves their absence.
 Retained evidence is scanned for the API key, the fingerprint key, and every
 secret and identity canary.
 
+## Live Schedule declarative apply test
+
+Verify Schedule reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-schedule-apply.sh
+scripts/integration/test-schedule-evidence-sanitization.sh
+```
+
+The apply check creates a disposable project, environment, two undeployed
+applications, and an undeployed raw Compose service, then three Schedules, all
+disabled with far-future cron expressions: two on the first application and one
+on the Compose service. Each command and script comes from a private file
+descriptor. It requires an immediate no-op plan and proves each exact record,
+the exact remote command and script bytes, and each target's authoritative
+`schedule.list` collection.
+
+One apply then edits the cron expression, description, and timezone in place and
+rotates the command and script while proving every physical identity is
+unchanged and the new remote bytes are exact. Changing the target application
+proves delete-before-create replacement, a new identity, and absence of the old
+one through `schedule.one` (HTTP 404). A declarative removal proves identity and
+collection absence, removes the durable state entry, and requires a no-op plan.
+The check then creates a disabled Schedule out of band through a private request
+body, adopts it through protected import into a separate workspace, and requires
+an immediate no-op plan with no executable text in the imported configuration or
+state. Every Schedule must report zero deployments in its collection record,
+which proves none ever executed, and every touched application and the Compose
+service must report zero deployments. Raw responses and the executable-text
+files stay in a private directory that cleanup discards; retained evidence is
+reduced to an allowlist, and generated command and script canaries and the
+integration API key are scanned across all retained evidence, state, journals,
+and plan output. Cleanup proves the project and every observed Schedule identity
+absent. The sanitization self-test proves the scanner fails on seeded command and
+script canaries and that the scrubber refuses an unexpected directory.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector

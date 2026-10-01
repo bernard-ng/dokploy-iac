@@ -55,6 +55,17 @@ All notable changes to this project will be documented in this file.
   placement; manual recovery when a selector stops resolving uniquely;
   name-selector import; and a live acceptance with inert, tripwired external
   records (ADR 0045).
+- Add end-to-end declarative Schedule reconciliation for application and
+  Compose-service targets with a typed target union, an explicit target-scoped
+  name, cron expression, shell, and required `enabled` flag, descriptor-only
+  fingerprinted command and script, parse-time duplicate-name, malformed-value,
+  and null-executable rejection, authoritative per-target `schedule.list`
+  discovery with direct-read agreement, fresh-read complete-replacement updates
+  with exact executable proofs, delete-before-create replacement on target or
+  service change, journaled outcome-unknown recovery with manual intervention
+  for unprovable executable rotation, protected import with the target
+  ancestry, and a disabled, never-executed, canary-scanned disposable live
+  acceptance (ADR 0046).
 - Add end-to-end declarative Mount reconciliation for application, Compose,
   and database targets with a typed target union, bind, volume, and file
   sources, descriptor-only fingerprinted file content, target-scoped

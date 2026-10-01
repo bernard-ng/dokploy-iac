@@ -187,6 +187,16 @@ durable state semantics.
   complete-replacement updates, delete-before-create replacement on target or
   storage-type change, explicit recovery, and protected import (ADR 0044). The
   disposable live acceptance never deploys a target.
+- Schedules are declarative end to end as environment-contained resources whose
+  typed target (an application, or a Compose service) is an owned property and
+  inferred dependency, with an explicit target-scoped name, a required
+  `enabled` flag, descriptor-only fingerprinted command and script,
+  authoritative per-target `schedule.list` discovery with direct-read
+  agreement, fresh-read complete-replacement updates, delete-before-create
+  replacement on target or service change, explicit recovery that never guesses
+  an executable rotation, and protected import (ADR 0046). The disposable live
+  acceptance keeps every Schedule disabled and proves none ever executed or
+  deployed a target.
 - External selector resolution is implemented for application server,
   build-server, and registry associations (ADR 0045): typed local-or-named
   selectors, fresh minimal collection reads with exact-name matching that
@@ -194,10 +204,10 @@ durable state semantics.
   resolved identities, create-time placement with in-place nullable
   associations and delete-before-create replacement on a changed placement, and
   name-selector import. The resolver seam is kind-agnostic and already reads
-  backup destinations; wiring Backup destinations and Schedule server scopes
-  onto it remains.
-- Backups and schedules use the shared typed-target and external-selector
-  model in ADR 0026.
+  backup destinations; wiring Backup destinations onto it remains. Schedule
+  server and Dokploy-server scopes stay unsupported (ADR 0033).
+- Backups use the shared typed-target and external-selector model in ADR
+  0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
   MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
   `target.one.backups` collections, mutations prove identity and target

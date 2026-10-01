@@ -31,8 +31,8 @@ about ownership, drift, secrets, remote identity, and recovery.
 - A strict, versioned `dokploy.yaml` format for projects, environments,
   applications, application ports, redirects, and basic-auth security
   entries, Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL,
-  Redis, domains, and mounts on applications, Compose services, and
-  databases. Application server, build-server, and registry associations select
+  Redis, domains, mounts on applications, Compose services, and
+  databases, and schedules on applications and Compose services. Application server, build-server, and registry associations select
   external infrastructure by stable local-or-named selectors that are resolved
   against fresh server and registry collections and bound into saved plans.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
@@ -134,7 +134,7 @@ The foundation, API/SDK, durable state, configuration language, and core
 planner are implemented. Fresh remote projection covers projects,
 environments, applications, application ports, redirects, security entries,
 Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, Redis,
-application domains, and mounts.
+application domains, mounts, and schedules.
 Adapter-owned contracts classify in-place changes, reparenting, and ordered
 replacement without admitting mutation code to the planner.
 
