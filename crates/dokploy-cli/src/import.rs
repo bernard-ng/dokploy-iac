@@ -24,6 +24,8 @@ use thiserror::Error;
 
 use crate::cli::ImportKind;
 
+mod mount;
+
 const INTERACTIVE_LIBSQL_ITEM_LIMIT: usize = 10_000;
 
 /// A complete noninteractive import selection.
@@ -315,6 +317,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Port => "port",
         ImportKind::Redirect => "redirect",
         ImportKind::Security => "security",
+        ImportKind::Mount => "mount",
     }
 }
 
@@ -608,6 +611,7 @@ async fn discover(
                 .await?;
             build_security(project, environment, application, entry, target)
         }
+        ImportKind::Mount => mount::discover_mount(client, remote_id, target).await,
     }
 }
 
@@ -1578,6 +1582,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Port => ResourceKind::Port,
         ImportKind::Redirect => ResourceKind::Redirect,
         ImportKind::Security => ResourceKind::Security,
+        ImportKind::Mount => ResourceKind::Mount,
     }
 }
 

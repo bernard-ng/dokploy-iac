@@ -215,6 +215,7 @@ pub enum ImportKind {
     Port,
     Redirect,
     Security,
+    Mount,
 }
 
 #[derive(Subcommand)]

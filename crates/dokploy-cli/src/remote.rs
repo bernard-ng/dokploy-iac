@@ -14,6 +14,8 @@ use thiserror::Error;
 use crate::desired::CompiledDesired;
 
 mod leaf;
+mod mount;
+pub(crate) use mount::{mount_service_target, mount_type_label};
 
 /// Whether `project.all` is known to contain every project visible to reconciliation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,6 +143,15 @@ pub enum SecurityTopologyAuthority {
     Partial,
 }
 
+/// Whether an exact target's Mount collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MountTopologyAuthority {
+    /// Absence from `mounts.listByServiceId` proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -172,6 +183,8 @@ pub struct DiscoveryAuthority {
     pub redirects: RedirectTopologyAuthority,
     /// Completeness of each exact application's Security collection.
     pub security: SecurityTopologyAuthority,
+    /// Completeness of each exact target's Mount collection.
+    pub mounts: MountTopologyAuthority,
 }
 
 impl DiscoveryAuthority {
@@ -193,6 +206,7 @@ impl DiscoveryAuthority {
             ports: PortTopologyAuthority::Authoritative,
             redirects: RedirectTopologyAuthority::Authoritative,
             security: SecurityTopologyAuthority::Authoritative,
+            mounts: MountTopologyAuthority::Authoritative,
         }
     }
 }
@@ -419,6 +433,21 @@ pub enum DiscoverRemoteError {
     /// Direct and authoritative parent Security reads contradict each other.
     #[error("DOKREM077: Security read endpoints returned conflicting topology")]
     SecurityTopologyConflict,
+    /// A Mount has no valid typed target binding.
+    #[error("DOKREM080: Mount target binding is unavailable")]
+    MountTarget,
+    /// A Mount physical identity does not satisfy the state contract.
+    #[error("DOKREM081: Mount topology contains an invalid remote identity")]
+    InvalidMountId,
+    /// More than one Mount occupies one target-scoped mount path.
+    #[error("DOKREM082: Mount topology contains a duplicate target-scoped mount path")]
+    DuplicateMountCollision,
+    /// More than one logical address resolves to the same Mount identity.
+    #[error("DOKREM083: Mount topology contains a duplicate remote identity")]
+    DuplicateMountId,
+    /// Direct and authoritative target Mount reads contradict each other.
+    #[error("DOKREM084: Mount read endpoints returned conflicting topology")]
+    MountTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -550,6 +579,15 @@ pub async fn discover_remote(
         discover_domain_observations(client, compiled, state, &observations, authority.domains)
             .await?;
     observations.extend(domains);
+    let mounts = mount::discover_mount_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.mounts,
+    )
+    .await?;
+    observations.extend(mounts);
 
     remote_state_with_contracts(state.instance().clone(), observations)
         .map_err(DiscoverRemoteError::InvalidRemoteState)

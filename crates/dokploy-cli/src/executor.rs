@@ -31,6 +31,8 @@ use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::desired::{CompileDesiredError, compile_desired_for_instance};
+
+mod mount;
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
 use crate::saved_plan::{SavedPlan, SavedPlanError};
 use crate::sensitive::SensitiveFingerprinter;
@@ -302,6 +304,14 @@ async fn apply_workspace_with_expectation(
         }
         if change.kind() != ChangeKind::Create {
             execute_existing_change(client, &mut compiled, change, &mut state, &mut journal)
+                .await?;
+            applied += 1;
+            change_index += 1;
+            continue;
+        }
+
+        if change.address().kind() == ResourceKind::Mount {
+            mount::execute_mount_create(client, &mut compiled, change, &mut state, &mut journal)
                 .await?;
             applied += 1;
             change_index += 1;
@@ -787,6 +797,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Port
                     | ResourceKind::Redirect
                     | ResourceKind::Security
+                    | ResourceKind::Mount
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
@@ -799,6 +810,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Port
                     | ResourceKind::Redirect
                     | ResourceKind::Security
+                    | ResourceKind::Mount
             ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
         }
     }) {
@@ -1207,7 +1219,12 @@ async fn delete_remote_resource(
                 .delete(SecurityId::new(remote_id.as_str()))
                 .await,
         ),
-        ResourceKind::Mount => None,
+        ResourceKind::Mount => Some(
+            client
+                .mounts()
+                .delete(dokploy_sdk::MountId::new(remote_id.as_str()))
+                .await,
+        ),
     }
 }
 
@@ -2310,6 +2327,11 @@ async fn execute_delete_before_create_replacement(
         return execute_application_leaf_replacement(client, compiled, change, state, journal)
             .await;
     }
+    if change.address().kind() == ResourceKind::Mount
+        && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return mount::execute_mount_replacement(client, compiled, change, state, journal).await;
+    }
     if change.address().kind() != ResourceKind::LibSql
         || change.replacement_order() != Some(ReplacementOrder::DeleteBeforeCreate)
     {
@@ -2801,6 +2823,9 @@ async fn execute_existing_change(
 
     if change.address().kind() == ResourceKind::LibSql && change.kind() == ChangeKind::Update {
         return execute_libsql_update(client, compiled, change, state, journal).await;
+    }
+    if change.address().kind() == ResourceKind::Mount && change.kind() == ChangeKind::Update {
+        return mount::execute_mount_update(client, compiled, change, state, journal).await;
     }
 
     if !matches!(change.kind(), ChangeKind::Update | ChangeKind::Reparent) {
