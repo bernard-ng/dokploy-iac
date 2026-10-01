@@ -35,6 +35,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative Compose reconciliation with authoritative bounded
+  environment discovery, direct-read agreement, descriptor-only document
+  fingerprints, journaled mutations, outcome-unknown recovery, protected
+  document-free import, preserve-volume deletion, and undeployed disposable
+  live acceptance.
 - Add a typed database Backup SDK contract for PostgreSQL, MySQL, MariaDB,
   MongoDB, and LibSQL targets, with safe destination validation, bounded
   authoritative collections, set-difference identity proof, single-attempt

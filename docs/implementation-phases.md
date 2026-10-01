@@ -158,6 +158,12 @@ durable state semantics.
   import. Description, username, and password update in place. Changing the
   atomic primary-or-replica node replaces the undeployed record in
   delete-before-create order.
+- Compose is declarative end to end with strict environment containment,
+  bounded authoritative search and direct-read agreement, descriptor-only
+  document fingerprints, journaled mutations, explicit recovery, and
+  protected document-free import. Description and the opaque raw document
+  update in place. Deletion always preserves volumes, and the disposable live
+  acceptance never deploys the Compose record.
 - Mounts, ports, redirects, security entries, backups, and schedules use the
   shared typed-target and external-selector model in ADR 0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
@@ -167,8 +173,8 @@ durable state semantics.
   deployment, execution, or destination traffic. Compose and web-server
   Backups remain unsupported.
 - Completion still requires declarative reconciliation plus unit, sanitized
-  fixture, and live create-update-delete evidence for every listed adapter and
-  server or registry association.
+  fixture, and live create-update-delete evidence for the remaining listed
+  adapters and server or registry association.
 
 ## Phase 9: import and refactoring workflows — complete
 

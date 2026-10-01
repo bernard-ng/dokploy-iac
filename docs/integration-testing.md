@@ -539,6 +539,32 @@ identity, node, and status fields before they can become retained evidence.
 Cleanup verifies project and database absence, retains owner-only evidence if
 any proof fails, and never deploys the database.
 
+## Live Compose declarative apply test
+
+Verify Compose reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-compose-apply.sh
+```
+
+The check creates a disposable project, environment, and undeployed raw
+Compose record from an environment-backed one-shot document. It requires an
+immediate no-op plan, then updates the nullable description and opaque document
+in one journaled apply and proves convergence again. No provider, refresh
+token, deployment, environment values, or server selector are owned.
+
+The final apply removes the Compose record with the declarative
+preserve-volume policy. The check confirms absence through both `compose.one`
+and the bounded environment-scoped `compose.search`, removes the durable state
+entry, and requires a final no-op plan. Direct and collection responses can
+echo the raw document, so each private response is validated and atomically
+replaced with an allowlisted identity, containment, metadata, and deployment
+status projection. Every command stream, configuration, state file, journal,
+and retained response is scanned for both document canaries and the ephemeral
+fingerprint key, while cleanup also excludes the real integration API key.
+Cleanup proves project and Compose identity absence and keeps only owner-safe
+evidence whenever a proof fails.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector
