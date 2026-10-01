@@ -29,8 +29,9 @@ about ownership, drift, secrets, remote identity, and recovery.
 ### A declarative engine built for safe reconciliation
 
 - A strict, versioned `dokploy.yaml` format for projects, environments,
-  applications, application ports, Compose services, PostgreSQL, MySQL,
-  MariaDB, MongoDB, LibSQL, Redis, and domains.
+  applications, application ports, redirects, and basic-auth security
+  entries, Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL,
+  Redis, and domains.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
 - Dedicated containment separate from general dependency ordering, persisted
@@ -128,8 +129,9 @@ the context workflow without exposing stored API keys.
 
 The foundation, API/SDK, durable state, configuration language, and core
 planner are implemented. Fresh remote projection covers projects,
-environments, applications, application ports, Compose services, PostgreSQL,
-MySQL, MariaDB, MongoDB, LibSQL, Redis, and application domains.
+environments, applications, application ports, redirects, security entries,
+Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, Redis, and
+application domains.
 Adapter-owned contracts classify in-place changes, reparenting, and ordered
 replacement without admitting mutation code to the planner.
 

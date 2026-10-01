@@ -170,8 +170,18 @@ durable state semantics.
   delete-before-create containment replacement, explicit recovery, and
   protected import. The disposable live acceptance never deploys the
   application.
-- Mounts, redirects, security entries, backups, and schedules use the shared
-  typed-target and external-selector model in ADR 0026.
+- Redirects are declarative end to end as application-contained resources
+  keyed by regular expression with authoritative `application.one` discovery,
+  direct-read agreement, fresh-read complete-replacement updates that keep
+  unowned fields, delete-before-create containment replacement, explicit
+  recovery, and protected import (ADR 0042).
+- Security entries are declarative end to end as application-contained
+  resources keyed by username with descriptor-only fingerprinted passwords,
+  fail-closed updates that require the declared password, manual recovery for
+  unprovable password rotation, and secret-free protected import (ADR 0043).
+  Both disposable live acceptances never deploy the application.
+- Mounts, backups, and schedules use the shared typed-target and
+  external-selector model in ADR 0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
   MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
   `target.one.backups` collections, mutations prove identity and target

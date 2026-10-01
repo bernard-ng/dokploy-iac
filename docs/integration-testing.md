@@ -590,6 +590,52 @@ in a private directory that cleanup discards, retained evidence is reduced to an
 allowlist and scanned for the integration API key, and cleanup proves project
 and every observed Port identity absent.
 
+## Live Redirect declarative apply test
+
+Verify Redirect reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-redirect-apply.sh
+```
+
+The check creates a disposable project, environment, and two undeployed
+applications with one Redirect under the first application. It requires an
+immediate no-op plan, replaces all three owned fields in one apply while proving
+the physical identity is unchanged, and then moves the Redirect under the second
+application to prove delete-before-create replacement, a new identity, absence
+of the old identity, and an empty former parent collection.
+
+The next apply removes the Redirect declaratively. The check confirms absence
+through `redirects.one` (HTTP 404) and the authoritative `application.one`
+collection, removes the durable state entry, and requires a no-op plan. It then
+creates a Redirect out of band, adopts it through protected import into a
+separate workspace, and requires an immediate no-op plan. Every touched
+application must report zero deployments. Raw responses stay in a private
+directory that cleanup discards, retained evidence is reduced to an allowlist
+and scanned for the integration API key, and cleanup proves project and every
+observed Redirect identity absent.
+
+## Live Security declarative apply test
+
+Verify basic-auth reconciliation independently against the pinned local
+instance:
+
+```bash
+scripts/integration/test-security-apply.sh
+scripts/integration/test-security-evidence-sanitization.sh
+```
+
+The apply check follows the Redirect lifecycle with one entry whose password
+comes from a private file descriptor: undeployed create, no-op plan, a username
+and password rotation that proves the exact credentials privately, containment
+replacement, declarative deletion with `security.one` (HTTP 404) and collection
+absence, and protected import of an out-of-band entry that leaves the password
+unmanaged. Every touched application must report zero deployments. Generated
+password canaries and the integration API key are scanned across all retained
+evidence, state, journals, and plan output; cleanup proves project and every
+observed identity absent and discards the private directory. The sanitization
+self-test proves the scanner fails on a seeded password canary and API key.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector

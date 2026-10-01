@@ -43,6 +43,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative Redirect reconciliation for application-contained
+  regular expression, replacement, and permanence with duplicate regular
+  expression rejection, authoritative `application.one` discovery with
+  direct-read agreement, fresh-read complete-replacement updates that preserve
+  unowned fields, delete-before-create containment replacement, journaled
+  outcome-unknown recovery, protected import, and undeployed disposable live
+  acceptance.
+- Add end-to-end declarative Security (basic-auth) reconciliation for
+  application-contained usernames with descriptor-only, fingerprinted
+  passwords, duplicate username rejection, authoritative discovery that never
+  retains remote passwords, complete-credential updates that fail closed
+  without a declared password, delete-before-create containment replacement,
+  manual-intervention recovery for unprovable password rotations, protected
+  secret-free import, and a canary-scanned undeployed live acceptance.
 - Add end-to-end declarative Port reconciliation for application-contained
   published port, target port, publish mode, and protocol with duplicate
   collision rejection, authoritative `application.one` discovery with
