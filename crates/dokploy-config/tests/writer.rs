@@ -1,9 +1,9 @@
 use std::fs;
 
 use dokploy_config::{
-    ApplicationDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError, DokployConfig,
-    DomainDocument, EnvironmentDocument, Field, MySqlDocument, PostgresDocument, RedisDocument,
-    SourceDocument, render, write,
+    ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,
+    DokployConfig, DomainDocument, EnvironmentDocument, Field, MySqlDocument, PostgresDocument,
+    RedisDocument, SourceDocument, render, write,
 };
 use dokploy_state::{ResourceKind, ResourceName};
 
@@ -17,6 +17,11 @@ project:
 environments:
   production:
     description: Production
+    compose:
+      web:
+        description: "Web: production"
+        document:
+          file: deploy/compose.yaml
     postgres:
       main:
         database: app
@@ -100,6 +105,8 @@ fn renders_the_complete_mvp_model_as_deterministic_nested_yaml() {
     assert!(first.starts_with("version: 1\nproject:\n"));
     assert!(first.contains("\nenvironments:\n  production:\n"));
     assert!(first.contains("\n    applications:\n      api:\n"));
+    assert!(first.contains("\n    compose:\n      web:\n"));
+    assert!(first.contains("        document:\n          file: \"deploy/compose.yaml\"\n"));
     assert!(first.contains("\n    mysql:\n      analytics:\n"));
     assert!(first.contains("        root_password:\n"));
     assert!(first.contains("\n    mariadb:\n      reporting:\n"));
@@ -108,6 +115,36 @@ fn renders_the_complete_mvp_model_as_deterministic_nested_yaml() {
     assert!(first.contains("\n    libsql:\n      edge:\n"));
     assert!(first.contains("        node:\n          type: \"primary\"\n"));
     assert!(!first.contains("resources:"));
+}
+
+#[test]
+fn typed_import_document_writes_protected_compose_with_unmanaged_document() {
+    let mut document = ConfigDocument::new(name("platform"));
+    let mut production = EnvironmentDocument::default();
+    production
+        .add_compose(
+            name("web"),
+            ComposeDocument {
+                description: Field::Set("Imported stack".to_owned()),
+                document: Field::Unmanaged,
+                lifecycle: dokploy_config::LifecycleDocument {
+                    protect: Field::Set(true),
+                    ..dokploy_config::LifecycleDocument::default()
+                },
+                ..ComposeDocument::default()
+            },
+        )
+        .expect("Compose address is unique");
+    document
+        .add_environment(name("production"), production)
+        .expect("environment is unique");
+
+    let rendered = document.render().expect("import document renders");
+
+    assert!(rendered.contains("\n    compose:\n      web:\n"));
+    assert!(rendered.contains("        description: \"Imported stack\"\n"));
+    assert!(rendered.contains("          protect: true\n"));
+    assert!(!rendered.contains("document:"));
 }
 
 #[test]

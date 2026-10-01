@@ -78,6 +78,7 @@ fn resource_addresses_have_one_canonical_text_form() {
     assert_eq!(mysql.to_string(), "mysql.primary");
 
     for (value, kind) in [
+        ("compose.web", ResourceKind::Compose),
         ("mariadb.primary", ResourceKind::MariaDb),
         ("mongo.documents", ResourceKind::Mongo),
         ("libsql.edge", ResourceKind::LibSql),
@@ -99,6 +100,7 @@ fn remaining_database_state_requires_environment_containment() {
         .expect("environment address must parse");
 
     for kind in [
+        ResourceKind::Compose,
         ResourceKind::MariaDb,
         ResourceKind::Mongo,
         ResourceKind::LibSql,
@@ -175,6 +177,8 @@ fn managed_inputs_accept_objects_and_reject_secret_bearing_fields() {
         "api-key",
         "private_key",
         "build_secrets",
+        "document",
+        "composeFile",
     ] {
         assert!(
             ManagedInputs::try_from_json(json!({ key: "secret" })).is_err(),
@@ -225,10 +229,13 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
     let password = SensitivePropertyPath::parse("password").expect("password path must parse");
     let root_password =
         SensitivePropertyPath::parse("root_password").expect("root password path must parse");
+    let document =
+        SensitivePropertyPath::parse("document").expect("Compose document path must parse");
     let environment =
         SensitivePropertyPath::parse("environment.API_TOKEN").expect("environment path must parse");
     let sensitive = SensitiveInputs::try_from_entries([
         (environment.clone(), receipt.clone()),
+        (document.clone(), receipt.clone()),
         (password.clone(), receipt.clone()),
         (root_password.clone(), receipt),
     ])
@@ -237,6 +244,7 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
     assert!(sensitive.fingerprint(&password).is_some());
     assert!(sensitive.fingerprint(&root_password).is_some());
     assert!(sensitive.fingerprint(&environment).is_some());
+    assert!(sensitive.fingerprint(&document).is_some());
     assert!(
         SensitiveInputs::try_from_entries([
             (password.clone(), fingerprint(0x01)),

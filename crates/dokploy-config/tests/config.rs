@@ -207,6 +207,77 @@ environments:
 }
 
 #[test]
+fn parses_compose_with_an_opaque_document_descriptor_and_strict_owned_surface() {
+    let config = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    compose:
+      web:
+        description: Web stack
+        document:
+          file: deploy/compose.yaml
+"#,
+    )
+    .expect("Compose configuration is valid");
+
+    let compose = config
+        .resource(&"compose.web".parse().unwrap())
+        .expect("Compose resource exists")
+        .as_compose()
+        .expect("resource is Compose");
+    assert_eq!(compose.description(), &Field::Set("Web stack".to_owned()));
+    assert!(
+        matches!(compose.document(), Field::Set(source) if source.file_path() == Some("deploy/compose.yaml"))
+    );
+    assert_eq!(
+        config
+            .parent_of(&"compose.web".parse().unwrap())
+            .expect("Compose has an environment parent")
+            .to_string(),
+        "environment.production"
+    );
+
+    for body in [
+        "description: imported without protection",
+        "document: inline-is-not-a-descriptor",
+        "document: null",
+        "provider: github",
+        "deploy: true",
+        "refresh_token: forbidden",
+        "environment: { TOKEN: forbidden }",
+        "server_id: deferred",
+    ] {
+        let source = format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      web:\n        {body}\n"
+        );
+        assert!(
+            DokployConfig::parse(&source).is_err(),
+            "unsupported Compose shape parsed unexpectedly: {body}"
+        );
+    }
+
+    DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    compose:
+      imported:
+        description: Imported stack
+        lifecycle:
+          protect: true
+"#,
+    )
+    .expect("protected imports may leave the opaque document unmanaged");
+}
+
+#[test]
 fn remaining_database_shapes_reject_explicitly_unsupported_fields() {
     for body in [
         "mariadb:\n      main:\n        description: unsupported",
@@ -528,6 +599,12 @@ fn generated_schema_is_strict_and_models_nullable_owned_fields() {
     assert!(rendered.contains("removed"));
     assert!(rendered.contains("mysql"));
     assert!(rendered.contains("root_password"));
+    assert!(rendered.contains("compose"));
+    assert_eq!(
+        schema["$defs"]["RawCompose"]["properties"]["document"],
+        schema["$defs"]["RawPostgres"]["properties"]["password"]
+    );
+    assert_eq!(schema["$defs"]["RawCompose"]["additionalProperties"], false);
     assert_eq!(
         schema["$defs"]["ConfigValue"]["oneOf"]
             .as_array()

@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 
 use crate::model::{
-    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
+    ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
     LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PostgresConfig, ProjectConfig,
     RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
 };
@@ -66,6 +66,9 @@ struct RawEnvironment {
     #[schemars(with = "BTreeMap<String, RawApplication>")]
     applications: BTreeMap<String, Spanned<RawApplication>>,
     #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawCompose>")]
+    compose: BTreeMap<String, Spanned<RawCompose>>,
+    #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawPostgres>")]
     postgres: BTreeMap<String, Spanned<RawPostgres>>,
     #[serde(default)]
@@ -99,6 +102,20 @@ struct RawApplication {
     source: Field<SourceConfig>,
     #[serde(default)]
     environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawCompose {
+    #[serde(default)]
+    description: Field<String>,
+    #[serde(default)]
+    document: Field<SecretSource>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -358,6 +375,26 @@ impl DokployConfig {
                         replicas: raw_config.replicas,
                         source: raw_config.source,
                         environment: raw_config.environment,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
+
+            for (name, raw_config) in environment.compose {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address =
+                    address(ResourceKind::Compose, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::Compose(ComposeConfig {
+                        description: raw_config.description,
+                        document: raw_config.document,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -711,6 +748,25 @@ fn validate_resources(
             );
         }
 
+        if let ResourceConfig::Compose(compose) = config
+            && matches!(compose.document, Field::Clear)
+        {
+            emit(
+                diagnostics,
+                ValidationIssue::ComposeDocumentCannotBeCleared,
+                location,
+            );
+        } else if let ResourceConfig::Compose(compose) = config
+            && matches!(compose.document, Field::Unmanaged)
+            && !matches!(compose.lifecycle.protect(), Field::Set(true))
+        {
+            emit(
+                diagnostics,
+                ValidationIssue::UnmanagedComposeDocumentRequiresProtection,
+                location,
+            );
+        }
+
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
     }
@@ -809,6 +865,7 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         ResourceKind::Application => matches!(value.as_str(), "url"),
         ResourceKind::Project
         | ResourceKind::Environment
+        | ResourceKind::Compose
         | ResourceKind::LibSql
         | ResourceKind::Domain => false,
     }
@@ -826,6 +883,7 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
                 | "source.branch"
                 | "deployment.status"
         ),
+        ResourceKind::Compose => value == "description",
         ResourceKind::Postgres | ResourceKind::MySql | ResourceKind::MariaDb => {
             matches!(value.as_str(), "database" | "username")
         }

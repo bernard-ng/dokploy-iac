@@ -519,6 +519,9 @@ async fn apply_workspace_with_expectation(
                     continue;
                 }
             }
+            ResourceKind::Compose => {
+                return Err(ApplyWorkspaceError::UnsupportedChange);
+            }
             ResourceKind::Postgres => {
                 let environment_id = checkpoint_environment_id(checkpoint, &state)?;
                 let database = required_string(checkpoint, &PropertyPath::Database)?;
@@ -718,7 +721,9 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
-        ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => true,
+        ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => {
+            change.address().kind() != ResourceKind::Compose
+        }
         ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
         ChangeKind::Replace => {
             change.address().kind() == ResourceKind::LibSql
@@ -897,6 +902,7 @@ async fn prepare_move_mutation(
                 current_environment,
             )?))
         }
+        ResourceKind::Compose => Err(ApplyWorkspaceError::UnsupportedChange),
         ResourceKind::Postgres => {
             let mut input = UpdatePostgres::new(PostgresId::new(remote_id.as_str()));
             for path in selected_paths {
@@ -1055,6 +1061,7 @@ async fn delete_remote_resource(
                 .delete(ApplicationId::new(remote_id.as_str()))
                 .await,
         ),
+        ResourceKind::Compose => None,
         ResourceKind::Postgres => Some(
             client
                 .postgres()
@@ -2334,6 +2341,9 @@ async fn execute_existing_change(
                 input = input.with_environment_id(checkpoint_environment_id(checkpoint, state)?);
             }
             ExistingMutation::Application(input)
+        }
+        ResourceKind::Compose => {
+            return Err(ApplyWorkspaceError::UnsupportedChange);
         }
         ResourceKind::Postgres => {
             let mut input = UpdatePostgres::new(PostgresId::new(remote_id.as_str()));

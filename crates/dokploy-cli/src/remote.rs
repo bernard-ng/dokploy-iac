@@ -442,6 +442,11 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 .with_default_property(in_place)
                 .with_containment(MutationMode::InPlace)
         }
+        ResourceKind::Compose => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::ComposeDocument)
+            .with_property(PropertyPath::Description, in_place)
+            .with_property(PropertyPath::ComposeDocument, set_only)
+            .with_containment(MutationMode::StateOnly),
         ResourceKind::Postgres => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Database)
             .requiring(PropertyPath::Username)
@@ -2354,6 +2359,7 @@ fn application_properties(
             | PropertyPath::Username
             | PropertyPath::Password
             | PropertyPath::RootPassword
+            | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
             | PropertyPath::Host
@@ -2394,6 +2400,7 @@ fn postgres_properties(
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
             | PropertyPath::RootPassword
+            | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
             | PropertyPath::Host
@@ -2650,6 +2657,7 @@ fn mysql_properties(
             | PropertyPath::SourceBranch
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
             | PropertyPath::Host
@@ -2927,6 +2935,7 @@ fn mariadb_properties(
             | PropertyPath::SourceBranch
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::ComposeDocument
             | PropertyPath::ReplicaSets
             | PropertyPath::Node
             | PropertyPath::Host
@@ -3206,6 +3215,7 @@ fn mongo_properties(
             | PropertyPath::SourceBranch
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::ComposeDocument
             | PropertyPath::Node
             | PropertyPath::Host
             | PropertyPath::Application
@@ -3501,6 +3511,7 @@ fn libsql_properties(
             | PropertyPath::SourceBranch
             | PropertyPath::Environment
             | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::ComposeDocument
             | PropertyPath::Host
             | PropertyPath::Application
             | PropertyPath::DeploymentStatus => continue,

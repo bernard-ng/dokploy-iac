@@ -145,6 +145,17 @@ impl ConfigDocument {
                         },
                     );
                 }
+                ResourceConfig::Compose(config) => {
+                    environment.compose.insert(
+                        address.name().clone(),
+                        ComposeDocument {
+                            description: config.description.clone(),
+                            document: config.document.clone(),
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
                 ResourceConfig::Postgres(config) => {
                     environment.postgres.insert(
                         address.name().clone(),
@@ -294,6 +305,7 @@ pub struct EnvironmentDocument {
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
     applications: BTreeMap<ResourceName, ApplicationDocument>,
+    compose: BTreeMap<ResourceName, ComposeDocument>,
     postgres: BTreeMap<ResourceName, PostgresDocument>,
     mysql: BTreeMap<ResourceName, MySqlDocument>,
     mariadb: BTreeMap<ResourceName, MariaDbDocument>,
@@ -323,6 +335,14 @@ impl EnvironmentDocument {
         postgres: PostgresDocument,
     ) -> Result<(), ConfigDocumentError> {
         insert_resource(&mut self.postgres, name, postgres, ResourceKind::Postgres)
+    }
+
+    pub fn add_compose(
+        &mut self,
+        name: ResourceName,
+        compose: ComposeDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.compose, name, compose, ResourceKind::Compose)
     }
 
     pub fn add_mysql(
@@ -381,6 +401,15 @@ pub struct ApplicationDocument {
     pub replicas: Field<u32>,
     pub source: Field<SourceDocument>,
     pub environment: Field<BTreeMap<String, Field<ConfigValue>>>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// Compose properties accepted by an imported document.
+#[derive(Clone, Default)]
+pub struct ComposeDocument {
+    pub description: Field<String>,
+    pub document: Field<SecretSource>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -578,6 +607,12 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
         );
         render_document_children(
             &mut output,
+            "compose",
+            &environment.compose,
+            render_compose_document,
+        );
+        render_document_children(
+            &mut output,
             "postgres",
             &environment.postgres,
             render_postgres_document,
@@ -669,6 +704,12 @@ fn render_application_document(output: &mut String, indent: usize, config: &Appl
     u32_field(output, indent, "replicas", &config.replicas);
     document_source_field(output, indent, &config.source);
     environment_field(output, indent, &config.environment);
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+fn render_compose_document(output: &mut String, indent: usize, config: &ComposeDocument) {
+    string_field(output, indent, "description", &config.description);
+    secret_field(output, indent, "document", &config.document);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -820,6 +861,14 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             &mut output,
             config,
             environment_address,
+            ResourceKind::Compose,
+            "compose",
+            render_compose,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
             ResourceKind::Postgres,
             "postgres",
             render_postgres,
@@ -965,6 +1014,22 @@ fn render_application(
     source_field(output, indent, &config.source);
     environment_field(output, indent, &config.environment);
     common_fields(output, indent, config.depends_on(), config.lifecycle());
+
+    Ok(())
+}
+
+fn render_compose(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Compose(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    string_field(output, indent, "description", &config.description);
+    secret_field(output, indent, "document", &config.document);
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
 }

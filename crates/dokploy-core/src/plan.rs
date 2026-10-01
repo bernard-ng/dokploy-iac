@@ -461,13 +461,15 @@ impl ResourceCheckpoint {
                         return Err(CheckpointMaterializationError::InvalidPropertyShape);
                     }
                 },
-                PropertyPath::Password | PropertyPath::RootPassword => match value {
+                PropertyPath::Password
+                | PropertyPath::RootPassword
+                | PropertyPath::ComposeDocument => match value {
                     OwnedValue::Null => {
                         managed.insert(path.to_string(), serde_json::Value::Null);
                     }
                     OwnedValue::Sensitive(intent) => sensitive.push((
                         SensitivePropertyPath::parse(&path.to_string())
-                            .expect("password paths are canonical sensitive paths"),
+                            .expect("write-only paths are canonical sensitive paths"),
                         intent.fingerprint().clone(),
                     )),
                     OwnedValue::EmptyCollection | OwnedValue::Value(_) => {

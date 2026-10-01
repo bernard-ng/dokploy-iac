@@ -253,6 +253,20 @@ fn compile_desired_with_fingerprints(
                     fingerprints,
                 )?;
             }
+            ResourceConfig::Compose(compose) => {
+                compile_string_field(
+                    &mut properties,
+                    PropertyPath::Description,
+                    compose.description(),
+                );
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::ComposeDocument,
+                    compose.document(),
+                    fingerprints,
+                )?;
+            }
             ResourceConfig::Postgres(postgres) => {
                 compile_string_field(&mut properties, PropertyPath::Database, postgres.database());
                 compile_string_field(&mut properties, PropertyPath::Username, postgres.username());
@@ -441,6 +455,7 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
+            | ResourceConfig::Compose(_)
             | ResourceConfig::Postgres(_)
             | ResourceConfig::MySql(_)
             | ResourceConfig::MariaDb(_)

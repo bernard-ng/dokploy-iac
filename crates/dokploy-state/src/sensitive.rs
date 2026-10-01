@@ -178,6 +178,7 @@ pub struct SensitivePropertyPath(SensitivePropertyPathKind);
 enum SensitivePropertyPathKind {
     Password,
     RootPassword,
+    ComposeDocument,
     EnvironmentVariable(String),
 }
 
@@ -189,6 +190,9 @@ impl SensitivePropertyPath {
         }
         if value == "root_password" {
             return Ok(Self(SensitivePropertyPathKind::RootPassword));
+        }
+        if value == "document" {
+            return Ok(Self(SensitivePropertyPathKind::ComposeDocument));
         }
 
         let name = value
@@ -211,10 +215,15 @@ impl SensitivePropertyPath {
         matches!(self.0, SensitivePropertyPathKind::RootPassword)
     }
 
+    pub(crate) const fn is_compose_document(&self) -> bool {
+        matches!(self.0, SensitivePropertyPathKind::ComposeDocument)
+    }
+
     pub(crate) fn environment_name(&self) -> Option<&str> {
         match &self.0 {
             SensitivePropertyPathKind::Password => None,
             SensitivePropertyPathKind::RootPassword => None,
+            SensitivePropertyPathKind::ComposeDocument => None,
             SensitivePropertyPathKind::EnvironmentVariable(name) => Some(name),
         }
     }
@@ -225,6 +234,7 @@ impl fmt::Display for SensitivePropertyPath {
         match &self.0 {
             SensitivePropertyPathKind::Password => formatter.write_str("password"),
             SensitivePropertyPathKind::RootPassword => formatter.write_str("root_password"),
+            SensitivePropertyPathKind::ComposeDocument => formatter.write_str("document"),
             SensitivePropertyPathKind::EnvironmentVariable(name) => {
                 write!(formatter, "environment.{name}")
             }

@@ -79,7 +79,7 @@ environments:
 }
 
 #[test]
-fn remaining_database_secrets_are_fingerprinted_and_bound_once() {
+fn remaining_database_and_compose_secrets_are_fingerprinted_and_bound_once() {
     let config = DokployConfig::parse(
         r#"
 version: 1
@@ -87,6 +87,10 @@ project:
   name: platform
 environments:
   production:
+    compose:
+      web:
+        document:
+          file: deploy/compose.yaml
     mariadb:
       main:
         password:
@@ -117,6 +121,10 @@ environments:
                 Ok(b"libsql-password".to_vec()),
             ),
         ]),
+        files: BTreeMap::from([(
+            "deploy/compose.yaml".to_owned(),
+            Ok(b"services:\n  web:\n    image: private-canary\n".to_vec()),
+        )]),
         ..RecordingSourceResolver::default()
     };
     let loader = existing_fingerprinter_loader();
@@ -132,6 +140,11 @@ environments:
     .unwrap();
 
     for (address, path, expected) in [
+        (
+            "compose.web",
+            PropertyPath::ComposeDocument,
+            b"services:\n  web:\n    image: private-canary\n".as_slice(),
+        ),
         (
             "mariadb.main",
             PropertyPath::Password,
@@ -169,6 +182,7 @@ environments:
 
     let debug = format!("{compiled:?}");
     for canary in [
+        "private-canary",
         "mariadb-user",
         "mariadb-root",
         "mongo-password",

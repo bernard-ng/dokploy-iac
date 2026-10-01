@@ -10,6 +10,7 @@ pub enum ResourceKind {
     Project,
     Environment,
     Application,
+    Compose,
     Postgres,
     #[serde(rename = "mysql")]
     MySql,
@@ -30,6 +31,7 @@ impl ResourceKind {
             Self::Project => "project",
             Self::Environment => "environment",
             Self::Application => "application",
+            Self::Compose => "compose",
             Self::Postgres => "postgres",
             Self::MySql => "mysql",
             Self::MariaDb => "mariadb",
@@ -47,6 +49,7 @@ impl ResourceKind {
             Self::Project => None,
             Self::Environment => Some(Self::Project),
             Self::Application
+            | Self::Compose
             | Self::Postgres
             | Self::MySql
             | Self::MariaDb
@@ -84,6 +87,7 @@ impl FromStr for ResourceKind {
             "project" => Ok(Self::Project),
             "environment" => Ok(Self::Environment),
             "application" => Ok(Self::Application),
+            "compose" => Ok(Self::Compose),
             "postgres" => Ok(Self::Postgres),
             "mysql" => Ok(Self::MySql),
             "mariadb" => Ok(Self::MariaDb),

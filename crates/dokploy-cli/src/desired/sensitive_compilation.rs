@@ -185,6 +185,14 @@ fn preflight_sensitive_inputs(
                     }
                 }
             }
+            ResourceConfig::Compose(compose) => {
+                if let Field::Set(source) = compose.document() {
+                    inputs.insert(
+                        (address.clone(), PropertyPath::ComposeDocument),
+                        pending_secret_source(source),
+                    );
+                }
+            }
             ResourceConfig::Postgres(postgres) => {
                 if let Field::Set(source) = postgres.password() {
                     inputs.insert(

@@ -28,7 +28,7 @@ pub use file::{
     load_with_digest,
 };
 pub use model::{
-    ApplicationConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
+    ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
     LibSqlNodeConfig, MariaDbConfig, MongoConfig, MySqlConfig, PostgresConfig, ProjectConfig,
     RedisConfig, ResourceConfig, SourceLocation, ValidationDiagnostic, ValidationIssue,
 };
@@ -37,7 +37,8 @@ pub use types::{
     RemovedDeclaration, ResourceReference, SecretSource, SecretSourceKind, SourceConfig,
 };
 pub use writer::{
-    ApplicationDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError, DomainDocument,
-    EnvironmentDocument, LibSqlDocument, LifecycleDocument, MariaDbDocument, MongoDocument,
-    MySqlDocument, PostgresDocument, ProjectDocument, RedisDocument, SourceDocument, render, write,
+    ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,
+    DomainDocument, EnvironmentDocument, LibSqlDocument, LifecycleDocument, MariaDbDocument,
+    MongoDocument, MySqlDocument, PostgresDocument, ProjectDocument, RedisDocument, SourceDocument,
+    render, write,
 };

@@ -110,6 +110,11 @@ environments:
         environment: null
       empty:
         environment: {}
+    compose:
+      web:
+        description: Web stack
+        lifecycle:
+          protect: true
     postgres:
       main:
         database: app
@@ -157,7 +162,7 @@ environments:
     let compiled = compile_desired(&config, digest()).expect("configuration compiles");
     let resources = compiled.desired_state().resources();
 
-    assert_eq!(resources.len(), 15);
+    assert_eq!(resources.len(), 16);
     assert_eq!(
         resources[&"environment.production".parse().unwrap()]
             .properties()
@@ -202,6 +207,17 @@ environments:
             .properties()
             .get(&PropertyPath::Environment),
         Some(&OwnedValue::EmptyCollection)
+    );
+
+    let compose = &resources[&"compose.web".parse().unwrap()];
+    assert_eq!(
+        compose.properties().get(&PropertyPath::Description),
+        Some(&value(serde_json::json!("Web stack")))
+    );
+    assert!(
+        !compose
+            .properties()
+            .contains_key(&PropertyPath::ComposeDocument)
     );
 
     let postgres = &resources[&"postgres.main".parse().unwrap()];

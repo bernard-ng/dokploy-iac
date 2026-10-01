@@ -25,6 +25,8 @@ const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "previewenv",
     "buildargs",
     "previewbuildargs",
+    "document",
+    "composefile",
 ];
 
 /// The normalized base URL of the Dokploy instance owning a state lineage.
@@ -558,6 +560,8 @@ fn ensure_disjoint_inputs(
             managed.contains_key("password")
         } else if path.is_root_password() {
             managed.contains_key("root_password")
+        } else if path.is_compose_document() {
+            managed.contains_key("document")
         } else if let Some(name) = path.environment_name() {
             match environment {
                 Some(serde_json::Value::Null) => true,

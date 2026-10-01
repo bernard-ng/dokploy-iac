@@ -75,6 +75,8 @@ pub enum PropertyPath {
     ReplicaSets,
     /// Atomic LibSQL primary-or-replica node selection.
     Node,
+    /// Opaque Compose document.
+    ComposeDocument,
     /// Domain host name.
     Host,
     /// Domain application reference.
@@ -98,7 +100,10 @@ impl PropertyPath {
     pub const fn is_sensitive(&self) -> bool {
         matches!(
             self,
-            Self::Password | Self::RootPassword | Self::EnvironmentVariable(_)
+            Self::Password
+                | Self::RootPassword
+                | Self::ComposeDocument
+                | Self::EnvironmentVariable(_)
         )
     }
 
@@ -132,6 +137,7 @@ impl PropertyPath {
                     | Self::EnvironmentVariable(_)
                     | Self::DeploymentStatus
             ),
+            ResourceKind::Compose => matches!(self, Self::Description | Self::ComposeDocument),
             ResourceKind::Postgres => {
                 matches!(self, Self::Database | Self::Username | Self::Password)
             }
@@ -174,6 +180,7 @@ impl fmt::Display for PropertyPath {
             Self::RootPassword => formatter.write_str("root_password"),
             Self::ReplicaSets => formatter.write_str("replica_sets"),
             Self::Node => formatter.write_str("node"),
+            Self::ComposeDocument => formatter.write_str("document"),
             Self::Host => formatter.write_str("host"),
             Self::Application => formatter.write_str("application"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
@@ -198,6 +205,7 @@ impl FromStr for PropertyPath {
             "root_password" => Ok(Self::RootPassword),
             "replica_sets" => Ok(Self::ReplicaSets),
             "node" => Ok(Self::Node),
+            "document" => Ok(Self::ComposeDocument),
             "host" => Ok(Self::Host),
             "application" => Ok(Self::Application),
             "deployment.status" => Ok(Self::DeploymentStatus),

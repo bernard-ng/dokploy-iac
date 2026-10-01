@@ -740,8 +740,18 @@ fn desired_state_rejects_wrong_kind_and_invalid_dependencies() {
 }
 
 #[test]
-fn remaining_database_property_paths_are_kind_scoped() {
+fn remaining_database_and_compose_property_paths_are_kind_scoped() {
     for (address, properties) in [
+        (
+            address("compose.web"),
+            BTreeMap::from([
+                (
+                    PropertyPath::Description,
+                    OwnedValue::Value(value(json!("Web stack"))),
+                ),
+                (PropertyPath::ComposeDocument, sensitive_intent(0xa0)),
+            ]),
+        ),
         (
             address("mariadb.main"),
             BTreeMap::from([
@@ -797,6 +807,7 @@ fn remaining_database_property_paths_are_kind_scoped() {
     }
 
     for (address, invalid_path) in [
+        (address("compose.web"), PropertyPath::Password),
         (address("mariadb.main"), PropertyPath::ReplicaSets),
         (address("mongo.documents"), PropertyPath::Database),
         (address("libsql.edge"), PropertyPath::RootPassword),
@@ -820,6 +831,11 @@ fn remaining_database_property_paths_are_kind_scoped() {
         PropertyPath::ReplicaSets
     );
     assert_eq!("node".parse::<PropertyPath>().unwrap(), PropertyPath::Node);
+    assert_eq!(
+        "document".parse::<PropertyPath>().unwrap(),
+        PropertyPath::ComposeDocument
+    );
+    assert!(PropertyPath::ComposeDocument.is_sensitive());
 }
 
 #[test]

@@ -56,10 +56,10 @@ fn planned_project_create_materializes_the_exact_durable_resource() {
 }
 
 #[test]
-fn planned_sensitive_create_materializes_only_an_opaque_receipt() {
+fn planned_compose_create_materializes_only_an_opaque_document_receipt() {
     let project: ResourceAddress = "project.platform".parse().expect("address is valid");
     let environment: ResourceAddress = "environment.production".parse().expect("address is valid");
-    let redis: ResourceAddress = "redis.cache".parse().expect("address is valid");
+    let compose: ResourceAddress = "compose.web".parse().expect("address is valid");
     let instance =
         InstanceIdentity::parse("https://deploy.example.com").expect("instance is valid");
     let fingerprint = SensitiveFingerprint::new_v1(
@@ -95,9 +95,9 @@ fn planned_sensitive_create_materializes_only_an_opaque_receipt() {
                 DesiredResource::new(BTreeMap::new()).with_containment(Some(project.clone())),
             ),
             (
-                redis.clone(),
+                compose.clone(),
                 DesiredResource::new(BTreeMap::from([(
-                    PropertyPath::Password,
+                    PropertyPath::ComposeDocument,
                     OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(fingerprint.clone())),
                 )]))
                 .with_containment(Some(environment.clone())),
@@ -123,7 +123,7 @@ fn planned_sensitive_create_materializes_only_an_opaque_receipt() {
                     BTreeMap::new(),
                 )),
             ),
-            (redis.clone(), RemoteObservation::Missing),
+            (compose.clone(), RemoteObservation::Missing),
         ],
     )
     .expect("remote state is valid");
@@ -135,8 +135,8 @@ fn planned_sensitive_create_materializes_only_an_opaque_receipt() {
 
     let materialized = checkpoint
         .materialize(
-            &redis,
-            RemoteId::new("redis-1").expect("remote ID is valid"),
+            &compose,
+            RemoteId::new("compose-1").expect("remote ID is valid"),
         )
         .expect("checkpoint materializes");
 
@@ -147,7 +147,7 @@ fn planned_sensitive_create_materializes_only_an_opaque_receipt() {
     assert_eq!(
         materialized
             .sensitive_inputs()
-            .fingerprint(&SensitivePropertyPath::parse("password").expect("path is valid")),
+            .fingerprint(&SensitivePropertyPath::parse("document").expect("path is valid")),
         Some(&fingerprint)
     );
 }

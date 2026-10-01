@@ -101,6 +101,7 @@ pub enum ResourceConfig {
     Project(ProjectConfig),
     Environment(EnvironmentConfig),
     Application(ApplicationConfig),
+    Compose(ComposeConfig),
     Postgres(PostgresConfig),
     MySql(MySqlConfig),
     MariaDb(MariaDbConfig),
@@ -117,6 +118,7 @@ impl ResourceConfig {
             Self::Project(_) => ResourceKind::Project,
             Self::Environment(_) => ResourceKind::Environment,
             Self::Application(_) => ResourceKind::Application,
+            Self::Compose(_) => ResourceKind::Compose,
             Self::Postgres(_) => ResourceKind::Postgres,
             Self::MySql(_) => ResourceKind::MySql,
             Self::MariaDb(_) => ResourceKind::MariaDb,
@@ -139,6 +141,14 @@ impl ResourceConfig {
     pub const fn as_application(&self) -> Option<&ApplicationConfig> {
         match self {
             Self::Application(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_compose(&self) -> Option<&ComposeConfig> {
+        match self {
+            Self::Compose(config) => Some(config),
             _ => None,
         }
     }
@@ -213,6 +223,7 @@ impl ResourceConfig {
             Self::Project(config) => &config.depends_on,
             Self::Environment(config) => &config.depends_on,
             Self::Application(config) => &config.depends_on,
+            Self::Compose(config) => &config.depends_on,
             Self::Postgres(config) => &config.depends_on,
             Self::MySql(config) => &config.depends_on,
             Self::MariaDb(config) => &config.depends_on,
@@ -229,6 +240,7 @@ impl ResourceConfig {
             Self::Project(config) => &config.lifecycle,
             Self::Environment(config) => &config.lifecycle,
             Self::Application(config) => &config.lifecycle,
+            Self::Compose(config) => &config.lifecycle,
             Self::Postgres(config) => &config.lifecycle,
             Self::MySql(config) => &config.lifecycle,
             Self::MariaDb(config) => &config.lifecycle,
@@ -244,6 +256,7 @@ impl ResourceConfig {
             Self::Project(config) => &mut config.lifecycle,
             Self::Environment(config) => &mut config.lifecycle,
             Self::Application(config) => &mut config.lifecycle,
+            Self::Compose(config) => &mut config.lifecycle,
             Self::Postgres(config) => &mut config.lifecycle,
             Self::MySql(config) => &mut config.lifecycle,
             Self::MariaDb(config) => &mut config.lifecycle,
@@ -259,6 +272,7 @@ impl ResourceConfig {
             Self::Project(config) => &mut config.depends_on,
             Self::Environment(config) => &mut config.depends_on,
             Self::Application(config) => &mut config.depends_on,
+            Self::Compose(config) => &mut config.depends_on,
             Self::Postgres(config) => &mut config.depends_on,
             Self::MySql(config) => &mut config.depends_on,
             Self::MariaDb(config) => &mut config.depends_on,
@@ -298,6 +312,11 @@ impl ResourceConfig {
                         | Field::Clear
                         | Field::Set(ConfigValue::Literal(_) | ConfigValue::Reference(_)) => None,
                     }));
+                }
+            }
+            Self::Compose(config) => {
+                if let Field::Set(secret) = &config.document {
+                    secrets.push(secret);
                 }
             }
             Self::Postgres(config) => {
@@ -467,6 +486,28 @@ impl ApplicationConfig {
 }
 
 redacted_debug!(ApplicationConfig, "ApplicationConfig");
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct ComposeConfig {
+    pub(crate) description: Field<String>,
+    pub(crate) document: Field<SecretSource>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl ComposeConfig {
+    #[must_use]
+    pub const fn description(&self) -> &Field<String> {
+        &self.description
+    }
+
+    #[must_use]
+    pub const fn document(&self) -> &Field<SecretSource> {
+        &self.document
+    }
+}
+
+redacted_debug!(ComposeConfig, "ComposeConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct PostgresConfig {
@@ -687,6 +728,8 @@ pub enum ValidationIssue {
     RemovedResourceConfigured,
     MoveRemovalConflict,
     InvalidLibSqlPrimaryUrl,
+    ComposeDocumentCannotBeCleared,
+    UnmanagedComposeDocumentRequiresProtection,
 }
 
 impl ValidationIssue {
@@ -716,6 +759,8 @@ impl ValidationIssue {
             Self::RemovedResourceConfigured => "DOKCFG020",
             Self::MoveRemovalConflict => "DOKCFG021",
             Self::InvalidLibSqlPrimaryUrl => "DOKCFG022",
+            Self::ComposeDocumentCannotBeCleared => "DOKCFG023",
+            Self::UnmanagedComposeDocumentRequiresProtection => "DOKCFG024",
         }
     }
 
@@ -745,6 +790,10 @@ impl ValidationIssue {
             Self::RemovedResourceConfigured => "removed resource is still configured",
             Self::MoveRemovalConflict => "move and removal declarations conflict",
             Self::InvalidLibSqlPrimaryUrl => "LibSQL replica primary URL is empty",
+            Self::ComposeDocumentCannotBeCleared => "Compose document cannot be null",
+            Self::UnmanagedComposeDocumentRequiresProtection => {
+                "unmanaged Compose document requires lifecycle.protect: true"
+            }
         }
     }
 }
