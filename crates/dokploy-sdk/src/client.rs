@@ -64,10 +64,11 @@ use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse,
     ApplicationPortCollectionResponse, ApplicationRedirectCollectionResponse,
-    ApplicationSearchPage, ApplicationSecurityCollectionResponse, BackupCollection, BackupDetails,
-    ComposeCollection, ComposeCreateResponse, ComposeDetails, ComposeSearchPage,
-    DestinationCollection, DestinationSummary, DomainCollection, DomainCreateResponse,
-    DomainDetails, EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
+    ApplicationSearchPage, ApplicationSecurityCollectionResponse,
+    ApplicationSecurityProofCollectionResponse, BackupCollection, BackupDetails, ComposeCollection,
+    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DestinationCollection,
+    DestinationSummary, DomainCollection, DomainCreateResponse, DomainDetails,
+    EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
     LibSqlBackupCollectionResponse, LibSqlCollection, LibSqlDetails,
     MariaDbBackupCollectionResponse, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails,
     MariaDbSearchPage, MongoBackupCollectionResponse, MongoCollection, MongoCreateResponse,
@@ -77,7 +78,8 @@ use crate::models::{
     PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology,
     RedirectCollection, RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails,
     RedisSearchPage, RegistryCollection, RegistrySummary, ScheduleCollection, ScheduleDetails,
-    ScheduleProofDetails, SecurityCollection, SecurityDetails, ServerCollection, ServerSummary,
+    ScheduleProofDetails, SecurityCollection, SecurityDetails, SecurityProofDetails,
+    ServerCollection, ServerSummary,
 };
 use crate::services::{
     Applications, Backups, Composes, Destinations, Domains, Environments, LibSql, MariaDb, Mongo,
@@ -886,6 +888,15 @@ impl Dokploy {
     }
 
     pub(crate) async fn redirect_get(&self, redirect_id: &str) -> Result<RedirectDetails, Error> {
+        self.redirect_get_with_collection(redirect_id)
+            .await
+            .map(|(details, _)| details)
+    }
+
+    async fn redirect_get_with_collection(
+        &self,
+        redirect_id: &str,
+    ) -> Result<(RedirectDetails, RedirectCollection), Error> {
         let request = RedirectsOneRequest {
             query: RedirectsOneRequestQuery {
                 redirect_id: redirect_id.to_owned(),
@@ -911,7 +922,7 @@ impl Dokploy {
             });
         }
 
-        Ok(details)
+        Ok((details, collection))
     }
 
     pub(crate) async fn redirects_by_application(
@@ -1014,7 +1025,32 @@ impl Dokploy {
             ));
         }
 
-        self.mutate_body_ok(REDIRECTS_UPDATE, &input).await
+        let (existing, before) = self
+            .redirect_get_with_collection(input.redirect_id().as_str())
+            .await?;
+        if before.redirects().iter().any(|redirect| {
+            redirect.redirect_id != *input.redirect_id() && redirect.regex == input.regex()
+        }) {
+            return Err(Error::UnexpectedResponse {
+                operation: REDIRECTS_UPDATE.operation(),
+            });
+        }
+
+        self.mutate_body_ok(REDIRECTS_UPDATE, &input).await?;
+
+        let after = self
+            .redirects_by_application(&existing.application_id)
+            .await
+            .map_err(|_| post_mutation_proof_unknown(REDIRECTS_UPDATE))?;
+        let updated = after
+            .redirects()
+            .iter()
+            .find(|redirect| redirect.redirect_id == *input.redirect_id());
+        if !updated.is_some_and(|redirect| input.matches(redirect)) {
+            return Err(post_mutation_proof_unknown(REDIRECTS_UPDATE));
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn redirect_delete(&self, redirect_id: RedirectId) -> Result<(), Error> {
@@ -1024,18 +1060,46 @@ impl Dokploy {
             },
         };
         validate_generated_request(REDIRECTS_DELETE, &request)?;
+        let (existing, _) = self
+            .redirect_get_with_collection(redirect_id.as_str())
+            .await?;
 
-        self.mutate_body_ok(REDIRECTS_DELETE, &request.body).await
+        self.mutate_body_ok(REDIRECTS_DELETE, &request.body).await?;
+
+        let after = self
+            .redirects_by_application(&existing.application_id)
+            .await
+            .map_err(|_| post_mutation_proof_unknown(REDIRECTS_DELETE))?;
+        if after
+            .redirects()
+            .iter()
+            .any(|redirect| redirect.redirect_id == redirect_id)
+        {
+            return Err(post_mutation_proof_unknown(REDIRECTS_DELETE));
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn security_get(&self, security_id: &str) -> Result<SecurityDetails, Error> {
+        self.security_get_with_collection(security_id)
+            .await
+            .map(|(details, _)| details)
+    }
+
+    async fn security_get_with_collection(
+        &self,
+        security_id: &str,
+    ) -> Result<(SecurityDetails, SecurityCollection), Error> {
         let request = SecurityOneRequest {
             query: SecurityOneRequestQuery {
                 security_id: security_id.to_owned(),
             },
         };
         validate_generated_request(SECURITY_ONE, &request)?;
-        let details: SecurityDetails = self.read_query_json(SECURITY_ONE, &request.query).await?;
+        let details: SecurityDetails = self
+            .read_query_json_secret(SECURITY_ONE, &request.query)
+            .await?;
         if !details.is_valid() || details.security_id.as_str() != security_id {
             return Err(Error::UnexpectedResponse {
                 operation: SECURITY_ONE.operation(),
@@ -1054,7 +1118,7 @@ impl Dokploy {
             });
         }
 
-        Ok(details)
+        Ok((details, collection))
     }
 
     pub(crate) async fn security_by_application(
@@ -1068,7 +1132,7 @@ impl Dokploy {
         };
         validate_generated_request(APPLICATION_ONE, &request)?;
         let response: ApplicationSecurityCollectionResponse = self
-            .read_query_json(APPLICATION_ONE, &request.query)
+            .read_query_json_secret(APPLICATION_ONE, &request.query)
             .await?;
         let mut seen_ids = HashSet::new();
         let mut seen_usernames = HashSet::new();
@@ -1151,6 +1215,40 @@ impl Dokploy {
         Err(post_mutation_proof_unknown(SECURITY_CREATE))
     }
 
+    async fn security_proofs_by_application(
+        &self,
+        application_id: &ApplicationId,
+    ) -> Result<Vec<SecurityProofDetails>, Error> {
+        let request = ApplicationOneRequest {
+            query: ApplicationOneRequestQuery {
+                application_id: application_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(APPLICATION_ONE, &request)?;
+        let response: ApplicationSecurityProofCollectionResponse = self
+            .read_query_json_secret(APPLICATION_ONE, &request.query)
+            .await?;
+        let mut seen_ids = HashSet::new();
+        let mut seen_usernames = HashSet::new();
+        let contradictory = response.application_id != *application_id
+            || response.entries.len() > SECURITY_LIST_ITEM_LIMIT
+            || response.entries.iter().any(|proof| {
+                let entry = proof.details();
+
+                !entry.is_valid()
+                    || entry.application_id != *application_id
+                    || !seen_ids.insert(entry.security_id.as_str().to_owned())
+                    || !seen_usernames.insert(entry.username.clone())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: APPLICATION_ONE.operation(),
+            });
+        }
+
+        Ok(response.entries)
+    }
+
     pub(crate) async fn security_update(&self, input: UpdateSecurity) -> Result<(), Error> {
         if !input.is_valid() {
             return Err(invalid_request(
@@ -1159,7 +1257,31 @@ impl Dokploy {
             ));
         }
 
-        self.mutate_body_ok_secret(SECURITY_UPDATE, &input).await
+        let (existing, before) = self
+            .security_get_with_collection(input.security_id().as_str())
+            .await?;
+        if before.entries().iter().any(|entry| {
+            entry.security_id != *input.security_id() && entry.username == input.username()
+        }) {
+            return Err(Error::UnexpectedResponse {
+                operation: SECURITY_UPDATE.operation(),
+            });
+        }
+
+        self.mutate_body_ok_secret(SECURITY_UPDATE, &input).await?;
+
+        let after = self
+            .security_proofs_by_application(&existing.application_id)
+            .await
+            .map_err(|_| post_mutation_proof_unknown(SECURITY_UPDATE))?;
+        let updated = after
+            .iter()
+            .find(|proof| proof.details().security_id == *input.security_id());
+        if !updated.is_some_and(|proof| input.matches(proof)) {
+            return Err(post_mutation_proof_unknown(SECURITY_UPDATE));
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn security_delete(&self, security_id: SecurityId) -> Result<(), Error> {
@@ -1169,8 +1291,25 @@ impl Dokploy {
             },
         };
         validate_generated_request(SECURITY_DELETE, &request)?;
+        let (existing, _) = self
+            .security_get_with_collection(security_id.as_str())
+            .await?;
 
-        self.mutate_body_ok(SECURITY_DELETE, &request.body).await
+        self.mutate_body_ok(SECURITY_DELETE, &request.body).await?;
+
+        let after = self
+            .security_by_application(&existing.application_id)
+            .await
+            .map_err(|_| post_mutation_proof_unknown(SECURITY_DELETE))?;
+        if after
+            .entries()
+            .iter()
+            .any(|entry| entry.security_id == security_id)
+        {
+            return Err(post_mutation_proof_unknown(SECURITY_DELETE));
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn schedule_get(&self, schedule_id: &str) -> Result<ScheduleDetails, Error> {

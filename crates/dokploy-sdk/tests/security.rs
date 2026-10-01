@@ -537,7 +537,11 @@ async fn security_mutation_rejections_never_retain_echoed_passwords() {
     assert_no_canary(&error);
     assert_eq!(create_server.finish_all().len(), 2);
 
-    let update_server = TestServer::respond_in_sequence(vec![("422 Unprocessable Entity", echoed)]);
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+        ("422 Unprocessable Entity", echoed),
+    ]);
     let error = client(&update_server)
         .security()
         .update(UpdateSecurity::new(
@@ -553,7 +557,7 @@ async fn security_mutation_rejections_never_retain_echoed_passwords() {
     assert_eq!(dokploy.message(), "Unprocessable Entity");
     assert!(dokploy.issues().is_empty());
     assert_no_canary(&error);
-    assert_eq!(update_server.finish_all().len(), 1);
+    assert_eq!(update_server.finish_all().len(), 3);
 }
 
 #[tokio::test]
@@ -564,14 +568,25 @@ async fn security_update_and_delete_use_exact_complete_requests() {
         Zeroizing::new(REQUEST_PASSWORD_CANARY.to_owned()),
     );
     assert_no_canary(&update);
-    let update_server = TestServer::respond_with_json("true");
+    let updated = SECURITY_RESPONSE
+        .replace("\"username\":\"owner\"", "\"username\":\"operator\"")
+        .replace(PASSWORD_CANARY, REQUEST_PASSWORD_CANARY);
+    let updated = Box::leak(updated.into_boxed_str());
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(updated)),
+    ]);
     client(&update_server)
         .security()
         .update(update)
         .await
         .unwrap();
+    let requests = update_server.finish_all();
+    assert_eq!(requests.len(), 4);
     assert_mutation_request(
-        &update_server.finish(),
+        &requests[2],
         "security.update",
         serde_json::json!({
             "securityId": "security-1",
@@ -580,16 +595,165 @@ async fn security_update_and_delete_use_exact_complete_requests() {
         }),
     );
 
-    let delete_server = TestServer::respond_with_json("true");
+    let delete_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", EMPTY_PARENT),
+    ]);
     client(&delete_server)
         .security()
         .delete(SecurityId::new("security-1"))
         .await
         .unwrap();
+    let requests = delete_server.finish_all();
+    assert_eq!(requests.len(), 4);
     assert_mutation_request(
-        &delete_server.finish(),
+        &requests[2],
         "security.delete",
         serde_json::json!({"securityId": "security-1"}),
+    );
+}
+
+#[tokio::test]
+async fn security_update_and_delete_require_authoritative_preflight() {
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", EMPTY_PARENT),
+    ]);
+    let error = client(&update_server)
+        .security()
+        .update(UpdateSecurity::new(
+            SecurityId::new("security-1"),
+            "operator",
+            Zeroizing::new(REQUEST_PASSWORD_CANARY.to_owned()),
+        ))
+        .await
+        .expect_err("an uncontained Security entry must not be updated");
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "security.one"
+        }
+    ));
+    assert_no_canary(&error);
+    assert_eq!(update_server.finish_all().len(), 2);
+
+    let delete_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", EMPTY_PARENT),
+    ]);
+    let error = client(&delete_server)
+        .security()
+        .delete(SecurityId::new("security-1"))
+        .await
+        .expect_err("an uncontained Security entry must not be deleted");
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "security.one"
+        }
+    ));
+    assert_no_canary(&error);
+    assert_eq!(delete_server.finish_all().len(), 2);
+}
+
+#[tokio::test]
+async fn security_update_rejects_application_scoped_username_collisions() {
+    let collision = SECURITY_RESPONSE
+        .replace("security-1", "security-2")
+        .replace("\"owner\"", "\"operator\"");
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        (
+            "200 OK",
+            parent_with(&format!("{SECURITY_RESPONSE},{collision}")),
+        ),
+    ]);
+    let error = client(&server)
+        .security()
+        .update(UpdateSecurity::new(
+            SecurityId::new("security-1"),
+            "operator",
+            Zeroizing::new(REQUEST_PASSWORD_CANARY.to_owned()),
+        ))
+        .await
+        .expect_err("a sibling username collision must stop before mutation");
+
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "security.update"
+        }
+    ));
+    assert_no_canary(&error);
+    assert_eq!(server.finish_all().len(), 2);
+}
+
+#[tokio::test]
+async fn security_update_and_delete_require_secret_safe_postflight_proof() {
+    let wrong_password =
+        SECURITY_RESPONSE.replace("\"username\":\"owner\"", "\"username\":\"operator\"");
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(&wrong_password)),
+    ]);
+    let error = client(&update_server)
+        .security()
+        .update(UpdateSecurity::new(
+            SecurityId::new("security-1"),
+            "operator",
+            Zeroizing::new(REQUEST_PASSWORD_CANARY.to_owned()),
+        ))
+        .await
+        .expect_err("an accepted update with a different password is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "security.update",
+            ..
+        }
+    ));
+    assert_no_canary(&error);
+    let requests = update_server.finish_all();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/security.update "))
+            .count(),
+        1
+    );
+
+    let delete_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+    ]);
+    let error = client(&delete_server)
+        .security()
+        .delete(SecurityId::new("security-1"))
+        .await
+        .expect_err("an accepted delete without authoritative absence is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "security.delete",
+            ..
+        }
+    ));
+    assert_no_canary(&error);
+    let requests = delete_server.finish_all();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/security.delete "))
+            .count(),
+        1
     );
 }
 
@@ -663,7 +827,10 @@ async fn security_mutations_are_single_attempt_with_secret_safe_unknown_outcomes
     assert_no_canary(&create_error);
     assert_eq!(create_server.finish_all().len(), 2);
 
-    let update_server = TestServer::close_after_requests(vec![]);
+    let update_server = TestServer::close_after_requests(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+    ]);
     let update_error = client(&update_server)
         .security()
         .update(UpdateSecurity::new(
@@ -681,9 +848,12 @@ async fn security_mutations_are_single_attempt_with_secret_safe_unknown_outcomes
         }
     ));
     assert_no_canary(&update_error);
-    assert_eq!(update_server.finish_all().len(), 1);
+    assert_eq!(update_server.finish_all().len(), 3);
 
-    let delete_server = TestServer::close_after_requests(vec![]);
+    let delete_server = TestServer::close_after_requests(vec![
+        ("200 OK", SECURITY_RESPONSE),
+        ("200 OK", parent_with(SECURITY_RESPONSE)),
+    ]);
     let delete_error = client(&delete_server)
         .security()
         .delete(SecurityId::new("security-1"))
@@ -697,5 +867,5 @@ async fn security_mutations_are_single_attempt_with_secret_safe_unknown_outcomes
         }
     ));
     assert_no_canary(&delete_error);
-    assert_eq!(delete_server.finish_all().len(), 1);
+    assert_eq!(delete_server.finish_all().len(), 3);
 }

@@ -705,6 +705,21 @@ impl UpdateRedirect {
             && !self.regex.is_empty()
             && !self.replacement.is_empty()
     }
+
+    pub(crate) const fn redirect_id(&self) -> &RedirectId {
+        &self.redirect_id
+    }
+
+    pub(crate) fn regex(&self) -> &str {
+        &self.regex
+    }
+
+    pub(crate) fn matches(&self, details: &RedirectDetails) -> bool {
+        details.redirect_id == self.redirect_id
+            && details.regex == self.regex
+            && details.replacement == self.replacement
+            && details.permanent == self.permanent
+    }
 }
 
 /// Complete inputs required to create one application basic-auth entry.
@@ -819,6 +834,25 @@ impl UpdateSecurity {
         !self.security_id.as_str().is_empty()
             && !self.username.is_empty()
             && !self.password.is_empty()
+    }
+
+    pub(crate) const fn security_id(&self) -> &SecurityId {
+        &self.security_id
+    }
+
+    pub(crate) fn username(&self) -> &str {
+        &self.username
+    }
+
+    pub(crate) fn matches(&self, proof: &SecurityProofDetails) -> bool {
+        let details = proof.details();
+
+        details.security_id == self.security_id
+            && details.username == self.username
+            && proof
+                .password
+                .as_ref()
+                .is_some_and(|password| password.as_str() == self.password.as_str())
     }
 }
 
@@ -4348,6 +4382,58 @@ pub(crate) struct ApplicationSecurityCollectionResponse {
     pub(crate) application_id: ApplicationId,
     #[serde(rename = "security")]
     pub(crate) entries: Vec<SecurityDetails>,
+}
+
+pub(crate) struct SecurityProofDetails {
+    details: SecurityDetails,
+    password: Option<Zeroizing<String>>,
+}
+
+impl SecurityProofDetails {
+    pub(crate) const fn details(&self) -> &SecurityDetails {
+        &self.details
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SecurityProofResponse {
+    security_id: SecurityId,
+    application_id: ApplicationId,
+    username: String,
+    #[serde(deserialize_with = "deserialize_optional_zeroizing_string")]
+    password: Option<Zeroizing<String>>,
+}
+
+impl<'de> Deserialize<'de> for SecurityProofDetails {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let response = SecurityProofResponse::deserialize(deserializer)?;
+        let password_present = response
+            .password
+            .as_ref()
+            .is_some_and(|password| !password.is_empty());
+
+        Ok(Self {
+            details: SecurityDetails {
+                security_id: response.security_id,
+                application_id: response.application_id,
+                username: response.username,
+                password_present,
+            },
+            password: response.password,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApplicationSecurityProofCollectionResponse {
+    pub(crate) application_id: ApplicationId,
+    #[serde(rename = "security")]
+    pub(crate) entries: Vec<SecurityProofDetails>,
 }
 
 /// A safe Schedule returned by direct or target-scoped read operations.

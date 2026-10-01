@@ -498,7 +498,17 @@ async fn redirect_create_postflight_failures_are_always_outcome_unknown() {
 
 #[tokio::test]
 async fn redirect_update_and_delete_use_exact_complete_requests() {
-    let update_server = TestServer::respond_with_json("true");
+    let updated = REDIRECT_RESPONSE
+        .replace("^/old/(.*)$", "^/legacy/(.*)$")
+        .replace("/new/$1", "/current/$1")
+        .replace("\"permanent\":false", "\"permanent\":true");
+    let updated = Box::leak(updated.into_boxed_str());
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(updated)),
+    ]);
     client(&update_server)
         .redirects()
         .update(UpdateRedirect::new(
@@ -509,8 +519,10 @@ async fn redirect_update_and_delete_use_exact_complete_requests() {
         ))
         .await
         .expect("Redirect update succeeds");
+    let requests = update_server.finish_all();
+    assert_eq!(requests.len(), 4);
     assert_mutation_request(
-        &update_server.finish(),
+        &requests[2],
         "redirects.update",
         serde_json::json!({
             "redirectId": "redirect-1",
@@ -520,16 +532,161 @@ async fn redirect_update_and_delete_use_exact_complete_requests() {
         }),
     );
 
-    let delete_server = TestServer::respond_with_json("true");
+    let delete_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", EMPTY_PARENT),
+    ]);
     client(&delete_server)
         .redirects()
         .delete(RedirectId::new("redirect-1"))
         .await
         .expect("Redirect deletion succeeds");
+    let requests = delete_server.finish_all();
+    assert_eq!(requests.len(), 4);
     assert_mutation_request(
-        &delete_server.finish(),
+        &requests[2],
         "redirects.delete",
         serde_json::json!({"redirectId": "redirect-1"}),
+    );
+}
+
+#[tokio::test]
+async fn redirect_update_and_delete_require_authoritative_preflight() {
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", EMPTY_PARENT),
+    ]);
+    let error = client(&update_server)
+        .redirects()
+        .update(UpdateRedirect::new(
+            RedirectId::new("redirect-1"),
+            "^/legacy$",
+            "/current",
+            true,
+        ))
+        .await
+        .expect_err("an uncontained Redirect must not be updated");
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "redirects.one"
+        }
+    ));
+    assert_eq!(update_server.finish_all().len(), 2);
+
+    let delete_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", EMPTY_PARENT),
+    ]);
+    let error = client(&delete_server)
+        .redirects()
+        .delete(RedirectId::new("redirect-1"))
+        .await
+        .expect_err("an uncontained Redirect must not be deleted");
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "redirects.one"
+        }
+    ));
+    assert_eq!(delete_server.finish_all().len(), 2);
+}
+
+#[tokio::test]
+async fn redirect_update_rejects_application_scoped_regex_collisions() {
+    let collision = REDIRECT_RESPONSE
+        .replace("redirect-1", "redirect-2")
+        .replace("^/old/(.*)$", "^/legacy$");
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        (
+            "200 OK",
+            parent_with(&format!("{REDIRECT_RESPONSE},{collision}")),
+        ),
+    ]);
+    let error = client(&server)
+        .redirects()
+        .update(UpdateRedirect::new(
+            RedirectId::new("redirect-1"),
+            "^/legacy$",
+            "/current",
+            true,
+        ))
+        .await
+        .expect_err("a sibling regex collision must stop before mutation");
+
+    assert!(matches!(
+        error,
+        Error::UnexpectedResponse {
+            operation: "redirects.update"
+        }
+    ));
+    assert_eq!(server.finish_all().len(), 2);
+}
+
+#[tokio::test]
+async fn redirect_update_and_delete_require_postflight_proof() {
+    let update_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+    ]);
+    let error = client(&update_server)
+        .redirects()
+        .update(UpdateRedirect::new(
+            RedirectId::new("redirect-1"),
+            "^/legacy$",
+            "/current",
+            true,
+        ))
+        .await
+        .expect_err("an accepted update without exact agreement is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "redirects.update",
+            ..
+        }
+    ));
+    let requests = update_server.finish_all();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/redirects.update "))
+            .count(),
+        1
+    );
+
+    let delete_server = TestServer::respond_in_sequence(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+        ("200 OK", "true"),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+    ]);
+    let error = client(&delete_server)
+        .redirects()
+        .delete(RedirectId::new("redirect-1"))
+        .await
+        .expect_err("an accepted delete without authoritative absence is uncertain");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "redirects.delete",
+            ..
+        }
+    ));
+    let requests = delete_server.finish_all();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.starts_with("POST /api/redirects.delete "))
+            .count(),
+        1
     );
 }
 
@@ -603,24 +760,33 @@ async fn redirect_mutations_are_single_attempt_and_report_unknown_outcomes() {
     ));
     assert_eq!(create_server.finish_all().len(), 2);
 
-    for (operation, action) in [(
-        "redirects.update",
-        UpdateRedirect::new(RedirectId::new("redirect-1"), "^/legacy$", "/current", true),
-    )] {
-        let server = TestServer::close_after_requests(vec![]);
-        let error = client(&server)
-            .redirects()
-            .update(action)
-            .await
-            .expect_err("missing update response has an unknown outcome");
-        assert!(matches!(
-            error,
-            Error::OutcomeUnknown { operation: actual, .. } if actual == operation
-        ));
-        assert_eq!(server.finish_all().len(), 1);
-    }
+    let update_server = TestServer::close_after_requests(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+    ]);
+    let error = client(&update_server)
+        .redirects()
+        .update(UpdateRedirect::new(
+            RedirectId::new("redirect-1"),
+            "^/legacy$",
+            "/current",
+            true,
+        ))
+        .await
+        .expect_err("missing update response has an unknown outcome");
+    assert!(matches!(
+        error,
+        Error::OutcomeUnknown {
+            operation: "redirects.update",
+            ..
+        }
+    ));
+    assert_eq!(update_server.finish_all().len(), 3);
 
-    let delete_server = TestServer::close_after_requests(vec![]);
+    let delete_server = TestServer::close_after_requests(vec![
+        ("200 OK", REDIRECT_RESPONSE),
+        ("200 OK", parent_with(REDIRECT_RESPONSE)),
+    ]);
     let delete_error = client(&delete_server)
         .redirects()
         .delete(RedirectId::new("redirect-1"))
@@ -633,5 +799,5 @@ async fn redirect_mutations_are_single_attempt_and_report_unknown_outcomes() {
             ..
         }
     ));
-    assert_eq!(delete_server.finish_all().len(), 1);
+    assert_eq!(delete_server.finish_all().len(), 3);
 }
