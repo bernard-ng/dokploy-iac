@@ -7,14 +7,16 @@ use dokploy_api::{
     APPLICATION_SEARCH, APPLICATION_UPDATE, ApplicationCreateRequest, ApplicationCreateRequestBody,
     ApplicationDeleteRequest, ApplicationIdRequestBody, ApplicationOneRequest,
     ApplicationOneRequestQuery, ApplicationRedeployRequestBody, ApplicationSearchRequest,
-    ApplicationSearchRequestQuery, COMPOSE_CREATE, COMPOSE_DELETE, COMPOSE_ONE, COMPOSE_SEARCH,
-    COMPOSE_UPDATE, ComposeDeleteRequest, ComposeDeleteRequestBody, ComposeOneRequest,
-    ComposeOneRequestQuery, ComposeSearchRequest, ComposeSearchRequestQuery, DESTINATION_ALL,
-    DOMAIN_BY_APPLICATION_ID, DOMAIN_CREATE, DOMAIN_DELETE, DOMAIN_ONE, DOMAIN_UPDATE,
-    DokployApiClient, DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery,
-    DomainCreateRequest, DomainCreateRequestBody, DomainDeleteRequest, DomainIdRequestBody,
-    DomainOneRequest, DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE,
-    ENVIRONMENT_ONE, ENVIRONMENT_REMOVE, ENVIRONMENT_UPDATE, Endpoint, EndpointMethod,
+    ApplicationSearchRequestQuery, BACKUP_CREATE, BACKUP_ONE, BACKUP_REMOVE, BACKUP_UPDATE,
+    BackupIdRequestBody, BackupOneRequest, BackupOneRequestQuery, BackupRemoveRequest,
+    COMPOSE_CREATE, COMPOSE_DELETE, COMPOSE_ONE, COMPOSE_SEARCH, COMPOSE_UPDATE,
+    ComposeDeleteRequest, ComposeDeleteRequestBody, ComposeOneRequest, ComposeOneRequestQuery,
+    ComposeSearchRequest, ComposeSearchRequestQuery, DESTINATION_ALL, DOMAIN_BY_APPLICATION_ID,
+    DOMAIN_CREATE, DOMAIN_DELETE, DOMAIN_ONE, DOMAIN_UPDATE, DokployApiClient,
+    DomainByApplicationIdRequest, DomainByApplicationIdRequestQuery, DomainCreateRequest,
+    DomainCreateRequestBody, DomainDeleteRequest, DomainIdRequestBody, DomainOneRequest,
+    DomainOneRequestQuery, ENVIRONMENT_BY_PROJECT_ID, ENVIRONMENT_CREATE, ENVIRONMENT_ONE,
+    ENVIRONMENT_REMOVE, ENVIRONMENT_UPDATE, Endpoint, EndpointMethod,
     EnvironmentByProjectIdRequest, EnvironmentByProjectIdRequestQuery, EnvironmentCreateRequest,
     EnvironmentCreateRequestBody, EnvironmentIdRequestBody, EnvironmentOneRequest,
     EnvironmentOneRequestQuery, EnvironmentRemoveRequest, LIBSQL_CREATE, LIBSQL_ONE, LIBSQL_REMOVE,
@@ -62,36 +64,40 @@ use crate::models::{
     ApplicationCollection, ApplicationCreateResponse, ApplicationDetails,
     ApplicationEnvironmentDocument, ApplicationEnvironmentResponse,
     ApplicationPortCollectionResponse, ApplicationRedirectCollectionResponse,
-    ApplicationSearchPage, ApplicationSecurityCollectionResponse, ComposeCollection,
-    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DestinationCollection,
-    DestinationSummary, DomainCollection, DomainCreateResponse, DomainDetails,
-    EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails, LibSqlCollection,
-    LibSqlDetails, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails, MariaDbSearchPage,
-    MongoCollection, MongoCreateResponse, MongoDetails, MongoSearchPage, MountCollection,
-    MountDetails, MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage,
-    PortCollection, PortDetails, PostgresCollection, PostgresCreateResponse, PostgresDetails,
-    PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology, RedirectCollection,
-    RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails, RedisSearchPage,
-    RegistryCollection, RegistrySummary, ScheduleCollection, ScheduleDetails, ScheduleProofDetails,
-    SecurityCollection, SecurityDetails, ServerCollection, ServerSummary,
+    ApplicationSearchPage, ApplicationSecurityCollectionResponse, BackupCollection, BackupDetails,
+    ComposeCollection, ComposeCreateResponse, ComposeDetails, ComposeSearchPage,
+    DestinationCollection, DestinationSummary, DomainCollection, DomainCreateResponse,
+    DomainDetails, EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
+    LibSqlBackupCollectionResponse, LibSqlCollection, LibSqlDetails,
+    MariaDbBackupCollectionResponse, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails,
+    MariaDbSearchPage, MongoBackupCollectionResponse, MongoCollection, MongoCreateResponse,
+    MongoDetails, MongoSearchPage, MountCollection, MountDetails, MySqlBackupCollectionResponse,
+    MySqlCollection, MySqlCreateResponse, MySqlDetails, MySqlSearchPage, PortCollection,
+    PortDetails, PostgresBackupCollectionResponse, PostgresCollection, PostgresCreateResponse,
+    PostgresDetails, PostgresSearchPage, ProjectCreateResponse, ProjectDetails, ProjectTopology,
+    RedirectCollection, RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails,
+    RedisSearchPage, RegistryCollection, RegistrySummary, ScheduleCollection, ScheduleDetails,
+    ScheduleProofDetails, SecurityCollection, SecurityDetails, ServerCollection, ServerSummary,
 };
 use crate::services::{
-    Applications, Composes, Destinations, Domains, Environments, LibSql, MariaDb, Mongo, Mounts,
-    MySql, Ports, Postgres, Projects, Redirects, Redis, Registries, Schedules, Security, Servers,
+    Applications, Backups, Composes, Destinations, Domains, Environments, LibSql, MariaDb, Mongo,
+    Mounts, MySql, Ports, Postgres, Projects, Redirects, Redis, Registries, Schedules, Security,
+    Servers,
 };
 use crate::{
-    ApplicationId, ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword,
-    ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication, CreateCompose,
-    CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount,
-    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
-    CreateSchedule, CreateSecurity, CreatedApplication, CreatedCompose, CreatedDomain,
-    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql,
-    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSchedule,
-    CreatedSecurity, DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId,
-    PortId, PostgresId, ProjectId, RedirectId, RedisId, ScheduleId, ScheduleTarget, SecurityId,
-    ServiceTarget, UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql,
-    UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres,
-    UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule, UpdateSecurity,
+    ApplicationId, BackupId, BackupTarget, ChangeLibSqlPassword, ChangeMariaDbPassword,
+    ChangeMongoPassword, ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication,
+    CreateBackup, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
+    CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject,
+    CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreatedApplication, CreatedBackup,
+    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
+    CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect,
+    CreatedRedis, CreatedSchedule, CreatedSecurity, DomainId, EnvironmentId, LibSqlId, MariaDbId,
+    MongoId, MountId, MySqlId, PortId, PostgresId, ProjectId, RedirectId, RedisId, ScheduleId,
+    ScheduleTarget, SecurityId, ServiceTarget, UpdateApplication, UpdateBackup, UpdateCompose,
+    UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount,
+    UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis,
+    UpdateSchedule, UpdateSecurity,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -112,6 +118,7 @@ const MARIADB_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MONGO_SEARCH_PAGE_SIZE: usize = 100;
 const MONGO_SEARCH_ITEM_LIMIT: usize = 10_000;
 const MOUNT_LIST_ITEM_LIMIT: usize = 10_000;
+const BACKUP_LIST_ITEM_LIMIT: usize = 10_000;
 const PORT_LIST_ITEM_LIMIT: usize = 10_000;
 const REDIRECT_LIST_ITEM_LIMIT: usize = 10_000;
 const SCHEDULE_LIST_ITEM_LIMIT: usize = 10_000;
@@ -217,6 +224,12 @@ impl Dokploy {
     #[must_use]
     pub fn destinations(&self) -> Destinations<'_> {
         Destinations::new(self)
+    }
+
+    /// Returns access to database Backup read and mutation operations.
+    #[must_use]
+    pub fn backups(&self) -> Backups<'_> {
+        Backups::new(self)
     }
 
     /// Returns access to application read operations.
@@ -1358,6 +1371,292 @@ impl Dokploy {
             .any(|schedule| schedule.schedule_id == schedule_id)
         {
             return Err(post_mutation_proof_unknown(SCHEDULE_DELETE));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn backup_get(&self, backup_id: &str) -> Result<BackupDetails, Error> {
+        self.backup_get_with_collection(backup_id)
+            .await
+            .map(|(details, _)| details)
+    }
+
+    async fn backup_get_with_collection(
+        &self,
+        backup_id: &str,
+    ) -> Result<(BackupDetails, BackupCollection), Error> {
+        let request = BackupOneRequest {
+            query: BackupOneRequestQuery {
+                backup_id: backup_id.to_owned(),
+            },
+        };
+        validate_generated_request(BACKUP_ONE, &request)?;
+        let details: BackupDetails = self
+            .read_query_json_secret(BACKUP_ONE, &request.query)
+            .await?;
+        if !details.is_valid() || details.backup_id.as_str() != backup_id {
+            return Err(Error::UnexpectedResponse {
+                operation: BACKUP_ONE.operation(),
+            });
+        }
+        self.validate_backup_destination(&details.destination_id, BACKUP_ONE)
+            .await?;
+        let collection = self.backups_by_target(&details.target).await?;
+        let matching = collection
+            .backups()
+            .iter()
+            .find(|backup| backup.backup_id.as_str() == backup_id);
+        if matching != Some(&details) {
+            return Err(Error::UnexpectedResponse {
+                operation: BACKUP_ONE.operation(),
+            });
+        }
+
+        Ok((details, collection))
+    }
+
+    pub(crate) async fn backups_by_target(
+        &self,
+        target: &BackupTarget,
+    ) -> Result<BackupCollection, Error> {
+        if !target.is_valid() {
+            return Err(invalid_request(
+                BACKUP_ONE.operation(),
+                "Backup target identity cannot be empty",
+            ));
+        }
+
+        let (parent_id, backups) = match target {
+            BackupTarget::Postgres(id) => {
+                let request = PostgresOneRequest {
+                    query: PostgresOneRequestQuery {
+                        postgres_id: id.as_str().to_owned(),
+                    },
+                };
+                validate_generated_request(POSTGRES_ONE, &request)?;
+                let response: PostgresBackupCollectionResponse = self
+                    .read_query_json_secret(POSTGRES_ONE, &request.query)
+                    .await?;
+                (response.postgres_id.as_str().to_owned(), response.backups)
+            }
+            BackupTarget::MySql(id) => {
+                let request = MysqlOneRequest {
+                    query: MysqlOneRequestQuery {
+                        mysql_id: id.as_str().to_owned(),
+                    },
+                };
+                validate_generated_request(MYSQL_ONE, &request)?;
+                let response: MySqlBackupCollectionResponse = self
+                    .read_query_json_secret(MYSQL_ONE, &request.query)
+                    .await?;
+                (response.mysql_id.as_str().to_owned(), response.backups)
+            }
+            BackupTarget::MariaDb(id) => {
+                let request = MariadbOneRequest {
+                    query: MariadbOneRequestQuery {
+                        mariadb_id: id.as_str().to_owned(),
+                    },
+                };
+                validate_generated_request(MARIADB_ONE, &request)?;
+                let response: MariaDbBackupCollectionResponse = self
+                    .read_query_json_secret(MARIADB_ONE, &request.query)
+                    .await?;
+                (response.mariadb_id.as_str().to_owned(), response.backups)
+            }
+            BackupTarget::Mongo(id) => {
+                let request = MongoOneRequest {
+                    query: MongoOneRequestQuery {
+                        mongo_id: id.as_str().to_owned(),
+                    },
+                };
+                validate_generated_request(MONGO_ONE, &request)?;
+                let response: MongoBackupCollectionResponse = self
+                    .read_query_json_secret(MONGO_ONE, &request.query)
+                    .await?;
+                (response.mongo_id.as_str().to_owned(), response.backups)
+            }
+            BackupTarget::LibSql(id) => {
+                let request = LibsqlOneRequest {
+                    query: LibsqlOneRequestQuery {
+                        libsql_id: id.as_str().to_owned(),
+                    },
+                };
+                validate_generated_request(LIBSQL_ONE, &request)?;
+                let response: LibSqlBackupCollectionResponse = self
+                    .read_query_json_secret(LIBSQL_ONE, &request.query)
+                    .await?;
+                (response.libsql_id.as_str().to_owned(), response.backups)
+            }
+        };
+        let mut seen_ids = HashSet::new();
+        let mut seen_collisions = HashSet::new();
+        let contradictory = parent_id != target.id()
+            || backups.len() > BACKUP_LIST_ITEM_LIMIT
+            || backups.iter().any(|backup| {
+                !backup.is_valid()
+                    || backup.target != *target
+                    || !seen_ids.insert(backup.backup_id.as_str().to_owned())
+                    || !seen_collisions.insert(backup.collision_key())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: BACKUP_ONE.operation(),
+            });
+        }
+
+        Ok(BackupCollection::new(target.clone(), backups))
+    }
+
+    async fn validate_backup_destination(
+        &self,
+        destination_id: &crate::DestinationId,
+        endpoint: Endpoint,
+    ) -> Result<(), Error> {
+        let destinations = self.destination_all().await?;
+        if destinations
+            .destinations()
+            .iter()
+            .any(|destination| destination.destination_id == *destination_id)
+        {
+            return Ok(());
+        }
+
+        Err(Error::UnexpectedResponse {
+            operation: endpoint.operation(),
+        })
+    }
+
+    pub(crate) async fn backup_create(&self, input: CreateBackup) -> Result<CreatedBackup, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                BACKUP_CREATE.operation(),
+                "Backup create fields are invalid",
+            ));
+        }
+        self.validate_backup_destination(input.destination_id(), BACKUP_CREATE)
+            .await?;
+        let before = self.backups_by_target(input.target()).await?;
+        let collision_key = input.collision_key();
+        if before
+            .backups()
+            .iter()
+            .any(|backup| backup.collision_key() == collision_key)
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: BACKUP_CREATE.operation(),
+            });
+        }
+
+        self.mutate_body_ok_secret(BACKUP_CREATE, &input).await?;
+
+        let after = self
+            .backups_by_target(input.target())
+            .await
+            .map_err(|_| post_mutation_proof_unknown(BACKUP_CREATE))?;
+        let before_ids = before
+            .backups()
+            .iter()
+            .map(|backup| backup.backup_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let after_ids = after
+            .backups()
+            .iter()
+            .map(|backup| backup.backup_id.as_str().to_owned())
+            .collect::<HashSet<_>>();
+        let new_ids = after_ids.difference(&before_ids).collect::<Vec<_>>();
+        if !before_ids.is_subset(&after_ids) || new_ids.len() != 1 {
+            return Err(post_mutation_proof_unknown(BACKUP_CREATE));
+        }
+        let created = after
+            .backups()
+            .iter()
+            .find(|backup| backup.backup_id.as_str() == new_ids[0].as_str());
+        if !created.is_some_and(|backup| input.matches(backup)) {
+            return Err(post_mutation_proof_unknown(BACKUP_CREATE));
+        }
+
+        Ok(CreatedBackup::new(
+            created
+                .expect("the matching Backup was checked")
+                .backup_id
+                .clone(),
+        ))
+    }
+
+    pub(crate) async fn backup_update(&self, input: UpdateBackup) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                BACKUP_UPDATE.operation(),
+                "Backup update fields are invalid",
+            ));
+        }
+        self.validate_backup_destination(input.destination_id(), BACKUP_UPDATE)
+            .await?;
+        let (existing, before) = self
+            .backup_get_with_collection(input.backup_id().as_str())
+            .await?;
+        let collision_key = input.collision_key();
+        if existing.target != *input.target()
+            || before.backups().iter().any(|backup| {
+                backup.backup_id != *input.backup_id() && backup.collision_key() == collision_key
+            })
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: BACKUP_UPDATE.operation(),
+            });
+        }
+
+        self.mutate_body_ok_secret(BACKUP_UPDATE, &input).await?;
+
+        let (updated, _) = self
+            .backup_get_with_collection(input.backup_id().as_str())
+            .await
+            .map_err(|_| post_mutation_proof_unknown(BACKUP_UPDATE))?;
+        if !input.matches(&updated) {
+            return Err(post_mutation_proof_unknown(BACKUP_UPDATE));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn backup_delete(
+        &self,
+        backup_id: BackupId,
+        target: BackupTarget,
+    ) -> Result<(), Error> {
+        if backup_id.as_str().is_empty() || !target.is_valid() {
+            return Err(invalid_request(
+                BACKUP_REMOVE.operation(),
+                "Backup identity and target cannot be empty",
+            ));
+        }
+        let request = BackupRemoveRequest {
+            body: BackupIdRequestBody {
+                backup_id: backup_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(BACKUP_REMOVE, &request)?;
+        let (existing, _) = self.backup_get_with_collection(backup_id.as_str()).await?;
+        if existing.target != target {
+            return Err(Error::UnexpectedResponse {
+                operation: BACKUP_REMOVE.operation(),
+            });
+        }
+
+        self.mutate_body_ok_secret(BACKUP_REMOVE, &request.body)
+            .await?;
+
+        let after = self
+            .backups_by_target(&target)
+            .await
+            .map_err(|_| post_mutation_proof_unknown(BACKUP_REMOVE))?;
+        if after
+            .backups()
+            .iter()
+            .any(|backup| backup.backup_id == backup_id)
+        {
+            return Err(post_mutation_proof_unknown(BACKUP_REMOVE));
         }
 
         Ok(())

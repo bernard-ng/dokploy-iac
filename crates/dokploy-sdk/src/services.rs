@@ -1,28 +1,28 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
-    ComposeCollection, ComposeDetails, ComposeId, ComposeVolumePolicy, DestinationCollection,
-    Dokploy, DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
-    EnvironmentId, Error, LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection,
-    MariaDbDetails, MariaDbId, MongoCollection, MongoDetails, MongoId, MountCollection,
-    MountDetails, MountId, MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails,
-    PortId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId,
-    ProjectTopology, RedirectCollection, RedirectDetails, RedirectId, RedisCollection,
-    RedisDetails, RedisId, RegistryCollection, ScheduleCollection, ScheduleDetails, ScheduleId,
-    ScheduleTarget, SecurityCollection, SecurityDetails, SecurityId, ServerCollection,
-    ServiceTarget,
+    BackupCollection, BackupDetails, BackupId, BackupTarget, ComposeCollection, ComposeDetails,
+    ComposeId, ComposeVolumePolicy, DestinationCollection, Dokploy, DomainCollection,
+    DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
+    LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection, MariaDbDetails, MariaDbId,
+    MongoCollection, MongoDetails, MongoId, MountCollection, MountDetails, MountId,
+    MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
+    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
+    RedirectCollection, RedirectDetails, RedirectId, RedisCollection, RedisDetails, RedisId,
+    RegistryCollection, ScheduleCollection, ScheduleDetails, ScheduleId, ScheduleTarget,
+    SecurityCollection, SecurityDetails, SecurityId, ServerCollection, ServiceTarget,
 };
 
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
-    CreateApplication, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
-    CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject,
-    CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreatedApplication,
-    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
-    CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect,
-    CreatedRedis, CreatedSchedule, CreatedSecurity, UpdateApplication, UpdateCompose, UpdateDomain,
-    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
-    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule,
-    UpdateSecurity,
+    CreateApplication, CreateBackup, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql,
+    CreateMariaDb, CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres,
+    CreateProject, CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreatedApplication,
+    CreatedBackup, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
+    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres,
+    CreatedProject, CreatedRedirect, CreatedRedis, CreatedSchedule, CreatedSecurity,
+    UpdateApplication, UpdateBackup, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql,
+    UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres,
+    UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule, UpdateSecurity,
 };
 
 /// Read operations for external Dokploy servers.
@@ -70,6 +70,42 @@ impl<'a> Destinations<'a> {
     /// Reads the complete bounded collection of destination selector candidates.
     pub async fn all(&self) -> Result<DestinationCollection, Error> {
         self.client.destination_all().await
+    }
+}
+
+/// Read and mutation operations for supported database Backups.
+pub struct Backups<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Backups<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads one Backup and requires agreement with its authoritative target collection.
+    pub async fn get(&self, backup_id: BackupId) -> Result<BackupDetails, Error> {
+        self.client.backup_get(backup_id.as_str()).await
+    }
+
+    /// Reads the complete bounded Backup collection for one supported database target.
+    pub async fn by_target(&self, target: BackupTarget) -> Result<BackupCollection, Error> {
+        self.client.backups_by_target(&target).await
+    }
+
+    /// Creates a Backup and discovers exactly one new matching identity.
+    pub async fn create(&self, input: CreateBackup) -> Result<CreatedBackup, Error> {
+        self.client.backup_create(input).await
+    }
+
+    /// Replaces every mutable Backup field without changing its database target.
+    pub async fn update(&self, input: UpdateBackup) -> Result<(), Error> {
+        self.client.backup_update(input).await
+    }
+
+    /// Permanently removes one Backup after proving its supported target.
+    pub async fn delete(&self, backup_id: BackupId, target: BackupTarget) -> Result<(), Error> {
+        self.client.backup_delete(backup_id, target).await
     }
 }
 

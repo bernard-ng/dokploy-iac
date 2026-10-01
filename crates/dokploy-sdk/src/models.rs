@@ -1,7 +1,7 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use std::fmt;
-use std::num::NonZeroU16;
+use std::num::{NonZeroU16, NonZeroU32};
 use zeroize::{Zeroize, Zeroizing};
 
 /// A mutation value that distinguishes omission from an explicit JSON null.
@@ -51,6 +51,7 @@ identifier!(RedisId);
 identifier!(DomainId);
 identifier!(SecurityId);
 identifier!(ScheduleId);
+identifier!(BackupId);
 identifier!(ServerId);
 identifier!(RegistryId);
 identifier!(DestinationId);
@@ -1106,6 +1107,285 @@ impl Serialize for UpdateSchedule {
         )?;
         body.serialize_field("enabled", &self.enabled)?;
         body.serialize_field("timezone", &self.timezone)?;
+        body.end()
+    }
+}
+
+/// The supported database target that owns a Backup.
+///
+/// Compose and web-server backups remain unavailable until their metadata and
+/// privilege boundaries have a separate secret-safe design.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum BackupTarget {
+    /// A PostgreSQL database.
+    Postgres(PostgresId),
+    /// A MySQL database.
+    MySql(MySqlId),
+    /// A MariaDB database.
+    MariaDb(MariaDbId),
+    /// A MongoDB database.
+    Mongo(MongoId),
+    /// A LibSQL database.
+    LibSql(LibSqlId),
+}
+
+impl BackupTarget {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.id().is_empty()
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        match self {
+            Self::Postgres(id) => id.as_str(),
+            Self::MySql(id) => id.as_str(),
+            Self::MariaDb(id) => id.as_str(),
+            Self::Mongo(id) => id.as_str(),
+            Self::LibSql(id) => id.as_str(),
+        }
+    }
+
+    pub(crate) const fn database_type(&self) -> &'static str {
+        match self {
+            Self::Postgres(_) => "postgres",
+            Self::MySql(_) => "mysql",
+            Self::MariaDb(_) => "mariadb",
+            Self::Mongo(_) => "mongo",
+            Self::LibSql(_) => "libsql",
+        }
+    }
+}
+
+/// Complete safe inputs required to create one database Backup.
+#[derive(Clone, Debug)]
+pub struct CreateBackup {
+    target: BackupTarget,
+    destination_id: DestinationId,
+    schedule: String,
+    enabled: bool,
+    prefix: String,
+    database: String,
+    keep_latest_count: Option<NonZeroU32>,
+    include_encryption_key: bool,
+}
+
+impl CreateBackup {
+    /// Creates the complete desired Backup payload for a supported database.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        target: BackupTarget,
+        destination_id: DestinationId,
+        schedule: impl Into<String>,
+        enabled: bool,
+        prefix: impl Into<String>,
+        database: impl Into<String>,
+        keep_latest_count: Option<NonZeroU32>,
+        include_encryption_key: bool,
+    ) -> Self {
+        Self {
+            target,
+            destination_id,
+            schedule: schedule.into(),
+            enabled,
+            prefix: prefix.into(),
+            database: database.into(),
+            keep_latest_count,
+            include_encryption_key,
+        }
+    }
+
+    pub(crate) const fn target(&self) -> &BackupTarget {
+        &self.target
+    }
+
+    pub(crate) const fn destination_id(&self) -> &DestinationId {
+        &self.destination_id
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        self.target.is_valid()
+            && !self.destination_id.as_str().is_empty()
+            && !self.schedule.is_empty()
+            && !self.prefix.is_empty()
+            && !self.database.is_empty()
+    }
+
+    pub(crate) fn matches(&self, details: &BackupDetails) -> bool {
+        details.is_valid()
+            && details.target == self.target
+            && details.destination_id == self.destination_id
+            && details.schedule == self.schedule
+            && details.enabled == Some(self.enabled)
+            && details.prefix == self.prefix
+            && details.database == self.database
+            && details.keep_latest_count == self.keep_latest_count
+            && details.include_encryption_key == self.include_encryption_key
+    }
+
+    pub(crate) fn collision_key(&self) -> BackupCollisionKey {
+        BackupCollisionKey::new(
+            self.target.clone(),
+            self.destination_id.clone(),
+            &self.prefix,
+            self.database.clone(),
+        )
+    }
+}
+
+impl Serialize for CreateBackup {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("CreateBackup", 12)?;
+        body.serialize_field("schedule", &self.schedule)?;
+        body.serialize_field("enabled", &self.enabled)?;
+        body.serialize_field("prefix", &self.prefix)?;
+        body.serialize_field("destinationId", self.destination_id.as_str())?;
+        body.serialize_field(
+            "keepLatestCount",
+            &self.keep_latest_count.map(NonZeroU32::get),
+        )?;
+        body.serialize_field("database", &self.database)?;
+        body.serialize_field("databaseType", self.target.database_type())?;
+        body.serialize_field("backupType", "database")?;
+        body.serialize_field("serviceName", &Option::<String>::None)?;
+        body.serialize_field("includeEncryptionKey", &self.include_encryption_key)?;
+        body.serialize_field("metadata", &Option::<()>::None)?;
+        match &self.target {
+            BackupTarget::Postgres(id) => body.serialize_field("postgresId", id.as_str())?,
+            BackupTarget::MySql(id) => body.serialize_field("mysqlId", id.as_str())?,
+            BackupTarget::MariaDb(id) => body.serialize_field("mariadbId", id.as_str())?,
+            BackupTarget::Mongo(id) => body.serialize_field("mongoId", id.as_str())?,
+            BackupTarget::LibSql(id) => body.serialize_field("libsqlId", id.as_str())?,
+        }
+        body.end()
+    }
+}
+
+/// Physical identity discovered after Dokploy creates one Backup.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedBackup {
+    backup_id: BackupId,
+}
+
+impl CreatedBackup {
+    pub(crate) const fn new(backup_id: BackupId) -> Self {
+        Self { backup_id }
+    }
+
+    /// Returns the created Backup identity.
+    #[must_use]
+    pub const fn backup_id(&self) -> &BackupId {
+        &self.backup_id
+    }
+}
+
+/// Every mutable database Backup field plus the immutable target proof.
+#[derive(Clone, Debug)]
+pub struct UpdateBackup {
+    backup_id: BackupId,
+    target: BackupTarget,
+    destination_id: DestinationId,
+    schedule: String,
+    enabled: bool,
+    prefix: String,
+    database: String,
+    keep_latest_count: Option<NonZeroU32>,
+    include_encryption_key: bool,
+}
+
+impl UpdateBackup {
+    /// Replaces every mutable field without changing the Backup target.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        backup_id: BackupId,
+        target: BackupTarget,
+        destination_id: DestinationId,
+        schedule: impl Into<String>,
+        enabled: bool,
+        prefix: impl Into<String>,
+        database: impl Into<String>,
+        keep_latest_count: Option<NonZeroU32>,
+        include_encryption_key: bool,
+    ) -> Self {
+        Self {
+            backup_id,
+            target,
+            destination_id,
+            schedule: schedule.into(),
+            enabled,
+            prefix: prefix.into(),
+            database: database.into(),
+            keep_latest_count,
+            include_encryption_key,
+        }
+    }
+
+    pub(crate) const fn backup_id(&self) -> &BackupId {
+        &self.backup_id
+    }
+
+    pub(crate) const fn target(&self) -> &BackupTarget {
+        &self.target
+    }
+
+    pub(crate) const fn destination_id(&self) -> &DestinationId {
+        &self.destination_id
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.backup_id.as_str().is_empty()
+            && self.target.is_valid()
+            && !self.destination_id.as_str().is_empty()
+            && !self.schedule.is_empty()
+            && !self.prefix.is_empty()
+            && !self.database.is_empty()
+    }
+
+    pub(crate) fn matches(&self, details: &BackupDetails) -> bool {
+        details.backup_id == self.backup_id
+            && details.target == self.target
+            && details.destination_id == self.destination_id
+            && details.schedule == self.schedule
+            && details.enabled == Some(self.enabled)
+            && details.prefix == self.prefix
+            && details.database == self.database
+            && details.keep_latest_count == self.keep_latest_count
+            && details.include_encryption_key == self.include_encryption_key
+    }
+
+    pub(crate) fn collision_key(&self) -> BackupCollisionKey {
+        BackupCollisionKey::new(
+            self.target.clone(),
+            self.destination_id.clone(),
+            &self.prefix,
+            self.database.clone(),
+        )
+    }
+}
+
+impl Serialize for UpdateBackup {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut body = serializer.serialize_struct("UpdateBackup", 11)?;
+        body.serialize_field("schedule", &self.schedule)?;
+        body.serialize_field("enabled", &self.enabled)?;
+        body.serialize_field("prefix", &self.prefix)?;
+        body.serialize_field("backupId", self.backup_id.as_str())?;
+        body.serialize_field("destinationId", self.destination_id.as_str())?;
+        body.serialize_field("database", &self.database)?;
+        body.serialize_field(
+            "keepLatestCount",
+            &self.keep_latest_count.map(NonZeroU32::get),
+        )?;
+        body.serialize_field("serviceName", &Option::<String>::None)?;
+        body.serialize_field("metadata", &Option::<()>::None)?;
+        body.serialize_field("databaseType", self.target.database_type())?;
+        body.serialize_field("includeEncryptionKey", &self.include_encryption_key)?;
         body.end()
     }
 }
@@ -3962,6 +4242,290 @@ impl ScheduleCollection {
     pub fn schedules(&self) -> &[ScheduleDetails] {
         &self.schedules
     }
+}
+
+/// A safe database Backup returned by direct or target-scoped reads.
+///
+/// Nested database records, destination records, deployment history, user
+/// relations, and metadata are deliberately excluded. Those upstream
+/// relations can contain database credentials, destination keys, executable
+/// errors, or Compose metadata secrets.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackupDetails {
+    pub backup_id: BackupId,
+    pub target: BackupTarget,
+    pub destination_id: DestinationId,
+    pub schedule: String,
+    pub enabled: Option<bool>,
+    pub prefix: String,
+    pub database: String,
+    pub keep_latest_count: Option<NonZeroU32>,
+    pub include_encryption_key: bool,
+}
+
+impl BackupDetails {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.backup_id.as_str().is_empty()
+            && self.target.is_valid()
+            && !self.destination_id.as_str().is_empty()
+            && !self.schedule.is_empty()
+            && !self.prefix.is_empty()
+            && !self.database.is_empty()
+    }
+
+    pub(crate) fn collision_key(&self) -> BackupCollisionKey {
+        BackupCollisionKey::new(
+            self.target.clone(),
+            self.destination_id.clone(),
+            &self.prefix,
+            self.database.clone(),
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct BackupCollisionKey {
+    target: BackupTarget,
+    destination_id: DestinationId,
+    normalized_prefix: String,
+    database: String,
+}
+
+impl BackupCollisionKey {
+    fn new(
+        target: BackupTarget,
+        destination_id: DestinationId,
+        prefix: &str,
+        database: String,
+    ) -> Self {
+        Self {
+            target,
+            destination_id,
+            normalized_prefix: normalize_backup_prefix(prefix),
+            database,
+        }
+    }
+}
+
+fn normalize_backup_prefix(prefix: &str) -> String {
+    let trimmed = prefix.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("{trimmed}/")
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupResponse {
+    backup_id: BackupId,
+    schedule: String,
+    #[serde(default)]
+    enabled: ResponseField<bool>,
+    database: String,
+    prefix: String,
+    destination_id: DestinationId,
+    #[serde(default)]
+    keep_latest_count: ResponseField<u32>,
+    include_encryption_key: bool,
+    backup_type: BackupTypeResponse,
+    database_type: BackupDatabaseTypeResponse,
+    #[serde(default)]
+    compose_id: ResponseField<ComposeId>,
+    #[serde(default)]
+    postgres_id: ResponseField<PostgresId>,
+    #[serde(default)]
+    mariadb_id: ResponseField<MariaDbId>,
+    #[serde(default)]
+    mysql_id: ResponseField<MySqlId>,
+    #[serde(default)]
+    mongo_id: ResponseField<MongoId>,
+    #[serde(default)]
+    libsql_id: ResponseField<LibSqlId>,
+    #[serde(default)]
+    service_name: ResponseField<String>,
+    #[serde(default)]
+    metadata: ResponseField<de::IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum BackupTypeResponse {
+    Database,
+    Compose,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum BackupDatabaseTypeResponse {
+    Postgres,
+    Mariadb,
+    Mysql,
+    Mongo,
+    WebServer,
+    Libsql,
+}
+
+impl<'de> Deserialize<'de> for BackupDetails {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let response = BackupResponse::deserialize(deserializer)?;
+        if !matches!(response.backup_type, BackupTypeResponse::Database)
+            || !matches!(response.compose_id, ResponseField::Null)
+            || !matches!(response.service_name, ResponseField::Null)
+            || !matches!(response.metadata, ResponseField::Null)
+        {
+            return Err(de::Error::custom("unsupported Backup target or metadata"));
+        }
+
+        let target = match (
+            response.database_type,
+            response.postgres_id,
+            response.mysql_id,
+            response.mariadb_id,
+            response.mongo_id,
+            response.libsql_id,
+        ) {
+            (
+                BackupDatabaseTypeResponse::Postgres,
+                ResponseField::Value(id),
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Null,
+            ) => BackupTarget::Postgres(id),
+            (
+                BackupDatabaseTypeResponse::Mysql,
+                ResponseField::Null,
+                ResponseField::Value(id),
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Null,
+            ) => BackupTarget::MySql(id),
+            (
+                BackupDatabaseTypeResponse::Mariadb,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Value(id),
+                ResponseField::Null,
+                ResponseField::Null,
+            ) => BackupTarget::MariaDb(id),
+            (
+                BackupDatabaseTypeResponse::Mongo,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Value(id),
+                ResponseField::Null,
+            ) => BackupTarget::Mongo(id),
+            (
+                BackupDatabaseTypeResponse::Libsql,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Null,
+                ResponseField::Value(id),
+            ) => BackupTarget::LibSql(id),
+            (BackupDatabaseTypeResponse::WebServer, ..) => {
+                return Err(de::Error::custom("invalid or unsupported Backup target"));
+            }
+            _ => {
+                return Err(de::Error::custom("invalid or unsupported Backup target"));
+            }
+        };
+        let enabled = match response.enabled {
+            ResponseField::Null => None,
+            ResponseField::Value(enabled) => Some(enabled),
+            ResponseField::NotReturned => {
+                return Err(de::Error::custom("Backup enabled state was not returned"));
+            }
+        };
+        let keep_latest_count = match response.keep_latest_count {
+            ResponseField::Null => None,
+            ResponseField::Value(count) => Some(
+                NonZeroU32::new(count)
+                    .ok_or_else(|| de::Error::custom("Backup retention count cannot be zero"))?,
+            ),
+            ResponseField::NotReturned => {
+                return Err(de::Error::custom("Backup retention count was not returned"));
+            }
+        };
+
+        Ok(Self {
+            backup_id: response.backup_id,
+            target,
+            destination_id: response.destination_id,
+            schedule: response.schedule,
+            enabled,
+            prefix: response.prefix,
+            database: response.database,
+            keep_latest_count,
+            include_encryption_key: response.include_encryption_key,
+        })
+    }
+}
+
+/// The complete bounded Backup collection for one exact database target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackupCollection {
+    target: BackupTarget,
+    backups: Vec<BackupDetails>,
+}
+
+impl BackupCollection {
+    pub(crate) fn new(target: BackupTarget, backups: Vec<BackupDetails>) -> Self {
+        Self { target, backups }
+    }
+
+    /// Returns the exact database target whose Backup collection was read.
+    #[must_use]
+    pub const fn target(&self) -> &BackupTarget {
+        &self.target
+    }
+
+    /// Returns every Backup authoritatively reported by the target.
+    #[must_use]
+    pub fn backups(&self) -> &[BackupDetails] {
+        &self.backups
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PostgresBackupCollectionResponse {
+    pub(crate) postgres_id: PostgresId,
+    pub(crate) backups: Vec<BackupDetails>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MySqlBackupCollectionResponse {
+    pub(crate) mysql_id: MySqlId,
+    pub(crate) backups: Vec<BackupDetails>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MariaDbBackupCollectionResponse {
+    pub(crate) mariadb_id: MariaDbId,
+    pub(crate) backups: Vec<BackupDetails>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MongoBackupCollectionResponse {
+    pub(crate) mongo_id: MongoId,
+    pub(crate) backups: Vec<BackupDetails>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LibSqlBackupCollectionResponse {
+    pub(crate) libsql_id: LibSqlId,
+    pub(crate) backups: Vec<BackupDetails>,
 }
 
 fn deserialize_secret_presence<'de, D>(deserializer: D) -> Result<bool, D::Error>
