@@ -112,6 +112,15 @@ pub enum DomainTopologyAuthority {
     Partial,
 }
 
+/// Whether an exact application's Port collection is known to be complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PortTopologyAuthority {
+    /// Absence from `application.one.ports` proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Visibility assertions required by combined discovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiscoveryAuthority {
@@ -137,6 +146,8 @@ pub struct DiscoveryAuthority {
     pub redis: RedisTopologyAuthority,
     /// Completeness of each `domain.byApplicationId` collection.
     pub domains: DomainTopologyAuthority,
+    /// Completeness of each exact application's Port collection.
+    pub ports: PortTopologyAuthority,
 }
 
 impl DiscoveryAuthority {
@@ -155,6 +166,7 @@ impl DiscoveryAuthority {
             libsql: LibSqlTopologyAuthority::Authoritative,
             redis: RedisTopologyAuthority::Authoritative,
             domains: DomainTopologyAuthority::Authoritative,
+            ports: PortTopologyAuthority::Authoritative,
         }
     }
 }
@@ -336,6 +348,21 @@ pub enum DiscoverRemoteError {
     /// Direct and collection Compose reads contradict each other.
     #[error("DOKREM062: Compose read endpoints returned conflicting topology")]
     ComposeTopologyConflict,
+    /// A Port has no unambiguous containing application.
+    #[error("DOKREM063: Port containment is unavailable")]
+    PortContainment,
+    /// A Port physical identity does not satisfy the state contract.
+    #[error("DOKREM064: Port topology contains an invalid remote identity")]
+    InvalidPortId,
+    /// More than one Port occupies one application-scoped collision key.
+    #[error("DOKREM065: Port topology contains a duplicate published port and protocol")]
+    DuplicatePortCollision,
+    /// More than one logical address resolves to the same Port identity.
+    #[error("DOKREM066: Port topology contains a duplicate remote identity")]
+    DuplicatePortId,
+    /// Direct and authoritative parent Port reads contradict each other.
+    #[error("DOKREM067: Port read endpoints returned conflicting topology")]
+    PortTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -412,6 +439,9 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(applications);
+    let ports =
+        discover_port_observations(client, compiled, state, &observations, authority.ports).await?;
+    observations.extend(ports);
     let compose =
         discover_compose_observations(client, compiled, state, &observations, authority.compose)
             .await?;
@@ -681,6 +711,365 @@ async fn discover_compose_observations(
     }
 
     Ok(observations)
+}
+
+async fn discover_port_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: PortTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::Port)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = Vec::new();
+        if desired.resources().contains_key(address) {
+            parents.push(port_parent_from_desired(address, compiled, state)?);
+        }
+        if state.resource(address).is_some() {
+            parents.push(port_parent_from_state(address, state)?);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(application_id) = trusted_application_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&application_id) {
+                continue;
+            }
+            let collection = client
+                .ports()
+                .by_application(dokploy_sdk::ApplicationId::new(&application_id))
+                .await;
+            collections.insert(application_id, collection);
+        }
+    }
+    validate_port_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = port_parent_from_state(&address, state)?;
+            let Some(current_application_id) =
+                trusted_application_id(&current_parent, compiled, state, topology)
+            else {
+                observations.push((
+                    address,
+                    inherited_port_parent_observation(&current_parent, topology),
+                ));
+                continue;
+            };
+            match client
+                .ports()
+                .get(dokploy_sdk::PortId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(port) => {
+                    let remote_id = RemoteId::new(port.port_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidPortId)?;
+                    if remote_id != *stored.remote_id()
+                        || port.application_id.as_str() != current_application_id
+                    {
+                        return Err(DiscoverRemoteError::PortTopologyConflict);
+                    }
+                    match collections.get(&current_application_id) {
+                        Some(Ok(collection)) => {
+                            let matching = collection
+                                .ports()
+                                .iter()
+                                .filter(|candidate| candidate.port_id == port.port_id)
+                                .collect::<Vec<_>>();
+                            if matching.as_slice() != [&port] {
+                                return Err(DiscoverRemoteError::PortTopologyConflict);
+                            }
+                        }
+                        Some(Err(error)) => {
+                            observations.push((
+                                address,
+                                RemoteObservation::Unavailable(classify_sdk_error(error)),
+                            ));
+                            continue;
+                        }
+                        None => return Err(DiscoverRemoteError::PortContainment),
+                    }
+                    if !seen_direct_ids.insert(remote_id.clone()) {
+                        return Err(DiscoverRemoteError::DuplicatePortId);
+                    }
+                    if desired.resources().contains_key(&address) {
+                        let desired_parent = port_parent_from_desired(&address, compiled, state)?;
+                        if desired_parent != current_parent {
+                            match observe_port_under_parent(
+                                &address,
+                                &desired_parent,
+                                compiled,
+                                state,
+                                topology,
+                                &collections,
+                                authority,
+                            )? {
+                                RemoteObservation::Present(_) => {
+                                    return Err(DiscoverRemoteError::DuplicatePortCollision);
+                                }
+                                RemoteObservation::Unavailable(failure) => {
+                                    observations
+                                        .push((address, RemoteObservation::Unavailable(failure)));
+                                    continue;
+                                }
+                                RemoteObservation::Missing => {}
+                            }
+                        }
+                    }
+                    RemoteObservation::Present(RemoteResource::new(
+                        remote_id,
+                        port_properties(&address, compiled, &port),
+                    ))
+                }
+                Err(SdkError::Api(error)) if error.status() == 400 => {
+                    match collections.get(&current_application_id) {
+                        Some(Ok(collection))
+                            if collection.ports().iter().all(|port| {
+                                port.port_id.as_str() != stored.remote_id().as_str()
+                            }) =>
+                        {
+                            if authority == PortTopologyAuthority::Authoritative {
+                                RemoteObservation::Missing
+                            } else {
+                                RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                            }
+                        }
+                        Some(Ok(_)) => {
+                            RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                        }
+                        Some(Err(error)) => {
+                            RemoteObservation::Unavailable(classify_sdk_error(error))
+                        }
+                        None => RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse),
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = port_parent_from_desired(&address, compiled, state)?;
+            observe_port_under_parent(
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
+}
+
+fn validate_port_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::PortCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (application_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        if collection.application_id().as_str() != application_id {
+            return Err(DiscoverRemoteError::PortContainment);
+        }
+        let mut collisions = BTreeSet::new();
+        for port in collection.ports() {
+            let remote_id = RemoteId::new(port.port_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidPortId)?;
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicatePortId);
+            }
+            if !collisions.insert((port.published_port.get(), port_protocol(port.protocol))) {
+                return Err(DiscoverRemoteError::DuplicatePortCollision);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn observe_port_under_parent(
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::PortCollection, dokploy_sdk::Error>>,
+    authority: PortTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match observation(topology, parent) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(application_id) = trusted_application_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    let Some((published_port, _, _, protocol)) = compiled.bindings().port(address) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&application_id) {
+        Some(Ok(collection)) => {
+            let matching = collection
+                .ports()
+                .iter()
+                .filter(|port| {
+                    port.published_port.get() == published_port
+                        && port_protocol(port.protocol) == protocol
+                })
+                .collect::<Vec<_>>();
+            let port = match matching.as_slice() {
+                [] if authority == PortTopologyAuthority::Authoritative => {
+                    return Ok(RemoteObservation::Missing);
+                }
+                [] => {
+                    return Ok(RemoteObservation::Unavailable(
+                        RemoteFailureKind::InvalidResponse,
+                    ));
+                }
+                [port] => *port,
+                _ => return Err(DiscoverRemoteError::DuplicatePortCollision),
+            };
+            let remote_id = RemoteId::new(port.port_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidPortId)?;
+            Ok(RemoteObservation::Present(RemoteResource::new(
+                remote_id,
+                port_properties(address, compiled, port),
+            )))
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn inherited_port_parent_observation(
+    parent: &ResourceAddress,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> RemoteObservation {
+    match observation(topology, parent) {
+        Some(RemoteObservation::Missing) => RemoteObservation::Missing,
+        Some(RemoteObservation::Unavailable(failure)) => RemoteObservation::Unavailable(*failure),
+        Some(RemoteObservation::Present(_)) | None => {
+            RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+        }
+    }
+}
+
+fn port_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    compiled
+        .desired_state()
+        .resources()
+        .get(address)
+        .and_then(dokploy_core::DesiredResource::containment)
+        .cloned()
+        .or_else(|| {
+            state
+                .resource(address)
+                .and_then(dokploy_state::ResourceState::containment)
+                .cloned()
+        })
+        .filter(|parent| parent.kind() == ResourceKind::Application)
+        .ok_or(DiscoverRemoteError::PortContainment)
+}
+
+fn port_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    state
+        .resource(address)
+        .and_then(dokploy_state::ResourceState::containment)
+        .cloned()
+        .filter(|parent| parent.kind() == ResourceKind::Application)
+        .ok_or(DiscoverRemoteError::PortContainment)
+}
+
+fn port_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    port: &dokploy_sdk::PortDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let value = match path {
+            PropertyPath::PublishedPort => serde_json::json!(port.published_port.get()),
+            PropertyPath::TargetPort => serde_json::json!(port.target_port.get()),
+            PropertyPath::PublishMode => serde_json::json!(port_publish_mode(port.publish_mode)),
+            PropertyPath::Protocol => serde_json::json!(port_protocol(port.protocol)),
+            _ => continue,
+        };
+        properties.insert(
+            path.clone(),
+            PropertyObservation::Known(
+                ComparableValue::try_from_json(value)
+                    .expect("typed Port response values are non-null"),
+            ),
+        );
+    }
+
+    properties
+}
+
+const fn port_publish_mode(mode: dokploy_sdk::PublishMode) -> &'static str {
+    match mode {
+        dokploy_sdk::PublishMode::Ingress => "ingress",
+        dokploy_sdk::PublishMode::Host => "host",
+    }
+}
+
+const fn port_protocol(protocol: dokploy_sdk::PortProtocol) -> &'static str {
+    match protocol {
+        dokploy_sdk::PortProtocol::Tcp => "tcp",
+        dokploy_sdk::PortProtocol::Udp => "udp",
+    }
 }
 
 async fn discover_domain_observations(

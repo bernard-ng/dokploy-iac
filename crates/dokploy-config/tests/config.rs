@@ -1097,3 +1097,67 @@ environments:
         assert!(DokployConfig::parse(&yaml).is_err());
     }
 }
+
+#[test]
+fn rejects_duplicate_port_collision_keys_within_one_application() {
+    let error = DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        ports:
+          http:
+            published_port: 8080
+            target_port: 80
+            publish_mode: ingress
+            protocol: tcp
+          metrics:
+            published_port: 8080
+            target_port: 9090
+            publish_mode: host
+            protocol: tcp
+"#,
+    )
+    .expect_err("one application cannot publish the same port and protocol twice");
+
+    assert!(
+        error
+            .issues()
+            .contains(&ValidationIssue::DuplicatePortCollision)
+    );
+
+    DokployConfig::parse(
+        r#"
+version: 1
+project:
+  name: platform
+environments:
+  production:
+    applications:
+      api:
+        ports:
+          tcp:
+            published_port: 8080
+            target_port: 80
+            publish_mode: ingress
+            protocol: tcp
+          udp:
+            published_port: 8080
+            target_port: 80
+            publish_mode: ingress
+            protocol: udp
+      worker:
+        ports:
+          http:
+            published_port: 8080
+            target_port: 80
+            publish_mode: ingress
+            protocol: tcp
+"#,
+    )
+    .expect("protocol and application are part of the collision key");
+}

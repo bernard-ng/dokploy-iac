@@ -1428,7 +1428,7 @@ async fn mysql_invalid_create_identity_keeps_the_journal_step_recoverable() {
     assert!(matches!(
         error,
         dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
-            code: dokploy_state::FailureCode::Internal
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
         }
     ));
     let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
@@ -2101,6 +2101,245 @@ async fn project_default_environment_is_checkpointed_without_a_duplicate_create(
     assert_eq!(requests.len(), 2);
     assert!(requests[0].starts_with("GET /api/project.all HTTP/1.1\r\n"));
     assert!(requests[1].starts_with("POST /api/project.create HTTP/1.1\r\n"));
+}
+
+#[tokio::test]
+async fn port_create_checkpoints_complete_fields_without_deploying() {
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}"#,
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        ports:\n",
+            "          http:\n",
+            "            published_port: 8080\n",
+            "            target_port: 80\n",
+            "            publish_mode: ingress\n",
+            "            protocol: tcp\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let summary = apply_workspace(&server.client(), &config)
+        .await
+        .expect("Port creation succeeds");
+
+    assert_eq!(summary.applied(), 4);
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let state = StateStore::new(directory.path(), instance)
+        .expect("state store is valid")
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    let port: ResourceAddress = "port.http".parse().expect("address is valid");
+    assert_eq!(
+        state
+            .resource(&port)
+            .expect("Port is checkpointed")
+            .last_applied()
+            .as_json(),
+        &serde_json::json!({
+            "published_port": 8080,
+            "target_port": 80,
+            "publish_mode": "ingress",
+            "protocol": "tcp"
+        })
+    );
+    let requests = server.finish();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[3].starts_with("POST /api/port.create HTTP/1.1\r\n"));
+    assert!(requests[3].contains(r#""applicationId":"application-1""#));
+    assert!(requests[3].contains(r#""publishedPort":8080"#));
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn port_update_uses_a_fresh_read_and_complete_replacement_without_deploying() {
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let application_collection = r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#;
+    let application = r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#;
+    let port = r#"{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}"#;
+    let port_collection = r#"{"applicationId":"application-1","ports":[{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}]}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/application-create.owner.json"),
+        ),
+        ("200 OK", port),
+        ("200 OK", project_topology),
+        ("200 OK", environment_collection),
+        ("200 OK", environment),
+        ("200 OK", application_collection),
+        ("200 OK", application),
+        ("200 OK", port_collection),
+        ("200 OK", port),
+        ("200 OK", port),
+        ("200 OK", r#"{"ok":true}"#),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    let port_config = |target: u16| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    applications:\n",
+                "      api:\n",
+                "        ports:\n",
+                "          http:\n",
+                "            published_port: 8080\n",
+                "            target_port: {}\n",
+                "            publish_mode: ingress\n",
+                "            protocol: tcp\n",
+            ),
+            target,
+        )
+    };
+    fs::write(&config, port_config(80)).expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Port creation succeeds");
+    fs::write(&config, port_config(81)).expect("updated configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Port update succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 13);
+    assert!(requests[11].starts_with("GET /api/port.one?portId=port-1"));
+    assert!(requests[12].starts_with("POST /api/port.update HTTP/1.1\r\n"));
+    for expected in [
+        r#""publishedPort":8080"#,
+        r#""targetPort":81"#,
+        r#""publishMode":"ingress""#,
+        r#""protocol":"tcp""#,
+    ] {
+        assert!(requests[12].contains(expected));
+    }
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
+}
+
+#[tokio::test]
+async fn port_containment_change_deletes_before_creating_under_the_new_application() {
+    let application_api = r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#;
+    let application_worker = r#"{"applicationId":"application-2","environmentId":"environment-1","name":"worker","appName":"worker"}"#;
+    let port_api = r#"{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}"#;
+    let port_worker = r#"{"portId":"port-2","applicationId":"application-2","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"},{"applicationId":"application-2","environmentId":"environment-1","name":"worker"}],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let application_collection = r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"},{"applicationId":"application-2","environmentId":"environment-1","name":"worker"}],"total":2}"#;
+    let api_ports = r#"{"applicationId":"application-1","ports":[{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}]}"#;
+    let worker_ports = r#"{"applicationId":"application-2","ports":[]}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        ("200 OK", application_api),
+        ("200 OK", application_worker),
+        ("200 OK", port_api),
+        ("200 OK", project_topology),
+        ("200 OK", environment_collection),
+        ("200 OK", environment),
+        ("200 OK", application_collection),
+        ("200 OK", application_api),
+        ("200 OK", application_worker),
+        ("200 OK", api_ports),
+        ("200 OK", worker_ports),
+        ("200 OK", port_api),
+        ("200 OK", r#"{"ok":true}"#),
+        ("200 OK", port_worker),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let config = directory.path().join("dokploy.yaml");
+    let port_config = |under_worker: bool| {
+        let api = if under_worker {
+            "      api: {}\n"
+        } else {
+            concat!(
+                "      api:\n",
+                "        ports:\n",
+                "          http:\n",
+                "            published_port: 8080\n",
+                "            target_port: 80\n",
+                "            publish_mode: ingress\n",
+                "            protocol: tcp\n",
+            )
+        };
+        let worker = if under_worker {
+            concat!(
+                "      worker:\n",
+                "        ports:\n",
+                "          http:\n",
+                "            published_port: 8080\n",
+                "            target_port: 80\n",
+                "            publish_mode: ingress\n",
+                "            protocol: tcp\n",
+            )
+        } else {
+            "      worker: {}\n"
+        };
+        format!(
+            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n{api}{worker}"
+        )
+    };
+    fs::write(&config, port_config(false)).expect("initial configuration fixture is writable");
+    let client = server.client();
+    apply_workspace(&client, &config)
+        .await
+        .expect("initial Port creation succeeds");
+    fs::write(&config, port_config(true)).expect("moved configuration fixture is writable");
+
+    let summary = apply_workspace(&client, &config)
+        .await
+        .expect("Port containment replacement succeeds");
+
+    assert_eq!(summary.applied(), 1);
+    let requests = server.finish();
+    assert_eq!(requests.len(), 16);
+    assert!(requests[14].starts_with("POST /api/port.delete HTTP/1.1\r\n"));
+    assert!(requests[15].starts_with("POST /api/port.create HTTP/1.1\r\n"));
+    assert!(requests[15].contains(r#""applicationId":"application-2""#));
+    assert!(requests.iter().all(|request| !request.contains(".deploy")));
 }
 
 #[tokio::test]

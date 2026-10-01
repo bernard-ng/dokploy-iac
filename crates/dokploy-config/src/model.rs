@@ -779,6 +779,7 @@ pub enum ValidationIssue {
     InvalidLibSqlPrimaryUrl,
     ComposeDocumentCannotBeCleared,
     UnmanagedComposeDocumentRequiresProtection,
+    DuplicatePortCollision,
 }
 
 impl ValidationIssue {
@@ -810,6 +811,7 @@ impl ValidationIssue {
             Self::InvalidLibSqlPrimaryUrl => "DOKCFG022",
             Self::ComposeDocumentCannotBeCleared => "DOKCFG023",
             Self::UnmanagedComposeDocumentRequiresProtection => "DOKCFG024",
+            Self::DuplicatePortCollision => "DOKCFG025",
         }
     }
 
@@ -842,6 +844,9 @@ impl ValidationIssue {
             Self::ComposeDocumentCannotBeCleared => "Compose document cannot be null",
             Self::UnmanagedComposeDocumentRequiresProtection => {
                 "unmanaged Compose document requires lifecycle.protect: true"
+            }
+            Self::DuplicatePortCollision => {
+                "published port and protocol are duplicated within one application"
             }
         }
     }

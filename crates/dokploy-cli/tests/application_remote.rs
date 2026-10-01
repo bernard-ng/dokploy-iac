@@ -8,8 +8,8 @@ use dokploy_cli::remote::{
     ApplicationTopologyAuthority, ComposeTopologyAuthority, DiscoverRemoteError,
     DiscoveryAuthority, DomainTopologyAuthority, EnvironmentTopologyAuthority,
     LibSqlTopologyAuthority, MariaDbTopologyAuthority, MongoTopologyAuthority,
-    MySqlTopologyAuthority, PostgresTopologyAuthority, ProjectTopologyAuthority,
-    RedisTopologyAuthority, discover_remote,
+    MySqlTopologyAuthority, PortTopologyAuthority, PostgresTopologyAuthority,
+    ProjectTopologyAuthority, RedisTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -108,6 +108,7 @@ fn authority(applications: ApplicationTopologyAuthority) -> DiscoveryAuthority {
         libsql: LibSqlTopologyAuthority::Authoritative,
         redis: RedisTopologyAuthority::Authoritative,
         domains: DomainTopologyAuthority::Authoritative,
+        ports: PortTopologyAuthority::Authoritative,
     }
 }
 

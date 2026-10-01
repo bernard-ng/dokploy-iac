@@ -969,3 +969,82 @@ async fn domain_import_tracks_its_application_dependency_and_immediately_converg
     assert_eq!(requests.len(), 11);
     assert!(requests.iter().all(|request| request.starts_with("GET ")));
 }
+
+#[tokio::test]
+async fn port_import_is_protected_authoritative_and_immediately_convergent() {
+    let port = r#"{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}"#;
+    let port_collection = r#"{"applicationId":"application-1","ports":[{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":80,"publishMode":"ingress","protocol":"tcp"}]}"#;
+    let application = r#"{"applicationId":"application-1","name":"API Service","appName":"api","environmentId":"environment-1","description":"API","replicas":1}"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"Production West","projectId":"project-1"}"#;
+    let project = r#"{"projectId":"project-1","name":"IaC Contract Test","environments":[]}"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"IaC Contract Test","environments":[{"environmentId":"environment-1","name":"Production West","isDefault":true,"applications":[{"applicationId":"application-1","name":"API Service"}],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection = r#"[{"environmentId":"environment-1","name":"Production West"}]"#;
+    let application_collection = r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"API Service"}],"total":1}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        port,
+        port_collection,
+        application,
+        environment,
+        project,
+        project_topology,
+        environment_collection,
+        environment,
+        application_collection,
+        application,
+        port_collection,
+        port,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Port,
+            remote_id: "port-1".to_owned(),
+            address: "port.http".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("Port imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 4);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).unwrap();
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"port.http".parse().unwrap()).unwrap();
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    let imported = state.resource(&"port.http".parse().unwrap()).unwrap();
+    assert!(imported.is_protected());
+    assert_eq!(
+        imported.last_applied().as_json(),
+        &serde_json::json!({
+            "published_port": 8080,
+            "target_port": 80,
+            "publish_mode": "ingress",
+            "protocol": "tcp"
+        })
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 12);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}

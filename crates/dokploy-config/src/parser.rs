@@ -687,6 +687,7 @@ fn validate_resources(
     diagnostics: &mut Vec<ValidationDiagnostic>,
 ) {
     let addresses: BTreeSet<_> = resources.keys().cloned().collect();
+    let mut port_collisions = BTreeSet::new();
 
     for (address, config) in resources.iter_mut() {
         let location = locations
@@ -806,6 +807,19 @@ fn validate_resources(
                 ValidationIssue::UnmanagedComposeDocumentRequiresProtection,
                 location,
             );
+        }
+
+        if let ResourceConfig::Port(port) = config {
+            let parent = parents
+                .get(address)
+                .expect("nested Port resources always have an application parent");
+            if !port_collisions.insert((parent.clone(), port.published_port.get(), port.protocol)) {
+                emit(
+                    diagnostics,
+                    ValidationIssue::DuplicatePortCollision,
+                    location,
+                );
+            }
         }
 
         config.depends_on_mut().sort();

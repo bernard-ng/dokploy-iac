@@ -457,8 +457,33 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
             matches!(value, OwnedValue::Null | OwnedValue::EmptyCollection)
         }
         PropertyPath::Node => libsql_node_value_valid(value),
+        PropertyPath::PublishedPort | PropertyPath::TargetPort => port_number_value_valid(value),
+        PropertyPath::PublishMode => port_string_value_valid(value, &["ingress", "host"]),
+        PropertyPath::Protocol => port_string_value_valid(value, &["tcp", "udp"]),
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
     }
+}
+
+fn port_number_value_valid(value: &OwnedValue) -> bool {
+    matches!(
+        value,
+        OwnedValue::Value(value)
+            if value
+                .as_json()
+                .as_u64()
+                .is_some_and(|number| (1..=u64::from(u16::MAX)).contains(&number))
+    )
+}
+
+fn port_string_value_valid(value: &OwnedValue, allowed: &[&str]) -> bool {
+    matches!(
+        value,
+        OwnedValue::Value(value)
+            if value
+                .as_json()
+                .as_str()
+                .is_some_and(|candidate| allowed.contains(&candidate))
+    )
 }
 
 fn libsql_node_value_valid(value: &OwnedValue) -> bool {
@@ -1236,6 +1261,22 @@ fn validate_remote_resource(
                     PropertyObservation::KnownAbsent => true,
                     PropertyObservation::Unknown(_) => true,
                 },
+                PropertyPath::PublishedPort | PropertyPath::TargetPort => match observation {
+                    PropertyObservation::Known(value) => value
+                        .as_json()
+                        .as_u64()
+                        .is_some_and(|number| (1..=u64::from(u16::MAX)).contains(&number)),
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                    PropertyObservation::KnownAbsent => false,
+                },
+                PropertyPath::PublishMode => {
+                    port_observation_string_valid(observation, &["ingress", "host"])
+                }
+                PropertyPath::Protocol => {
+                    port_observation_string_valid(observation, &["tcp", "udp"])
+                }
                 _ => !matches!(
                     observation,
                     PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
@@ -1259,6 +1300,17 @@ fn validate_remote_resource(
         });
     }
     Ok(())
+}
+
+fn port_observation_string_valid(observation: &PropertyObservation, allowed: &[&str]) -> bool {
+    match observation {
+        PropertyObservation::Known(value) => value
+            .as_json()
+            .as_str()
+            .is_some_and(|candidate| allowed.contains(&candidate)),
+        PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
+        PropertyObservation::KnownAbsent => false,
+    }
 }
 
 fn remote_source_shape_valid(properties: &BTreeMap<PropertyPath, PropertyObservation>) -> bool {

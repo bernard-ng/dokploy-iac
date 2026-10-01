@@ -275,6 +275,132 @@ fn property_paths_use_config_compatible_stable_strings() {
 }
 
 #[test]
+fn port_values_are_validated_at_desired_stored_and_remote_seams() {
+    let port = address("port.http");
+    let application = address("application.api");
+    let valid_properties = BTreeMap::from([
+        (
+            PropertyPath::PublishedPort,
+            OwnedValue::Value(value(json!(8080))),
+        ),
+        (
+            PropertyPath::TargetPort,
+            OwnedValue::Value(value(json!(80))),
+        ),
+        (
+            PropertyPath::PublishMode,
+            OwnedValue::Value(value(json!("ingress"))),
+        ),
+        (
+            PropertyPath::Protocol,
+            OwnedValue::Value(value(json!("tcp"))),
+        ),
+    ]);
+
+    DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            port.clone(),
+            DesiredResource::new(valid_properties.clone())
+                .with_containment(Some(application.clone())),
+        )]),
+    )
+    .expect("typed Port values are valid");
+
+    for (path, invalid) in [
+        (PropertyPath::PublishedPort, OwnedValue::Null),
+        (
+            PropertyPath::PublishedPort,
+            OwnedValue::Value(value(json!(0))),
+        ),
+        (
+            PropertyPath::PublishedPort,
+            OwnedValue::Value(value(json!(65_536))),
+        ),
+        (
+            PropertyPath::TargetPort,
+            OwnedValue::Value(value(json!(1.5))),
+        ),
+        (
+            PropertyPath::PublishMode,
+            OwnedValue::Value(value(json!("bridge"))),
+        ),
+        (
+            PropertyPath::Protocol,
+            OwnedValue::Value(value(json!("sctp"))),
+        ),
+    ] {
+        let mut properties = valid_properties.clone();
+        properties.insert(path, invalid);
+        let error = DesiredState::try_new(
+            digest(),
+            BTreeMap::from([(
+                port.clone(),
+                DesiredResource::new(properties).with_containment(Some(application.clone())),
+            )]),
+        )
+        .expect_err("invalid Port values must fail at the desired-state seam");
+        assert!(matches!(
+            error,
+            DesiredStateError::InvalidPropertyValue { .. }
+        ));
+    }
+
+    let state = state_with_resource_details(
+        &port,
+        &instance(),
+        ResourceKind::Port,
+        "port-1",
+        json!({
+            "published_port": 8080,
+            "target_port": 80,
+            "publish_mode": "ingress",
+            "protocol": null
+        }),
+        false,
+        vec![application],
+    );
+    let error = StoredState::try_from_state(&state)
+        .expect_err("stored Port clears must fail at the state seam");
+    assert!(matches!(
+        error,
+        StoredStateError::InvalidPropertyValue { .. }
+    ));
+
+    for (path, observation) in [
+        (
+            PropertyPath::PublishedPort,
+            PropertyObservation::Known(value(json!(0))),
+        ),
+        (PropertyPath::TargetPort, PropertyObservation::KnownAbsent),
+        (
+            PropertyPath::PublishMode,
+            PropertyObservation::Known(value(json!("bridge"))),
+        ),
+        (
+            PropertyPath::Protocol,
+            PropertyObservation::Known(value(json!("sctp"))),
+        ),
+    ] {
+        let error = RemoteState::try_new(
+            instance(),
+            [(
+                port.clone(),
+                RemoteObservation::Present(RemoteResource::new(
+                    remote_id(),
+                    BTreeMap::from([(path, observation)]),
+                )),
+            )],
+        )
+        .expect_err("invalid known Port observations must fail closed");
+        assert!(matches!(
+            error,
+            RemoteStateError::InvalidPropertyObservation { .. }
+        ));
+    }
+}
+
+#[test]
 fn collection_root_intents_are_explicit_and_cannot_conflict_with_children() {
     let address = address("application.api");
     DesiredState::try_new(

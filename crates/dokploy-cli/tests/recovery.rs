@@ -72,6 +72,134 @@ impl TestServer {
 }
 
 #[tokio::test]
+async fn uncertain_port_update_is_recovered_from_authoritative_complete_state() {
+    let server = TestServer::respond_in_sequence(vec![
+        r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"postgres":[],"redis":[]}]}]"#,
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#,
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#,
+        r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"api"}],"total":1}"#,
+        r#"{"applicationId":"application-1","environmentId":"environment-1","name":"api","appName":"api"}"#,
+        r#"{"applicationId":"application-1","ports":[{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":81,"publishMode":"ingress","protocol":"tcp"}]}"#,
+        r#"{"portId":"port-1","applicationId":"application-1","publishedPort":8080,"targetPort":81,"publishMode":"ingress","protocol":"tcp"}"#,
+    ]);
+    let workspace = tempfile::tempdir().expect("temporary workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+    fs::write(
+        &config_file,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    applications:\n",
+            "      api:\n",
+            "        ports:\n",
+            "          http:\n",
+            "            published_port: 8080\n",
+            "            target_port: 81\n",
+            "            publish_mode: ingress\n",
+            "            protocol: tcp\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+    let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
+    let store = StateStore::new(workspace.path(), instance.clone()).expect("state store is valid");
+    let mut state = seed_parent_state(&store, instance);
+    let before_parents = state.clone();
+    state
+        .upsert_resource(
+            address("application.api"),
+            ResourceState::new(
+                ResourceKind::Application,
+                RemoteId::new("application-1").unwrap(),
+                false,
+                ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+                Some(address("environment.production")),
+                Vec::new(),
+            ),
+        )
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_parents), &state)
+        .unwrap();
+    let before_inputs = serde_json::json!({
+        "published_port": 8080,
+        "target_port": 80,
+        "publish_mode": "ingress",
+        "protocol": "tcp"
+    });
+    let after_inputs = serde_json::json!({
+        "published_port": 8080,
+        "target_port": 81,
+        "publish_mode": "ingress",
+        "protocol": "tcp"
+    });
+    let port_address = address("port.http");
+    let before_port = ResourceState::new(
+        ResourceKind::Port,
+        RemoteId::new("port-1").unwrap(),
+        false,
+        ManagedInputs::try_from_json(before_inputs).unwrap(),
+        Some(address("application.api")),
+        Vec::new(),
+    );
+    let before_application = state.clone();
+    state
+        .upsert_resource(port_address.clone(), before_port.clone())
+        .unwrap();
+    store
+        .begin_write()
+        .unwrap()
+        .checkpoint(ExpectedState::from_state(&before_application), &state)
+        .unwrap();
+    let after_port = ResourceState::new(
+        ResourceKind::Port,
+        RemoteId::new("port-1").unwrap(),
+        false,
+        ManagedInputs::try_from_json(after_inputs.clone()).unwrap(),
+        Some(address("application.api")),
+        Vec::new(),
+    );
+    let mut write = store.begin_write().unwrap();
+    let mut journal =
+        OperationJournal::begin(&mut write, PlanDigest::parse("d".repeat(64)).unwrap()).unwrap();
+    journal
+        .start_recoverable_step(
+            port_address.clone(),
+            JournalAction::Update,
+            ExpectedCheckpoint::update(before_port, after_port).unwrap(),
+        )
+        .unwrap();
+    drop(journal);
+    drop(write);
+
+    let result = recover_workspace_with_approval(&server.client(), &config_file, |preview| {
+        assert_eq!(preview.address(), Some(&port_address));
+        assert_eq!(preview.action(), RecoveryAction::CheckpointConfirmedSuccess);
+        Ok(true)
+    })
+    .await
+    .expect("complete authoritative Port evidence confirms the update");
+
+    assert_eq!(result.recovered_steps(), 1);
+    assert_eq!(
+        store
+            .inspect()
+            .unwrap()
+            .unwrap()
+            .resource(&port_address)
+            .unwrap()
+            .last_applied()
+            .as_json(),
+        &after_inputs
+    );
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+    assert_eq!(server.finish().len(), 7);
+}
+
+#[tokio::test]
 async fn uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state() {
     exercise_uncertain_database_update_recovery(
         ResourceKind::MySql,

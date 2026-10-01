@@ -96,7 +96,16 @@ pub struct ExecutionBindings {
     parents: BTreeMap<ResourceAddress, ResourceAddress>,
     domain_applications: BTreeMap<ResourceAddress, ResourceAddress>,
     domain_hosts: BTreeMap<ResourceAddress, String>,
+    ports: BTreeMap<ResourceAddress, PortBinding>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
+}
+
+#[derive(Clone, Copy)]
+struct PortBinding {
+    published_port: u16,
+    target_port: u16,
+    publish_mode: &'static str,
+    protocol: &'static str,
 }
 
 impl ExecutionBindings {
@@ -116,6 +125,22 @@ impl ExecutionBindings {
     #[must_use]
     pub fn domain_host(&self, address: &ResourceAddress) -> Option<&str> {
         self.domain_hosts.get(address).map(String::as_str)
+    }
+
+    /// Returns the complete non-secret Port input for collision and execution checks.
+    #[must_use]
+    pub fn port(
+        &self,
+        address: &ResourceAddress,
+    ) -> Option<(u16, u16, &'static str, &'static str)> {
+        self.ports.get(address).map(|port| {
+            (
+                port.published_port,
+                port.target_port,
+                port.publish_mode,
+                port.protocol,
+            )
+        })
     }
 }
 
@@ -476,6 +501,23 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
                         .insert(address.clone(), application.clone());
                 }
             }
+            ResourceConfig::Port(port) => {
+                bindings.ports.insert(
+                    address.clone(),
+                    PortBinding {
+                        published_port: port.published_port().get(),
+                        target_port: port.target_port().get(),
+                        publish_mode: match port.publish_mode() {
+                            dokploy_config::PortPublishModeConfig::Ingress => "ingress",
+                            dokploy_config::PortPublishModeConfig::Host => "host",
+                        },
+                        protocol: match port.protocol() {
+                            dokploy_config::PortProtocolConfig::Tcp => "tcp",
+                            dokploy_config::PortProtocolConfig::Udp => "udp",
+                        },
+                    },
+                );
+            }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
@@ -485,8 +527,7 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
             | ResourceConfig::MariaDb(_)
             | ResourceConfig::Mongo(_)
             | ResourceConfig::LibSql(_)
-            | ResourceConfig::Redis(_)
-            | ResourceConfig::Port(_) => {}
+            | ResourceConfig::Redis(_) => {}
         }
     }
 

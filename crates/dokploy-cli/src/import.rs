@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use dokploy_config::{
     ApplicationDocument, ComposeDocument, ConfigDocument, ConfigWriteError, DomainDocument,
     EnvironmentDocument, Field, LibSqlDocument, LibSqlNodeConfig, LifecycleDocument,
-    MariaDbDocument, MongoDocument, MySqlDocument, PostgresDocument, RedisDocument, SourceDocument,
+    MariaDbDocument, MongoDocument, MySqlDocument, PortDocument, PortNumber, PortProtocolConfig,
+    PortPublishModeConfig, PostgresDocument, RedisDocument, SourceDocument,
 };
 use dokploy_sdk::{
     ApplicationDetails, ApplicationId, ComposeId, Dokploy, DomainId, EnvironmentDetails,
-    EnvironmentId, Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PostgresId,
-    ProjectDetails, ProjectId, RedisId, ResponseField,
+    EnvironmentId, Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PortDetails, PortId,
+    PortProtocol, PostgresId, ProjectDetails, ProjectId, PublishMode, RedisId, ResponseField,
 };
 use dokploy_state::{
     ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -121,6 +122,22 @@ pub async fn select_with_prompter(
                         ImportKind::Domain,
                         domain.domain_id.as_str(),
                         &domain.host,
+                    ));
+                }
+                for port in client
+                    .ports()
+                    .by_application(application.application_id.clone())
+                    .await?
+                    .ports()
+                {
+                    choices.push(ImportChoice::new(
+                        ImportKind::Port,
+                        port.port_id.as_str(),
+                        &format!(
+                            "{}-{}",
+                            port.published_port,
+                            port_protocol_label(port.protocol)
+                        ),
                     ));
                 }
             }
@@ -269,6 +286,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::LibSql => "libsql",
         ImportKind::Redis => "redis",
         ImportKind::Domain => "domain",
+        ImportKind::Port => "port",
     }
 }
 
@@ -487,7 +505,47 @@ async fn discover(
                 .await?;
             build_domain(project, environment, application, domain, target)
         }
+        ImportKind::Port => {
+            let requested_id = PortId::new(remote_id);
+            let port = client.ports().get(requested_id.clone()).await?;
+            if port.port_id != requested_id {
+                return Err(ImportError::InvalidRemoteTopology);
+            }
+            let collection = client
+                .ports()
+                .by_application(port.application_id.clone())
+                .await?;
+            validate_port_import_authority(&port, collection.ports())?;
+            let application = client
+                .applications()
+                .get(port.application_id.clone())
+                .await?;
+            let environment = client
+                .environments()
+                .get(application.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_port(project, environment, application, port, target)
+        }
     }
+}
+
+fn validate_port_import_authority(
+    direct: &PortDetails,
+    collection: &[PortDetails],
+) -> Result<(), ImportError> {
+    let matching = collection
+        .iter()
+        .filter(|candidate| candidate.port_id == direct.port_id)
+        .collect::<Vec<_>>();
+    if matching.as_slice() != [direct] {
+        return Err(ImportError::InvalidRemoteTopology);
+    }
+
+    Ok(())
 }
 
 fn validate_compose_import_authority(
@@ -604,6 +662,93 @@ fn build_application(
             false,
             inputs,
             Some(environment_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
+fn build_port(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    application: ApplicationDetails,
+    port: PortDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let application_address = address(ResourceKind::Application, &application.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    let (mut application_config, application_inputs) = application_config(&application);
+    application_config.add_port(
+        target.name().clone(),
+        PortDocument {
+            published_port: PortNumber::new(port.published_port.get())
+                .expect("the SDK guarantees nonzero Port numbers"),
+            target_port: PortNumber::new(port.target_port.get())
+                .expect("the SDK guarantees nonzero Port numbers"),
+            publish_mode: match port.publish_mode {
+                PublishMode::Ingress => PortPublishModeConfig::Ingress,
+                PublishMode::Host => PortPublishModeConfig::Host,
+            },
+            protocol: match port.protocol {
+                PortProtocol::Tcp => PortProtocolConfig::Tcp,
+                PortProtocol::Udp => PortProtocolConfig::Udp,
+            },
+            depends_on: Vec::new(),
+            lifecycle: LifecycleDocument {
+                protect: Field::Set(true),
+                ..LifecycleDocument::default()
+            },
+        },
+    )?;
+    environment_config.add_application(application_address.name().clone(), application_config)?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    imported.resources.push(ImportedResource {
+        address: application_address.clone(),
+        state: resource_state(
+            &application_address,
+            application.application_id.as_str(),
+            false,
+            application_inputs,
+            Some(environment_address),
+        )?,
+    });
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            port.port_id.as_str(),
+            true,
+            serde_json::Map::from_iter([
+                (
+                    "published_port".to_owned(),
+                    serde_json::json!(port.published_port.get()),
+                ),
+                (
+                    "target_port".to_owned(),
+                    serde_json::json!(port.target_port.get()),
+                ),
+                (
+                    "publish_mode".to_owned(),
+                    serde_json::json!(port_publish_mode_label(port.publish_mode)),
+                ),
+                (
+                    "protocol".to_owned(),
+                    serde_json::json!(port_protocol_label(port.protocol)),
+                ),
+            ]),
+            Some(application_address),
         )?,
     });
 
@@ -1175,6 +1320,21 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::LibSql => ResourceKind::LibSql,
         ImportKind::Redis => ResourceKind::Redis,
         ImportKind::Domain => ResourceKind::Domain,
+        ImportKind::Port => ResourceKind::Port,
+    }
+}
+
+const fn port_publish_mode_label(mode: PublishMode) -> &'static str {
+    match mode {
+        PublishMode::Ingress => "ingress",
+        PublishMode::Host => "host",
+    }
+}
+
+const fn port_protocol_label(protocol: PortProtocol) -> &'static str {
+    match protocol {
+        PortProtocol::Tcp => "tcp",
+        PortProtocol::Udp => "udp",
     }
 }
 

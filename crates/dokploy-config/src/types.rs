@@ -64,7 +64,7 @@ pub enum PortPublishModeConfig {
 }
 
 /// The transport protocol carried by a published application port.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PortProtocolConfig {
     /// Transmission Control Protocol.

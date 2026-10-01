@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
+use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 
 use dokploy_core::{
@@ -12,11 +13,11 @@ use dokploy_core::{
 use dokploy_sdk::{
     ApplicationId, ChangeLibSqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication,
     CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo,
-    CreateMySql, CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId,
-    Error as SdkError, LibSqlId, LibSqlNode, MariaDbId, MongoId, MySqlId, Nullable, PostgresId,
-    ProjectId, RedisId, UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment,
-    UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePostgres, UpdateProject,
-    UpdateRedis,
+    CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId,
+    EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode, MariaDbId, MongoId, MySqlId, Nullable,
+    PortId, PortProtocol, PostgresId, ProjectId, PublishMode, RedisId, UpdateApplication,
+    UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo,
+    UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedis,
 };
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
@@ -712,7 +713,19 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.domain_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
-            ResourceKind::Port => return Err(ApplyWorkspaceError::UnsupportedChange),
+            ResourceKind::Port => {
+                let input = port_create_input(checkpoint, &state)?;
+                let created = match client.ports().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        fail_if_definitive(&mut journal, token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.port_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
+            }
         };
         let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
         state.upsert_resource(change.address().clone(), resource)?;
@@ -742,14 +755,17 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::LibSql
                     | ResourceKind::Redis
                     | ResourceKind::Domain
+                    | ResourceKind::Port
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
         ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => true,
         ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
         ChangeKind::Replace => {
-            change.address().kind() == ResourceKind::LibSql
-                && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+            matches!(
+                change.address().kind(),
+                ResourceKind::LibSql | ResourceKind::Port
+            ) && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
         }
     }) {
         Ok(())
@@ -1141,7 +1157,7 @@ async fn delete_remote_resource(
                 .delete(DomainId::new(remote_id.as_str()))
                 .await,
         ),
-        ResourceKind::Port => None,
+        ResourceKind::Port => Some(client.ports().delete(PortId::new(remote_id.as_str())).await),
     }
 }
 
@@ -1162,6 +1178,82 @@ fn checkpoint_environment_id(
         .remote_id();
 
     Ok(EnvironmentId::new(parent_id.as_str()))
+}
+
+fn checkpoint_application_id(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+) -> Result<ApplicationId, ApplyWorkspaceError> {
+    let parent = checkpoint
+        .containment()
+        .filter(|parent| parent.kind() == ResourceKind::Application)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let parent_id = state
+        .resource(parent)
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .remote_id();
+
+    Ok(ApplicationId::new(parent_id.as_str()))
+}
+
+fn port_create_input(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    state: &StateFile,
+) -> Result<CreatePort, ApplyWorkspaceError> {
+    Ok(CreatePort::new(
+        checkpoint_application_id(checkpoint, state)?,
+        required_port_number(checkpoint, &PropertyPath::PublishedPort)?,
+        required_port_number(checkpoint, &PropertyPath::TargetPort)?,
+        required_publish_mode(checkpoint)?,
+        required_port_protocol(checkpoint)?,
+    ))
+}
+
+fn port_update_input(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    remote_id: &RemoteId,
+) -> Result<UpdatePort, ApplyWorkspaceError> {
+    Ok(UpdatePort::new(
+        PortId::new(remote_id.as_str()),
+        required_port_number(checkpoint, &PropertyPath::PublishedPort)?,
+        required_port_number(checkpoint, &PropertyPath::TargetPort)?,
+        required_publish_mode(checkpoint)?,
+        required_port_protocol(checkpoint)?,
+    ))
+}
+
+fn required_port_number(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    path: &PropertyPath,
+) -> Result<NonZeroU16, ApplyWorkspaceError> {
+    let value = match checkpoint.property(path) {
+        Some(CheckpointValueRef::NonSensitive(value)) => value.as_u64(),
+        _ => None,
+    }
+    .and_then(|value| u16::try_from(value).ok())
+    .and_then(NonZeroU16::new)
+    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    Ok(value)
+}
+
+fn required_publish_mode(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+) -> Result<PublishMode, ApplyWorkspaceError> {
+    match required_string(checkpoint, &PropertyPath::PublishMode)?.as_str() {
+        "ingress" => Ok(PublishMode::Ingress),
+        "host" => Ok(PublishMode::Host),
+        _ => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
+}
+
+fn required_port_protocol(
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+) -> Result<PortProtocol, ApplyWorkspaceError> {
+    match required_string(checkpoint, &PropertyPath::Protocol)?.as_str() {
+        "tcp" => Ok(PortProtocol::Tcp),
+        "udp" => Ok(PortProtocol::Udp),
+        _ => Err(ApplyWorkspaceError::InvalidCheckpoint),
+    }
 }
 
 fn required_string(
@@ -2130,6 +2222,11 @@ async fn execute_delete_before_create_replacement(
     state: &mut StateFile,
     journal: &mut OperationJournal<'_, '_>,
 ) -> Result<(), ApplyWorkspaceError> {
+    if change.address().kind() == ResourceKind::Port
+        && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
+    {
+        return execute_port_replacement(client, change, state, journal).await;
+    }
     if change.address().kind() != ResourceKind::LibSql
         || change.replacement_order() != Some(ReplacementOrder::DeleteBeforeCreate)
     {
@@ -2201,6 +2298,63 @@ async fn execute_delete_before_create_replacement(
             return Err(ApplyWorkspaceError::RemoteMutation { code });
         }
     };
+    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
+    state.upsert_resource(change.address().clone(), resource)?;
+    journal.succeed(create_token, Some(remote_id), state)?;
+
+    Ok(())
+}
+
+async fn execute_port_replacement(
+    client: &Dokploy,
+    change: &dokploy_core::PlannedChange,
+    state: &mut StateFile,
+    journal: &mut OperationJournal<'_, '_>,
+) -> Result<(), ApplyWorkspaceError> {
+    let checkpoint = change
+        .checkpoint()
+        .present()
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
+    let before = state
+        .resource(change.address())
+        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
+        .clone();
+    let delete_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Delete,
+        ExpectedCheckpoint::remove(before.clone()),
+    )?;
+    if let Err(error) = client
+        .ports()
+        .delete(PortId::new(before.remote_id().as_str()))
+        .await
+        && !is_already_missing(&error)
+    {
+        let code = failure_code(&error);
+        fail_if_definitive(journal, delete_token, code)?;
+        return Err(ApplyWorkspaceError::RemoteMutation { code });
+    }
+    state.remove_resource(change.address())?;
+    journal.succeed(delete_token, None, state)?;
+
+    let placeholder = RemoteId::new("recovery-pending")
+        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
+    let create_token = journal.start_recoverable_step(
+        change.address().clone(),
+        JournalAction::Create,
+        ExpectedCheckpoint::create(checkpoint.materialize(change.address(), placeholder)?)?,
+    )?;
+    let input = port_create_input(checkpoint, state)?;
+    let created = match client.ports().create(input).await {
+        Ok(created) => created,
+        Err(error) => {
+            let code = failure_code(&error);
+            fail_if_definitive(journal, create_token, code)?;
+            return Err(ApplyWorkspaceError::RemoteMutation { code });
+        }
+    };
+    let remote_id = RemoteId::new(created.port_id().as_str())
+        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
     let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
     state.upsert_resource(change.address().clone(), resource)?;
     journal.succeed(create_token, Some(remote_id), state)?;
@@ -2508,7 +2662,33 @@ async fn execute_existing_change(
             let host = required_string(checkpoint, &PropertyPath::Host)?;
             ExistingMutation::Domain(UpdateDomain::new(DomainId::new(remote_id.as_str()), host))
         }
-        ResourceKind::Port => return Err(ApplyWorkspaceError::UnsupportedChange),
+        ResourceKind::Port => {
+            if selected_paths.iter().any(|path| {
+                !matches!(
+                    path,
+                    PropertyPath::PublishedPort
+                        | PropertyPath::TargetPort
+                        | PropertyPath::PublishMode
+                        | PropertyPath::Protocol
+                )
+            }) {
+                return Err(ApplyWorkspaceError::InvalidCheckpoint);
+            }
+            let application_id = checkpoint_application_id(checkpoint, state)?;
+            let current = client
+                .ports()
+                .get(PortId::new(remote_id.as_str()))
+                .await
+                .map_err(|error| ApplyWorkspaceError::RemotePreparation {
+                    code: failure_code(&error),
+                })?;
+            if current.port_id.as_str() != remote_id.as_str()
+                || current.application_id != application_id
+            {
+                return Err(ApplyWorkspaceError::InvalidCheckpoint);
+            }
+            ExistingMutation::Port(port_update_input(checkpoint, &remote_id)?)
+        }
     };
 
     let token = journal.start_recoverable_step(
@@ -2559,6 +2739,7 @@ enum ExistingMutation {
     Mongo(UpdateMongo),
     Redis(UpdateRedis),
     Domain(UpdateDomain),
+    Port(UpdatePort),
 }
 
 impl ExistingMutation {
@@ -2574,6 +2755,7 @@ impl ExistingMutation {
             Self::Mongo(input) => client.mongo().update(input).await,
             Self::Redis(input) => client.redis().update(input).await,
             Self::Domain(input) => client.domains().update(input).await,
+            Self::Port(input) => client.ports().update(input).await,
         }
     }
 }
