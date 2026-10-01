@@ -4,14 +4,14 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use dokploy_config::{
-    ApplicationDocument, ConfigDocument, ConfigWriteError, DomainDocument, EnvironmentDocument,
-    Field, LibSqlDocument, LibSqlNodeConfig, LifecycleDocument, MariaDbDocument, MongoDocument,
-    MySqlDocument, PostgresDocument, RedisDocument, SourceDocument,
+    ApplicationDocument, ComposeDocument, ConfigDocument, ConfigWriteError, DomainDocument,
+    EnvironmentDocument, Field, LibSqlDocument, LibSqlNodeConfig, LifecycleDocument,
+    MariaDbDocument, MongoDocument, MySqlDocument, PostgresDocument, RedisDocument, SourceDocument,
 };
 use dokploy_sdk::{
-    ApplicationDetails, ApplicationId, Dokploy, DomainId, EnvironmentDetails, EnvironmentId,
-    Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PostgresId, ProjectDetails,
-    ProjectId, RedisId, ResponseField,
+    ApplicationDetails, ApplicationId, ComposeId, Dokploy, DomainId, EnvironmentDetails,
+    EnvironmentId, Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PostgresId,
+    ProjectDetails, ProjectId, RedisId, ResponseField,
 };
 use dokploy_state::{
     ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -129,6 +129,18 @@ pub async fn select_with_prompter(
                     ImportKind::Postgres,
                     database.postgres_id.as_str(),
                     database.name.as_deref().unwrap_or("unnamed-postgres"),
+                ));
+            }
+            for compose in client
+                .composes()
+                .by_environment(environment.environment_id.clone())
+                .await?
+                .composes()
+            {
+                choices.push(ImportChoice::new(
+                    ImportKind::Compose,
+                    compose.compose_id.as_str(),
+                    &compose.name,
                 ));
             }
             for database in client
@@ -249,6 +261,7 @@ const fn kind_name(kind: ImportKind) -> &'static str {
         ImportKind::Project => "project",
         ImportKind::Environment => "environment",
         ImportKind::Application => "application",
+        ImportKind::Compose => "compose",
         ImportKind::Postgres => "postgres",
         ImportKind::MySql => "mysql",
         ImportKind::MariaDb => "mariadb",
@@ -363,6 +376,18 @@ async fn discover(
                 .get(environment.project_id.clone())
                 .await?;
             build_application(project, environment, application, target)
+        }
+        ImportKind::Compose => {
+            let compose = client.composes().get(ComposeId::new(remote_id)).await?;
+            let environment = client
+                .environments()
+                .get(compose.environment_id.clone())
+                .await?;
+            let project = client
+                .projects()
+                .get(environment.project_id.clone())
+                .await?;
+            build_compose(project, environment, compose, target)
         }
         ImportKind::Postgres => {
             let database = client.postgres().get(PostgresId::new(remote_id)).await?;
@@ -536,6 +561,51 @@ fn build_application(
             application.application_id.as_str(),
             false,
             inputs,
+            Some(environment_address),
+        )?,
+    });
+
+    Ok(imported)
+}
+
+fn build_compose(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    compose: dokploy_sdk::ComposeDetails,
+    target: &ResourceAddress,
+) -> Result<ImportedWorkspace, ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let environment_address = address(ResourceKind::Environment, &environment.name)?;
+    let mut imported = build_project(project, &project_address)?;
+    let mut environment_config = EnvironmentDocument::default();
+    environment_config.description = response_field(&environment.description);
+    environment_config.add_compose(
+        target.name().clone(),
+        ComposeDocument {
+            description: response_field(&compose.description),
+            lifecycle: LifecycleDocument {
+                protect: Field::Set(true),
+                ..LifecycleDocument::default()
+            },
+            ..ComposeDocument::default()
+        },
+    )?;
+    imported
+        .document
+        .add_environment(environment_address.name().clone(), environment_config)?;
+    push_environment_state(
+        &mut imported,
+        &environment,
+        environment_address.clone(),
+        project_address,
+    )?;
+    imported.resources.push(ImportedResource {
+        address: target.clone(),
+        state: resource_state(
+            target,
+            compose.compose_id.as_str(),
+            true,
+            description_inputs(&compose.description),
             Some(environment_address),
         )?,
     });
@@ -1055,6 +1125,7 @@ const fn resource_kind(kind: ImportKind) -> ResourceKind {
         ImportKind::Project => ResourceKind::Project,
         ImportKind::Environment => ResourceKind::Environment,
         ImportKind::Application => ResourceKind::Application,
+        ImportKind::Compose => ResourceKind::Compose,
         ImportKind::Postgres => ResourceKind::Postgres,
         ImportKind::MySql => ResourceKind::MySql,
         ImportKind::MariaDb => ResourceKind::MariaDb,

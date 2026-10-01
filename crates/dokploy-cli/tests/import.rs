@@ -134,6 +134,7 @@ async fn interactive_discovery_enriches_sparse_libsql_ids_without_inventing_name
         empty_search,
         empty_search,
         empty_search,
+        empty_search,
         libsql,
     ]);
     let client = Dokploy::builder()
@@ -167,9 +168,9 @@ async fn interactive_discovery_enriches_sparse_libsql_ids_without_inventing_name
             .all(|choice| !choice.contains("password-canary"))
     );
     let requests = server.finish();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 6);
     assert!(requests[0].starts_with("GET /api/project.all"));
-    assert!(requests[4].starts_with("GET /api/libsql.one?libsqlId=libsql-1"));
+    assert!(requests[5].starts_with("GET /api/libsql.one?libsqlId=libsql-1"));
 }
 
 #[tokio::test]
@@ -442,6 +443,86 @@ async fn mysql_import_is_protected_two_secret_free_and_immediately_convergent() 
             .paths()
             .count(),
         0
+    );
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 8);
+    assert!(requests.iter().all(|request| request.starts_with("GET ")));
+}
+
+#[tokio::test]
+async fn compose_import_is_protected_document_free_and_immediately_convergent() {
+    let compose = r#"{"composeId":"compose-1","environmentId":"environment-1","name":"Remote stack","appName":"remote-stack","description":"Imported stack","sourceType":"raw","composeType":"docker-compose","autoDeploy":false,"composePath":"./docker-compose.yml","composeStatus":"idle","composeFile":"document-canary","refreshToken":"token-canary"}"#;
+    let environment = r#"{"environmentId":"environment-1","name":"production","description":"Production","projectId":"project-1"}"#;
+    let project =
+        r#"{"projectId":"project-1","name":"platform","description":"Platform","environments":[]}"#;
+    let project_topology = r#"[{"projectId":"project-1","name":"platform","description":"Platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true,"applications":[],"postgres":[],"redis":[]}]}]"#;
+    let environment_collection =
+        r#"[{"environmentId":"environment-1","name":"production","description":"Production"}]"#;
+    let compose_collection = r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"Remote stack","appName":"remote-stack","description":"Imported stack","sourceType":"raw"}],"total":1}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        compose,
+        environment,
+        project,
+        project_topology,
+        environment_collection,
+        environment,
+        compose_collection,
+        compose,
+    ]);
+    let client = Dokploy::builder()
+        .url(&server.url)
+        .api_key("test-api-key")
+        .build()
+        .expect("client is valid");
+    let workspace = tempfile::tempdir().expect("workspace is available");
+    let config_file = workspace.path().join("dokploy.yaml");
+
+    let count = import_resource(
+        &client,
+        ImportRequest {
+            kind: ImportKind::Compose,
+            remote_id: "compose-1".to_owned(),
+            address: "compose.web".parse().unwrap(),
+            config_file: config_file.clone(),
+        },
+    )
+    .await
+    .expect("Compose imports");
+    let plan = plan_workspace(&client, &config_file)
+        .await
+        .expect("fresh plan succeeds");
+
+    assert_eq!(count, 3);
+    assert!(plan.complete());
+    assert!(plan.applyable());
+    assert!(plan.changes().is_empty());
+    let source = std::fs::read_to_string(&config_file).expect("config is readable");
+    assert!(!source.contains("document:"));
+    assert!(!source.contains("document-canary"));
+    assert!(!source.contains("token-canary"));
+    assert!(!source.contains("refresh"));
+    let config = DokployConfig::parse(&source).expect("config is canonical and valid");
+    let resource = config.resource(&"compose.web".parse().unwrap()).unwrap();
+    let compose_config = resource.as_compose().unwrap();
+    assert_eq!(
+        compose_config.description(),
+        &Field::Set("Imported stack".to_owned())
+    );
+    assert_eq!(compose_config.document(), &Field::Unmanaged);
+    assert_eq!(resource.lifecycle().protect(), &Field::Set(true));
+    let instance = InstanceIdentity::parse(&server.url).unwrap();
+    let state = StateStore::new(workspace.path(), instance)
+        .unwrap()
+        .inspect()
+        .unwrap()
+        .unwrap();
+    let imported = state.resource(&"compose.web".parse().unwrap()).unwrap();
+    assert!(imported.is_protected());
+    assert_eq!(imported.sensitive_inputs().paths().count(), 0);
+    assert_eq!(
+        imported.last_applied().as_json(),
+        &serde_json::json!({"description":"Imported stack"})
     );
 
     let requests = server.finish();

@@ -40,6 +40,15 @@ pub enum ApplicationTopologyAuthority {
     Partial,
 }
 
+/// Whether a fully paginated parent-scoped Compose search is complete.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ComposeTopologyAuthority {
+    /// Exhaustive absence below a proven environment proves nonexistence.
+    Authoritative,
+    /// Absence may be caused by role-dependent filtering.
+    Partial,
+}
+
 /// Whether a fully paginated parent-scoped Postgres search is complete.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PostgresTopologyAuthority {
@@ -112,6 +121,8 @@ pub struct DiscoveryAuthority {
     pub environments: EnvironmentTopologyAuthority,
     /// Completeness of each fully paginated `application.search` collection.
     pub applications: ApplicationTopologyAuthority,
+    /// Completeness of each fully paginated `compose.search` collection.
+    pub compose: ComposeTopologyAuthority,
     /// Completeness of each fully paginated `postgres.search` collection.
     pub postgres: PostgresTopologyAuthority,
     /// Completeness of each fully paginated `mysql.search` collection.
@@ -136,6 +147,7 @@ impl DiscoveryAuthority {
             projects: ProjectTopologyAuthority::Authoritative,
             environments: EnvironmentTopologyAuthority::Authoritative,
             applications: ApplicationTopologyAuthority::Authoritative,
+            compose: ComposeTopologyAuthority::Authoritative,
             postgres: PostgresTopologyAuthority::Authoritative,
             mysql: MySqlTopologyAuthority::Authoritative,
             mariadb: MariaDbTopologyAuthority::Authoritative,
@@ -306,6 +318,24 @@ pub enum DiscoverRemoteError {
     /// Direct and collection LibSQL reads contradict each other.
     #[error("DOKREM056: LibSQL read endpoints returned conflicting topology")]
     LibSqlTopologyConflict,
+    /// A Compose record has no unambiguous containing environment.
+    #[error("DOKREM057: Compose containment is unavailable")]
+    ComposeContainment,
+    /// A Compose physical identity does not satisfy the state contract.
+    #[error("DOKREM058: Compose topology contains an invalid remote identity")]
+    InvalidComposeId,
+    /// More than one Compose record has the same name within one environment.
+    #[error("DOKREM059: Compose topology contains a duplicate scoped name")]
+    DuplicateComposeName,
+    /// More than one Compose record has the same physical identity.
+    #[error("DOKREM060: Compose topology contains a duplicate remote identity")]
+    DuplicateComposeId,
+    /// A Compose containment change would require an unsupported remote reparent.
+    #[error("DOKREM061: Compose reparenting is not supported")]
+    ComposeReparentUnsupported,
+    /// Direct and collection Compose reads contradict each other.
+    #[error("DOKREM062: Compose read endpoints returned conflicting topology")]
+    ComposeTopologyConflict,
 }
 
 /// A redaction-safe project projection failure.
@@ -382,6 +412,10 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(applications);
+    let compose =
+        discover_compose_observations(client, compiled, state, &observations, authority.compose)
+            .await?;
+    observations.extend(compose);
     let postgres =
         discover_postgres_observations(client, compiled, state, &observations, authority.postgres)
             .await?;
@@ -503,6 +537,143 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             )
             .with_containment(MutationMode::StateOnly),
     }
+}
+
+async fn discover_compose_observations(
+    client: &Dokploy,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    authority: ComposeTopologyAuthority,
+) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
+    let desired = compiled.desired_state();
+    let addresses: BTreeSet<_> = desired
+        .resources()
+        .keys()
+        .chain(state.resources().keys())
+        .chain(
+            desired
+                .removals()
+                .iter()
+                .filter(|directive| state.resource(directive.address()).is_some())
+                .map(|directive| directive.address()),
+        )
+        .filter(|address| address.kind() == ResourceKind::Compose)
+        .cloned()
+        .collect();
+    let mut collections = BTreeMap::new();
+
+    for address in &addresses {
+        let mut parents = vec![compose_parent_from_desired(address, compiled, state)?];
+        if state.resource(address).is_some() {
+            let current_parent = compose_parent_from_state(address, state)?;
+            validate_compose_parent_change(
+                address,
+                &current_parent,
+                &parents[0],
+                compiled,
+                state,
+                topology,
+            )?;
+            parents.push(current_parent);
+        }
+        parents.sort();
+        parents.dedup();
+        for parent in parents {
+            let Some(environment_id) = trusted_environment_id(&parent, compiled, state, topology)
+            else {
+                continue;
+            };
+            if collections.contains_key(&environment_id) {
+                continue;
+            }
+            let collection = client
+                .composes()
+                .by_environment(dokploy_sdk::EnvironmentId::new(&environment_id))
+                .await;
+            collections.insert(environment_id, collection);
+        }
+    }
+    validate_compose_collections(&collections)?;
+
+    let mut seen_direct_ids = BTreeSet::new();
+    let mut observations = Vec::new();
+    for address in addresses {
+        let observation = if let Some(stored) = state.resource(&address) {
+            let current_parent = compose_parent_from_state(&address, state)?;
+            match client
+                .composes()
+                .get(dokploy_sdk::ComposeId::new(stored.remote_id().as_str()))
+                .await
+            {
+                Ok(compose) => {
+                    let remote_id = RemoteId::new(compose.compose_id.as_str())
+                        .map_err(|_| DiscoverRemoteError::InvalidComposeId)?;
+                    if remote_id != *stored.remote_id() {
+                        return Err(DiscoverRemoteError::InvalidComposeId);
+                    }
+                    let expected_environment_id =
+                        trusted_environment_id(&current_parent, compiled, state, topology)
+                            .ok_or(DiscoverRemoteError::ComposeContainment)?;
+                    if compose.environment_id.as_str() != expected_environment_id {
+                        return Err(DiscoverRemoteError::ComposeContainment);
+                    }
+                    if let Some(Err(error)) = collections.get(&expected_environment_id) {
+                        RemoteObservation::Unavailable(classify_sdk_error(error))
+                    } else {
+                        validate_direct_compose_against_collection(
+                            &compose,
+                            &expected_environment_id,
+                            &collections,
+                            authority,
+                        )?;
+                        if !seen_direct_ids.insert(remote_id.clone()) {
+                            return Err(DiscoverRemoteError::DuplicateComposeId);
+                        }
+                        RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            compose_properties(&address, compiled, &compose),
+                        ))
+                    }
+                }
+                Err(SdkError::Api(error)) if error.status() == 404 => {
+                    if compose_collections_contain_id(stored.remote_id(), &collections) {
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse)
+                    } else {
+                        let observed = observe_compose_under_parent(
+                            client,
+                            &address,
+                            &current_parent,
+                            compiled,
+                            state,
+                            topology,
+                            &collections,
+                            authority,
+                        )
+                        .await?;
+                        normalize_missing_identity(observed, stored.remote_id())
+                    }
+                }
+                Err(error) => RemoteObservation::Unavailable(classify_sdk_error(&error)),
+            }
+        } else {
+            let parent = compose_parent_from_desired(&address, compiled, state)?;
+            observe_compose_under_parent(
+                client,
+                &address,
+                &parent,
+                compiled,
+                state,
+                topology,
+                &collections,
+                authority,
+            )
+            .await?
+        };
+        observations.push((address, observation));
+    }
+
+    Ok(observations)
 }
 
 async fn discover_domain_observations(
@@ -2370,6 +2541,305 @@ fn application_properties(
     }
 
     properties
+}
+
+fn compose_properties(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    compose: &dokploy_sdk::ComposeDetails,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
+    let mut properties = BTreeMap::new();
+    let Some(desired) = desired_resource_for_observation(address, compiled) else {
+        return properties;
+    };
+
+    for path in desired.properties().keys() {
+        if desired.ignored_changes().contains(path) {
+            continue;
+        }
+        let observed = match path {
+            PropertyPath::Description => observe_string_field(&compose.description),
+            PropertyPath::ComposeDocument if matches!(&compose.source_type, ResponseField::Value(value) if value == "raw") => {
+                PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+            }
+            PropertyPath::ComposeDocument => {
+                PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse)
+            }
+            PropertyPath::Replicas
+            | PropertyPath::Source
+            | PropertyPath::SourceRepository
+            | PropertyPath::SourceBranch
+            | PropertyPath::Environment
+            | PropertyPath::EnvironmentVariable(_)
+            | PropertyPath::Database
+            | PropertyPath::Username
+            | PropertyPath::Password
+            | PropertyPath::RootPassword
+            | PropertyPath::ReplicaSets
+            | PropertyPath::Node
+            | PropertyPath::Host
+            | PropertyPath::Application
+            | PropertyPath::DeploymentStatus => continue,
+        };
+        properties.insert(path.clone(), observed);
+    }
+
+    properties
+}
+
+fn validate_compose_collections(
+    collections: &BTreeMap<String, Result<dokploy_sdk::ComposeCollection, dokploy_sdk::Error>>,
+) -> Result<(), DiscoverRemoteError> {
+    let mut global_ids = BTreeSet::new();
+    for (environment_id, collection) in collections
+        .iter()
+        .filter_map(|(id, result)| result.as_ref().ok().map(|collection| (id, collection)))
+    {
+        let mut scoped_names = BTreeSet::new();
+        for compose in collection.composes() {
+            let remote_id = RemoteId::new(compose.compose_id.as_str())
+                .map_err(|_| DiscoverRemoteError::InvalidComposeId)?;
+            if compose.environment_id.as_str() != environment_id {
+                return Err(DiscoverRemoteError::ComposeContainment);
+            }
+            if !global_ids.insert(remote_id) {
+                return Err(DiscoverRemoteError::DuplicateComposeId);
+            }
+            if !scoped_names.insert(compose.name.as_str()) {
+                return Err(DiscoverRemoteError::DuplicateComposeName);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn observe_compose_under_parent(
+    client: &Dokploy,
+    address: &ResourceAddress,
+    parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+    collections: &BTreeMap<String, Result<dokploy_sdk::ComposeCollection, dokploy_sdk::Error>>,
+    authority: ComposeTopologyAuthority,
+) -> Result<RemoteObservation, DiscoverRemoteError> {
+    match effective_environment_observation(parent, compiled, state, topology) {
+        Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
+        Some(RemoteObservation::Unavailable(failure)) => {
+            return Ok(RemoteObservation::Unavailable(*failure));
+        }
+        Some(RemoteObservation::Present(_)) => {}
+        None => {
+            return Ok(RemoteObservation::Unavailable(
+                RemoteFailureKind::InvalidResponse,
+            ));
+        }
+    }
+    let Some(environment_id) = trusted_environment_id(parent, compiled, state, topology) else {
+        return Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        ));
+    };
+    match collections.get(&environment_id) {
+        Some(Ok(collection)) => {
+            if let Some(compose) = collection
+                .composes()
+                .iter()
+                .find(|compose| compose.name == address.name().as_str())
+            {
+                let remote_id = RemoteId::new(compose.compose_id.as_str())
+                    .map_err(|_| DiscoverRemoteError::InvalidComposeId)?;
+                return match client.composes().get(compose.compose_id.clone()).await {
+                    Ok(details) => {
+                        if details.compose_id != compose.compose_id
+                            || details.environment_id.as_str() != environment_id
+                            || details.name != compose.name
+                        {
+                            return Err(DiscoverRemoteError::ComposeTopologyConflict);
+                        }
+                        validate_direct_compose_against_collection(
+                            &details,
+                            &environment_id,
+                            collections,
+                            authority,
+                        )?;
+                        Ok(RemoteObservation::Present(RemoteResource::new(
+                            remote_id,
+                            compose_properties(address, compiled, &details),
+                        )))
+                    }
+                    Err(SdkError::Api(error)) if error.status() == 404 => Ok(
+                        RemoteObservation::Unavailable(RemoteFailureKind::InvalidResponse),
+                    ),
+                    Err(error) => Ok(RemoteObservation::Unavailable(classify_sdk_error(&error))),
+                };
+            }
+            if authority == ComposeTopologyAuthority::Authoritative {
+                Ok(RemoteObservation::Missing)
+            } else {
+                Ok(RemoteObservation::Unavailable(
+                    RemoteFailureKind::InvalidResponse,
+                ))
+            }
+        }
+        Some(Err(error)) => Ok(RemoteObservation::Unavailable(classify_sdk_error(error))),
+        None => Ok(RemoteObservation::Unavailable(
+            RemoteFailureKind::InvalidResponse,
+        )),
+    }
+}
+
+fn validate_direct_compose_against_collection(
+    compose: &dokploy_sdk::ComposeDetails,
+    environment_id: &str,
+    collections: &BTreeMap<String, Result<dokploy_sdk::ComposeCollection, dokploy_sdk::Error>>,
+    authority: ComposeTopologyAuthority,
+) -> Result<(), DiscoverRemoteError> {
+    if collections
+        .iter()
+        .any(|(candidate_environment_id, result)| {
+            candidate_environment_id != environment_id
+                && result.as_ref().is_ok_and(|collection| {
+                    collection
+                        .composes()
+                        .iter()
+                        .any(|item| item.compose_id == compose.compose_id)
+                })
+        })
+    {
+        return Err(DiscoverRemoteError::ComposeTopologyConflict);
+    }
+    let Some(collection) = collections.get(environment_id) else {
+        return Err(DiscoverRemoteError::ComposeTopologyConflict);
+    };
+    let Ok(collection) = collection else {
+        return Err(DiscoverRemoteError::ComposeTopologyConflict);
+    };
+    let matching = collection
+        .composes()
+        .iter()
+        .find(|item| item.compose_id == compose.compose_id);
+    match matching {
+        Some(item)
+            if item.name == compose.name
+                && response_fields_agree(
+                    &item.app_name,
+                    &ResponseField::Value(compose.app_name.clone()),
+                )
+                && response_fields_agree(&item.description, &compose.description)
+                && response_fields_agree(&item.source_type, &compose.source_type) =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(DiscoverRemoteError::ComposeTopologyConflict),
+        None if authority == ComposeTopologyAuthority::Authoritative => {
+            Err(DiscoverRemoteError::ComposeTopologyConflict)
+        }
+        None => Ok(()),
+    }
+}
+
+fn response_fields_agree<T: PartialEq>(left: &ResponseField<T>, right: &ResponseField<T>) -> bool {
+    matches!(
+        (left, right),
+        (ResponseField::NotReturned, _) | (_, ResponseField::NotReturned)
+    ) || left == right
+}
+
+fn compose_collections_contain_id(
+    remote_id: &RemoteId,
+    collections: &BTreeMap<String, Result<dokploy_sdk::ComposeCollection, dokploy_sdk::Error>>,
+) -> bool {
+    collections.values().any(|result| {
+        result.as_ref().is_ok_and(|collection| {
+            collection
+                .composes()
+                .iter()
+                .any(|compose| compose.compose_id.as_str() == remote_id.as_str())
+        })
+    })
+}
+
+fn validate_compose_parent_change(
+    address: &ResourceAddress,
+    current_parent: &ResourceAddress,
+    desired_parent: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+    topology: &[(ResourceAddress, RemoteObservation)],
+) -> Result<(), DiscoverRemoteError> {
+    if current_parent == desired_parent {
+        return Ok(());
+    }
+    let current_environment_id = trusted_environment_id(current_parent, compiled, state, topology);
+    let desired_environment_id = trusted_environment_id(desired_parent, compiled, state, topology);
+    if current_environment_id.is_some() && current_environment_id == desired_environment_id {
+        return Ok(());
+    }
+    if desired_resource_for_observation(address, compiled).is_none() {
+        return Ok(());
+    }
+
+    Err(DiscoverRemoteError::ComposeReparentUnsupported)
+}
+
+fn compose_parent_from_state(
+    address: &ResourceAddress,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    let resource = state
+        .resource(address)
+        .ok_or(DiscoverRemoteError::ComposeContainment)?;
+    let parent = resource
+        .containment()
+        .ok_or(DiscoverRemoteError::ComposeContainment)?;
+    if parent.kind() != ResourceKind::Environment {
+        return Err(DiscoverRemoteError::ComposeContainment);
+    }
+
+    Ok(parent.clone())
+}
+
+fn compose_parent_from_desired(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    state: &StateFile,
+) -> Result<ResourceAddress, DiscoverRemoteError> {
+    if let Some(parent) = compiled.bindings().parent_of(address) {
+        if parent.kind() == ResourceKind::Environment {
+            return Ok(parent.clone());
+        }
+        return Err(DiscoverRemoteError::ComposeContainment);
+    }
+    if let Some(target) = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map(|directive| directive.to())
+    {
+        if let Some(parent) = compiled.bindings().parent_of(target) {
+            if parent.kind() == ResourceKind::Environment {
+                return Ok(parent.clone());
+            }
+            return Err(DiscoverRemoteError::ComposeContainment);
+        }
+        if state.resource(target).is_some() {
+            return compose_parent_from_state(target, state);
+        }
+    }
+    let source = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.to() == address)
+        .map(|directive| directive.from());
+    if let Some(source) = source {
+        return compose_parent_from_state(source, state);
+    }
+    compose_parent_from_state(address, state)
 }
 
 fn postgres_properties(

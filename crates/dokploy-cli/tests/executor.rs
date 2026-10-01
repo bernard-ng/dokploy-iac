@@ -172,6 +172,195 @@ async fn postgres_owned_fields_update_in_place() {
 }
 
 #[tokio::test]
+async fn compose_create_update_and_delete_preserve_volumes_without_persisting_the_document() {
+    let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
+    let environments =
+        r#"[{"environmentId":"environment-1","name":"production","projectId":"project-1"}]"#;
+    let environment =
+        r#"{"environmentId":"environment-1","name":"production","projectId":"project-1"}"#;
+    let search = r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"web","appName":"web-app","description":"Initial stack","sourceType":"raw"}],"total":1}"#;
+    let old = r#"{"composeId":"compose-1","environmentId":"environment-1","name":"web","appName":"web-app","description":"Initial stack","sourceType":"raw","composeType":"docker-compose","autoDeploy":false,"composePath":"./docker-compose.yml","composeStatus":"idle"}"#;
+    let updated_search = r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"web","appName":"web-app","description":"Updated stack","sourceType":"raw"}],"total":1}"#;
+    let updated = r#"{"composeId":"compose-1","environmentId":"environment-1","name":"web","appName":"web-app","description":"Updated stack","sourceType":"raw","composeType":"docker-compose","autoDeploy":false,"composePath":"./docker-compose.yml","composeStatus":"idle"}"#;
+    let server = TestServer::respond_in_sequence(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+        (
+            "200 OK",
+            r#"{"composeId":"compose-1","environmentId":"environment-1","name":"web"}"#,
+        ),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", search),
+        ("200 OK", old),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/compose-update.owner.json"),
+        ),
+        ("200 OK", project),
+        ("200 OK", environments),
+        ("200 OK", environment),
+        ("200 OK", updated_search),
+        ("200 OK", updated),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/compose-delete.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    let compose_document = directory.path().join("compose.yaml");
+    let config = directory.path().join("dokploy.yaml");
+    let compose_config = |description: &str| {
+        format!(
+            concat!(
+                "version: 1\n",
+                "project:\n  name: platform\n",
+                "environments:\n",
+                "  production:\n",
+                "    compose:\n",
+                "      web:\n",
+                "        description: {:?}\n",
+                "        document:\n",
+                "          file: compose.yaml\n",
+            ),
+            description,
+        )
+    };
+    fs::write(
+        &compose_document,
+        "services:\n  web:\n    image: initial-document-canary\n",
+    )
+    .expect("initial Compose document is writable");
+    fs::write(&config, compose_config("Initial stack"))
+        .expect("initial configuration fixture is writable");
+    let client = server.client();
+
+    let created = apply_workspace(&client, &config)
+        .await
+        .expect("initial Compose apply succeeds");
+    assert_eq!(created.applied(), 3);
+    fs::write(
+        &compose_document,
+        "services:\n  web:\n    image: updated-document-canary\n",
+    )
+    .expect("updated Compose document is writable");
+    fs::write(&config, compose_config("Updated stack"))
+        .expect("updated configuration fixture is writable");
+    let updated_summary = apply_workspace(&client, &config)
+        .await
+        .expect("Compose update succeeds");
+    assert_eq!(updated_summary.applied(), 1);
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    compose: {}\n",
+            "removed:\n",
+            "  - from: compose.web\n",
+            "    destroy: true\n",
+        ),
+    )
+    .expect("removal configuration fixture is writable");
+    let deleted = apply_workspace(&client, &config)
+        .await
+        .expect("Compose delete succeeds");
+    assert_eq!(deleted.applied(), 1);
+
+    let instance = InstanceIdentity::parse(&server.url).expect("instance is valid");
+    let store = StateStore::new(directory.path(), instance).expect("state store is valid");
+    let state = store
+        .inspect()
+        .expect("state is readable")
+        .expect("state was initialized");
+    assert!(state.resource(&"compose.web".parse().unwrap()).is_none());
+    assert_eq!(store.recovery_status().unwrap(), RecoveryStatus::Clean);
+
+    let requests = server.finish();
+    assert_eq!(requests.len(), 15);
+    assert!(requests[2].starts_with("POST /api/compose.create HTTP/1.1\r\n"));
+    assert!(requests[2].contains("initial-document-canary"));
+    assert!(requests[2].contains(r#""sourceType":"raw""#));
+    assert!(requests[8].starts_with("POST /api/compose.update HTTP/1.1\r\n"));
+    assert!(requests[8].contains("updated-document-canary"));
+    assert!(requests[8].contains(r#""description":"Updated stack""#));
+    assert!(requests[14].starts_with("POST /api/compose.delete HTTP/1.1\r\n"));
+    assert!(requests[14].contains(r#""deleteVolumes":false"#));
+    assert!(
+        requests
+            .iter()
+            .all(|request| !request.contains("compose.deploy"))
+    );
+
+    let state_json = fs::read_to_string(directory.path().join(".dokploy/state.json"))
+        .expect("state is readable as text");
+    assert!(!state_json.contains("initial-document-canary"));
+    assert!(!state_json.contains("updated-document-canary"));
+    assert!(!format!("{created:?} {updated_summary:?} {deleted:?}").contains("document-canary"));
+}
+
+#[tokio::test]
+async fn compose_unknown_create_outcome_keeps_the_document_step_recoverable() {
+    let server = TestServer::respond_then_drop(vec![
+        ("200 OK", "[]"),
+        (
+            "200 OK",
+            include_str!("../../../fixtures/api/live/v0.30.6/project-create.owner.json"),
+        ),
+    ]);
+    let directory = tempfile::tempdir().expect("temporary workspace is available");
+    fs::write(
+        directory.path().join("compose.yaml"),
+        "services:\n  web:\n    image: unknown-compose-document-canary\n",
+    )
+    .expect("Compose document fixture is writable");
+    let config = directory.path().join("dokploy.yaml");
+    fs::write(
+        &config,
+        concat!(
+            "version: 1\n",
+            "project:\n  name: platform\n",
+            "environments:\n",
+            "  production:\n",
+            "    compose:\n",
+            "      web:\n",
+            "        document:\n",
+            "          file: compose.yaml\n",
+        ),
+    )
+    .expect("configuration fixture is writable");
+
+    let error = apply_workspace(&server.client(), &config)
+        .await
+        .expect_err("an interrupted Compose create has an unknown outcome");
+    assert!(matches!(
+        error,
+        dokploy_cli::executor::ApplyWorkspaceError::RemoteMutation {
+            code: dokploy_state::FailureCode::TransportOutcomeUnknown
+        }
+    ));
+    assert_recovery_step_in_progress(directory.path(), &server.url);
+    let journal = fs::read_dir(directory.path().join(".dokploy/journal"))
+        .unwrap()
+        .find_map(|entry| {
+            let path = entry.ok()?.path();
+            path.extension()
+                .is_some_and(|extension| extension == "jsonl")
+                .then(|| fs::read_to_string(path).unwrap())
+        })
+        .expect("journal exists");
+    assert!(!journal.contains("stepFailed"));
+    assert!(!journal.contains("unknown-compose-document-canary"));
+    assert_eq!(server.finish().len(), 3);
+}
+
+#[tokio::test]
 async fn mysql_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks() {
     let project = r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#;
     let environments =

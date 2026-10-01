@@ -10,12 +10,13 @@ use dokploy_core::{
     PropertyPath, ReplacementOrder, StoredState,
 };
 use dokploy_sdk::{
-    ApplicationId, ChangeLibSqlPassword, CreateApplication, CreateDomain, CreateEnvironment,
-    CreateLibSql, CreateMariaDb, CreateMongo, CreateMySql, CreatePostgres, CreateProject,
-    CreateRedis, Dokploy, DomainId, EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode,
-    MariaDbId, MongoId, MySqlId, Nullable, PostgresId, ProjectId, RedisId, UpdateApplication,
-    UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql,
-    UpdatePostgres, UpdateProject, UpdateRedis,
+    ApplicationId, ChangeLibSqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication,
+    CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo,
+    CreateMySql, CreatePostgres, CreateProject, CreateRedis, Dokploy, DomainId, EnvironmentId,
+    Error as SdkError, LibSqlId, LibSqlNode, MariaDbId, MongoId, MySqlId, Nullable, PostgresId,
+    ProjectId, RedisId, UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment,
+    UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMySql, UpdatePostgres, UpdateProject,
+    UpdateRedis,
 };
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
@@ -520,7 +521,28 @@ async fn apply_workspace_with_expectation(
                 }
             }
             ResourceKind::Compose => {
-                return Err(ApplyWorkspaceError::UnsupportedChange);
+                let environment_id = checkpoint_environment_id(checkpoint, &state)?;
+                let document = take_sensitive_string(
+                    &mut compiled,
+                    change.address(),
+                    &PropertyPath::ComposeDocument,
+                )?;
+                let mut input =
+                    CreateCompose::new(change.address().name().as_str(), environment_id, document);
+                if let Some(description) = optional_string(checkpoint, &PropertyPath::Description)?
+                {
+                    input = input.with_description(description);
+                }
+                let created = match client.composes().create(input).await {
+                    Ok(created) => created,
+                    Err(error) => {
+                        let code = failure_code(&error);
+                        fail_if_definitive(&mut journal, token, code)?;
+                        return Err(ApplyWorkspaceError::RemoteMutation { code });
+                    }
+                };
+                RemoteId::new(created.compose_id().as_str())
+                    .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
             ResourceKind::Postgres => {
                 let environment_id = checkpoint_environment_id(checkpoint, &state)?;
@@ -711,6 +733,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                 ResourceKind::Project
                     | ResourceKind::Environment
                     | ResourceKind::Application
+                    | ResourceKind::Compose
                     | ResourceKind::Postgres
                     | ResourceKind::MySql
                     | ResourceKind::MariaDb
@@ -721,9 +744,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
-        ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => {
-            change.address().kind() != ResourceKind::Compose
-        }
+        ChangeKind::Update | ChangeKind::Delete | ChangeKind::Move => true,
         ChangeKind::Reparent => change.address().kind() == ResourceKind::Application,
         ChangeKind::Replace => {
             change.address().kind() == ResourceKind::LibSql
@@ -902,7 +923,13 @@ async fn prepare_move_mutation(
                 current_environment,
             )?))
         }
-        ResourceKind::Compose => Err(ApplyWorkspaceError::UnsupportedChange),
+        ResourceKind::Compose => Ok(ExistingMutation::Compose(compose_update_input(
+            compiled,
+            target,
+            checkpoint,
+            ComposeId::new(remote_id.as_str()),
+            selected_paths,
+        )?)),
         ResourceKind::Postgres => {
             let mut input = UpdatePostgres::new(PostgresId::new(remote_id.as_str()));
             for path in selected_paths {
@@ -1061,7 +1088,15 @@ async fn delete_remote_resource(
                 .delete(ApplicationId::new(remote_id.as_str()))
                 .await,
         ),
-        ResourceKind::Compose => None,
+        ResourceKind::Compose => Some(
+            client
+                .composes()
+                .delete(
+                    ComposeId::new(remote_id.as_str()),
+                    ComposeVolumePolicy::Preserve,
+                )
+                .await,
+        ),
         ResourceKind::Postgres => Some(
             client
                 .postgres()
@@ -1302,6 +1337,36 @@ fn minimal_resource_state(
         checkpoint.dependencies().to_vec(),
     )
     .map_err(|_| ApplyWorkspaceError::InvalidCheckpoint)
+}
+
+fn compose_update_input(
+    compiled: &mut crate::desired::CompiledDesired,
+    address: &ResourceAddress,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    compose_id: ComposeId,
+    selected_paths: &[PropertyPath],
+) -> Result<UpdateCompose, ApplyWorkspaceError> {
+    let mut input = UpdateCompose::new(compose_id);
+    for path in selected_paths {
+        match path {
+            PropertyPath::Description => {
+                input = match checkpoint
+                    .property(path)
+                    .ok_or(ApplyWorkspaceError::InvalidCheckpoint)
+                    .and_then(nullable_string)?
+                {
+                    Nullable::Null => input.clear_description(),
+                    Nullable::Value(description) => input.with_description(description),
+                };
+            }
+            PropertyPath::ComposeDocument => {
+                input = input.with_compose_file(take_sensitive_string(compiled, address, path)?);
+            }
+            _ => return Err(ApplyWorkspaceError::InvalidCheckpoint),
+        }
+    }
+
+    Ok(input)
 }
 
 fn application_update_input(
@@ -2342,9 +2407,13 @@ async fn execute_existing_change(
             }
             ExistingMutation::Application(input)
         }
-        ResourceKind::Compose => {
-            return Err(ApplyWorkspaceError::UnsupportedChange);
-        }
+        ResourceKind::Compose => ExistingMutation::Compose(compose_update_input(
+            compiled,
+            change.address(),
+            checkpoint,
+            ComposeId::new(remote_id.as_str()),
+            &selected_paths,
+        )?),
         ResourceKind::Postgres => {
             let mut input = UpdatePostgres::new(PostgresId::new(remote_id.as_str()));
             for path in &selected_paths {
@@ -2479,6 +2548,7 @@ enum ExistingMutation {
     Project(UpdateProject),
     Environment(UpdateEnvironment),
     Application(UpdateApplication),
+    Compose(UpdateCompose),
     Postgres(UpdatePostgres),
     MySql(UpdateMySql),
     MariaDb(UpdateMariaDb),
@@ -2493,6 +2563,7 @@ impl ExistingMutation {
             Self::Project(input) => client.projects().update(input).await,
             Self::Environment(input) => client.environments().update(input).await,
             Self::Application(input) => client.applications().update(input).await,
+            Self::Compose(input) => client.composes().update(input).await,
             Self::Postgres(input) => client.postgres().update(input).await,
             Self::MySql(input) => client.mysql().update(input).await,
             Self::MariaDb(input) => client.mariadb().update(input).await,

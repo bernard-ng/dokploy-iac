@@ -200,6 +200,7 @@ pub enum ImportKind {
     Project,
     Environment,
     Application,
+    Compose,
     Postgres,
     #[value(name = "mysql")]
     MySql,

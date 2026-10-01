@@ -161,6 +161,36 @@ async fn uncertain_libsql_password_rotation_requires_manual_intervention() {
     .await;
 }
 
+#[tokio::test]
+async fn uncertain_compose_metadata_update_is_recovered_when_document_is_unchanged() {
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::Compose,
+        "compose.main",
+        "compose-1",
+        "compose",
+        r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"main","appName":"main-app","description":"next","sourceType":"raw"}],"total":1}"#,
+        r#"{"composeId":"compose-1","environmentId":"environment-1","name":"main","appName":"main-app","description":"next","sourceType":"raw","composeType":"docker-compose","autoDeploy":false,"composePath":"./docker-compose.yml","composeStatus":"idle"}"#,
+        1,
+        true,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn uncertain_compose_document_update_requires_manual_intervention() {
+    exercise_uncertain_database_update_recovery(
+        ResourceKind::Compose,
+        "compose.main",
+        "compose-1",
+        "compose",
+        r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"main","appName":"main-app","description":"next","sourceType":"raw"}],"total":1}"#,
+        r#"{"composeId":"compose-1","environmentId":"environment-1","name":"main","appName":"main-app","description":"next","sourceType":"raw","composeType":"docker-compose","autoDeploy":false,"composePath":"./docker-compose.yml","composeStatus":"idle"}"#,
+        9,
+        false,
+    )
+    .await;
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn exercise_uncertain_database_update_recovery(
     kind: ResourceKind,
@@ -182,7 +212,20 @@ async fn exercise_uncertain_database_update_recovery(
     let workspace = tempfile::tempdir().expect("temporary workspace is available");
     let config_file = workspace.path().join("dokploy.yaml");
     let (configured_fields, before_inputs, after_inputs, before_sensitive, after_sensitive) =
-        if kind == ResourceKind::Mongo {
+        if kind == ResourceKind::Compose {
+            (
+                concat!(
+                    "        description: next\n",
+                    "        document:\n",
+                    "          file: compose.yaml\n",
+                )
+                .to_owned(),
+                serde_json::json!({"description":"old"}),
+                serde_json::json!({"description":"next"}),
+                compose_sensitive_inputs(1),
+                compose_sensitive_inputs(proposed_password_fingerprint),
+            )
+        } else if kind == ResourceKind::Mongo {
             (
                 "        username: next\n        password: null\n        replica_sets: true\n"
                     .to_owned(),
@@ -231,6 +274,13 @@ async fn exercise_uncertain_database_update_recovery(
         ),
     )
     .expect("configuration fixture is writable");
+    if kind == ResourceKind::Compose {
+        fs::write(
+            workspace.path().join("compose.yaml"),
+            "services:\n  web:\n    image: recovery-canary\n",
+        )
+        .expect("Compose document fixture is writable");
+    }
     let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
     let store = StateStore::new(workspace.path(), instance.clone()).expect("state store is valid");
     let mut state = StateFile::new(Version::new(0, 1, 0), instance);
@@ -408,6 +458,19 @@ async fn uncertain_libsql_create_adopts_topology_identity_without_retrying_secre
 }
 
 #[tokio::test]
+async fn uncertain_compose_create_adopts_one_matching_resource_without_retrying_the_document() {
+    exercise_uncertain_database_create_recovery(
+        ResourceKind::Compose,
+        "compose.main",
+        "compose-1",
+        "compose",
+        r#"{"items":[{"composeId":"compose-1","environmentId":"environment-1","name":"main","appName":"main-app","description":"edge","sourceType":"raw"}],"total":1}"#,
+        r#"{"composeId":"compose-1","environmentId":"environment-1","name":"main","appName":"main-app","description":"edge","sourceType":"raw","composeType":"docker-compose","autoDeploy":false,"composePath":"./docker-compose.yml","composeStatus":"idle"}"#,
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn interrupted_libsql_create_with_authoritative_absence_confirms_no_change() {
     let server = TestServer::respond_in_sequence(vec![
         r#"[{"projectId":"project-1","name":"platform","environments":[{"environmentId":"environment-1","name":"production","isDefault":true}]}]"#,
@@ -572,7 +635,18 @@ async fn exercise_uncertain_database_create_recovery(
     ]);
     let workspace = tempfile::tempdir().expect("temporary workspace is available");
     let config_file = workspace.path().join("dokploy.yaml");
-    let (configured_fields, managed_inputs, sensitive) = if kind == ResourceKind::Mongo {
+    let (configured_fields, managed_inputs, sensitive) = if kind == ResourceKind::Compose {
+        (
+            concat!(
+                "        description: edge\n",
+                "        document:\n",
+                "          file: compose.yaml\n",
+            )
+            .to_owned(),
+            serde_json::json!({"description":"edge"}),
+            compose_sensitive_inputs(1),
+        )
+    } else if kind == ResourceKind::Mongo {
         (
             "        username: app\n        password: null\n        replica_sets: false\n"
                 .to_owned(),
@@ -615,6 +689,13 @@ async fn exercise_uncertain_database_create_recovery(
         ),
     )
     .expect("configuration fixture is writable");
+    if kind == ResourceKind::Compose {
+        fs::write(
+            workspace.path().join("compose.yaml"),
+            "services:\n  web:\n    image: recovery-create-canary\n",
+        )
+        .expect("Compose document fixture is writable");
+    }
     let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
     let store = StateStore::new(workspace.path(), instance.clone()).expect("state store is valid");
     let mut state = StateFile::new(Version::new(0, 1, 0), instance);
@@ -1135,6 +1216,18 @@ fn mongo_sensitive_inputs(password: u8) -> SensitiveInputs {
     SensitiveInputs::try_from_entries([(
         SensitivePropertyPath::parse("password").unwrap(),
         SensitiveFingerprint::new_v1(key_id, [password; 32]),
+    )])
+    .unwrap()
+}
+
+fn compose_sensitive_inputs(document: u8) -> SensitiveInputs {
+    let key_id = FingerprintKeyId::new(
+        uuid::Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").unwrap(),
+    )
+    .unwrap();
+    SensitiveInputs::try_from_entries([(
+        SensitivePropertyPath::parse("document").unwrap(),
+        SensitiveFingerprint::new_v1(key_id, [document; 32]),
     )])
     .unwrap()
 }

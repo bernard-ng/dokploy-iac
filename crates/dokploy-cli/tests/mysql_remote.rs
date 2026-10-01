@@ -5,10 +5,10 @@ use std::thread::{self, JoinHandle};
 
 use dokploy_cli::desired::compile_desired;
 use dokploy_cli::remote::{
-    ApplicationTopologyAuthority, DiscoveryAuthority, DomainTopologyAuthority,
-    EnvironmentTopologyAuthority, LibSqlTopologyAuthority, MariaDbTopologyAuthority,
-    MongoTopologyAuthority, MySqlTopologyAuthority, PostgresTopologyAuthority,
-    ProjectTopologyAuthority, RedisTopologyAuthority, discover_remote,
+    ApplicationTopologyAuthority, ComposeTopologyAuthority, DiscoveryAuthority,
+    DomainTopologyAuthority, EnvironmentTopologyAuthority, LibSqlTopologyAuthority,
+    MariaDbTopologyAuthority, MongoTopologyAuthority, MySqlTopologyAuthority,
+    PostgresTopologyAuthority, ProjectTopologyAuthority, RedisTopologyAuthority, discover_remote,
 };
 use dokploy_config::DokployConfig;
 use dokploy_core::{
@@ -99,6 +99,7 @@ fn authoritative() -> DiscoveryAuthority {
         projects: ProjectTopologyAuthority::Authoritative,
         environments: EnvironmentTopologyAuthority::Authoritative,
         applications: ApplicationTopologyAuthority::Authoritative,
+        compose: ComposeTopologyAuthority::Authoritative,
         postgres: PostgresTopologyAuthority::Authoritative,
         mysql: MySqlTopologyAuthority::Authoritative,
         mariadb: MariaDbTopologyAuthority::Authoritative,
