@@ -164,8 +164,14 @@ durable state semantics.
   protected document-free import. Description and the opaque raw document
   update in place. Deletion always preserves volumes, and the disposable live
   acceptance never deploys the Compose record.
-- Mounts, ports, redirects, security entries, backups, and schedules use the
-  shared typed-target and external-selector model in ADR 0026.
+- Ports are declarative end to end as application-contained resources with
+  duplicate collision rejection, authoritative `application.one` discovery and
+  direct-read agreement, fresh-read complete-replacement updates,
+  delete-before-create containment replacement, explicit recovery, and
+  protected import. The disposable live acceptance never deploys the
+  application.
+- Mounts, redirects, security entries, backups, and schedules use the shared
+  typed-target and external-selector model in ADR 0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
   MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
   `target.one.backups` collections, mutations prove identity and target

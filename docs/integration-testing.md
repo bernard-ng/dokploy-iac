@@ -565,6 +565,31 @@ fingerprint key, while cleanup also excludes the real integration API key.
 Cleanup proves project and Compose identity absence and keeps only owner-safe
 evidence whenever a proof fails.
 
+## Live Port declarative apply test
+
+Verify Port reconciliation independently against the pinned local instance:
+
+```bash
+scripts/integration/test-port-apply.sh
+```
+
+The check creates a disposable project, environment, and two undeployed
+applications with one Port under the first application. It requires an
+immediate no-op plan, replaces all four owned fields in one apply while proving
+the physical identity is unchanged, and then moves the Port under the second
+application to prove delete-before-create replacement, a new identity, absence
+of the old identity, and an empty former parent collection.
+
+The next apply removes the Port declaratively. The check confirms absence
+through `port.one` (which reports HTTP 400 for a missing Port) and the
+authoritative `application.one` collection, removes the durable state entry,
+and requires a no-op plan. It then creates a Port out of band, adopts it through
+protected import into a separate workspace, and requires an immediate no-op
+plan. Every touched application must report zero deployments. Raw responses stay
+in a private directory that cleanup discards, retained evidence is reduced to an
+allowlist and scanned for the integration API key, and cleanup proves project
+and every observed Port identity absent.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector

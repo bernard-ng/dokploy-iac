@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 - Require managed Postgres, MySQL, MariaDB, and Redis direct reads to agree
   with a successful parent-scoped collection read before planning mutations,
   and retain redaction-safe live-test evidence whenever cleanup is unproven.
+- Classify an unusable MySQL create identity as an unknown outcome in the CLI
+  executor so the journal step stays recoverable, matching the SDK contract.
 - Validate atomic LibSQL node values at both desired and stored planner seams,
   rejecting malformed tagged shapes and empty replica URLs.
 - Separate optional create-only mutation properties from required create
@@ -41,6 +43,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add end-to-end declarative Port reconciliation for application-contained
+  published port, target port, publish mode, and protocol with duplicate
+  collision rejection, authoritative `application.one` discovery with
+  direct-read agreement, fresh-read complete-replacement updates,
+  delete-before-create containment replacement, journaled outcome-unknown
+  recovery, protected import, and undeployed disposable live acceptance.
 - Add end-to-end declarative Compose reconciliation with authoritative bounded
   environment discovery, direct-read agreement, descriptor-only document
   fingerprints, journaled mutations, outcome-unknown recovery, protected
