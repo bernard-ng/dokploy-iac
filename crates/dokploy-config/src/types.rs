@@ -411,7 +411,7 @@ impl JsonSchema for ResourceReference {
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security|mount|schedule)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
+            "pattern": "^(project|environment|application|compose|postgres|mysql|mariadb|mongo|libsql|redis|domain|port|redirect|security|mount|schedule|backup)\\.[a-z][a-z0-9_-]*\\.[A-Za-z_][A-Za-z0-9_.-]*$"
         })
     }
 }
@@ -943,6 +943,44 @@ pub(crate) fn valid_schedule_description(value: &str) -> bool {
         && value.len() <= 1024
         && value.trim() == value
         && !value.chars().any(char::is_control)
+}
+
+/// Returns whether a Backup schedule is a bounded five- or six-field cron expression.
+///
+/// Macros such as `@daily` are rejected so every accepted value has one
+/// unambiguous textual form to compare with Dokploy's stored schedule.
+pub(crate) fn valid_backup_schedule(value: &str) -> bool {
+    let fields = value.split(' ').collect::<Vec<_>>();
+    value.len() <= 128
+        && (5..=6).contains(&fields.len())
+        && fields.iter().all(|field| {
+            !field.is_empty()
+                && field.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || matches!(character, '*' | '/' | ',' | '?' | '#' | '-')
+                })
+        })
+}
+
+/// Returns whether a Backup destination prefix is nonempty, bounded, and control-free.
+pub(crate) fn valid_backup_prefix(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
+}
+
+/// Returns whether a Backup database name is nonempty, bounded, and control-free.
+pub(crate) fn valid_backup_database(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 255 && !value.chars().any(char::is_control)
+}
+
+/// Mirrors Dokploy's collision normalization: trim whitespace and slashes, then
+/// append one trailing slash to a nonempty remainder.
+pub(crate) fn normalize_backup_prefix(value: &str) -> String {
+    let trimmed = value.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("{trimmed}/")
+    }
 }
 
 fn valid_path_segment(segment: &str) -> bool {

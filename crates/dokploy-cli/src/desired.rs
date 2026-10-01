@@ -132,6 +132,7 @@ pub struct ExecutionBindings {
     security_usernames: BTreeMap<ResourceAddress, String>,
     mounts: BTreeMap<ResourceAddress, MountBinding>,
     schedules: BTreeMap<ResourceAddress, ScheduleBinding>,
+    backups: BTreeMap<ResourceAddress, BackupBinding>,
     selectors: BTreeMap<(ResourceAddress, PropertyPath), SelectorBinding>,
     external_ids: BTreeMap<(ResourceAddress, PropertyPath), ExternalExecutionId>,
     sensitive: BTreeMap<(ResourceAddress, PropertyPath), SensitiveExecutionValue>,
@@ -170,6 +171,12 @@ struct PortBinding {
     target_port: u16,
     publish_mode: &'static str,
     protocol: &'static str,
+}
+
+struct BackupBinding {
+    target: ResourceAddress,
+    prefix: String,
+    database: String,
 }
 
 struct MountBinding {
@@ -258,6 +265,26 @@ impl ExecutionBindings {
                 port.protocol,
             )
         })
+    }
+
+    /// Returns the typed target, destination selector, prefix, and database used for
+    /// Backup identity discovery.
+    #[must_use]
+    pub fn backup(
+        &self,
+        address: &ResourceAddress,
+    ) -> Option<(&ResourceAddress, &ExternalSelector, &str, &str)> {
+        let binding = self.backups.get(address)?;
+        let destination = self
+            .selectors
+            .get(&(address.clone(), PropertyPath::Destination))?;
+
+        Some((
+            &binding.target,
+            &destination.selector,
+            binding.prefix.as_str(),
+            binding.database.as_str(),
+        ))
     }
 
     /// Returns the typed target, storage type, and path used for Mount identity discovery.
@@ -687,6 +714,7 @@ fn compile_desired_with_fingerprints(
                     fingerprints,
                 )?;
             }
+            ResourceConfig::Backup(backup) => compile_backup(&mut properties, backup),
         }
 
         let protection = match resource.lifecycle().protect() {
@@ -835,6 +863,16 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
                     },
                 );
             }
+            ResourceConfig::Backup(backup) => {
+                bindings.backups.insert(
+                    address.clone(),
+                    BackupBinding {
+                        target: backup.target().clone(),
+                        prefix: backup.prefix().to_owned(),
+                        database: backup.database().to_owned(),
+                    },
+                );
+            }
             ResourceConfig::Project(_)
             | ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
@@ -878,6 +916,10 @@ fn compile_dependencies(resource: &ResourceConfig) -> Vec<ResourceAddress> {
         dependencies.insert(schedule.target().clone());
     }
 
+    if let ResourceConfig::Backup(backup) = resource {
+        dependencies.insert(backup.target().clone());
+    }
+
     dependencies.into_iter().collect()
 }
 
@@ -905,6 +947,43 @@ fn compile_bool_field(
         Field::Set(value) => comparable(serde_json::json!(value)),
     };
     properties.insert(path, value);
+}
+
+/// Compiles every Backup-owned property; the destination is a stable name selector.
+fn compile_backup(
+    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+    backup: &dokploy_config::BackupConfig,
+) {
+    properties.insert(
+        PropertyPath::Target,
+        comparable(serde_json::json!(backup.target().to_string())),
+    );
+    compile_selector_field(
+        properties,
+        PropertyPath::Destination,
+        &Field::Set(backup.destination().clone()),
+    );
+    properties.insert(
+        PropertyPath::Schedule,
+        comparable(serde_json::json!(backup.schedule())),
+    );
+    properties.insert(
+        PropertyPath::Prefix,
+        comparable(serde_json::json!(backup.prefix())),
+    );
+    properties.insert(
+        PropertyPath::Database,
+        comparable(serde_json::json!(backup.database())),
+    );
+    properties.insert(
+        PropertyPath::Enabled,
+        comparable(serde_json::json!(backup.enabled())),
+    );
+    compile_u32_field(properties, PropertyPath::KeepLatest, backup.keep_latest());
+    properties.insert(
+        PropertyPath::IncludeEncryptionKey,
+        comparable(serde_json::json!(backup.include_encryption_key())),
+    );
 }
 
 fn compile_selector_field(

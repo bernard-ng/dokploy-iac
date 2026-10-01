@@ -26,6 +26,7 @@ pub enum ResourceKind {
     Security,
     Mount,
     Schedule,
+    Backup,
 }
 
 impl ResourceKind {
@@ -49,6 +50,7 @@ impl ResourceKind {
             Self::Security => "security",
             Self::Mount => "mount",
             Self::Schedule => "schedule",
+            Self::Backup => "backup",
         }
     }
 
@@ -68,7 +70,8 @@ impl ResourceKind {
             | Self::Redis
             | Self::Domain
             | Self::Mount
-            | Self::Schedule => Some(Self::Environment),
+            | Self::Schedule
+            | Self::Backup => Some(Self::Environment),
             Self::Port | Self::Redirect | Self::Security => Some(Self::Application),
         }
     }
@@ -99,6 +102,18 @@ impl ResourceKind {
     #[must_use]
     pub const fn is_schedule_target(self) -> bool {
         matches!(self, Self::Application | Self::Compose)
+    }
+
+    /// Returns whether a Backup may target resources of this kind.
+    ///
+    /// Backups are supported for the five database kinds proven by the SDK
+    /// contract. Compose and web-server Backups remain unsupported.
+    #[must_use]
+    pub const fn is_backup_target(self) -> bool {
+        matches!(
+            self,
+            Self::Postgres | Self::MySql | Self::MariaDb | Self::Mongo | Self::LibSql
+        )
     }
 }
 
@@ -141,6 +156,7 @@ impl FromStr for ResourceKind {
             "security" => Ok(Self::Security),
             "mount" => Ok(Self::Mount),
             "schedule" => Ok(Self::Schedule),
+            "backup" => Ok(Self::Backup),
             _ => Err(ResourceKindParseError {
                 value: value.to_owned(),
             }),

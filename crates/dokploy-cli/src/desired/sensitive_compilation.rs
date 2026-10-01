@@ -293,7 +293,8 @@ fn preflight_sensitive_inputs(
             | ResourceConfig::Environment(_)
             | ResourceConfig::Domain(_)
             | ResourceConfig::Port(_)
-            | ResourceConfig::Redirect(_) => {}
+            | ResourceConfig::Redirect(_)
+            | ResourceConfig::Backup(_) => {}
         }
     }
 

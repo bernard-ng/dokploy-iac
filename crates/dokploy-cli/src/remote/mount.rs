@@ -33,7 +33,8 @@ pub(crate) fn mount_service_target(kind: ResourceKind, id: &str) -> Option<Servi
         | ResourceKind::Redirect
         | ResourceKind::Security
         | ResourceKind::Schedule
-        | ResourceKind::Mount => return None,
+        | ResourceKind::Mount
+        | ResourceKind::Backup => return None,
     })
 }
 

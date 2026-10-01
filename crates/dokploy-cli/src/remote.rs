@@ -831,6 +831,31 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::FilePath, set_only)
             .with_property(PropertyPath::FileContent, set_only)
             .with_containment(MutationMode::StateOnly),
+        // Dokploy's `backup.update` replaces every mutable field (schedule, prefix,
+        // database, enabled, retention, encryption-key inclusion, and the
+        // destination association) but never the database target, so only a
+        // target change replaces the Backup.
+        ResourceKind::Backup => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Target)
+            .requiring(PropertyPath::Destination)
+            .requiring(PropertyPath::Schedule)
+            .requiring(PropertyPath::Prefix)
+            .requiring(PropertyPath::Database)
+            .requiring(PropertyPath::Enabled)
+            .requiring(PropertyPath::IncludeEncryptionKey)
+            .allowing_on_create(PropertyPath::KeepLatest)
+            .with_property(
+                PropertyPath::Target,
+                PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
+            )
+            .with_property(PropertyPath::Destination, set_only)
+            .with_property(PropertyPath::Schedule, set_only)
+            .with_property(PropertyPath::Prefix, set_only)
+            .with_property(PropertyPath::Database, set_only)
+            .with_property(PropertyPath::Enabled, set_only)
+            .with_property(PropertyPath::KeepLatest, in_place)
+            .with_property(PropertyPath::IncludeEncryptionKey, set_only)
+            .with_containment(MutationMode::StateOnly),
         ResourceKind::Port => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::PublishedPort)
             .requiring(PropertyPath::TargetPort)
@@ -3263,6 +3288,11 @@ fn application_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3345,6 +3375,11 @@ fn compose_properties(
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
             | PropertyPath::RollbackRegistry
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3668,6 +3703,11 @@ fn postgres_properties(
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
             | PropertyPath::RollbackRegistry
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3952,6 +3992,11 @@ fn mysql_properties(
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
             | PropertyPath::RollbackRegistry
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4257,6 +4302,11 @@ fn mariadb_properties(
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
             | PropertyPath::RollbackRegistry
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4563,6 +4613,11 @@ fn mongo_properties(
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
             | PropertyPath::RollbackRegistry
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4885,6 +4940,11 @@ fn libsql_properties(
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
             | PropertyPath::RollbackRegistry
+            | PropertyPath::Destination
+            | PropertyPath::Schedule
+            | PropertyPath::Prefix
+            | PropertyPath::KeepLatest
+            | PropertyPath::IncludeEncryptionKey
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);

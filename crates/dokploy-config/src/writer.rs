@@ -330,6 +330,23 @@ impl ConfigDocument {
                         },
                     );
                 }
+                ResourceConfig::Backup(config) => {
+                    environment.backups.insert(
+                        address.name().clone(),
+                        BackupDocument {
+                            target: config.target.clone(),
+                            destination: config.destination.clone(),
+                            schedule: config.schedule.clone(),
+                            prefix: config.prefix.clone(),
+                            database: config.database.clone(),
+                            enabled: config.enabled,
+                            keep_latest: config.keep_latest.clone(),
+                            include_encryption_key: config.include_encryption_key,
+                            depends_on: config.depends_on.clone(),
+                            lifecycle: lifecycle_document(&config.lifecycle),
+                        },
+                    );
+                }
                 ResourceConfig::Project(_)
                 | ResourceConfig::Environment(_)
                 | ResourceConfig::Port(_)
@@ -425,6 +442,7 @@ pub struct EnvironmentDocument {
     domains: BTreeMap<ResourceName, DomainDocument>,
     mounts: BTreeMap<ResourceName, MountDocument>,
     schedules: BTreeMap<ResourceName, ScheduleDocument>,
+    backups: BTreeMap<ResourceName, BackupDocument>,
 }
 
 impl EnvironmentDocument {
@@ -519,6 +537,14 @@ impl EnvironmentDocument {
         schedule: ScheduleDocument,
     ) -> Result<(), ConfigDocumentError> {
         insert_resource(&mut self.schedules, name, schedule, ResourceKind::Schedule)
+    }
+
+    pub fn add_backup(
+        &mut self,
+        name: ResourceName,
+        backup: BackupDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.backups, name, backup, ResourceKind::Backup)
     }
 }
 
@@ -708,6 +734,21 @@ pub struct ScheduleDocument {
     pub lifecycle: LifecycleDocument,
 }
 
+/// Backup properties accepted by an imported document.
+#[derive(Clone)]
+pub struct BackupDocument {
+    pub target: ResourceAddress,
+    pub destination: ExternalSelector,
+    pub schedule: String,
+    pub prefix: String,
+    pub database: String,
+    pub enabled: bool,
+    pub keep_latest: Field<u32>,
+    pub include_encryption_key: bool,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
 /// Generic lifecycle properties accepted by an imported document.
 #[derive(Clone, Default)]
 pub struct LifecycleDocument {
@@ -888,6 +929,12 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
             "schedules",
             &environment.schedules,
             render_schedule_document,
+        );
+        render_document_children(
+            &mut output,
+            "backups",
+            &environment.backups,
+            render_backup_document,
         );
         collapse_empty_mapping(&mut output, item_start, 2, name.as_str());
     }
@@ -1145,6 +1192,62 @@ fn schedule_fields(output: &mut String, indent: usize, fields: &ScheduleFields<'
     secret_field(output, indent, "script", fields.script);
 }
 
+fn render_backup_document(output: &mut String, indent: usize, config: &BackupDocument) {
+    backup_fields(
+        output,
+        indent,
+        &BackupFields {
+            target: &config.target,
+            destination: &config.destination,
+            schedule: &config.schedule,
+            prefix: &config.prefix,
+            database: &config.database,
+            enabled: config.enabled,
+            keep_latest: &config.keep_latest,
+            include_encryption_key: config.include_encryption_key,
+        },
+    );
+    document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
+}
+
+struct BackupFields<'a> {
+    target: &'a ResourceAddress,
+    destination: &'a ExternalSelector,
+    schedule: &'a str,
+    prefix: &'a str,
+    database: &'a str,
+    enabled: bool,
+    keep_latest: &'a Field<u32>,
+    include_encryption_key: bool,
+}
+
+fn backup_fields(output: &mut String, indent: usize, fields: &BackupFields<'_>) {
+    line(
+        output,
+        indent,
+        "target",
+        &quoted(&fields.target.to_string()),
+    );
+    mapping_header(output, indent, "destination");
+    match fields.destination {
+        ExternalSelector::Local => line(output, indent + 2, "local", "true"),
+        ExternalSelector::Named(selector) => {
+            line(output, indent + 2, "name", &quoted(selector.as_str()));
+        }
+    }
+    line(output, indent, "schedule", &quoted(fields.schedule));
+    line(output, indent, "prefix", &quoted(fields.prefix));
+    line(output, indent, "database", &quoted(fields.database));
+    line(output, indent, "enabled", bool_text(fields.enabled));
+    u32_field(output, indent, "keep_latest", fields.keep_latest);
+    line(
+        output,
+        indent,
+        "include_encryption_key",
+        bool_text(fields.include_encryption_key),
+    );
+}
+
 fn document_common_fields(
     output: &mut String,
     indent: usize,
@@ -1319,6 +1422,14 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             ResourceKind::Schedule,
             "schedules",
             render_schedule,
+        )?;
+        render_children(
+            &mut output,
+            config,
+            environment_address,
+            ResourceKind::Backup,
+            "backups",
+            render_backup,
         )?;
         collapse_empty_mapping(
             &mut output,
@@ -1626,6 +1737,34 @@ fn render_schedule(
             timezone: config.timezone(),
             command: config.command(),
             script: config.script(),
+        },
+    );
+    common_fields(output, indent, resource.depends_on(), resource.lifecycle());
+
+    Ok(())
+}
+
+fn render_backup(
+    output: &mut String,
+    indent: usize,
+    resource: &ResourceConfig,
+) -> Result<(), ConfigWriteError> {
+    let ResourceConfig::Backup(config) = resource else {
+        return Err(ConfigWriteError::InconsistentModel);
+    };
+
+    backup_fields(
+        output,
+        indent,
+        &BackupFields {
+            target: config.target(),
+            destination: config.destination(),
+            schedule: config.schedule(),
+            prefix: config.prefix(),
+            database: config.database(),
+            enabled: config.enabled(),
+            keep_latest: config.keep_latest(),
+            include_encryption_key: config.include_encryption_key(),
         },
     );
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());

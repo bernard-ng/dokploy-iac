@@ -135,6 +135,16 @@ pub enum PropertyPath {
     BuildRegistry,
     /// External rollback image registry selector.
     RollbackRegistry,
+    /// External backup-destination selector.
+    Destination,
+    /// Backup cron schedule.
+    Schedule,
+    /// Backup destination object prefix.
+    Prefix,
+    /// Nullable Backup retention count.
+    KeepLatest,
+    /// Whether a Backup includes Dokploy's encryption key.
+    IncludeEncryptionKey,
     /// Deployment status, valid only in lifecycle metadata.
     DeploymentStatus,
 }
@@ -183,6 +193,7 @@ impl PropertyPath {
                 | Self::Registry
                 | Self::BuildRegistry
                 | Self::RollbackRegistry
+                | Self::Destination
         )
     }
 
@@ -267,6 +278,17 @@ impl PropertyPath {
                     | Self::Command
                     | Self::Script
             ),
+            ResourceKind::Backup => matches!(
+                self,
+                Self::Target
+                    | Self::Destination
+                    | Self::Schedule
+                    | Self::Database
+                    | Self::Prefix
+                    | Self::Enabled
+                    | Self::KeepLatest
+                    | Self::IncludeEncryptionKey
+            ),
         }
     }
 }
@@ -319,6 +341,11 @@ impl fmt::Display for PropertyPath {
             Self::Registry => formatter.write_str("registry"),
             Self::BuildRegistry => formatter.write_str("build_registry"),
             Self::RollbackRegistry => formatter.write_str("rollback_registry"),
+            Self::Destination => formatter.write_str("destination"),
+            Self::Schedule => formatter.write_str("schedule"),
+            Self::Prefix => formatter.write_str("prefix"),
+            Self::KeepLatest => formatter.write_str("keep_latest"),
+            Self::IncludeEncryptionKey => formatter.write_str("include_encryption_key"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
         }
     }
@@ -371,6 +398,11 @@ impl FromStr for PropertyPath {
             "registry" => Ok(Self::Registry),
             "build_registry" => Ok(Self::BuildRegistry),
             "rollback_registry" => Ok(Self::RollbackRegistry),
+            "destination" => Ok(Self::Destination),
+            "schedule" => Ok(Self::Schedule),
+            "prefix" => Ok(Self::Prefix),
+            "keep_latest" => Ok(Self::KeepLatest),
+            "include_encryption_key" => Ok(Self::IncludeEncryptionKey),
             "deployment.status" => Ok(Self::DeploymentStatus),
             _ => {
                 let Some(name) = value.strip_prefix("environment.") else {

@@ -6,10 +6,10 @@ use serde::Deserialize;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
 
 use crate::model::{
-    ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
-    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig, PortConfig,
-    PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, ScheduleConfig,
-    SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
+    ApplicationConfig, BackupConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig,
+    LibSqlConfig, LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig,
+    PortConfig, PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig,
+    ScheduleConfig, SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
 };
 use crate::{
     ConfigValue, DomainConfig, ExternalSelector, Field, Lifecycle, MountSourceConfig,
@@ -97,6 +97,9 @@ struct RawEnvironment {
     #[serde(default)]
     #[schemars(with = "BTreeMap<String, RawSchedule>")]
     schedules: BTreeMap<String, Spanned<RawSchedule>>,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawBackup>")]
+    backups: BTreeMap<String, Spanned<RawBackup>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -354,6 +357,35 @@ enum RawMountSource {
         #[serde(default)]
         content: Field<SecretSource>,
     },
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawBackup {
+    #[schemars(schema_with = "backup_target_schema")]
+    target: ResourceAddress,
+    destination: ExternalSelector,
+    #[schemars(schema_with = "backup_schedule_schema")]
+    schedule: String,
+    #[schemars(schema_with = "backup_text_schema")]
+    prefix: String,
+    #[schemars(schema_with = "backup_database_schema")]
+    database: String,
+    #[serde(default = "backup_enabled_default")]
+    enabled: bool,
+    #[serde(default)]
+    keep_latest: Field<u32>,
+    #[serde(default)]
+    include_encryption_key: bool,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+const fn backup_enabled_default() -> bool {
+    true
 }
 
 impl From<RawMountSource> for MountSourceConfig {
@@ -816,6 +848,31 @@ impl DokployConfig {
                     &mut diagnostics,
                 );
             }
+
+            for (name, raw_config) in environment.backups {
+                let location = source_location(raw_config.defined);
+                let raw_config = raw_config.value;
+                let child_address = address(ResourceKind::Backup, name, location, &mut diagnostics);
+                insert_child_resource(
+                    (&mut resources, &mut parents, &mut locations),
+                    child_address,
+                    environment_address.as_ref(),
+                    ResourceConfig::Backup(BackupConfig {
+                        target: raw_config.target,
+                        destination: raw_config.destination,
+                        schedule: raw_config.schedule,
+                        prefix: raw_config.prefix,
+                        database: raw_config.database,
+                        enabled: raw_config.enabled,
+                        keep_latest: raw_config.keep_latest,
+                        include_encryption_key: raw_config.include_encryption_key,
+                        depends_on: raw_config.depends_on,
+                        lifecycle: raw_config.lifecycle,
+                    }),
+                    location,
+                    &mut diagnostics,
+                );
+            }
         }
 
         validate_resources(&mut resources, &parents, &locations, &mut diagnostics);
@@ -918,6 +975,7 @@ fn validate_resources(
     let mut security_collisions = BTreeSet::new();
     let mut mount_collisions = BTreeSet::new();
     let mut schedule_collisions = BTreeSet::new();
+    let mut backup_collisions = BTreeSet::new();
     let mut schedule_compose_services = BTreeMap::new();
 
     for (address, config) in resources.iter_mut() {
@@ -1140,8 +1198,68 @@ fn validate_resources(
             );
         }
 
+        if let ResourceConfig::Backup(backup) = config {
+            validate_backup(
+                address,
+                backup,
+                addresses.contains(&backup.target),
+                parents,
+                &mut backup_collisions,
+                location,
+                diagnostics,
+            );
+        }
+
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
+    }
+}
+
+/// The parse-time collision key mirrors the SDK contract: target, destination,
+/// runtime-normalized prefix, and database. Destinations compare by exact name.
+type BackupCollisionKey = (ResourceAddress, Option<String>, String, String);
+
+fn validate_backup(
+    address: &ResourceAddress,
+    backup: &BackupConfig,
+    target_exists: bool,
+    parents: &BTreeMap<ResourceAddress, ResourceAddress>,
+    collisions: &mut BTreeSet<BackupCollisionKey>,
+    location: SourceLocation,
+    diagnostics: &mut Vec<ValidationDiagnostic>,
+) {
+    if !backup.target.kind().is_backup_target() {
+        emit(diagnostics, ValidationIssue::InvalidBackupTarget, location);
+    } else if !target_exists {
+        emit(diagnostics, ValidationIssue::MissingReference, location);
+    } else if parents.get(address) != parents.get(&backup.target) {
+        emit(
+            diagnostics,
+            ValidationIssue::CrossEnvironmentReference,
+            location,
+        );
+    }
+
+    if !crate::types::valid_backup_schedule(&backup.schedule)
+        || !crate::types::valid_backup_prefix(&backup.prefix)
+        || !crate::types::valid_backup_database(&backup.database)
+        || matches!(backup.keep_latest, Field::Set(0))
+    {
+        emit(diagnostics, ValidationIssue::InvalidBackupField, location);
+    }
+
+    let key = (
+        backup.target.clone(),
+        backup.destination.name().map(str::to_owned),
+        crate::types::normalize_backup_prefix(&backup.prefix),
+        backup.database.clone(),
+    );
+    if !collisions.insert(key) {
+        emit(
+            diagnostics,
+            ValidationIssue::DuplicateBackupCollision,
+            location,
+        );
     }
 }
 
@@ -1392,7 +1510,8 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Redirect
         | ResourceKind::Security
         | ResourceKind::Mount
-        | ResourceKind::Schedule => false,
+        | ResourceKind::Schedule
+        | ResourceKind::Backup => false,
     }
 }
 
@@ -1428,6 +1547,10 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
             value.as_str(),
             "name" | "cron_expression" | "shell_type" | "enabled" | "description" | "timezone"
         ),
+        ResourceKind::Backup => matches!(
+            value.as_str(),
+            "schedule" | "enabled" | "keep_latest" | "include_encryption_key"
+        ),
         ResourceKind::Domain => matches!(value.as_str(), "host" | "application"),
         ResourceKind::Port => matches!(
             value.as_str(),
@@ -1449,6 +1572,37 @@ fn mount_target_schema(_generator: &mut SchemaGenerator) -> Schema {
     json_schema!({
         "type": "string",
         "pattern": "^(application|compose|postgres|mysql|mariadb|mongo|libsql|redis)\\.[a-z][a-z0-9_-]*$"
+    })
+}
+
+fn backup_target_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^(postgres|mysql|mariadb|mongo|libsql)\\.[a-z][a-z0-9_-]*$"
+    })
+}
+
+fn backup_schedule_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "pattern": "^[A-Za-z0-9*/,?#-]+( [A-Za-z0-9*/,?#-]+){4,5}$",
+        "maxLength": 128
+    })
+}
+
+fn backup_text_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+    })
+}
+
+fn backup_database_schema(_generator: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
     })
 }
 

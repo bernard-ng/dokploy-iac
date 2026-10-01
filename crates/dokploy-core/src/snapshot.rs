@@ -500,7 +500,24 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
         | PropertyPath::BuildServer
         | PropertyPath::Registry
         | PropertyPath::BuildRegistry
-        | PropertyPath::RollbackRegistry => selector_owned_value_valid(path, value),
+        | PropertyPath::RollbackRegistry
+        | PropertyPath::Destination => selector_owned_value_valid(path, value),
+        PropertyPath::Schedule => matches!(
+            value,
+            OwnedValue::Value(value) if value.as_json().as_str().is_some_and(backup_schedule_valid)
+        ),
+        PropertyPath::Prefix => matches!(
+            value,
+            OwnedValue::Value(value) if value.as_json().as_str().is_some_and(backup_prefix_valid)
+        ),
+        PropertyPath::IncludeEncryptionKey => {
+            matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
+        }
+        PropertyPath::KeepLatest => match value {
+            OwnedValue::Null => true,
+            OwnedValue::Value(value) => keep_latest_json_valid(value.as_json()),
+            OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
+        },
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
     }
 }
@@ -519,6 +536,14 @@ fn kind_value_valid(kind: ResourceKind, path: &PropertyPath, value: &OwnedValue)
         (ResourceKind::Schedule, PropertyPath::Description) => matches!(
             value,
             OwnedValue::Value(value) if schedule_text_valid(value.as_json())
+        ),
+        (ResourceKind::Backup, PropertyPath::Target) => matches!(
+            value,
+            OwnedValue::Value(value) if backup_target_text_valid(value.as_json())
+        ),
+        (ResourceKind::Backup, PropertyPath::Database) => matches!(
+            value,
+            OwnedValue::Value(value) if value.as_json().as_str().is_some_and(backup_database_valid)
         ),
         _ => true,
     }
@@ -558,6 +583,42 @@ fn schedule_text_valid(value: &serde_json::Value) -> bool {
     })
 }
 
+/// Returns whether a JSON value is one logical address inside the closed Backup target union.
+fn backup_target_text_valid(value: &serde_json::Value) -> bool {
+    value
+        .as_str()
+        .and_then(|text| text.parse::<ResourceAddress>().ok())
+        .is_some_and(|address| address.kind().is_backup_target())
+}
+
+/// Mirrors the configuration grammar for a five- or six-field Backup cron schedule.
+fn backup_schedule_valid(text: &str) -> bool {
+    let fields = text.split(' ').collect::<Vec<_>>();
+    text.len() <= 128
+        && (5..=6).contains(&fields.len())
+        && fields.iter().all(|field| {
+            !field.is_empty()
+                && field.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || matches!(character, '*' | '/' | ',' | '?' | '#' | '-')
+                })
+        })
+}
+
+fn backup_prefix_valid(text: &str) -> bool {
+    !text.is_empty() && text.len() <= 512 && !text.chars().any(char::is_control)
+}
+
+fn backup_database_valid(text: &str) -> bool {
+    !text.is_empty() && text.len() <= 255 && !text.chars().any(char::is_control)
+}
+
+fn keep_latest_json_valid(value: &serde_json::Value) -> bool {
+    value
+        .as_u64()
+        .is_some_and(|count| (1..=u64::from(u32::MAX)).contains(&count))
+}
+
 /// Returns whether a JSON value is a bounded, control-free, nonempty Mount string.
 fn mount_text_valid(value: &serde_json::Value) -> bool {
     value.as_str().is_some_and(|text| {
@@ -593,8 +654,8 @@ fn external_name_valid(name: &str) -> bool {
 
 fn selector_owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
     match value {
-        // Server placement is create-only and cannot be cleared; local is explicit.
-        OwnedValue::Null => *path != PropertyPath::Server,
+        // Server placement and the backup destination cannot be cleared; local is explicit.
+        OwnedValue::Null => !matches!(path, PropertyPath::Server | PropertyPath::Destination),
         OwnedValue::Value(value) => selector_json_valid(path, value.as_json()),
         OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
     }
@@ -603,7 +664,9 @@ fn selector_owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
 fn selector_observation_valid(path: &PropertyPath, observation: &PropertyObservation) -> bool {
     match observation {
         PropertyObservation::Known(value) => selector_json_valid(path, value.as_json()),
-        PropertyObservation::KnownAbsent => *path != PropertyPath::Server,
+        PropertyObservation::KnownAbsent => {
+            !matches!(path, PropertyPath::Server | PropertyPath::Destination)
+        }
         PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
     }
 }
@@ -1590,14 +1653,18 @@ fn validate_remote_resource(
                 PropertyPath::ShellType => {
                     port_observation_string_valid(observation, &["bash", "sh"])
                 }
+                // A Backup's flag is nullable remotely; a Schedule's never is.
                 PropertyPath::Enabled => match observation {
                     PropertyObservation::Known(value) => value.as_json().is_boolean(),
                     PropertyObservation::Unknown(reason) => {
                         *reason != PropertyUnknownReason::Sensitive
                     }
-                    PropertyObservation::KnownAbsent => false,
+                    PropertyObservation::KnownAbsent => address.kind() == ResourceKind::Backup,
                 },
                 PropertyPath::Target => match observation {
+                    PropertyObservation::Known(value) if address.kind() == ResourceKind::Backup => {
+                        backup_target_text_valid(value.as_json())
+                    }
                     PropertyObservation::Known(value) => mount_target_text_valid(value.as_json()),
                     PropertyObservation::Unknown(reason) => {
                         *reason != PropertyUnknownReason::Sensitive
@@ -1630,7 +1697,28 @@ fn validate_remote_resource(
                 | PropertyPath::BuildServer
                 | PropertyPath::Registry
                 | PropertyPath::BuildRegistry
-                | PropertyPath::RollbackRegistry => selector_observation_valid(path, observation),
+                | PropertyPath::RollbackRegistry
+                | PropertyPath::Destination => selector_observation_valid(path, observation),
+                PropertyPath::Schedule | PropertyPath::Prefix => {
+                    non_empty_observation_valid(observation)
+                }
+                PropertyPath::Database if address.kind() == ResourceKind::Backup => {
+                    non_empty_observation_valid(observation)
+                }
+                PropertyPath::IncludeEncryptionKey => match observation {
+                    PropertyObservation::Known(value) => value.as_json().is_boolean(),
+                    PropertyObservation::KnownAbsent => false,
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                },
+                PropertyPath::KeepLatest => match observation {
+                    PropertyObservation::Known(value) => keep_latest_json_valid(value.as_json()),
+                    PropertyObservation::KnownAbsent => true,
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                },
                 _ => !matches!(
                     observation,
                     PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)

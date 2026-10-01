@@ -28,10 +28,10 @@ pub use file::{
     load_with_digest,
 };
 pub use model::{
-    ApplicationConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig, LibSqlConfig,
-    LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig, PortConfig,
-    PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig, ScheduleConfig,
-    SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue,
+    ApplicationConfig, BackupConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig,
+    LibSqlConfig, LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig,
+    PortConfig, PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig,
+    ScheduleConfig, SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue,
 };
 pub use types::{
     ConfigValue, DomainConfig, ExternalName, ExternalSelector, GitHubSource, Lifecycle,
@@ -40,9 +40,9 @@ pub use types::{
     ScheduleShellConfig, SecretSource, SecretSourceKind, SelectorKind, SourceConfig,
 };
 pub use writer::{
-    ApplicationDocument, ComposeDocument, ConfigDocument, ConfigDocumentError, ConfigWriteError,
-    DomainDocument, EnvironmentDocument, LibSqlDocument, LifecycleDocument, MariaDbDocument,
-    MongoDocument, MountDocument, MySqlDocument, PortDocument, PostgresDocument, ProjectDocument,
-    RedirectDocument, RedisDocument, ScheduleDocument, SecurityDocument, SourceDocument, render,
-    write,
+    ApplicationDocument, BackupDocument, ComposeDocument, ConfigDocument, ConfigDocumentError,
+    ConfigWriteError, DomainDocument, EnvironmentDocument, LibSqlDocument, LifecycleDocument,
+    MariaDbDocument, MongoDocument, MountDocument, MySqlDocument, PortDocument, PostgresDocument,
+    ProjectDocument, RedirectDocument, RedisDocument, ScheduleDocument, SecurityDocument,
+    SourceDocument, render, write,
 };

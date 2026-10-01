@@ -519,7 +519,12 @@ impl ResourceCheckpoint {
                 | PropertyPath::BuildServer
                 | PropertyPath::Registry
                 | PropertyPath::BuildRegistry
-                | PropertyPath::RollbackRegistry => {
+                | PropertyPath::RollbackRegistry
+                | PropertyPath::Destination
+                | PropertyPath::Schedule
+                | PropertyPath::Prefix
+                | PropertyPath::KeepLatest
+                | PropertyPath::IncludeEncryptionKey => {
                     managed.insert(path.to_string(), materialize_value(value)?);
                 }
                 PropertyPath::DeploymentStatus => {

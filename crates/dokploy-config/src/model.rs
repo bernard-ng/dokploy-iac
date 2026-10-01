@@ -115,6 +115,7 @@ pub enum ResourceConfig {
     Security(SecurityConfig),
     Mount(MountConfig),
     Schedule(ScheduleConfig),
+    Backup(BackupConfig),
 }
 
 impl ResourceConfig {
@@ -137,6 +138,7 @@ impl ResourceConfig {
             Self::Security(_) => ResourceKind::Security,
             Self::Mount(_) => ResourceKind::Mount,
             Self::Schedule(_) => ResourceKind::Schedule,
+            Self::Backup(_) => ResourceKind::Backup,
         }
     }
 
@@ -269,6 +271,14 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_backup(&self) -> Option<&BackupConfig> {
+        match self {
+            Self::Backup(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn depends_on(&self) -> &[ResourceAddress] {
         match self {
             Self::Project(config) => &config.depends_on,
@@ -287,6 +297,7 @@ impl ResourceConfig {
             Self::Security(config) => &config.depends_on,
             Self::Mount(config) => &config.depends_on,
             Self::Schedule(config) => &config.depends_on,
+            Self::Backup(config) => &config.depends_on,
         }
     }
 
@@ -309,6 +320,7 @@ impl ResourceConfig {
             Self::Security(config) => &config.lifecycle,
             Self::Mount(config) => &config.lifecycle,
             Self::Schedule(config) => &config.lifecycle,
+            Self::Backup(config) => &config.lifecycle,
         }
     }
 
@@ -330,6 +342,7 @@ impl ResourceConfig {
             Self::Security(config) => &mut config.lifecycle,
             Self::Mount(config) => &mut config.lifecycle,
             Self::Schedule(config) => &mut config.lifecycle,
+            Self::Backup(config) => &mut config.lifecycle,
         }
     }
 
@@ -351,6 +364,7 @@ impl ResourceConfig {
             Self::Security(config) => &mut config.depends_on,
             Self::Mount(config) => &mut config.depends_on,
             Self::Schedule(config) => &mut config.depends_on,
+            Self::Backup(config) => &mut config.depends_on,
         }
     }
 
@@ -452,7 +466,8 @@ impl ResourceConfig {
             | Self::Environment(_)
             | Self::Domain(_)
             | Self::Port(_)
-            | Self::Redirect(_) => {}
+            | Self::Redirect(_)
+            | Self::Backup(_) => {}
         }
         secrets
     }
@@ -487,6 +502,13 @@ impl ResourceConfig {
                     selectors.push((name, kind, selector));
                 }
             }
+        }
+        if let Self::Backup(config) = self {
+            selectors.push((
+                "destination",
+                crate::SelectorKind::Destination,
+                &config.destination,
+            ));
         }
         selectors
     }
@@ -868,6 +890,78 @@ impl ScheduleConfig {
 
 redacted_debug!(ScheduleConfig, "ScheduleConfig");
 
+/// Complete declarative inputs for one database Backup policy.
+///
+/// The typed database target is an owned property and inferred dependency, not
+/// a containment parent: Backups are contained by their environment like
+/// Mounts. The destination is an external record selected by exact name and is
+/// never owned by the workspace.
+#[derive(Clone, Eq, PartialEq)]
+pub struct BackupConfig {
+    pub(crate) target: ResourceAddress,
+    pub(crate) destination: ExternalSelector,
+    pub(crate) schedule: String,
+    pub(crate) prefix: String,
+    pub(crate) database: String,
+    pub(crate) enabled: bool,
+    pub(crate) keep_latest: Field<u32>,
+    pub(crate) include_encryption_key: bool,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl BackupConfig {
+    /// Returns the logical address of the backed-up database.
+    #[must_use]
+    pub const fn target(&self) -> &ResourceAddress {
+        &self.target
+    }
+
+    /// Returns the external backup-destination selector.
+    #[must_use]
+    pub const fn destination(&self) -> &ExternalSelector {
+        &self.destination
+    }
+
+    /// Returns the cron expression that schedules the Backup.
+    #[must_use]
+    pub fn schedule(&self) -> &str {
+        &self.schedule
+    }
+
+    /// Returns the destination object prefix.
+    #[must_use]
+    pub fn prefix(&self) -> &str {
+        &self.prefix
+    }
+
+    /// Returns the name of the database inside the target service.
+    #[must_use]
+    pub fn database(&self) -> &str {
+        &self.database
+    }
+
+    /// Returns whether Dokploy runs the Backup on its schedule.
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// Returns the nullable retention count; `null` keeps every backup.
+    #[must_use]
+    pub const fn keep_latest(&self) -> &Field<u32> {
+        &self.keep_latest
+    }
+
+    /// Returns whether Dokploy includes its encryption key in the backup.
+    #[must_use]
+    pub const fn include_encryption_key(&self) -> bool {
+        self.include_encryption_key
+    }
+}
+
+redacted_debug!(BackupConfig, "BackupConfig");
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct ComposeConfig {
     pub(crate) description: Field<String>,
@@ -1130,6 +1224,9 @@ pub enum ValidationIssue {
     InvalidExternalSelectorName,
     LocalSelectorUnsupported,
     ServerPlacementCannotBeCleared,
+    InvalidBackupTarget,
+    InvalidBackupField,
+    DuplicateBackupCollision,
 }
 
 impl ValidationIssue {
@@ -1180,6 +1277,9 @@ impl ValidationIssue {
             Self::InvalidExternalSelectorName => "DOKCFG029",
             Self::LocalSelectorUnsupported => "DOKCFG030",
             Self::ServerPlacementCannotBeCleared => "DOKCFG031",
+            Self::InvalidBackupTarget => "DOKCFG060",
+            Self::InvalidBackupField => "DOKCFG061",
+            Self::DuplicateBackupCollision => "DOKCFG062",
         }
     }
 
@@ -1257,6 +1357,15 @@ impl ValidationIssue {
             }
             Self::ServerPlacementCannotBeCleared => {
                 "server placement cannot be null; use `local: true` for the local server"
+            }
+            Self::InvalidBackupTarget => {
+                "Backup target must be a PostgreSQL, MySQL, MariaDB, MongoDB, or LibSQL database in this environment"
+            }
+            Self::InvalidBackupField => {
+                "Backup schedule, prefix, database, or retention count is invalid"
+            }
+            Self::DuplicateBackupCollision => {
+                "Backup target, destination, prefix, and database are duplicated"
             }
         }
     }

@@ -668,8 +668,9 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.domain_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
-            ResourceKind::Schedule => return Err(ApplyWorkspaceError::UnsupportedChange),
-            ResourceKind::Mount => return Err(ApplyWorkspaceError::UnsupportedChange),
+            ResourceKind::Schedule | ResourceKind::Mount | ResourceKind::Backup => {
+                return Err(ApplyWorkspaceError::UnsupportedChange);
+            }
             ResourceKind::Port => {
                 let input = port_create_input(checkpoint, &state)?;
                 let created = match client.ports().create(input).await {
@@ -1285,7 +1286,8 @@ async fn prepare_move_mutation(
         ResourceKind::Port
         | ResourceKind::Redirect
         | ResourceKind::Security
-        | ResourceKind::Mount => Err(ApplyWorkspaceError::UnsupportedChange),
+        | ResourceKind::Mount
+        | ResourceKind::Backup => Err(ApplyWorkspaceError::UnsupportedChange),
     }
 }
 
@@ -1432,6 +1434,7 @@ async fn delete_remote_resource(
                 .delete(dokploy_sdk::MountId::new(remote_id.as_str()))
                 .await,
         ),
+        ResourceKind::Backup => None,
     }
 }
 
@@ -3254,8 +3257,9 @@ async fn execute_existing_change(
             let host = required_string(checkpoint, &PropertyPath::Host)?;
             ExistingMutation::Domain(UpdateDomain::new(DomainId::new(remote_id.as_str()), host))
         }
-        ResourceKind::Schedule => return Err(ApplyWorkspaceError::UnsupportedChange),
-        ResourceKind::Mount => return Err(ApplyWorkspaceError::UnsupportedChange),
+        ResourceKind::Schedule | ResourceKind::Mount | ResourceKind::Backup => {
+            return Err(ApplyWorkspaceError::UnsupportedChange);
+        }
         ResourceKind::Port => {
             if selected_paths.iter().any(|path| {
                 !matches!(
