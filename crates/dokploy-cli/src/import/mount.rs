@@ -169,8 +169,9 @@ pub(super) async fn import_target(
                 .await?;
             validate_compose_import_authority(&compose, collection.composes())?;
             let address = address(ResourceKind::Compose, &compose.name)?;
+            let server = imported_server(client, &compose.server_id).await?;
             Ok((
-                build_compose(project, environment, compose, &address)?,
+                build_compose(project, environment, compose, server.as_deref(), &address)?,
                 address,
             ))
         }
@@ -182,8 +183,9 @@ pub(super) async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
             let address = address(ResourceKind::Postgres, &database.name)?;
+            let server = imported_server(client, &database.server_id).await?;
             Ok((
-                build_postgres(project, environment, database, &address)?,
+                build_postgres(project, environment, database, server.as_deref(), &address)?,
                 address,
             ))
         }
@@ -195,8 +197,9 @@ pub(super) async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
             let address = address(ResourceKind::MySql, &database.name)?;
+            let server = imported_server(client, &database.server_id).await?;
             Ok((
-                build_mysql(project, environment, database, &address)?,
+                build_mysql(project, environment, database, server.as_deref(), &address)?,
                 address,
             ))
         }
@@ -208,8 +211,9 @@ pub(super) async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
             let address = address(ResourceKind::MariaDb, &database.name)?;
+            let server = imported_server(client, &database.server_id).await?;
             Ok((
-                build_mariadb(project, environment, database, &address)?,
+                build_mariadb(project, environment, database, server.as_deref(), &address)?,
                 address,
             ))
         }
@@ -221,8 +225,9 @@ pub(super) async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
             let address = address(ResourceKind::Mongo, &database.name)?;
+            let server = imported_server(client, &database.server_id).await?;
             Ok((
-                build_mongo(project, environment, database, &address)?,
+                build_mongo(project, environment, database, server.as_deref(), &address)?,
                 address,
             ))
         }
@@ -234,8 +239,9 @@ pub(super) async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
             let address = address(ResourceKind::LibSql, &database.name)?;
+            let server = imported_server(client, &database.server_id).await?;
             Ok((
-                build_libsql(project, environment, database, &address)?,
+                build_libsql(project, environment, database, server.as_deref(), &address)?,
                 address,
             ))
         }
@@ -247,8 +253,9 @@ pub(super) async fn import_target(
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
             let address = address(ResourceKind::Redis, &database.name)?;
+            let server = imported_server(client, &database.server_id).await?;
             Ok((
-                build_redis(project, environment, database, &address)?,
+                build_redis(project, environment, database, server.as_deref(), &address)?,
                 address,
             ))
         }

@@ -609,33 +609,75 @@ pub async fn discover_remote(
     )
     .await?;
     observations.extend(security);
-    let compose =
-        discover_compose_observations(client, compiled, state, &observations, authority.compose)
-            .await?;
+    let compose = discover_compose_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.compose,
+        &externals,
+    )
+    .await?;
     observations.extend(compose);
-    let postgres =
-        discover_postgres_observations(client, compiled, state, &observations, authority.postgres)
-            .await?;
+    let postgres = discover_postgres_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.postgres,
+        &externals,
+    )
+    .await?;
     observations.extend(postgres);
-    let mysql =
-        discover_mysql_observations(client, compiled, state, &observations, authority.mysql)
-            .await?;
+    let mysql = discover_mysql_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.mysql,
+        &externals,
+    )
+    .await?;
     observations.extend(mysql);
-    let mariadb =
-        discover_mariadb_observations(client, compiled, state, &observations, authority.mariadb)
-            .await?;
+    let mariadb = discover_mariadb_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.mariadb,
+        &externals,
+    )
+    .await?;
     observations.extend(mariadb);
-    let mongo =
-        discover_mongo_observations(client, compiled, state, &observations, authority.mongo)
-            .await?;
+    let mongo = discover_mongo_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.mongo,
+        &externals,
+    )
+    .await?;
     observations.extend(mongo);
-    let libsql =
-        discover_libsql_observations(client, compiled, state, &observations, authority.libsql)
-            .await?;
+    let libsql = discover_libsql_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.libsql,
+        &externals,
+    )
+    .await?;
     observations.extend(libsql);
-    let redis =
-        discover_redis_observations(client, compiled, state, &observations, authority.redis)
-            .await?;
+    let redis = discover_redis_observations(
+        client,
+        compiled,
+        state,
+        &observations,
+        authority.redis,
+        &externals,
+    )
+    .await?;
     observations.extend(redis);
     let domains =
         discover_domain_observations(client, compiled, state, &observations, authority.domains)
@@ -738,6 +780,9 @@ fn remote_state_with_contracts(
 fn mutation_contract(kind: ResourceKind) -> MutationContract {
     let in_place = PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace);
     let set_only = PropertyMutation::new(MutationMode::InPlace, MutationMode::Unsupported);
+    // Dokploy accepts a service's server only when the service is created, so a
+    // changed placement replaces it; the local selector cannot be cleared.
+    let placement = PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported);
     match kind {
         ResourceKind::Project => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .with_property(PropertyPath::Description, in_place),
@@ -764,6 +809,8 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .requiring(PropertyPath::ComposeDocument)
             .with_property(PropertyPath::Description, in_place)
             .with_property(PropertyPath::ComposeDocument, set_only)
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::Postgres => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Database)
@@ -772,6 +819,8 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::Password, set_only)
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::MySql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Database)
@@ -780,6 +829,8 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .requiring(PropertyPath::RootPassword)
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::MariaDb => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Database)
@@ -788,12 +839,16 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .allowing_on_create(PropertyPath::RootPassword)
             .with_property(PropertyPath::Database, set_only)
             .with_property(PropertyPath::Username, set_only)
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::Mongo => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Username)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::ReplicaSets, set_only)
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::LibSql => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Username)
@@ -806,10 +861,14 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 PropertyPath::Node,
                 PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported),
             )
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::Redis => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Password)
             .with_property(PropertyPath::Password, set_only)
+            .allowing_on_create(PropertyPath::Server)
+            .with_property(PropertyPath::Server, placement)
             .with_containment(MutationMode::StateOnly),
         ResourceKind::Domain => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
             .requiring(PropertyPath::Host)
@@ -923,6 +982,7 @@ async fn discover_compose_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: ComposeTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -1010,7 +1070,7 @@ async fn discover_compose_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            compose_properties(&address, compiled, &compose),
+                            compose_properties(&address, compiled, &compose, externals),
                         ))
                     }
                 }
@@ -1027,6 +1087,7 @@ async fn discover_compose_observations(
                             topology,
                             &collections,
                             authority,
+                            externals,
                         )
                         .await?;
                         normalize_missing_identity(observed, stored.remote_id())
@@ -1045,6 +1106,7 @@ async fn discover_compose_observations(
                 topology,
                 &collections,
                 authority,
+                externals,
             )
             .await?
         };
@@ -1747,6 +1809,7 @@ async fn discover_postgres_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: PostgresTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -1834,7 +1897,7 @@ async fn discover_postgres_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            postgres_properties(&address, compiled, &postgres),
+                            postgres_properties(&address, compiled, &postgres, externals),
                         ))
                     }
                 }
@@ -1880,6 +1943,7 @@ async fn discover_mysql_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: MySqlTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -1967,7 +2031,7 @@ async fn discover_mysql_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            mysql_properties(&address, compiled, &mysql),
+                            mysql_properties(&address, compiled, &mysql, externals),
                         ))
                     }
                 }
@@ -1984,6 +2048,7 @@ async fn discover_mysql_observations(
                             topology,
                             &collections,
                             authority,
+                            externals,
                         )
                         .await?;
                         normalize_missing_identity(observed, stored.remote_id())
@@ -2002,6 +2067,7 @@ async fn discover_mysql_observations(
                 topology,
                 &collections,
                 authority,
+                externals,
             )
             .await?
         };
@@ -2017,6 +2083,7 @@ async fn discover_mariadb_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: MariaDbTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -2104,7 +2171,7 @@ async fn discover_mariadb_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            mariadb_properties(&address, compiled, &mariadb),
+                            mariadb_properties(&address, compiled, &mariadb, externals),
                         ))
                     }
                 }
@@ -2121,6 +2188,7 @@ async fn discover_mariadb_observations(
                             topology,
                             &collections,
                             authority,
+                            externals,
                         )
                         .await?;
                         normalize_missing_identity(observed, stored.remote_id())
@@ -2139,6 +2207,7 @@ async fn discover_mariadb_observations(
                 topology,
                 &collections,
                 authority,
+                externals,
             )
             .await?
         };
@@ -2154,6 +2223,7 @@ async fn discover_mongo_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: MongoTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -2241,7 +2311,7 @@ async fn discover_mongo_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            mongo_properties(&address, compiled, &mongo),
+                            mongo_properties(&address, compiled, &mongo, externals),
                         ))
                     }
                 }
@@ -2258,6 +2328,7 @@ async fn discover_mongo_observations(
                             topology,
                             &collections,
                             authority,
+                            externals,
                         )
                         .await?;
                         normalize_missing_identity(observed, stored.remote_id())
@@ -2276,6 +2347,7 @@ async fn discover_mongo_observations(
                 topology,
                 &collections,
                 authority,
+                externals,
             )
             .await?
         };
@@ -2291,6 +2363,7 @@ async fn discover_libsql_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: LibSqlTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -2382,7 +2455,7 @@ async fn discover_libsql_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            libsql_properties(&address, compiled, &libsql),
+                            libsql_properties(&address, compiled, &libsql, externals),
                         ))
                     }
                 }
@@ -2399,6 +2472,7 @@ async fn discover_libsql_observations(
                             topology,
                             &collections,
                             authority,
+                            externals,
                         )
                         .await?;
                         normalize_missing_identity(observed, stored.remote_id())
@@ -2417,6 +2491,7 @@ async fn discover_libsql_observations(
                 topology,
                 &collections,
                 authority,
+                externals,
             )
             .await?
         };
@@ -2432,6 +2507,7 @@ async fn discover_redis_observations(
     state: &StateFile,
     topology: &[(ResourceAddress, RemoteObservation)],
     authority: RedisTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<Vec<(ResourceAddress, RemoteObservation)>, DiscoverRemoteError> {
     let desired = compiled.desired_state();
     let addresses: BTreeSet<_> = desired
@@ -2519,7 +2595,7 @@ async fn discover_redis_observations(
                         }
                         RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            redis_properties(&address, compiled),
+                            redis_properties(&address, compiled, &redis, externals),
                         ))
                     }
                 }
@@ -3355,6 +3431,7 @@ fn compose_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     compose: &dokploy_sdk::ComposeDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -3366,6 +3443,11 @@ fn compose_properties(
             continue;
         }
         let observed = match path {
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&compose.server_id, dokploy_sdk::ServerId::as_str),
+            ),
             PropertyPath::Description => observe_string_field(&compose.description),
             PropertyPath::ComposeDocument if matches!(&compose.source_type, ResponseField::Value(value) if value == "raw") => {
                 PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
@@ -3409,7 +3491,6 @@ fn compose_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
             | PropertyPath::BuildServer
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
@@ -3464,6 +3545,7 @@ async fn observe_compose_under_parent(
     topology: &[(ResourceAddress, RemoteObservation)],
     collections: &BTreeMap<String, Result<dokploy_sdk::ComposeCollection, dokploy_sdk::Error>>,
     authority: ComposeTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<RemoteObservation, DiscoverRemoteError> {
     match effective_environment_observation(parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
@@ -3507,7 +3589,7 @@ async fn observe_compose_under_parent(
                         )?;
                         Ok(RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            compose_properties(address, compiled, &details),
+                            compose_properties(address, compiled, &details, externals),
                         )))
                     }
                     Err(SdkError::Api(error)) if error.status() == 404 => Ok(
@@ -3686,6 +3768,7 @@ fn postgres_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     postgres: &dokploy_sdk::PostgresDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -3697,6 +3780,11 @@ fn postgres_properties(
             continue;
         }
         let observed = match path {
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&postgres.server_id, dokploy_sdk::ServerId::as_str),
+            ),
             PropertyPath::Database => observe_string_field(&postgres.database_name),
             PropertyPath::Username => observe_string_field(&postgres.database_user),
             PropertyPath::Password => {
@@ -3737,7 +3825,6 @@ fn postgres_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
             | PropertyPath::BuildServer
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
@@ -3976,6 +4063,7 @@ fn mysql_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     mysql: &dokploy_sdk::MySqlDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -3987,6 +4075,11 @@ fn mysql_properties(
             continue;
         }
         let observed = match path {
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&mysql.server_id, dokploy_sdk::ServerId::as_str),
+            ),
             PropertyPath::Database => observe_string_field(&mysql.database_name),
             PropertyPath::Username => observe_string_field(&mysql.database_user),
             PropertyPath::Password | PropertyPath::RootPassword => {
@@ -4026,7 +4119,6 @@ fn mysql_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
             | PropertyPath::BuildServer
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
@@ -4081,6 +4173,7 @@ async fn observe_mysql_under_parent(
     topology: &[(ResourceAddress, RemoteObservation)],
     collections: &BTreeMap<String, Result<dokploy_sdk::MySqlCollection, dokploy_sdk::Error>>,
     authority: MySqlTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<RemoteObservation, DiscoverRemoteError> {
     match effective_environment_observation(parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
@@ -4124,7 +4217,7 @@ async fn observe_mysql_under_parent(
                         )?;
                         Ok(RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            mysql_properties(address, compiled, &details),
+                            mysql_properties(address, compiled, &details, externals),
                         )))
                     }
                     Err(SdkError::Api(error)) if error.status() == 404 => Ok(
@@ -4286,6 +4379,7 @@ fn mariadb_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     mariadb: &dokploy_sdk::MariaDbDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -4297,6 +4391,11 @@ fn mariadb_properties(
             continue;
         }
         let observed = match path {
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&mariadb.server_id, dokploy_sdk::ServerId::as_str),
+            ),
             PropertyPath::Database => observe_string_field(&mariadb.database_name),
             PropertyPath::Username => observe_string_field(&mariadb.database_user),
             PropertyPath::Password | PropertyPath::RootPassword => {
@@ -4336,7 +4435,6 @@ fn mariadb_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
             | PropertyPath::BuildServer
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
@@ -4391,6 +4489,7 @@ async fn observe_mariadb_under_parent(
     topology: &[(ResourceAddress, RemoteObservation)],
     collections: &BTreeMap<String, Result<dokploy_sdk::MariaDbCollection, dokploy_sdk::Error>>,
     authority: MariaDbTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<RemoteObservation, DiscoverRemoteError> {
     match effective_environment_observation(parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
@@ -4434,7 +4533,7 @@ async fn observe_mariadb_under_parent(
                         )?;
                         Ok(RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            mariadb_properties(address, compiled, &details),
+                            mariadb_properties(address, compiled, &details, externals),
                         )))
                     }
                     Err(SdkError::Api(error)) if error.status() == 404 => Ok(
@@ -4596,6 +4695,7 @@ fn mongo_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     mongo: &dokploy_sdk::MongoDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -4607,6 +4707,11 @@ fn mongo_properties(
             continue;
         }
         let observed = match path {
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&mongo.server_id, dokploy_sdk::ServerId::as_str),
+            ),
             PropertyPath::Username => observe_string_field(&mongo.database_user),
             PropertyPath::ReplicaSets => observe_bool_field(&mongo.replica_sets),
             PropertyPath::Password => {
@@ -4647,7 +4752,6 @@ fn mongo_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
             | PropertyPath::BuildServer
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
@@ -4702,6 +4806,7 @@ async fn observe_mongo_under_parent(
     topology: &[(ResourceAddress, RemoteObservation)],
     collections: &BTreeMap<String, Result<dokploy_sdk::MongoCollection, dokploy_sdk::Error>>,
     authority: MongoTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<RemoteObservation, DiscoverRemoteError> {
     match effective_environment_observation(parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
@@ -4745,7 +4850,7 @@ async fn observe_mongo_under_parent(
                         )?;
                         Ok(RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            mongo_properties(address, compiled, &details),
+                            mongo_properties(address, compiled, &details, externals),
                         )))
                     }
                     Err(SdkError::Api(error)) if error.status() == 404 => Ok(
@@ -4915,6 +5020,7 @@ fn libsql_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
     libsql: &dokploy_sdk::LibSqlDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -4926,6 +5032,11 @@ fn libsql_properties(
             continue;
         }
         let observed = match path {
+            PropertyPath::Server => externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&libsql.server_id, dokploy_sdk::ServerId::as_str),
+            ),
             PropertyPath::Description => libsql.description.as_ref().map_or(
                 PropertyObservation::KnownAbsent,
                 |description| {
@@ -4974,7 +5085,6 @@ fn libsql_properties(
             | PropertyPath::VolumeName
             | PropertyPath::FilePath
             | PropertyPath::FileContent
-            | PropertyPath::Server
             | PropertyPath::BuildServer
             | PropertyPath::Registry
             | PropertyPath::BuildRegistry
@@ -5045,6 +5155,7 @@ async fn observe_libsql_under_parent(
     topology: &[(ResourceAddress, RemoteObservation)],
     collections: &LibSqlCollections,
     authority: LibSqlTopologyAuthority,
+    externals: &ExternalDirectory,
 ) -> Result<RemoteObservation, DiscoverRemoteError> {
     match effective_environment_observation(parent, compiled, state, topology) {
         Some(RemoteObservation::Missing) => return Ok(RemoteObservation::Missing),
@@ -5089,7 +5200,7 @@ async fn observe_libsql_under_parent(
                         )?;
                         Ok(RemoteObservation::Present(RemoteResource::new(
                             remote_id,
-                            libsql_properties(address, compiled, &details),
+                            libsql_properties(address, compiled, &details, externals),
                         )))
                     }
                     Err(SdkError::Api(error)) if error.status() == 404 => Ok(
@@ -5262,6 +5373,8 @@ fn trusted_libsql_scope(
 fn redis_properties(
     address: &ResourceAddress,
     compiled: &CompiledDesired,
+    redis: &dokploy_sdk::RedisDetails,
+    externals: &ExternalDirectory,
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut properties = BTreeMap::new();
     let Some(desired) = desired_resource_for_observation(address, compiled) else {
@@ -5274,6 +5387,18 @@ fn redis_properties(
         properties.insert(
             PropertyPath::Password,
             PropertyObservation::Unknown(PropertyUnknownReason::Sensitive),
+        );
+    }
+    if desired.properties().contains_key(&PropertyPath::Server)
+        && !desired.ignored_changes().contains(&PropertyPath::Server)
+    {
+        properties.insert(
+            PropertyPath::Server,
+            externals.observe_association(
+                SelectorKind::Server,
+                true,
+                response_str(&redis.server_id, dokploy_sdk::ServerId::as_str),
+            ),
         );
     }
 

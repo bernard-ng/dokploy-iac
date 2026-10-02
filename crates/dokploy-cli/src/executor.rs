@@ -35,6 +35,7 @@ use crate::desired::{CompileDesiredError, ExternalExecutionId, compile_desired_f
 
 mod backup;
 mod mount;
+mod placement;
 mod schedule;
 use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
 use crate::saved_plan::{SavedPlan, SavedPlanError};
@@ -246,6 +247,7 @@ async fn apply_workspace_with_expectation(
     }
     preflight(&plan)?;
     preflight_replacements(&plan, &state)?;
+    placement::preflight_placements(&plan, &compiled)?;
     if plan.changes().is_empty() {
         return Ok(ApplySummary { applied: 0 });
     }
@@ -485,18 +487,12 @@ async fn apply_workspace_with_expectation(
                 continue;
             }
             ResourceKind::Compose => {
-                let environment_id = checkpoint_environment_id(checkpoint, &state)?;
-                let document = take_sensitive_string(
+                let input = placement::compose_create_input(
                     &mut compiled,
                     change.address(),
-                    &PropertyPath::ComposeDocument,
+                    checkpoint,
+                    &state,
                 )?;
-                let mut input =
-                    CreateCompose::new(change.address().name().as_str(), environment_id, document);
-                if let Some(description) = optional_string(checkpoint, &PropertyPath::Description)?
-                {
-                    input = input.with_description(description);
-                }
                 let created = match client.composes().create(input).await {
                     Ok(created) => created,
                     Err(error) => {
@@ -517,13 +513,18 @@ async fn apply_workspace_with_expectation(
                     change.address(),
                     &PropertyPath::Password,
                 )?;
-                let input = CreatePostgres::new(
+                let mut input = CreatePostgres::new(
                     change.address().name().as_str(),
                     environment_id,
                     database,
                     username,
                     password,
                 );
+                if let Some(placement) =
+                    placement::requested_placement(&compiled, change.address(), checkpoint)?
+                {
+                    input = input.with_server_placement(placement);
+                }
                 let created = match client.postgres().create(input).await {
                     Ok(created) => created,
                     Err(error) => {
@@ -549,7 +550,7 @@ async fn apply_workspace_with_expectation(
                     change.address(),
                     &PropertyPath::RootPassword,
                 )?;
-                let input = CreateMySql::new(
+                let mut input = CreateMySql::new(
                     change.address().name().as_str(),
                     environment_id,
                     database,
@@ -557,6 +558,11 @@ async fn apply_workspace_with_expectation(
                     password,
                     root_password,
                 );
+                if let Some(placement) =
+                    placement::requested_placement(&compiled, change.address(), checkpoint)?
+                {
+                    input = input.with_server_placement(placement);
+                }
                 let created = match client.mysql().create(input).await {
                     Ok(created) => created,
                     Err(error) => {
@@ -592,6 +598,11 @@ async fn apply_workspace_with_expectation(
                 )? {
                     input = input.with_root_password(root_password);
                 }
+                if let Some(placement) =
+                    placement::requested_placement(&compiled, change.address(), checkpoint)?
+                {
+                    input = input.with_server_placement(placement);
+                }
                 let created = match client.mariadb().create(input).await {
                     Ok(created) => created,
                     Err(error) => {
@@ -620,6 +631,11 @@ async fn apply_workspace_with_expectation(
                 if let Some(replica_sets) = optional_bool(checkpoint, &PropertyPath::ReplicaSets)? {
                     input = input.with_replica_sets(replica_sets);
                 }
+                if let Some(placement) =
+                    placement::requested_placement(&compiled, change.address(), checkpoint)?
+                {
+                    input = input.with_server_placement(placement);
+                }
                 let created = match client.mongo().create(input).await {
                     Ok(created) => created,
                     Err(error) => {
@@ -641,8 +657,13 @@ async fn apply_workspace_with_expectation(
                     change.address(),
                     &PropertyPath::Password,
                 )?;
-                let input =
+                let mut input =
                     CreateRedis::new(change.address().name().as_str(), environment_id, password);
+                if let Some(placement) =
+                    placement::requested_placement(&compiled, change.address(), checkpoint)?
+                {
+                    input = input.with_server_placement(placement);
+                }
                 let created = match client.redis().create(input).await {
                     Ok(created) => created,
                     Err(error) => {
@@ -762,7 +783,13 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
         ChangeKind::Replace => {
             matches!(
                 change.address().kind(),
-                ResourceKind::LibSql
+                ResourceKind::Compose
+                    | ResourceKind::Postgres
+                    | ResourceKind::MySql
+                    | ResourceKind::MariaDb
+                    | ResourceKind::Mongo
+                    | ResourceKind::LibSql
+                    | ResourceKind::Redis
                     | ResourceKind::Port
                     | ResourceKind::Redirect
                     | ResourceKind::Security
@@ -779,15 +806,18 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
     }
 }
 
-/// Refuses an application replacement that would orphan durable dependents.
+/// Refuses an application or service replacement that would orphan durable dependents.
 ///
-/// Deleting an application removes its Ports and detaches its Domains in
+/// Deleting an application removes its Ports and detaches its Domains, and
+/// deleting a Compose or database removes its Mounts, Schedules, and Backups in
 /// Dokploy, while the planner does not cascade a replacement to them. Until a
 /// cascading replacement is proven, any contained or dependent resource in
 /// durable state blocks the replacement before the first remote mutation.
 fn preflight_replacements(plan: &Plan, state: &StateFile) -> Result<(), ApplyWorkspaceError> {
     for change in plan.changes().iter().filter(|change| {
-        change.kind() == ChangeKind::Replace && change.address().kind() == ResourceKind::Application
+        change.kind() == ChangeKind::Replace
+            && (change.address().kind() == ResourceKind::Application
+                || placement::is_placed_service(change.address().kind()))
     }) {
         if application_has_dependents(state, change.address()) {
             return Err(ApplyWorkspaceError::ReplacementBlockedByDependents);
@@ -2137,32 +2167,37 @@ fn prepare_database_mutation(
         .clone();
     let address = change.address().clone();
     let (action, mutation) = match (change.kind(), change.address().kind()) {
-        (ChangeKind::Create, ResourceKind::Postgres) => {
+        (ChangeKind::Create | ChangeKind::Replace, ResourceKind::Postgres) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
             let database = required_string(&checkpoint, &PropertyPath::Database)?;
             let username = required_string(&checkpoint, &PropertyPath::Username)?;
             let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
-            let input = CreatePostgres::new(
+            let mut input = CreatePostgres::new(
                 address.name().as_str(),
                 environment_id,
                 database,
                 username,
                 password,
             );
+            if let Some(placement) =
+                placement::requested_placement(compiled, &address, &checkpoint)?
+            {
+                input = input.with_server_placement(placement);
+            }
 
             (
                 JournalAction::Create,
                 DatabaseMutation::CreatePostgres(input),
             )
         }
-        (ChangeKind::Create, ResourceKind::MySql) => {
+        (ChangeKind::Create | ChangeKind::Replace, ResourceKind::MySql) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
             let database = required_string(&checkpoint, &PropertyPath::Database)?;
             let username = required_string(&checkpoint, &PropertyPath::Username)?;
             let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
             let root_password =
                 take_sensitive_string(compiled, &address, &PropertyPath::RootPassword)?;
-            let input = CreateMySql::new(
+            let mut input = CreateMySql::new(
                 address.name().as_str(),
                 environment_id,
                 database,
@@ -2170,10 +2205,15 @@ fn prepare_database_mutation(
                 password,
                 root_password,
             );
+            if let Some(placement) =
+                placement::requested_placement(compiled, &address, &checkpoint)?
+            {
+                input = input.with_server_placement(placement);
+            }
 
             (JournalAction::Create, DatabaseMutation::CreateMySql(input))
         }
-        (ChangeKind::Create, ResourceKind::MariaDb) => {
+        (ChangeKind::Create | ChangeKind::Replace, ResourceKind::MariaDb) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
             let database = required_string(&checkpoint, &PropertyPath::Database)?;
             let username = required_string(&checkpoint, &PropertyPath::Username)?;
@@ -2193,13 +2233,18 @@ fn prepare_database_mutation(
             )? {
                 input = input.with_root_password(root_password);
             }
+            if let Some(placement) =
+                placement::requested_placement(compiled, &address, &checkpoint)?
+            {
+                input = input.with_server_placement(placement);
+            }
 
             (
                 JournalAction::Create,
                 DatabaseMutation::CreateMariaDb(input),
             )
         }
-        (ChangeKind::Create, ResourceKind::Mongo) => {
+        (ChangeKind::Create | ChangeKind::Replace, ResourceKind::Mongo) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
             let username = required_string(&checkpoint, &PropertyPath::Username)?;
             let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
@@ -2208,10 +2253,15 @@ fn prepare_database_mutation(
             if let Some(replica_sets) = optional_bool(&checkpoint, &PropertyPath::ReplicaSets)? {
                 input = input.with_replica_sets(replica_sets);
             }
+            if let Some(placement) =
+                placement::requested_placement(compiled, &address, &checkpoint)?
+            {
+                input = input.with_server_placement(placement);
+            }
 
             (JournalAction::Create, DatabaseMutation::CreateMongo(input))
         }
-        (ChangeKind::Create, ResourceKind::LibSql) => {
+        (ChangeKind::Create | ChangeKind::Replace, ResourceKind::LibSql) => {
             let (project_id, environment_id) = libsql_scope_ids(&checkpoint, state)?;
             let username = required_string(&checkpoint, &PropertyPath::Username)?;
             let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
@@ -2228,6 +2278,11 @@ fn prepare_database_mutation(
             if let Some(description) = optional_string(&checkpoint, &PropertyPath::Description)? {
                 input = input.with_description(description);
             }
+            if let Some(placement) =
+                placement::requested_placement(compiled, &address, &checkpoint)?
+            {
+                input = input.with_server_placement(placement);
+            }
 
             (
                 JournalAction::Create,
@@ -2238,10 +2293,15 @@ fn prepare_database_mutation(
                 },
             )
         }
-        (ChangeKind::Create, ResourceKind::Redis) => {
+        (ChangeKind::Create | ChangeKind::Replace, ResourceKind::Redis) => {
             let environment_id = checkpoint_environment_id(&checkpoint, state)?;
             let password = take_sensitive_string(compiled, &address, &PropertyPath::Password)?;
-            let input = CreateRedis::new(address.name().as_str(), environment_id, password);
+            let mut input = CreateRedis::new(address.name().as_str(), environment_id, password);
+            if let Some(placement) =
+                placement::requested_placement(compiled, &address, &checkpoint)?
+            {
+                input = input.with_server_placement(placement);
+            }
 
             (JournalAction::Create, DatabaseMutation::CreateRedis(input))
         }
@@ -2615,82 +2675,14 @@ async fn execute_delete_before_create_replacement(
     {
         return execute_application_replacement(client, compiled, change, state, journal).await;
     }
-    if change.address().kind() != ResourceKind::LibSql
-        || change.replacement_order() != Some(ReplacementOrder::DeleteBeforeCreate)
+    if placement::is_placed_service(change.address().kind())
+        && change.replacement_order() == Some(ReplacementOrder::DeleteBeforeCreate)
     {
-        return Err(ApplyWorkspaceError::UnsupportedChange);
+        return placement::execute_service_replacement(client, compiled, change, state, journal)
+            .await;
     }
-    let checkpoint = change
-        .checkpoint()
-        .present()
-        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?;
-    let before = state
-        .resource(change.address())
-        .ok_or(ApplyWorkspaceError::InvalidCheckpoint)?
-        .clone();
-    let delete_token = journal.start_recoverable_step(
-        change.address().clone(),
-        JournalAction::Delete,
-        ExpectedCheckpoint::remove(before.clone()),
-    )?;
-    if let Err(error) = client
-        .libsql()
-        .delete(LibSqlId::new(before.remote_id().as_str()))
-        .await
-        && !is_already_missing(&error)
-    {
-        let code = failure_code(&error);
-        fail_if_definitive(journal, delete_token, code)?;
-        return Err(ApplyWorkspaceError::RemoteMutation { code });
-    }
-    state.remove_resource(change.address())?;
-    journal.succeed(delete_token, None, state)?;
 
-    let placeholder = RemoteId::new("recovery-pending")
-        .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?;
-    let create_token = journal.start_recoverable_step(
-        change.address().clone(),
-        JournalAction::Create,
-        ExpectedCheckpoint::create(checkpoint.materialize(change.address(), placeholder)?)?,
-    )?;
-    let (project_id, environment_id) = libsql_scope_ids(checkpoint, state)?;
-    let username = required_string(checkpoint, &PropertyPath::Username)?;
-    let password = take_sensitive_string(compiled, change.address(), &PropertyPath::Password)?;
-    let node = required_libsql_node(checkpoint)?;
-    let mut input = CreateLibSql::new(
-        change.address().name().as_str(),
-        change.address().name().as_str(),
-        project_id,
-        environment_id.clone(),
-        username,
-        password,
-        node,
-    );
-    if let Some(description) = optional_string(checkpoint, &PropertyPath::Description)? {
-        input = input.with_description(description);
-    }
-    let result = DatabaseMutation::CreateLibSql {
-        input,
-        name: change.address().name().as_str().to_owned(),
-        environment_id,
-    }
-    .execute(client)
-    .await;
-    let remote_id = match result {
-        Ok(remote_id) => remote_id,
-        Err(error) => {
-            let code = error.code();
-            if error.is_definitive() {
-                journal.fail(create_token, code)?;
-            }
-            return Err(ApplyWorkspaceError::RemoteMutation { code });
-        }
-    };
-    let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
-    state.upsert_resource(change.address().clone(), resource)?;
-    journal.succeed(create_token, Some(remote_id), state)?;
-
-    Ok(())
+    Err(ApplyWorkspaceError::UnsupportedChange)
 }
 
 async fn execute_port_replacement(
@@ -3539,7 +3531,7 @@ pub enum ApplyWorkspaceError {
     InvalidCheckpoint,
     #[error("a planned external selector has no fresh resolved identity")]
     ExternalResolutionMissing,
-    #[error("replacing the application would orphan resources that depend on it")]
+    #[error("replacing the resource would orphan resources that depend on it")]
     ReplacementBlockedByDependents,
     #[error("Dokploy returned an invalid physical identity")]
     InvalidRemoteIdentity,

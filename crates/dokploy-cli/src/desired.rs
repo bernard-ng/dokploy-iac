@@ -477,6 +477,7 @@ fn compile_desired_with_fingerprints(
                     compose.document(),
                     fingerprints,
                 )?;
+                compile_selector_field(&mut properties, PropertyPath::Server, compose.server());
             }
             ResourceConfig::Postgres(postgres) => {
                 compile_string_field(&mut properties, PropertyPath::Database, postgres.database());
@@ -488,6 +489,7 @@ fn compile_desired_with_fingerprints(
                     postgres.password(),
                     fingerprints,
                 )?;
+                compile_selector_field(&mut properties, PropertyPath::Server, postgres.server());
             }
             ResourceConfig::MySql(mysql) => {
                 compile_string_field(&mut properties, PropertyPath::Database, mysql.database());
@@ -506,6 +508,7 @@ fn compile_desired_with_fingerprints(
                     mysql.root_password(),
                     fingerprints,
                 )?;
+                compile_selector_field(&mut properties, PropertyPath::Server, mysql.server());
             }
             ResourceConfig::MariaDb(mariadb) => {
                 compile_string_field(&mut properties, PropertyPath::Database, mariadb.database());
@@ -524,6 +527,7 @@ fn compile_desired_with_fingerprints(
                     mariadb.root_password(),
                     fingerprints,
                 )?;
+                compile_selector_field(&mut properties, PropertyPath::Server, mariadb.server());
             }
             ResourceConfig::Mongo(mongo) => {
                 compile_string_field(&mut properties, PropertyPath::Username, mongo.username());
@@ -539,6 +543,7 @@ fn compile_desired_with_fingerprints(
                     PropertyPath::ReplicaSets,
                     mongo.replica_sets(),
                 );
+                compile_selector_field(&mut properties, PropertyPath::Server, mongo.server());
             }
             ResourceConfig::LibSql(libsql) => {
                 compile_string_field(
@@ -555,14 +560,18 @@ fn compile_desired_with_fingerprints(
                     fingerprints,
                 )?;
                 compile_libsql_node(&mut properties, libsql.node());
+                compile_selector_field(&mut properties, PropertyPath::Server, libsql.server());
             }
-            ResourceConfig::Redis(redis) => compile_sensitive_field(
-                &mut properties,
-                address,
-                PropertyPath::Password,
-                redis.password(),
-                fingerprints,
-            )?,
+            ResourceConfig::Redis(redis) => {
+                compile_sensitive_field(
+                    &mut properties,
+                    address,
+                    PropertyPath::Password,
+                    redis.password(),
+                    fingerprints,
+                )?;
+                compile_selector_field(&mut properties, PropertyPath::Server, redis.server());
+            }
             ResourceConfig::Domain(domain) => {
                 compile_string_field(&mut properties, PropertyPath::Host, domain.host());
                 let application = match domain.application() {

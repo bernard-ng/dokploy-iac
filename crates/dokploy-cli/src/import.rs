@@ -451,7 +451,10 @@ async fn discover(
                 .by_environment(compose.environment_id.clone())
                 .await?;
             validate_compose_import_authority(&compose, collection.composes())?;
-            build_compose(project, environment, compose, target)
+            {
+                let server = imported_server(client, &compose.server_id).await?;
+                build_compose(project, environment, compose, server.as_deref(), target)
+            }
         }
         ImportKind::Postgres => {
             let database = client.postgres().get(PostgresId::new(remote_id)).await?;
@@ -463,7 +466,10 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_postgres(project, environment, database, target)
+            {
+                let server = imported_server(client, &database.server_id).await?;
+                build_postgres(project, environment, database, server.as_deref(), target)
+            }
         }
         ImportKind::MySql => {
             let database = client.mysql().get(MySqlId::new(remote_id)).await?;
@@ -475,7 +481,10 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_mysql(project, environment, database, target)
+            {
+                let server = imported_server(client, &database.server_id).await?;
+                build_mysql(project, environment, database, server.as_deref(), target)
+            }
         }
         ImportKind::MariaDb => {
             let database = client.mariadb().get(MariaDbId::new(remote_id)).await?;
@@ -487,7 +496,10 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_mariadb(project, environment, database, target)
+            {
+                let server = imported_server(client, &database.server_id).await?;
+                build_mariadb(project, environment, database, server.as_deref(), target)
+            }
         }
         ImportKind::Mongo => {
             let database = client.mongo().get(MongoId::new(remote_id)).await?;
@@ -499,7 +511,10 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_mongo(project, environment, database, target)
+            {
+                let server = imported_server(client, &database.server_id).await?;
+                build_mongo(project, environment, database, server.as_deref(), target)
+            }
         }
         ImportKind::LibSql => {
             let database = client.libsql().get(LibSqlId::new(remote_id)).await?;
@@ -511,7 +526,10 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_libsql(project, environment, database, target)
+            {
+                let server = imported_server(client, &database.server_id).await?;
+                build_libsql(project, environment, database, server.as_deref(), target)
+            }
         }
         ImportKind::Redis => {
             let database = client.redis().get(RedisId::new(remote_id)).await?;
@@ -523,7 +541,10 @@ async fn discover(
                 .projects()
                 .get(environment.project_id.clone())
                 .await?;
-            build_redis(project, environment, database, target)
+            {
+                let server = imported_server(client, &database.server_id).await?;
+                build_redis(project, environment, database, server.as_deref(), target)
+            }
         }
         ImportKind::Domain => {
             let domain = client.domains().get(DomainId::new(remote_id)).await?;
@@ -1065,6 +1086,7 @@ fn build_compose(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     compose: dokploy_sdk::ComposeDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1076,6 +1098,7 @@ fn build_compose(
         target.name().clone(),
         ComposeDocument {
             description: response_field(&compose.description),
+            server: imported_server_selector(server),
             lifecycle: LifecycleDocument {
                 protect: Field::Set(true),
                 ..LifecycleDocument::default()
@@ -1098,7 +1121,7 @@ fn build_compose(
             target,
             compose.compose_id.as_str(),
             true,
-            description_inputs(&compose.description),
+            service_inputs(description_inputs(&compose.description), server),
             Some(environment_address),
         )?,
     });
@@ -1110,6 +1133,7 @@ fn build_postgres(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     database: dokploy_sdk::PostgresDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1120,6 +1144,7 @@ fn build_postgres(
     let config = PostgresDocument {
         database: response_field(&database.database_name),
         username: response_field(&database.database_user),
+        server: imported_server_selector(server),
         lifecycle: LifecycleDocument {
             protect: Field::Set(true),
             ..LifecycleDocument::default()
@@ -1145,7 +1170,7 @@ fn build_postgres(
             target,
             database.postgres_id.as_str(),
             true,
-            inputs,
+            service_inputs(inputs, server),
             Some(environment_address),
         )?,
     });
@@ -1157,6 +1182,7 @@ fn build_redis(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     database: dokploy_sdk::RedisDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1165,6 +1191,7 @@ fn build_redis(
     let mut environment_config = EnvironmentDocument::default();
     environment_config.description = response_field(&environment.description);
     let config = RedisDocument {
+        server: imported_server_selector(server),
         lifecycle: LifecycleDocument {
             protect: Field::Set(true),
             ..LifecycleDocument::default()
@@ -1187,7 +1214,7 @@ fn build_redis(
             target,
             database.redis_id.as_str(),
             true,
-            serde_json::Map::new(),
+            service_inputs(serde_json::Map::new(), server),
             Some(environment_address),
         )?,
     });
@@ -1199,6 +1226,7 @@ fn build_mysql(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     database: dokploy_sdk::MySqlDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1209,6 +1237,7 @@ fn build_mysql(
     let config = MySqlDocument {
         database: response_field(&database.database_name),
         username: response_field(&database.database_user),
+        server: imported_server_selector(server),
         lifecycle: LifecycleDocument {
             protect: Field::Set(true),
             ..LifecycleDocument::default()
@@ -1234,7 +1263,7 @@ fn build_mysql(
             target,
             database.mysql_id.as_str(),
             true,
-            inputs,
+            service_inputs(inputs, server),
             Some(environment_address),
         )?,
     });
@@ -1246,6 +1275,7 @@ fn build_mariadb(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     database: dokploy_sdk::MariaDbDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1256,6 +1286,7 @@ fn build_mariadb(
     let config = MariaDbDocument {
         database: response_field(&database.database_name),
         username: response_field(&database.database_user),
+        server: imported_server_selector(server),
         lifecycle: LifecycleDocument {
             protect: Field::Set(true),
             ..LifecycleDocument::default()
@@ -1281,7 +1312,7 @@ fn build_mariadb(
             target,
             database.mariadb_id.as_str(),
             true,
-            inputs,
+            service_inputs(inputs, server),
             Some(environment_address),
         )?,
     });
@@ -1293,6 +1324,7 @@ fn build_mongo(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     database: dokploy_sdk::MongoDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1303,6 +1335,7 @@ fn build_mongo(
     let config = MongoDocument {
         username: response_field(&database.database_user),
         replica_sets: response_field(&database.replica_sets),
+        server: imported_server_selector(server),
         lifecycle: LifecycleDocument {
             protect: Field::Set(true),
             ..LifecycleDocument::default()
@@ -1328,7 +1361,7 @@ fn build_mongo(
             target,
             database.mongo_id.as_str(),
             true,
-            inputs,
+            service_inputs(inputs, server),
             Some(environment_address),
         )?,
     });
@@ -1340,6 +1373,7 @@ fn build_libsql(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     database: dokploy_sdk::LibSqlDetails,
+    server: Option<&str>,
     target: &ResourceAddress,
 ) -> Result<ImportedWorkspace, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
@@ -1356,6 +1390,7 @@ fn build_libsql(
         description,
         username: response_field(&database.database_user),
         node: Field::Set(node.clone()),
+        server: imported_server_selector(server),
         lifecycle: LifecycleDocument {
             protect: Field::Set(true),
             ..LifecycleDocument::default()
@@ -1395,7 +1430,7 @@ fn build_libsql(
             target,
             database.libsql_id.as_str(),
             true,
-            inputs,
+            service_inputs(inputs, server),
             Some(environment_address),
         )?,
     });
@@ -1566,6 +1601,43 @@ async fn imported_associations(
         build_registry: name(SelectorKind::Registry, build_registry)?,
         rollback_registry: name(SelectorKind::Registry, rollback_registry)?,
     })
+}
+
+/// Reads the fresh server collection only when a service is attached to a server.
+///
+/// A local (`null`) or omitted placement stays unmanaged. An identity that is
+/// unknown, unreadable, or whose name is shared by another record cannot be
+/// written back as an unambiguous selector, so the import fails closed.
+async fn imported_server(
+    client: &Dokploy,
+    field: &ResponseField<dokploy_sdk::ServerId>,
+) -> Result<Option<String>, ImportError> {
+    let ResponseField::Value(server_id) = field else {
+        return Ok(None);
+    };
+    let kinds = std::collections::BTreeSet::from([SelectorKind::Server]);
+    let directory = ExternalDirectory::load(client, &kinds).await;
+    directory
+        .unique_name_of(SelectorKind::Server, server_id.as_str())
+        .map(|name| Some(name.to_owned()))
+        .ok_or(ImportError::ExternalAssociation)
+}
+
+fn imported_server_selector(server: Option<&str>) -> Field<ExternalSelector> {
+    server.map_or(Field::Unmanaged, |name| {
+        Field::Set(ExternalSelector::named(name))
+    })
+}
+
+/// Records the imported server as a stable name selector in durable inputs.
+fn service_inputs(
+    mut inputs: serde_json::Map<String, serde_json::Value>,
+    server: Option<&str>,
+) -> serde_json::Map<String, serde_json::Value> {
+    if let Some(name) = server {
+        inputs.insert("server".to_owned(), serde_json::json!({ "name": name }));
+    }
+    inputs
 }
 
 fn application_config(
