@@ -149,6 +149,7 @@ const fn kind_label(kind: ResourceKind) -> &'static str {
         ResourceKind::Mount => "mount",
         ResourceKind::Schedule => "schedule",
         ResourceKind::Backup => "backup",
+        ResourceKind::Tag => "tag",
     }
 }
 

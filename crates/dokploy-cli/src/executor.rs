@@ -16,10 +16,10 @@ use dokploy_sdk::{
     CreateMySql, CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis,
     CreateSecurity, Dokploy, DomainId, EnvironmentId, Error as SdkError, LibSqlId, LibSqlNode,
     MariaDbId, MongoId, MySqlId, Nullable, PortId, PortProtocol, PostgresId, ProjectId,
-    PublishMode, RedirectId, RedisId, RegistryId, SecurityId, ServerId, ServerPlacement,
+    PublishMode, RedirectId, RedisId, RegistryId, SecurityId, ServerId, ServerPlacement, TagId,
     UpdateApplication, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb,
     UpdateMongo, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect,
-    UpdateRedis, UpdateSecurity,
+    UpdateRedis, UpdateSecurity, UpdateTag,
 };
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedCheckpointError, ExpectedState, FailureCode, InstanceIdentity,
@@ -37,7 +37,8 @@ mod backup;
 mod mount;
 mod placement;
 mod schedule;
-use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
+mod tag;
+use crate::remote::DiscoverRemoteError;
 use crate::saved_plan::{SavedPlan, SavedPlanError};
 use crate::sensitive::SensitiveFingerprinter;
 
@@ -100,17 +101,13 @@ pub async fn destroy_workspace_with_approval(
 ) -> Result<ApplySummary, ApplyWorkspaceError> {
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
-    let store = StateStore::new(&workspace, instance.clone())?;
+    let scope = dokploy_config::peek_scope(config_file)?;
+    let store = StateStore::with_scope(&workspace, instance.clone(), scope)?;
     let digest = ConfigDigest::parse(hex_digest(Sha256::digest(b"dokploy-destroy-all-v1").into()))
         .expect("a SHA-256 digest is canonical lowercase hexadecimal");
 
     if store.inspect()?.is_none() {
-        let state = StateFile::new(
-            env!("CARGO_PKG_VERSION")
-                .parse()
-                .expect("crate version is valid semver"),
-            instance.clone(),
-        );
+        let state = crate::scope::fresh_state(instance.clone(), scope);
         let compiled = crate::desired::CompiledDesired::destroy_all(&state, digest)?;
         let stored = StoredState::absent(instance.clone());
         let remote = dokploy_core::RemoteState::try_new(
@@ -132,13 +129,7 @@ pub async fn destroy_workspace_with_approval(
         .ok_or(ApplyWorkspaceError::StateDisappeared)?;
     let compiled = crate::desired::CompiledDesired::destroy_all(&state, digest)?;
     let stored = StoredState::try_from_state(&state)?;
-    let remote = discover_remote(
-        client,
-        &compiled,
-        &state,
-        DiscoveryAuthority::reconciliation(),
-    )
-    .await?;
+    let remote = crate::scope::discover(client, &compiled, &state).await?;
     let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
 
     if !approval(&plan).map_err(|source| ApplyWorkspaceError::Approval { source })? {
@@ -202,33 +193,27 @@ async fn apply_workspace_with_expectation(
     let parallelism = options.parallelism();
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
-    let store = StateStore::new(&workspace, instance.clone())?;
+    let scope = dokploy_config::peek_scope(config_file)?;
+    let store = StateStore::with_scope(&workspace, instance.clone(), scope)?;
     let mut session = store.begin_write()?;
     let loaded = dokploy_config::load_with_digest(config_file)?;
+    if loaded.config.scope() != scope {
+        // The file changed kind between choosing the state and reading the document.
+        return Err(ApplyWorkspaceError::ConfigScopeChanged);
+    }
     let source_digest = ConfigDigest::parse(hex_digest(loaded.source_sha256))
         .expect("a SHA-256 digest is canonical lowercase hexadecimal");
     let mut compiled =
         compile_desired_for_instance(&loaded.config, source_digest, instance.clone(), &workspace)?;
     let durable = store.inspect()?;
-    let mut state = durable.clone().unwrap_or_else(|| {
-        StateFile::new(
-            env!("CARGO_PKG_VERSION")
-                .parse()
-                .expect("crate version is valid semver"),
-            instance.clone(),
-        )
-    });
+    let mut state = durable
+        .clone()
+        .unwrap_or_else(|| crate::scope::fresh_state(instance.clone(), scope));
     let stored = match durable.as_ref() {
         Some(state) => StoredState::try_from_state(state)?,
         None => StoredState::absent(instance.clone()),
     };
-    let remote = discover_remote(
-        client,
-        &compiled,
-        &state,
-        DiscoveryAuthority::reconciliation(),
-    )
-    .await?;
+    let remote = crate::scope::discover(client, &compiled, &state).await?;
     let plan = dokploy_core::plan(compiled.desired_state(), &stored, &remote);
     compiled.bind_external_resolutions(&remote);
 
@@ -340,6 +325,12 @@ async fn apply_workspace_with_expectation(
         if change.address().kind() == ResourceKind::Backup {
             backup::execute_backup_create(client, &compiled, change, &mut state, &mut journal)
                 .await?;
+            applied += 1;
+            change_index += 1;
+            continue;
+        }
+        if change.address().kind() == ResourceKind::Tag {
+            tag::execute_tag_create(client, change, &mut state, &mut journal).await?;
             applied += 1;
             change_index += 1;
             continue;
@@ -697,7 +688,10 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.domain_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
-            ResourceKind::Schedule | ResourceKind::Mount | ResourceKind::Backup => {
+            ResourceKind::Schedule
+            | ResourceKind::Mount
+            | ResourceKind::Backup
+            | ResourceKind::Tag => {
                 return Err(ApplyWorkspaceError::UnsupportedChange);
             }
             ResourceKind::Port => {
@@ -775,6 +769,7 @@ fn preflight(plan: &Plan) -> Result<(), ApplyWorkspaceError> {
                     | ResourceKind::Mount
                     | ResourceKind::Schedule
                     | ResourceKind::Backup
+                    | ResourceKind::Tag
             )
         }
         ChangeKind::NoOp | ChangeKind::Forget => true,
@@ -1179,16 +1174,14 @@ async fn prepare_move_mutation(
     selected_paths: &[PropertyPath],
 ) -> Result<ExistingMutation, ApplyWorkspaceError> {
     match target.kind() {
-        ResourceKind::Project => {
-            let description = checkpoint
-                .property(&PropertyPath::Description)
-                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)
-                .and_then(nullable_string)?;
-            Ok(ExistingMutation::Project(UpdateProject::new(
-                ProjectId::new(remote_id.as_str()),
-                description,
-            )))
-        }
+        ResourceKind::Project => Ok(ExistingMutation::Project(
+            project_mutation(client, checkpoint, remote_id, selected_paths).await?,
+        )),
+        ResourceKind::Tag => Ok(ExistingMutation::Tag(tag::tag_update_input(
+            checkpoint,
+            remote_id,
+            selected_paths,
+        )?)),
         ResourceKind::Environment => {
             let description = checkpoint
                 .property(&PropertyPath::Description)
@@ -1478,6 +1471,7 @@ async fn delete_remote_resource(
                 .await,
         ),
         ResourceKind::Backup => None,
+        ResourceKind::Tag => Some(client.tags().delete(TagId::new(remote_id.as_str())).await),
     }
 }
 
@@ -3119,16 +3113,14 @@ async fn execute_existing_change(
         .map(|field| field.key().clone())
         .collect::<Vec<_>>();
     let mutation = match change.address().kind() {
-        ResourceKind::Project => {
-            let description = checkpoint
-                .property(&PropertyPath::Description)
-                .ok_or(ApplyWorkspaceError::InvalidCheckpoint)
-                .and_then(nullable_string)?;
-            ExistingMutation::Project(UpdateProject::new(
-                ProjectId::new(remote_id.as_str()),
-                description,
-            ))
-        }
+        ResourceKind::Project => ExistingMutation::Project(
+            project_mutation(client, checkpoint, &remote_id, &selected_paths).await?,
+        ),
+        ResourceKind::Tag => ExistingMutation::Tag(tag::tag_update_input(
+            checkpoint,
+            &remote_id,
+            &selected_paths,
+        )?),
         ResourceKind::Environment => {
             let description = checkpoint
                 .property(&PropertyPath::Description)
@@ -3354,8 +3346,64 @@ async fn execute_existing_change(
     Ok(())
 }
 
+/// A project update: its description and, separately, its tag association.
+struct ProjectMutation {
+    description: Option<UpdateProject>,
+    tags: Option<tag::ProjectTagChanges>,
+}
+
+impl ProjectMutation {
+    async fn execute(self, client: &Dokploy) -> Result<(), SdkError> {
+        if let Some(description) = self.description {
+            client.projects().update(description).await?;
+        }
+        if let Some(tags) = self.tags {
+            tags.execute(client).await?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Builds a project update for exactly the properties the plan selected.
+///
+/// The description is written when selected, or when nothing else is, which is
+/// the single-property behavior a project had before it could own tags. Tag
+/// names are resolved to identities before any mutation starts.
+async fn project_mutation(
+    client: &Dokploy,
+    checkpoint: &dokploy_core::ResourceCheckpoint,
+    remote_id: &RemoteId,
+    selected_paths: &[PropertyPath],
+) -> Result<ProjectMutation, ApplyWorkspaceError> {
+    let wants_tags = selected_paths.contains(&PropertyPath::Tags);
+    let description = if selected_paths.contains(&PropertyPath::Description) || !wants_tags {
+        let description = checkpoint
+            .property(&PropertyPath::Description)
+            .ok_or(ApplyWorkspaceError::InvalidCheckpoint)
+            .and_then(nullable_string)?;
+        Some(UpdateProject::new(
+            ProjectId::new(remote_id.as_str()),
+            description,
+        ))
+    } else {
+        None
+    };
+    let tags = if wants_tags {
+        Some(
+            tag::ProjectTagChanges::prepare(client, ProjectId::new(remote_id.as_str()), checkpoint)
+                .await?,
+        )
+    } else {
+        None
+    };
+
+    Ok(ProjectMutation { description, tags })
+}
+
 enum ExistingMutation {
-    Project(UpdateProject),
+    Project(ProjectMutation),
+    Tag(UpdateTag),
     Environment(UpdateEnvironment),
     Application(UpdateApplication),
     Compose(UpdateCompose),
@@ -3373,7 +3421,8 @@ enum ExistingMutation {
 impl ExistingMutation {
     async fn execute(self, client: &Dokploy) -> Result<(), SdkError> {
         match self {
-            Self::Project(input) => client.projects().update(input).await,
+            Self::Project(input) => input.execute(client).await,
+            Self::Tag(input) => client.tags().update(input).await,
             Self::Environment(input) => client.environments().update(input).await,
             Self::Application(input) => client.applications().update(input).await,
             Self::Compose(input) => client.composes().update(input).await,
@@ -3493,6 +3542,10 @@ fn failure_code(error: &SdkError) -> FailureCode {
 pub enum ApplyWorkspaceError {
     #[error("failed to load the declarative configuration")]
     Config(#[from] dokploy_config::ConfigFileError),
+    #[error("a project tag no longer names exactly one tag, or its association is unreadable")]
+    UnresolvedProjectTag,
+    #[error("the configuration file changed between document kinds while apply was starting")]
+    ConfigScopeChanged,
     #[error("failed to resolve the configuration workspace")]
     Workspace {
         #[source]

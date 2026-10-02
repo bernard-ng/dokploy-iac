@@ -294,7 +294,8 @@ fn preflight_sensitive_inputs(
             | ResourceConfig::Domain(_)
             | ResourceConfig::Port(_)
             | ResourceConfig::Redirect(_)
-            | ResourceConfig::Backup(_) => {}
+            | ResourceConfig::Backup(_)
+            | ResourceConfig::Tag(_) => {}
         }
     }
 

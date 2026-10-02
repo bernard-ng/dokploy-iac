@@ -24,7 +24,8 @@ pub fn execute(
         .unwrap_or_else(|| Path::new("."));
     let workspace = std::fs::canonicalize(workspace)
         .map_err(|source| StateCommandError::Workspace { source })?;
-    let store = StateStore::new(&workspace, instance)?;
+    let scope = dokploy_config::peek_scope(config_file)?;
+    let store = StateStore::with_scope(&workspace, instance, scope)?;
     let state = store.inspect()?.ok_or(StateCommandError::Missing)?;
 
     match command {
@@ -155,6 +156,8 @@ pub enum StateCommandError {
         #[source]
         source: io::Error,
     },
+    #[error("failed to read the configuration to choose its durable state")]
+    Scope(#[from] dokploy_config::ConfigFileError),
     #[error("failed to access durable workspace state")]
     Store(#[from] StateStoreError),
     #[error("durable state mutation is invalid")]

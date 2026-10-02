@@ -15,10 +15,13 @@ use thiserror::Error;
 use crate::desired::CompiledDesired;
 use crate::external::ExternalDirectory;
 
+pub use settings::{TagTopologyAuthority, discover_settings_remote};
+
 mod backup;
 mod leaf;
 mod mount;
 mod schedule;
+mod settings;
 pub(crate) use backup::backup_target;
 pub(crate) use mount::{mount_service_target, mount_type_label};
 pub(crate) use schedule::{schedule_sdk_target, shell_label, stored_schedule_target};
@@ -785,7 +788,17 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
     let placement = PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported);
     match kind {
         ResourceKind::Project => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
-            .with_property(PropertyPath::Description, in_place),
+            .with_property(PropertyPath::Description, in_place)
+            // The tag association is converged by assigning and removing tags.
+            .with_property(PropertyPath::Tags, in_place),
+        // A tag's name is required to create it and renames in place. A color can be
+        // set in place, but no explicit-null update is proven, so it cannot be cleared.
+        ResourceKind::Tag => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
+            .requiring(PropertyPath::Name)
+            .allowing_on_create(PropertyPath::Color)
+            .with_property(PropertyPath::Name, in_place)
+            .with_property(PropertyPath::Color, set_only)
+            .with_containment(MutationMode::StateOnly),
         ResourceKind::Environment => {
             MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
                 .with_property(PropertyPath::Description, in_place)
@@ -883,7 +896,7 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             let replace = PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported);
             MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
                 .requiring(PropertyPath::Target)
-                .requiring(PropertyPath::ScheduleName)
+                .requiring(PropertyPath::Name)
                 .requiring(PropertyPath::CronExpression)
                 .requiring(PropertyPath::ShellType)
                 .requiring(PropertyPath::Enabled)
@@ -896,7 +909,7 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
                 // collection, so it replaces the Schedule rather than moving it.
                 .with_property(PropertyPath::Target, replace)
                 .with_property(PropertyPath::ServiceName, replace)
-                .with_property(PropertyPath::ScheduleName, in_place)
+                .with_property(PropertyPath::Name, in_place)
                 .with_property(PropertyPath::CronExpression, in_place)
                 .with_property(PropertyPath::ShellType, in_place)
                 .with_property(PropertyPath::Enabled, in_place)
@@ -2669,6 +2682,15 @@ async fn discover_project_observations(
         Ok(topology) => index_projects(topology.projects())?,
         Err(_) => ProjectIndexes::default(),
     };
+    // Tag names are read once, and only when a project owns its tag association.
+    let tags_requested = addresses
+        .iter()
+        .any(|address| property_is_requested(address, compiled, &PropertyPath::Tags));
+    let tag_collection = if tags_requested {
+        Some(client.tags().all().await)
+    } else {
+        None
+    };
 
     let observations = addresses
         .iter()
@@ -2692,6 +2714,13 @@ async fn discover_project_observations(
                         ),
                     };
                     properties.insert(PropertyPath::Description, description);
+                }
+                if property_is_requested(address, compiled, &PropertyPath::Tags) {
+                    let desired = desired_project_tags(address, compiled);
+                    properties.insert(
+                        PropertyPath::Tags,
+                        observe_project_tags(project, tag_collection.as_ref(), &desired),
+                    );
                 }
                 RemoteObservation::Present(RemoteResource::new(
                     RemoteId::new(project.project_id.as_str())
@@ -3383,7 +3412,7 @@ fn application_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -3408,6 +3437,8 @@ fn application_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3471,7 +3502,7 @@ fn compose_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -3500,6 +3531,8 @@ fn compose_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -3805,7 +3838,7 @@ fn postgres_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -3834,6 +3867,8 @@ fn postgres_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4099,7 +4134,7 @@ fn mysql_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -4128,6 +4163,8 @@ fn mysql_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4415,7 +4452,7 @@ fn mariadb_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -4444,6 +4481,8 @@ fn mariadb_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -4732,7 +4771,7 @@ fn mongo_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -4761,6 +4800,8 @@ fn mongo_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -5058,7 +5099,7 @@ fn libsql_properties(
             | PropertyPath::Replacement
             | PropertyPath::Permanent
             | PropertyPath::ServiceName
-            | PropertyPath::ScheduleName
+            | PropertyPath::Name
             | PropertyPath::CronExpression
             | PropertyPath::ShellType
             | PropertyPath::Enabled
@@ -5094,6 +5135,8 @@ fn libsql_properties(
             | PropertyPath::Prefix
             | PropertyPath::KeepLatest
             | PropertyPath::IncludeEncryptionKey
+            | PropertyPath::Color
+            | PropertyPath::Tags
             | PropertyPath::DeploymentStatus => continue,
         };
         properties.insert(path.clone(), observed);
@@ -5622,6 +5665,22 @@ fn redis_parent_from_desired(
     redis_parent_from_state(address, state)
 }
 
+/// The tag names a project is configured to carry, following a logical move.
+fn desired_project_tags(address: &ResourceAddress, compiled: &CompiledDesired) -> Vec<String> {
+    let desired_address = compiled
+        .desired_state()
+        .moves()
+        .iter()
+        .find(|directive| directive.from() == address)
+        .map_or(address, |directive| directive.to());
+
+    compiled
+        .bindings()
+        .project_tags(desired_address)
+        .map(<[String]>::to_vec)
+        .unwrap_or_default()
+}
+
 fn desired_resource_for_observation<'a>(
     address: &ResourceAddress,
     compiled: &'a CompiledDesired,
@@ -5999,6 +6058,15 @@ fn index_projects(
 }
 
 fn description_is_requested(address: &ResourceAddress, compiled: &CompiledDesired) -> bool {
+    property_is_requested(address, compiled, &PropertyPath::Description)
+}
+
+/// Returns whether a desired, non-ignored property of this address must be observed.
+fn property_is_requested(
+    address: &ResourceAddress,
+    compiled: &CompiledDesired,
+    path: &PropertyPath,
+) -> bool {
     let desired = compiled.desired_state();
     let desired_address = desired
         .moves()
@@ -6009,12 +6077,56 @@ fn description_is_requested(address: &ResourceAddress, compiled: &CompiledDesire
         return false;
     };
 
-    resource
-        .properties()
-        .contains_key(&PropertyPath::Description)
-        && !resource
-            .ignored_changes()
-            .contains(&PropertyPath::Description)
+    resource.properties().contains_key(path) && !resource.ignored_changes().contains(path)
+}
+
+/// Observes a project's tag association as a sorted list of tag names.
+///
+/// A desired name that no tag carries makes the association unobservable, which
+/// blocks the plan: the tag belongs in the settings document and must exist
+/// before a project can select it. A project whose association is unreadable or
+/// names an unknown tag identity is never guessed at.
+fn observe_project_tags(
+    project: &dokploy_sdk::ProjectDetails,
+    tags: Option<&Result<dokploy_sdk::TagCollection, SdkError>>,
+    desired: &[String],
+) -> PropertyObservation {
+    let Some(Ok(tags)) = tags else {
+        return PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
+    };
+    let known = tags
+        .tags()
+        .iter()
+        .map(|tag| tag.name.as_str())
+        .collect::<BTreeSet<_>>();
+    if desired.iter().any(|name| !known.contains(name.as_str())) {
+        return PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
+    }
+    match &project.tags {
+        ResponseField::NotReturned => {
+            PropertyObservation::Unknown(PropertyUnknownReason::NotReturned)
+        }
+        ResponseField::Null => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+        ResponseField::Value(associated) => {
+            let mut names = Vec::with_capacity(associated.len());
+            for association in associated {
+                let Some(tag) = tags
+                    .tags()
+                    .iter()
+                    .find(|tag| tag.tag_id == association.tag_id)
+                else {
+                    return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse);
+                };
+                names.push(tag.name.clone());
+            }
+            names.sort();
+            names.dedup();
+            PropertyObservation::Known(
+                ComparableValue::try_from_json(serde_json::json!(names))
+                    .expect("a tag name list is comparable"),
+            )
+        }
+    }
 }
 
 fn classify_sdk_error(error: &SdkError) -> RemoteFailureKind {

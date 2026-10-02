@@ -111,8 +111,12 @@ pub enum PropertyPath {
     FileContent,
     /// Compose service name that scopes a Schedule.
     ServiceName,
-    /// Schedule name, the collision key within one target.
-    ScheduleName,
+    /// Resource name: a Schedule's collision key within one target, or a tag's name.
+    Name,
+    /// Tag color.
+    Color,
+    /// The tags associated with a project, as a sorted list of tag names.
+    Tags,
     /// Schedule cron expression.
     CronExpression,
     /// Schedule shell type.
@@ -207,9 +211,9 @@ impl PropertyPath {
 
     pub(crate) const fn valid_for_kind(&self, kind: ResourceKind) -> bool {
         match kind {
-            ResourceKind::Project | ResourceKind::Environment => {
-                matches!(self, Self::Description)
-            }
+            ResourceKind::Project => matches!(self, Self::Description | Self::Tags),
+            ResourceKind::Environment => matches!(self, Self::Description),
+            ResourceKind::Tag => matches!(self, Self::Name | Self::Color),
             ResourceKind::Application => matches!(
                 self,
                 Self::Description
@@ -282,7 +286,7 @@ impl PropertyPath {
                 self,
                 Self::Target
                     | Self::ServiceName
-                    | Self::ScheduleName
+                    | Self::Name
                     | Self::Description
                     | Self::CronExpression
                     | Self::ShellType
@@ -342,7 +346,9 @@ impl fmt::Display for PropertyPath {
             Self::FilePath => formatter.write_str("file_path"),
             Self::FileContent => formatter.write_str("content"),
             Self::ServiceName => formatter.write_str("service_name"),
-            Self::ScheduleName => formatter.write_str("name"),
+            Self::Name => formatter.write_str("name"),
+            Self::Color => formatter.write_str("color"),
+            Self::Tags => formatter.write_str("tags"),
             Self::CronExpression => formatter.write_str("cron_expression"),
             Self::ShellType => formatter.write_str("shell_type"),
             Self::Enabled => formatter.write_str("enabled"),
@@ -399,7 +405,9 @@ impl FromStr for PropertyPath {
             "file_path" => Ok(Self::FilePath),
             "content" => Ok(Self::FileContent),
             "service_name" => Ok(Self::ServiceName),
-            "name" => Ok(Self::ScheduleName),
+            "name" => Ok(Self::Name),
+            "color" => Ok(Self::Color),
+            "tags" => Ok(Self::Tags),
             "cron_expression" => Ok(Self::CronExpression),
             "shell_type" => Ok(Self::ShellType),
             "enabled" => Ok(Self::Enabled),

@@ -6,9 +6,11 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 pub const DEFAULT_CONFIG_FILE: &str = "dokploy.yaml";
+pub const DEFAULT_SETTINGS_FILE: &str = "dokploy.settings.yaml";
 pub const MAX_CONFIG_BYTES: usize = 1024 * 1024;
 
 const TEMPLATE: &str = include_str!("template.yaml");
+const SETTINGS_TEMPLATE: &str = include_str!("settings_template.yaml");
 
 /// Loads one regular UTF-8 configuration file through a strict one-MiB read bound.
 pub fn load(path: impl AsRef<Path>) -> Result<crate::DokployConfig, ConfigFileError> {
@@ -103,15 +105,50 @@ fn reject_oversized(length: u64) -> Result<(), ConfigFileError> {
     Ok(())
 }
 
+/// Reports which state scope the document at `path` belongs to, without
+/// validating the rest of it.
+///
+/// A settings document is recognized by its top-level `settings` key. Anything
+/// else, including a missing file, is a project document, so the caller's own
+/// load reports the real error. This lets commands open the matching durable
+/// state before (or without) fully validating the configuration.
+pub fn peek_scope(path: impl AsRef<Path>) -> Result<dokploy_state::StateScope, ConfigFileError> {
+    let path = path.as_ref();
+    let file = match open_for_bounded_read(path) {
+        Ok(file) => file,
+        Err(ConfigFileError::Read { source }) if source.kind() == io::ErrorKind::NotFound => {
+            return Ok(dokploy_state::StateScope::Project);
+        }
+        Err(error) => return Err(error),
+    };
+    let mut bytes = Vec::new();
+    file.take((MAX_CONFIG_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|source| ConfigFileError::Read { source })?;
+    let Ok(source) = String::from_utf8(bytes) else {
+        return Ok(dokploy_state::StateScope::Project);
+    };
+
+    Ok(crate::DokployConfig::scope_of_source(&source))
+}
+
 /// Creates a canonical starter configuration without replacing an existing path.
 pub fn initialize(path: impl AsRef<Path>) -> Result<(), ConfigFileError> {
-    let path = path.as_ref();
+    write_starter(path.as_ref(), TEMPLATE)
+}
+
+/// Creates a canonical starter settings document without replacing an existing path.
+pub fn initialize_settings(path: impl AsRef<Path>) -> Result<(), ConfigFileError> {
+    write_starter(path.as_ref(), SETTINGS_TEMPLATE)
+}
+
+fn write_starter(path: &Path, template: &str) -> Result<(), ConfigFileError> {
     let parent = existing_parent(path);
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
         .map_err(|source| ConfigFileError::Create { source })?;
 
     temporary
-        .write_all(TEMPLATE.as_bytes())
+        .write_all(template.as_bytes())
         .and_then(|()| temporary.flush())
         .and_then(|()| temporary.as_file().sync_all())
         .map_err(|source| ConfigFileError::Create { source })?;

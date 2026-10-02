@@ -9,7 +9,7 @@ use dokploy_state::{InstanceIdentity, RecoveryStatus, StateFile, StateStore};
 use thiserror::Error;
 
 use crate::desired::{CompileDesiredError, compile_desired_for_instance};
-use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
+use crate::remote::DiscoverRemoteError;
 
 /// A fresh plan paired with the remote evidence used to construct it.
 pub struct PreparedPlan {
@@ -60,7 +60,7 @@ pub async fn prepare_workspace(
     let loaded = dokploy_config::load_with_digest(config_file)?;
     let workspace = canonical_workspace(config_file)?;
     let instance = InstanceIdentity::parse(client.base_url().as_str())?;
-    let store = StateStore::new(&workspace, instance.clone())?;
+    let store = StateStore::with_scope(&workspace, instance.clone(), loaded.config.scope())?;
 
     ensure_recovery_clean(&store)?;
     let before = store.inspect()?;
@@ -72,21 +72,10 @@ pub async fn prepare_workspace(
         Some(state) => StoredState::try_from_state(state)?,
         None => StoredState::absent(instance.clone()),
     };
-    let discovery_state = before.clone().unwrap_or_else(|| {
-        StateFile::new(
-            env!("CARGO_PKG_VERSION")
-                .parse()
-                .expect("crate version is valid semver"),
-            instance.clone(),
-        )
-    });
-    let remote = discover_remote(
-        client,
-        &compiled,
-        &discovery_state,
-        DiscoveryAuthority::reconciliation(),
-    )
-    .await?;
+    let discovery_state = before
+        .clone()
+        .unwrap_or_else(|| crate::scope::fresh_state(instance.clone(), store.scope()));
+    let remote = crate::scope::discover(client, &compiled, &discovery_state).await?;
 
     ensure_recovery_clean(&store)?;
     let after = store.inspect()?;
