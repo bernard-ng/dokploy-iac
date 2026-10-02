@@ -4705,6 +4705,38 @@ impl ScheduleCollection {
     }
 }
 
+/// The complete bounded Schedule collection for one Compose across its services.
+///
+/// `schedule.list` takes only the Compose identity, so one response can span
+/// several service names. Every entry is a Compose Schedule owned by
+/// [`Self::compose_id`], and names are unique within each service.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ComposeScheduleCollection {
+    compose_id: ComposeId,
+    schedules: Vec<ScheduleDetails>,
+}
+
+impl ComposeScheduleCollection {
+    pub(crate) fn new(compose_id: ComposeId, schedules: Vec<ScheduleDetails>) -> Self {
+        Self {
+            compose_id,
+            schedules,
+        }
+    }
+
+    /// Returns the Compose whose Schedule collection was read.
+    #[must_use]
+    pub const fn compose_id(&self) -> &ComposeId {
+        &self.compose_id
+    }
+
+    /// Returns every Schedule authoritatively reported for the Compose.
+    #[must_use]
+    pub fn schedules(&self) -> &[ScheduleDetails] {
+        &self.schedules
+    }
+}
+
 /// A safe database Backup returned by direct or target-scoped reads.
 ///
 /// Nested database records, destination records, deployment history, user

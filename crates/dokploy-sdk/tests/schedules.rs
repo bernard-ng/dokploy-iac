@@ -1148,3 +1148,104 @@ async fn schedule_mutation_rejections_never_retain_echoed_commands_or_scripts() 
     assert_no_canary(&error);
     assert_eq!(update_server.finish_all().len(), 3);
 }
+
+#[tokio::test]
+async fn compose_wide_list_spans_services_and_is_bounded_and_owner_consistent() {
+    let other_service = COMPOSE_RESPONSE
+        .replace("schedule-2", "schedule-3")
+        .replace("\"serviceName\":\"worker\"", "\"serviceName\":\"web\"");
+    let server =
+        TestServer::respond_with_json(list_with(&format!("{COMPOSE_RESPONSE},{other_service}")));
+    let collection = client(&server)
+        .schedules()
+        .by_compose(ComposeId::new("compose-1"))
+        .await
+        .unwrap();
+    assert_eq!(collection.compose_id(), &ComposeId::new("compose-1"));
+    assert_eq!(collection.schedules().len(), 2);
+    let services = collection
+        .schedules()
+        .iter()
+        .map(|schedule| match &schedule.target {
+            ScheduleTarget::Compose { service_name, .. } => service_name.as_str(),
+            ScheduleTarget::Application(_) => panic!("Compose collections hold Compose targets"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(services, ["worker", "web"]);
+    assert_no_canary(&collection);
+    assert!(
+        server
+            .finish()
+            .contains("id=compose-1&scheduleType=compose")
+    );
+
+    // The same name on two services is distinct; per-target reads would reject it.
+    let per_target =
+        TestServer::respond_with_json(list_with(&format!("{COMPOSE_RESPONSE},{other_service}")));
+    assert!(matches!(
+        client(&per_target)
+            .schedules()
+            .by_target(compose_target())
+            .await
+            .unwrap_err(),
+        Error::UnexpectedResponse {
+            operation: "schedule.list"
+        }
+    ));
+    per_target.finish();
+
+    let duplicate_in_service = COMPOSE_RESPONSE.replace("schedule-2", "schedule-3");
+    let duplicate_id = COMPOSE_RESPONSE.replace("compose-job", "other-job");
+    let other_compose = COMPOSE_RESPONSE
+        .replace("schedule-2", "schedule-3")
+        .replace("compose-job", "other-job")
+        .replace("\"composeId\":\"compose-1\"", "\"composeId\":\"compose-2\"");
+    let too_many = (0..10_001)
+        .map(|index| {
+            COMPOSE_RESPONSE
+                .replace("schedule-2", &format!("schedule-{index}"))
+                .replace("compose-job", &format!("job-{index}"))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    for response in [
+        list_with(&format!("{COMPOSE_RESPONSE},{duplicate_in_service}")),
+        list_with(&format!("{COMPOSE_RESPONSE},{duplicate_id}")),
+        list_with(&format!("{COMPOSE_RESPONSE},{other_compose}")),
+        list_with(&format!("{COMPOSE_RESPONSE},{APPLICATION_RESPONSE}")),
+        list_with(&too_many),
+    ] {
+        let server = TestServer::respond_with_json(response);
+        let error = client(&server)
+            .schedules()
+            .by_compose(ComposeId::new("compose-1"))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            Error::UnexpectedResponse {
+                operation: "schedule.list"
+            }
+        ));
+        assert_no_canary(&error);
+        server.finish();
+    }
+}
+
+#[tokio::test]
+async fn compose_wide_list_rejects_an_empty_compose_before_transport() {
+    let client = Dokploy::builder()
+        .url("http://127.0.0.1:9")
+        .api_key("test-api-key")
+        .build()
+        .unwrap();
+
+    assert!(matches!(
+        client
+            .schedules()
+            .by_compose(ComposeId::new(""))
+            .await
+            .unwrap_err(),
+        Error::InvalidRequest { .. }
+    ));
+}

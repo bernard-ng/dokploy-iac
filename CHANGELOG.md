@@ -55,6 +55,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add `schedules().by_compose`, a bounded authoritative read of every Schedule
+  of one Compose across its services, so whole-project import can enumerate
+  Compose Schedules without knowing their service names in advance.
 - Add create-only server placement selectors for Compose, PostgreSQL, MySQL,
   MariaDB, MongoDB, LibSQL, and Redis, reusing the ADR 0045 selector
   vocabulary and `DOKCFG029`-`DOKCFG031`: a `server` field (`local: true` or an

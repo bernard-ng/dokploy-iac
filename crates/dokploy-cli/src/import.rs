@@ -25,7 +25,10 @@ use thiserror::Error;
 use crate::cli::ImportKind;
 use crate::external::ExternalDirectory;
 
+use self::context::{EnvScope, ImportContext};
+
 mod backup;
+mod context;
 mod mount;
 mod schedule;
 
@@ -384,11 +387,6 @@ fn persist_import(
     Ok(())
 }
 
-struct ImportedWorkspace {
-    document: ConfigDocument,
-    resources: Vec<ImportedResource>,
-}
-
 struct ImportedResource {
     address: ResourceAddress,
     state: ResourceState,
@@ -399,7 +397,7 @@ async fn discover(
     kind: ImportKind,
     remote_id: &str,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
+) -> Result<ImportContext, ImportError> {
     match kind {
         ImportKind::Project => {
             let project = client.projects().get(ProjectId::new(remote_id)).await?;
@@ -762,51 +760,38 @@ fn response_fields_agree<T: PartialEq>(left: &ResponseField<T>, right: &Response
     ) || left == right
 }
 
+/// Starts a context holding the project and one environment.
+fn single_environment(
+    project: &ProjectDetails,
+    environment: &EnvironmentDetails,
+) -> Result<(ImportContext, EnvScope), ImportError> {
+    let project_address = address(ResourceKind::Project, &project.name)?;
+    let mut context = ImportContext::new(project, &project_address)?;
+    let scope = context.add_environment(
+        environment,
+        address(ResourceKind::Environment, &environment.name)?,
+    )?;
+
+    Ok((context, scope))
+}
+
 fn build_project(
     project: ProjectDetails,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let mut document = ConfigDocument::new(target.name().clone());
-    document.project_mut().description = response_field(&project.description);
-    let address = target.clone();
-    let state = resource_state(
-        &address,
-        project.project_id.as_str(),
-        false,
-        description_inputs(&project.description),
-        None,
-    )?;
-
-    Ok(ImportedWorkspace {
-        document,
-        resources: vec![ImportedResource { address, state }],
-    })
+) -> Result<ImportContext, ImportError> {
+    ImportContext::new(&project, target)
 }
 
 fn build_environment(
     project: ProjectDetails,
     environment: EnvironmentDetails,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
+) -> Result<ImportContext, ImportError> {
     let project_address = address(ResourceKind::Project, &project.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut config = EnvironmentDocument::default();
-    config.description = response_field(&environment.description);
-    imported
-        .document
-        .add_environment(target.name().clone(), config)?;
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            environment.environment_id.as_str(),
-            false,
-            description_inputs(&environment.description),
-            Some(project_address),
-        )?,
-    });
+    let mut context = ImportContext::new(&project, &project_address)?;
+    context.add_environment(&environment, target.clone())?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_application(
@@ -815,39 +800,25 @@ fn build_application(
     application: ApplicationDetails,
     associations: &ImportedAssociations,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let (application_config, inputs) = application_config(&application, associations);
-    environment_config.add_application(target.name().clone(), application_config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    imported.resources.push(ImportedResource {
-        address: environment_address.clone(),
-        state: resource_state(
-            &environment_address,
-            environment.environment_id.as_str(),
-            false,
-            description_inputs(&environment.description),
-            Some(project_address),
-        )?,
-    });
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            application.application_id.as_str(),
-            false,
-            inputs,
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_application(&scope, &application, associations, target)?;
 
-    Ok(imported)
+    Ok(context)
+}
+
+/// Adds an application's ancestry and returns the context with the application address.
+fn application_ancestry(
+    project: &ProjectDetails,
+    environment: &EnvironmentDetails,
+    application: &ApplicationDetails,
+    associations: &ImportedAssociations,
+) -> Result<(ImportContext, EnvScope, ResourceAddress), ImportError> {
+    let (mut context, scope) = single_environment(project, environment)?;
+    let application_address = address(ResourceKind::Application, &application.name)?;
+    context.add_application(&scope, application, associations, &application_address)?;
+
+    Ok((context, scope, application_address))
 }
 
 fn build_port(
@@ -857,86 +828,12 @@ fn build_port(
     associations: &ImportedAssociations,
     port: PortDetails,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let application_address = address(ResourceKind::Application, &application.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let (mut application_config, application_inputs) =
-        application_config(&application, associations);
-    application_config.add_port(
-        target.name().clone(),
-        PortDocument {
-            published_port: PortNumber::new(port.published_port.get())
-                .expect("the SDK guarantees nonzero Port numbers"),
-            target_port: PortNumber::new(port.target_port.get())
-                .expect("the SDK guarantees nonzero Port numbers"),
-            publish_mode: match port.publish_mode {
-                PublishMode::Ingress => PortPublishModeConfig::Ingress,
-                PublishMode::Host => PortPublishModeConfig::Host,
-            },
-            protocol: match port.protocol {
-                PortProtocol::Tcp => PortProtocolConfig::Tcp,
-                PortProtocol::Udp => PortProtocolConfig::Udp,
-            },
-            depends_on: Vec::new(),
-            lifecycle: LifecycleDocument {
-                protect: Field::Set(true),
-                ..LifecycleDocument::default()
-            },
-        },
-    )?;
-    environment_config.add_application(application_address.name().clone(), application_config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    imported.resources.push(ImportedResource {
-        address: application_address.clone(),
-        state: resource_state(
-            &application_address,
-            application.application_id.as_str(),
-            false,
-            application_inputs,
-            Some(environment_address),
-        )?,
-    });
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            port.port_id.as_str(),
-            true,
-            serde_json::Map::from_iter([
-                (
-                    "published_port".to_owned(),
-                    serde_json::json!(port.published_port.get()),
-                ),
-                (
-                    "target_port".to_owned(),
-                    serde_json::json!(port.target_port.get()),
-                ),
-                (
-                    "publish_mode".to_owned(),
-                    serde_json::json!(port_publish_mode_label(port.publish_mode)),
-                ),
-                (
-                    "protocol".to_owned(),
-                    serde_json::json!(port_protocol_label(port.protocol)),
-                ),
-            ]),
-            Some(application_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope, application_address) =
+        application_ancestry(&project, &environment, &application, associations)?;
+    context.add_port(&scope, &application_address, &port, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_redirect(
@@ -946,76 +843,14 @@ fn build_redirect(
     associations: &ImportedAssociations,
     redirect: RedirectDetails,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let application_address = address(ResourceKind::Application, &application.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let (mut application_config, application_inputs) =
-        application_config(&application, associations);
-    application_config.add_redirect(
-        target.name().clone(),
-        RedirectDocument {
-            regex: NonEmptyText::new(redirect.regex.clone())
-                .ok_or(ImportError::InvalidRemoteTopology)?,
-            replacement: NonEmptyText::new(redirect.replacement.clone())
-                .ok_or(ImportError::InvalidRemoteTopology)?,
-            permanent: redirect.permanent,
-            depends_on: Vec::new(),
-            lifecycle: LifecycleDocument {
-                protect: Field::Set(true),
-                ..LifecycleDocument::default()
-            },
-        },
-    )?;
-    environment_config.add_application(application_address.name().clone(), application_config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    imported.resources.push(ImportedResource {
-        address: application_address.clone(),
-        state: resource_state(
-            &application_address,
-            application.application_id.as_str(),
-            false,
-            application_inputs,
-            Some(environment_address),
-        )?,
-    });
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            redirect.redirect_id.as_str(),
-            true,
-            serde_json::Map::from_iter([
-                ("regex".to_owned(), serde_json::json!(redirect.regex)),
-                (
-                    "replacement".to_owned(),
-                    serde_json::json!(redirect.replacement),
-                ),
-                (
-                    "permanent".to_owned(),
-                    serde_json::json!(redirect.permanent),
-                ),
-            ]),
-            Some(application_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope, application_address) =
+        application_ancestry(&project, &environment, &application, associations)?;
+    context.add_redirect(&scope, &application_address, &redirect, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
-/// Imports the username and identity only. The password is never read into the
-/// document or state; it stays unmanaged until the operator declares a descriptor.
 fn build_security(
     project: ProjectDetails,
     environment: EnvironmentDetails,
@@ -1023,63 +858,27 @@ fn build_security(
     associations: &ImportedAssociations,
     entry: SecurityDetails,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let application_address = address(ResourceKind::Application, &application.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let (mut application_config, application_inputs) =
-        application_config(&application, associations);
-    application_config.add_security(
-        target.name().clone(),
-        SecurityDocument {
-            username: NonEmptyText::new(entry.username.clone())
-                .ok_or(ImportError::InvalidRemoteTopology)?,
-            password: Field::Unmanaged,
-            depends_on: Vec::new(),
-            lifecycle: LifecycleDocument {
-                protect: Field::Set(true),
-                ..LifecycleDocument::default()
-            },
-        },
-    )?;
-    environment_config.add_application(application_address.name().clone(), application_config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    imported.resources.push(ImportedResource {
-        address: application_address.clone(),
-        state: resource_state(
-            &application_address,
-            application.application_id.as_str(),
-            false,
-            application_inputs,
-            Some(environment_address),
-        )?,
-    });
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            entry.security_id.as_str(),
-            true,
-            serde_json::Map::from_iter([(
-                "username".to_owned(),
-                serde_json::json!(entry.username),
-            )]),
-            Some(application_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope, application_address) =
+        application_ancestry(&project, &environment, &application, associations)?;
+    context.add_security(&scope, &application_address, &entry, target)?;
 
-    Ok(imported)
+    Ok(context)
+}
+
+fn build_domain(
+    project: ProjectDetails,
+    environment: EnvironmentDetails,
+    application: ApplicationDetails,
+    associations: &ImportedAssociations,
+    domain: dokploy_sdk::DomainDetails,
+    target: &ResourceAddress,
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope, application_address) =
+        application_ancestry(&project, &environment, &application, associations)?;
+    context.add_domain(&scope, &application_address, &domain, target)?;
+
+    Ok(context)
 }
 
 fn build_compose(
@@ -1088,45 +887,11 @@ fn build_compose(
     compose: dokploy_sdk::ComposeDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    environment_config.add_compose(
-        target.name().clone(),
-        ComposeDocument {
-            description: response_field(&compose.description),
-            server: imported_server_selector(server),
-            lifecycle: LifecycleDocument {
-                protect: Field::Set(true),
-                ..LifecycleDocument::default()
-            },
-            ..ComposeDocument::default()
-        },
-    )?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            compose.compose_id.as_str(),
-            true,
-            service_inputs(description_inputs(&compose.description), server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_compose(&scope, &compose, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_postgres(
@@ -1135,47 +900,11 @@ fn build_postgres(
     database: dokploy_sdk::PostgresDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let config = PostgresDocument {
-        database: response_field(&database.database_name),
-        username: response_field(&database.database_user),
-        server: imported_server_selector(server),
-        lifecycle: LifecycleDocument {
-            protect: Field::Set(true),
-            ..LifecycleDocument::default()
-        },
-        ..PostgresDocument::default()
-    };
-    environment_config.add_postgres(target.name().clone(), config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    let mut inputs = serde_json::Map::new();
-    insert_response(&mut inputs, "database", &database.database_name);
-    insert_response(&mut inputs, "username", &database.database_user);
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            database.postgres_id.as_str(),
-            true,
-            service_inputs(inputs, server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_postgres(&scope, &database, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_redis(
@@ -1184,42 +913,11 @@ fn build_redis(
     database: dokploy_sdk::RedisDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let config = RedisDocument {
-        server: imported_server_selector(server),
-        lifecycle: LifecycleDocument {
-            protect: Field::Set(true),
-            ..LifecycleDocument::default()
-        },
-        ..RedisDocument::default()
-    };
-    environment_config.add_redis(target.name().clone(), config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            database.redis_id.as_str(),
-            true,
-            service_inputs(serde_json::Map::new(), server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_redis(&scope, &database, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_mysql(
@@ -1228,47 +926,11 @@ fn build_mysql(
     database: dokploy_sdk::MySqlDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let config = MySqlDocument {
-        database: response_field(&database.database_name),
-        username: response_field(&database.database_user),
-        server: imported_server_selector(server),
-        lifecycle: LifecycleDocument {
-            protect: Field::Set(true),
-            ..LifecycleDocument::default()
-        },
-        ..MySqlDocument::default()
-    };
-    environment_config.add_mysql(target.name().clone(), config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    let mut inputs = serde_json::Map::new();
-    insert_response(&mut inputs, "database", &database.database_name);
-    insert_response(&mut inputs, "username", &database.database_user);
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            database.mysql_id.as_str(),
-            true,
-            service_inputs(inputs, server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_mysql(&scope, &database, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_mariadb(
@@ -1277,47 +939,11 @@ fn build_mariadb(
     database: dokploy_sdk::MariaDbDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let config = MariaDbDocument {
-        database: response_field(&database.database_name),
-        username: response_field(&database.database_user),
-        server: imported_server_selector(server),
-        lifecycle: LifecycleDocument {
-            protect: Field::Set(true),
-            ..LifecycleDocument::default()
-        },
-        ..MariaDbDocument::default()
-    };
-    environment_config.add_mariadb(target.name().clone(), config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    let mut inputs = serde_json::Map::new();
-    insert_response(&mut inputs, "database", &database.database_name);
-    insert_response(&mut inputs, "username", &database.database_user);
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            database.mariadb_id.as_str(),
-            true,
-            service_inputs(inputs, server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_mariadb(&scope, &database, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_mongo(
@@ -1326,47 +952,11 @@ fn build_mongo(
     database: dokploy_sdk::MongoDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let config = MongoDocument {
-        username: response_field(&database.database_user),
-        replica_sets: response_field(&database.replica_sets),
-        server: imported_server_selector(server),
-        lifecycle: LifecycleDocument {
-            protect: Field::Set(true),
-            ..LifecycleDocument::default()
-        },
-        ..MongoDocument::default()
-    };
-    environment_config.add_mongo(target.name().clone(), config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    let mut inputs = serde_json::Map::new();
-    insert_response(&mut inputs, "username", &database.database_user);
-    insert_response(&mut inputs, "replica_sets", &database.replica_sets);
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            database.mongo_id.as_str(),
-            true,
-            service_inputs(inputs, server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_mongo(&scope, &database, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn build_libsql(
@@ -1375,67 +965,11 @@ fn build_libsql(
     database: dokploy_sdk::LibSqlDetails,
     server: Option<&str>,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let environment_address = address(ResourceKind::Environment, &environment.name)?;
-    let mut imported = build_project(project, &project_address)?;
-    let mut environment_config = EnvironmentDocument::default();
-    environment_config.description = response_field(&environment.description);
-    let node = imported_libsql_node(&database)?;
-    let description = match &database.description {
-        Some(description) => Field::Set(description.clone()),
-        None => Field::Clear,
-    };
-    let config = LibSqlDocument {
-        description,
-        username: response_field(&database.database_user),
-        node: Field::Set(node.clone()),
-        server: imported_server_selector(server),
-        lifecycle: LifecycleDocument {
-            protect: Field::Set(true),
-            ..LifecycleDocument::default()
-        },
-        ..LibSqlDocument::default()
-    };
-    environment_config.add_libsql(target.name().clone(), config)?;
-    imported
-        .document
-        .add_environment(environment_address.name().clone(), environment_config)?;
-    push_environment_state(
-        &mut imported,
-        &environment,
-        environment_address.clone(),
-        project_address,
-    )?;
-    let mut inputs = serde_json::Map::new();
-    inputs.insert(
-        "description".to_owned(),
-        database
-            .description
-            .map_or(serde_json::Value::Null, serde_json::Value::String),
-    );
-    insert_response(&mut inputs, "username", &database.database_user);
-    inputs.insert(
-        "node".to_owned(),
-        match node {
-            LibSqlNodeConfig::Primary => serde_json::json!({"type":"primary"}),
-            LibSqlNodeConfig::Replica { primary_url } => {
-                serde_json::json!({"type":"replica","primary_url":primary_url})
-            }
-        },
-    );
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state(
-            target,
-            database.libsql_id.as_str(),
-            true,
-            service_inputs(inputs, server),
-            Some(environment_address),
-        )?,
-    });
+) -> Result<ImportContext, ImportError> {
+    let (mut context, scope) = single_environment(&project, &environment)?;
+    context.add_libsql(&scope, &database, server, target)?;
 
-    Ok(imported)
+    Ok(context)
 }
 
 fn imported_libsql_node(
@@ -1456,80 +990,6 @@ fn imported_libsql_node(
         }
         _ => Err(ImportError::InvalidLibSqlNode),
     }
-}
-
-fn build_domain(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    application: ApplicationDetails,
-    associations: &ImportedAssociations,
-    domain: dokploy_sdk::DomainDetails,
-    target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
-    let application_address = address(ResourceKind::Application, &application.name)?;
-    let mut imported = build_application(
-        project,
-        environment,
-        application,
-        associations,
-        &application_address,
-    )?;
-    let environment_address = imported
-        .resources
-        .iter()
-        .find(|item| item.address.kind() == ResourceKind::Environment)
-        .map(|item| item.address.clone())
-        .ok_or(ImportError::MissingContainment)?;
-    let environment_config = imported
-        .document
-        .environment_mut(environment_address.name())
-        .ok_or(ImportError::MissingContainment)?;
-    environment_config.add_domain(
-        target.name().clone(),
-        DomainDocument {
-            host: Field::Set(domain.host.clone()),
-            application: Field::Set(application_address.clone()),
-            ..DomainDocument::default()
-        },
-    )?;
-    let mut inputs = serde_json::Map::new();
-    inputs.insert("host".to_owned(), serde_json::json!(domain.host));
-    inputs.insert(
-        "application".to_owned(),
-        serde_json::json!(application_address.to_string()),
-    );
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state_with_dependencies(
-            target,
-            domain.domain_id.as_str(),
-            false,
-            inputs,
-            Some(environment_address),
-            vec![application_address],
-        )?,
-    });
-
-    Ok(imported)
-}
-
-fn push_environment_state(
-    imported: &mut ImportedWorkspace,
-    environment: &EnvironmentDetails,
-    address: ResourceAddress,
-    project: ResourceAddress,
-) -> Result<(), ImportError> {
-    imported.resources.push(ImportedResource {
-        state: resource_state(
-            &address,
-            environment.environment_id.as_str(),
-            false,
-            description_inputs(&environment.description),
-            Some(project),
-        )?,
-        address,
-    });
-    Ok(())
 }
 
 /// Exact names of the external records an imported application is attached to.

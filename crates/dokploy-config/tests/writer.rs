@@ -445,6 +445,39 @@ fn typed_document_and_canonical_writer_keep_ports_nested_under_applications() {
     );
 }
 
+#[test]
+fn leaves_can_be_appended_to_an_application_already_in_an_environment() {
+    let mut document = ConfigDocument::new(name("platform"));
+    let mut environment = EnvironmentDocument::default();
+    environment
+        .add_application(name("api"), ApplicationDocument::default())
+        .expect("application name is unique");
+    document
+        .add_environment(name("production"), environment)
+        .expect("environment name is unique");
+
+    let environment = document
+        .environment_mut(&name("production"))
+        .expect("the environment exists");
+    assert!(environment.application_mut(&name("missing")).is_none());
+    environment
+        .application_mut(&name("api"))
+        .expect("the application exists")
+        .add_security(
+            name("admin"),
+            SecurityDocument {
+                username: NonEmptyText::new("admin").unwrap(),
+                password: Field::Unmanaged,
+                depends_on: Vec::new(),
+                lifecycle: Default::default(),
+            },
+        )
+        .expect("Security name is unique");
+
+    let rendered = document.render().expect("appended leaf renders");
+    assert!(rendered.contains("          security:\n            admin:\n"));
+}
+
 fn name(value: &str) -> ResourceName {
     value.parse().expect("fixture resource name is valid")
 }

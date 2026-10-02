@@ -466,6 +466,11 @@ impl EnvironmentDocument {
         )
     }
 
+    /// Returns one contained application for further leaf resource additions.
+    pub fn application_mut(&mut self, name: &ResourceName) -> Option<&mut ApplicationDocument> {
+        self.applications.get_mut(name)
+    }
+
     pub fn add_postgres(
         &mut self,
         name: ResourceName,

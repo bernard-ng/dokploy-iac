@@ -11,14 +11,58 @@
 use dokploy_config::{ScheduleDocument, ScheduleShellConfig};
 use dokploy_sdk::{ScheduleDetails, ScheduleId, ScheduleTarget, ServiceTarget, ShellType};
 
+use super::context::{EnvScope, ImportContext};
 use super::mount::import_target;
 use super::*;
+
+impl ImportContext {
+    pub(super) fn add_schedule(
+        &mut self,
+        env: &EnvScope,
+        service: &ResourceAddress,
+        schedule: &ScheduleDetails,
+        service_name: Option<String>,
+        shell_type: ScheduleShellConfig,
+        address: &ResourceAddress,
+    ) -> Result<(), ImportError> {
+        let (inputs, description, timezone) =
+            imported_inputs(schedule, service, service_name.as_deref(), shell_type);
+        self.environment(env)?.add_schedule(
+            address.name().clone(),
+            ScheduleDocument {
+                name: schedule.name.clone(),
+                target: service.clone(),
+                service_name,
+                cron_expression: schedule.cron_expression.clone(),
+                shell_type,
+                enabled: schedule.enabled,
+                description,
+                timezone,
+                command: Field::Unmanaged,
+                script: Field::Unmanaged,
+                depends_on: Vec::new(),
+                lifecycle: LifecycleDocument {
+                    protect: Field::Set(true),
+                    ..LifecycleDocument::default()
+                },
+            },
+        )?;
+        self.push(
+            address,
+            schedule.schedule_id.as_str(),
+            true,
+            inputs,
+            env.address(),
+            vec![service.clone()],
+        )
+    }
+}
 
 pub(super) async fn discover_schedule(
     client: &Dokploy,
     remote_id: &str,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
+) -> Result<ImportContext, ImportError> {
     let requested_id = ScheduleId::new(remote_id);
     let schedule = client.schedules().get(requested_id.clone()).await?;
     if schedule.schedule_id != requested_id {
@@ -47,60 +91,20 @@ pub(super) async fn discover_schedule(
             Some(service_name.clone()),
         ),
     };
-    let (mut imported, target_address) = import_target(client, &service_target).await?;
-    let environment_address = imported
-        .resources
-        .iter()
-        .find(|item| item.address.kind() == ResourceKind::Environment)
-        .map(|item| item.address.clone())
-        .ok_or(ImportError::MissingContainment)?;
+    let (mut imported, scope, target_address) = import_target(client, &service_target).await?;
 
     let shell_type = match schedule.shell_type {
         ShellType::Bash => ScheduleShellConfig::Bash,
         ShellType::Sh => ScheduleShellConfig::Sh,
     };
-    let (inputs, description, timezone) = imported_inputs(
-        &schedule,
+    imported.add_schedule(
+        &scope,
         &target_address,
-        service_name.as_deref(),
+        &schedule,
+        service_name,
         shell_type,
-    );
-
-    imported
-        .document
-        .environment_mut(environment_address.name())
-        .ok_or(ImportError::MissingContainment)?
-        .add_schedule(
-            target.name().clone(),
-            ScheduleDocument {
-                name: schedule.name.clone(),
-                target: target_address.clone(),
-                service_name,
-                cron_expression: schedule.cron_expression.clone(),
-                shell_type,
-                enabled: schedule.enabled,
-                description,
-                timezone,
-                command: Field::Unmanaged,
-                script: Field::Unmanaged,
-                depends_on: Vec::new(),
-                lifecycle: LifecycleDocument {
-                    protect: Field::Set(true),
-                    ..LifecycleDocument::default()
-                },
-            },
-        )?;
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state_with_dependencies(
-            target,
-            schedule.schedule_id.as_str(),
-            true,
-            inputs,
-            Some(environment_address),
-            vec![target_address],
-        )?,
-    });
+        target,
+    )?;
 
     Ok(imported)
 }

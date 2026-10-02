@@ -13,14 +13,68 @@ use std::collections::BTreeSet;
 use dokploy_config::{BackupDocument, ExternalSelector, SelectorKind};
 use dokploy_sdk::{BackupTarget, ServiceTarget};
 
+use super::context::{EnvScope, ImportContext};
 use super::mount::import_target;
 use super::*;
+
+impl ImportContext {
+    pub(super) fn add_backup(
+        &mut self,
+        env: &EnvScope,
+        service: &ResourceAddress,
+        backup: &dokploy_sdk::BackupDetails,
+        destination: String,
+        enabled: bool,
+        address: &ResourceAddress,
+    ) -> Result<(), ImportError> {
+        let keep_latest = backup.keep_latest_count.map(std::num::NonZeroU32::get);
+        let inputs = serde_json::json!({
+            "target": service.to_string(),
+            "destination": { "name": destination },
+            "schedule": backup.schedule,
+            "prefix": backup.prefix,
+            "database": backup.database,
+            "enabled": enabled,
+            "keep_latest": keep_latest,
+            "include_encryption_key": backup.include_encryption_key,
+        });
+        let serde_json::Value::Object(inputs) = inputs else {
+            unreachable!("the managed inputs are a JSON object");
+        };
+        self.environment(env)?.add_backup(
+            address.name().clone(),
+            BackupDocument {
+                target: service.clone(),
+                destination: ExternalSelector::named(destination),
+                schedule: backup.schedule.clone(),
+                prefix: backup.prefix.clone(),
+                database: backup.database.clone(),
+                enabled,
+                keep_latest: keep_latest.map_or(Field::Clear, Field::Set),
+                include_encryption_key: backup.include_encryption_key,
+                depends_on: Vec::new(),
+                lifecycle: LifecycleDocument {
+                    protect: Field::Set(true),
+                    ..LifecycleDocument::default()
+                },
+            },
+        )?;
+        self.push(
+            address,
+            backup.backup_id.as_str(),
+            true,
+            inputs,
+            env.address(),
+            vec![service.clone()],
+        )
+    }
+}
 
 pub(super) async fn discover_backup(
     client: &Dokploy,
     remote_id: &str,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
+) -> Result<ImportContext, ImportError> {
     let requested_id = dokploy_sdk::BackupId::new(remote_id);
     let backup = client.backups().get(requested_id.clone()).await?;
     if backup.backup_id != requested_id {
@@ -45,62 +99,16 @@ pub(super) async fn discover_backup(
         .map(str::to_owned)
         .ok_or(ImportError::ExternalAssociation)?;
 
-    let (mut imported, target_address) =
+    let (mut imported, scope, target_address) =
         import_target(client, &service_target(&backup.target)).await?;
-    let environment_address = imported
-        .resources
-        .iter()
-        .find(|item| item.address.kind() == ResourceKind::Environment)
-        .map(|item| item.address.clone())
-        .ok_or(ImportError::MissingContainment)?;
-    let keep_latest = backup.keep_latest_count.map(std::num::NonZeroU32::get);
-    let inputs = serde_json::json!({
-        "target": target_address.to_string(),
-        "destination": { "name": destination },
-        "schedule": backup.schedule,
-        "prefix": backup.prefix,
-        "database": backup.database,
-        "enabled": enabled,
-        "keep_latest": keep_latest,
-        "include_encryption_key": backup.include_encryption_key,
-    });
-    let serde_json::Value::Object(inputs) = inputs else {
-        unreachable!("the managed inputs are a JSON object");
-    };
-
-    imported
-        .document
-        .environment_mut(environment_address.name())
-        .ok_or(ImportError::MissingContainment)?
-        .add_backup(
-            target.name().clone(),
-            BackupDocument {
-                target: target_address.clone(),
-                destination: ExternalSelector::named(destination),
-                schedule: backup.schedule.clone(),
-                prefix: backup.prefix.clone(),
-                database: backup.database.clone(),
-                enabled,
-                keep_latest: keep_latest.map_or(Field::Clear, Field::Set),
-                include_encryption_key: backup.include_encryption_key,
-                depends_on: Vec::new(),
-                lifecycle: LifecycleDocument {
-                    protect: Field::Set(true),
-                    ..LifecycleDocument::default()
-                },
-            },
-        )?;
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state_with_dependencies(
-            target,
-            backup.backup_id.as_str(),
-            true,
-            inputs,
-            Some(environment_address),
-            vec![target_address],
-        )?,
-    });
+    imported.add_backup(
+        &scope,
+        &target_address,
+        &backup,
+        destination,
+        enabled,
+        target,
+    )?;
 
     Ok(imported)
 }
