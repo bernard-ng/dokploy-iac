@@ -741,6 +741,47 @@ and plan output. Cleanup proves the project and every observed Schedule identity
 absent. The sanitization self-test proves the scanner fails on seeded command and
 script canaries and that the scrubber refuses an unexpected directory.
 
+## Live Backup declarative apply test
+
+Verify declarative database Backups independently against the pinned local
+instance:
+
+```bash
+scripts/integration/test-backup-apply.sh
+```
+
+The check starts a connection tripwire, creates three disposable backup
+destinations that point at it (creating a destination never connects), and
+declares a project, environment, undeployed PostgreSQL and MySQL targets, and
+two disabled Backups. Dokploy never schedules a disabled Backup, so no backup
+can run during the check. It requires an immediate no-op plan and proves each
+Backup through `backup.one` and each target's authoritative `backups` relation.
+
+One apply then edits the schedule, prefix, database, retention, and
+encryption-key flag in place and proves the physical Backup identity is
+unchanged; a second clears the retention. Re-selecting the destination by name
+is an in-place update that attaches the second destination. Changing the target
+proves delete-before-create replacement, a new identity, and absence of the old
+one through `backup.one` (HTTP 404) and the source target's empty relation. A
+declarative removal proves identity and relation absence and a no-op plan.
+
+A saved plan is then bound to the resolved destination identity: the selected
+destination is removed and re-created under the same name, and applying the
+byte-identical plan must be refused without mutation (the envelope contains no
+identity or name). An unresolved destination must block the plan with
+`DOKPLAN019` and block apply. Finally the check creates an out-of-band disabled
+Backup through a private request body, adopts it through protected import into a
+separate workspace, and requires an immediate no-op plan whose configuration
+and state hold a destination name and no physical destination identity.
+
+Every Backup must report zero deployment records, every touched target must
+stay idle with zero deployments, and the tripwire must record zero hits.
+Raw responses stay in a private directory that cleanup discards; retained
+evidence is reduced to booleans and counts. The integration API key, the
+fingerprint key, the database passwords, the destination credentials, and every
+destination identity are scanned across all retained evidence. Cleanup removes
+the project and every record carrying the run prefix and proves their absence.
+
 ## External selector contract capture
 
 Capture the read-only server, registry, and backup-destination selector

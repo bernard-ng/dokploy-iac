@@ -55,6 +55,20 @@ All notable changes to this project will be documented in this file.
   placement; manual recovery when a selector stops resolving uniquely;
   name-selector import; and a live acceptance with inert, tripwired external
   records (ADR 0045).
+- Add end-to-end declarative database Backup reconciliation for PostgreSQL,
+  MySQL, MariaDB, MongoDB, and LibSQL targets with a typed target union, an
+  external destination selected by exact name, owned schedule, prefix,
+  database, enabled, retention, and encryption-key fields, parse-time
+  collision-key and malformed-value rejection, authoritative per-target
+  `backups` discovery with direct-read agreement, fresh-read complete-replacement
+  updates that carry ignored and unmanaged values from the remote, in-place
+  destination re-selection, delete-before-create replacement on a target
+  change, saved-plan receipts that bind the resolved destination identity,
+  journaled outcome-unknown recovery that requires the destination to resolve
+  uniquely, protected import with the target ancestry and a destination name
+  selector, and a disabled, never-executed, tripwired live acceptance that
+  proves zero destination contact (ADR 0047). Compose and web-server Backups
+  remain unsupported.
 - Add end-to-end declarative Schedule reconciliation for application and
   Compose-service targets with a typed target union, an explicit target-scoped
   name, cron expression, shell, and required `enabled` flag, descriptor-only

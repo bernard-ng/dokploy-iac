@@ -203,20 +203,30 @@ durable state semantics.
   blocks zero or multiple matches, keyed saved-plan receipts that bind the
   resolved identities, create-time placement with in-place nullable
   associations and delete-before-create replacement on a changed placement, and
-  name-selector import. The resolver seam is kind-agnostic and already reads
-  backup destinations; wiring Backup destinations onto it remains. Schedule
-  server and Dokploy-server scopes stay unsupported (ADR 0033).
-- Backups use the shared typed-target and external-selector model in ADR
-  0026.
+  name-selector import. The resolver seam is kind-agnostic; Backup destinations
+  are wired onto it (ADR 0047). Schedule server and Dokploy-server scopes stay
+  unsupported (ADR 0033).
+- Database Backups are declarative end to end as environment-contained
+  resources whose typed database target (PostgreSQL, MySQL, MariaDB, MongoDB,
+  or LibSQL) is an owned property and inferred dependency and whose destination
+  is an external name selector (ADR 0047): authoritative per-target `backups`
+  discovery with direct-read agreement, fresh-read complete-replacement updates,
+  in-place destination re-selection, delete-before-create replacement on a
+  target change, saved-plan binding of the resolved destination identity,
+  explicit recovery, and protected import. The disposable live acceptance keeps
+  every Backup disabled and proves no backup ran, no destination was contacted,
+  and no target was deployed. Compose and web-server Backups remain unsupported.
+- Backups and schedules use the shared typed-target and external-selector
+  model in ADR 0026.
 - Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
   MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
   `target.one.backups` collections, mutations prove identity and target
   agreement, and disabled live evidence covers all mutable fields without
   deployment, execution, or destination traffic. Compose and web-server
   Backups remain unsupported.
-- Completion still requires declarative reconciliation plus unit, sanitized
-  fixture, and live create-update-delete evidence for the remaining listed
-  adapters and server or registry association.
+- Completion still requires the remaining server placement selectors for
+  Compose and databases, plus any adapter that is not yet declarative, each with
+  unit, sanitized fixture, and live create-update-delete evidence.
 
 ## Phase 9: import and refactoring workflows — complete
 

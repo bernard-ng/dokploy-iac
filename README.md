@@ -32,9 +32,11 @@ about ownership, drift, secrets, remote identity, and recovery.
   applications, application ports, redirects, and basic-auth security
   entries, Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL,
   Redis, domains, mounts on applications, Compose services, and
-  databases, and schedules on applications and Compose services. Application server, build-server, and registry associations select
-  external infrastructure by stable local-or-named selectors that are resolved
-  against fresh server and registry collections and bound into saved plans.
+  databases, schedules on applications and Compose services, and database
+  backups. Application server, build-server, and registry associations and
+  backup destinations select external infrastructure by stable local-or-named
+  selectors that are resolved against fresh server, registry, and destination
+  collections and bound into saved plans.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
 - Dedicated containment separate from general dependency ordering, persisted
@@ -134,7 +136,7 @@ The foundation, API/SDK, durable state, configuration language, and core
 planner are implemented. Fresh remote projection covers projects,
 environments, applications, application ports, redirects, security entries,
 Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, Redis,
-application domains, mounts, and schedules.
+application domains, mounts, schedules, and database backups.
 Adapter-owned contracts classify in-place changes, reparenting, and ordered
 replacement without admitting mutation code to the planner.
 
