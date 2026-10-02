@@ -377,7 +377,8 @@ async fn libsql_create_proves_absence_then_recovers_one_identity() {
             "databasePassword": "auth-token-canary",
             "sqldNode": "primary",
             "sqldPrimaryUrl": null,
-            "enableNamespaces": true
+            "enableNamespaces": true,
+            "serverId": null
         }),
     );
     assert!(requests[2].starts_with("GET /api/project.one?projectId=project-1 HTTP/1.1\r\n"));

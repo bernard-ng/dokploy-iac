@@ -77,8 +77,9 @@ const LIBSQL_DEFAULT_IMAGE: &str = "ghcr.io/tursodatabase/libsql-server:v0.24.32
 /// Explicit physical placement selected when creating a service.
 ///
 /// Leaving placement unset on a create input omits `serverId` and leaves the
-/// field unmanaged. Selecting [`Self::Local`] sends an explicit JSON null,
-/// while [`Self::Server`] sends one resolved external server identity.
+/// field unmanaged; only LibSQL, whose endpoint requires the key, sends null.
+/// Selecting [`Self::Local`] sends an explicit JSON null, while
+/// [`Self::Server`] sends one resolved external server identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServerPlacement {
     /// Place the service on Dokploy's local server.
@@ -2754,10 +2755,7 @@ impl Serialize for CreateLibSql {
     where
         S: Serializer,
     {
-        let mut body = serializer.serialize_struct(
-            "CreateLibSql",
-            10 + usize::from(self.server_placement.is_some()),
-        )?;
+        let mut body = serializer.serialize_struct("CreateLibSql", 11)?;
         body.serialize_field("name", &self.name)?;
         body.serialize_field("appName", &self.app_name)?;
         body.serialize_field("dockerImage", LIBSQL_DEFAULT_IMAGE)?;
@@ -2768,14 +2766,16 @@ impl Serialize for CreateLibSql {
         body.serialize_field("sqldNode", self.node.wire_name())?;
         body.serialize_field("sqldPrimaryUrl", &self.node.primary_url())?;
         body.serialize_field("enableNamespaces", &self.enable_namespaces)?;
-        if let Some(placement) = &self.server_placement {
-            match placement {
-                ServerPlacement::Local => {
-                    body.serialize_field("serverId", &Option::<&str>::None)?;
-                }
-                ServerPlacement::Server(server_id) => {
-                    body.serialize_field("serverId", server_id.as_str())?;
-                }
+        // Unlike every other create, `libsql.create` declares `serverId` required
+        // (nullable) and Dokploy v0.30.6 rejects a body that omits it. An unmanaged
+        // placement therefore sends null, which Dokploy stores exactly as it stores
+        // the omitted field of the other kinds, and leaves the placement unproven.
+        match &self.server_placement {
+            Some(ServerPlacement::Server(server_id)) => {
+                body.serialize_field("serverId", server_id.as_str())?;
+            }
+            Some(ServerPlacement::Local) | None => {
+                body.serialize_field("serverId", &Option::<&str>::None)?;
             }
         }
         body.end()

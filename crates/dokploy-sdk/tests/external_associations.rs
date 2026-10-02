@@ -125,11 +125,19 @@ fn every_supported_create_distinguishes_unmanaged_local_and_external_placement()
         mongo().with_server_placement(ServerPlacement::Local),
         mongo().with_server_placement(ServerPlacement::Server(ServerId::new("server-1"))),
     );
-    assert_placement(
-        libsql(),
-        libsql().with_server_placement(ServerPlacement::Local),
+    // `libsql.create` declares `serverId` required (nullable), so an unmanaged LibSQL
+    // placement must send the key as null; every other create omits it.
+    let unmanaged = serde_json::to_value(libsql()).expect("unmanaged input serializes");
+    assert_eq!(unmanaged["serverId"], Value::Null);
+    assert!(unmanaged.as_object().unwrap().contains_key("serverId"));
+    let local = serde_json::to_value(libsql().with_server_placement(ServerPlacement::Local))
+        .expect("local input serializes");
+    assert_eq!(local["serverId"], Value::Null);
+    let external = serde_json::to_value(
         libsql().with_server_placement(ServerPlacement::Server(ServerId::new("server-1"))),
-    );
+    )
+    .expect("external input serializes");
+    assert_eq!(external["serverId"], "server-1");
     assert_placement(
         redis(),
         redis().with_server_placement(ServerPlacement::Local),

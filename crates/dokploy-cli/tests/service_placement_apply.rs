@@ -210,11 +210,14 @@ async fn an_unmanaged_placement_omits_the_server_and_reads_no_external_collectio
 
         apply_workspace(&client, &config_file).await.unwrap();
 
-        assert!(
-            !create_body(&fake, &kind).contains("serverId"),
-            "{}",
-            kind.name
-        );
+        // `libsql.create` requires the key, so an unmanaged LibSQL placement sends null;
+        // every other create omits it.
+        let body = create_body(&fake, &kind);
+        if kind.resource == ResourceKind::LibSql {
+            assert!(body.contains(r#""serverId":null"#), "{}", kind.name);
+        } else {
+            assert!(!body.contains("serverId"), "{}", kind.name);
+        }
         assert_eq!(fake.count("GET /api/server.all"), 0, "{}", kind.name);
         assert!(
             state(&fake, directory.path())

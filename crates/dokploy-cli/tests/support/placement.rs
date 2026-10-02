@@ -732,6 +732,14 @@ fn create(world: &mut World, kind: &str, body: &serde_json::Value) -> (&'static 
     if name.is_empty() || body["environmentId"] != "environment-1" {
         return ("400 Bad Request", r#"{"message":"bad create"}"#.to_owned());
     }
+    // Dokploy v0.30.6 declares `serverId` required on `libsql.create` and rejects a
+    // body without the key; every other create takes it as optional.
+    if known.endpoint == "libsql" && body.get("serverId").is_none() {
+        return (
+            "400 Bad Request",
+            r#"{"message":"serverId required"}"#.to_owned(),
+        );
+    }
     // The real API treats an omitted or null `serverId` as the local host.
     let server = body["serverId"].as_str().map(str::to_owned);
     if let Some(server) = &server
