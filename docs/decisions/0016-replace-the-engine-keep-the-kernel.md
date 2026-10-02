@@ -16,9 +16,10 @@ no users to migrate and no reason to maintain two engines.
 **Replace, do not coexist.** There is no `--engine` switch, no document-version
 dispatch, and no dual state support.
 
-1. **Freeze.** Tag commit `96cab73` as `engine-v1` (a maintainer step: cloud
-   sessions cannot push tags). It is the reference for behavior that must survive
-   and the source of test scenarios; until the tag exists the commit id is the reference.
+1. **Freeze.** Commit `96cab73` is the reference for the first engine's behavior and
+   the source of test scenarios. It is deliberately **not tagged**: a tag would
+   promise a stable release, and nothing is stable before the beta. The commit id
+   in history is enough.
 2. **Extract goldens.** Before deleting a layer, its tests are mined for scenarios
    (inputs, expected requests, expected plans, expected state). They become
    conformance fixtures that the spec engine must satisfy for the same kind. This is

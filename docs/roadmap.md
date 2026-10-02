@@ -14,7 +14,7 @@ those kinds is classified.
 
 | # | Milestone | Content | Exit criterion | Days |
 |---|-----------|---------|----------------|------|
-| M0 | Foundations | Tag `engine-v1` at `96cab73` (needs a maintainer: tag pushes are refused in cloud sessions). Move the generated commands under `dokploy api` (small, independent). Prototype the spec grammar on three kinds: `registry` (flat), `redirect` (leaf with fresh-read update), application `source` (union). New `dokploy-spec` crate: parse, validate, registry. `cargo xtask specs --check` ledger for the request side against the OpenAPI. Tool to mine legacy tests into golden scenarios. Capture-tool skeleton. | Ledger runs in CI on the three specs; grammar v0 frozen in `docs/design/spec-format.md` | 4–6 |
+| M0 | Foundations | Commit `96cab73` is the first-engine reference (no tag; nothing is stable yet). Move the generated commands under `dokploy api` (small, independent). Prototype the spec grammar on three kinds: `registry` (flat), `redirect` (leaf with fresh-read update), application `source` (union). New `dokploy-spec` crate: parse, validate, registry. `cargo xtask specs --check` ledger for the request side against the OpenAPI. Tool to mine legacy tests into golden scenarios. Capture-tool skeleton. | Ledger runs in CI on the three specs; grammar v0 frozen in `docs/design/spec-format.md` | 4–6 |
 | M1 | Kernel and model | `PropertyPath` becomes spec-validated paths; `MutationContract` from specs. State format 5: hierarchical addresses, document id, per-document directories. New `dokploy-model`: parse, validate with spans, canonical render, JSON Schema. `Transport` trait in the SDK. Engine skeleton: compile and plan offline. | `plan` of a settings document containing a registry runs against a canned remote | 8–10 |
 | M2 | Engine core, simulator, conformance | Discovery and projection; executor with write groups, verification, journal, recovery; `dokploy-sim`; conformance generator. Port `tag`, `registry`, `redirect` using extracted goldens; delete the legacy code they replace. | Three kinds pass the full conformance suite; **cost gate** measured (below) | 10–12 |
 | M3 | Project kinds | Leaves first (port, security, mount, schedule, backup, volume backup, patch, domain), then databases (six kinds), Compose (all source types), application (sources, build, resources, Swarm, preview), environment, project. Hooks: Compose multi-service schedules, tag membership. | Every project kind green in conformance against the simulator; request-side ledger green | 16–22 |
@@ -49,7 +49,7 @@ starts, and this plan is re-estimated.
 
 Legacy layers are deleted as v2 replaces them (ADR 0016), so the declarative
 commands cover only the kinds ported so far. For the full first engine, use the
-`engine-v1` tag.
+commit `96cab73`.
 
 | After | Declarative commands cover |
 |-------|----------------------------|
@@ -84,6 +84,6 @@ commands cover only the kinds ported so far. For the full first engine, use the
 4. Beta kinds: members, custom roles, SSO, and the other identity features are out
    for now; AI providers stay in (ADR 0001).
 5. Deploy is its own verb with a per-resource policy (ADR 0012).
-6. The engine is replaced, not kept alongside; `96cab73` is the reference, to be tagged `engine-v1` (ADR 0016).
+6. The engine is replaced, not kept alongside; `96cab73` is the reference, untagged because nothing is stable yet (ADR 0016).
 7. Live captures and live suites run in CI, and locally in Docker for debugging
    (ADR 0015).
