@@ -857,6 +857,63 @@ url = "https://deploy.example.com"
     }
 
     #[tokio::test]
+    async fn init_settings_creates_a_settings_document() {
+        let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
+        let target = temporary_directory.path().join("dokploy.settings.yaml");
+        let repository =
+            ConfigRepository::new(temporary_directory.path().join("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let cli = Cli::try_parse_from([
+            "dokploy",
+            "init",
+            "--settings",
+            "--empty",
+            "--file",
+            target.to_str().expect("test path is UTF-8"),
+        ])
+        .expect("command line is valid");
+        let mut output = Vec::new();
+
+        execute(cli, &repository, &credentials, &mut output)
+            .await
+            .expect("init succeeds");
+
+        let source = fs::read_to_string(&target).expect("settings were created");
+        let config = DokployConfig::parse(&source).expect("starter settings are valid");
+        assert_eq!(config.scope(), dokploy_state::StateScope::Settings);
+        assert_eq!(
+            dokploy_config::peek_scope(&target).expect("scope is readable"),
+            dokploy_state::StateScope::Settings
+        );
+        assert_eq!(
+            String::from_utf8(output).expect("output is UTF-8"),
+            "Created dokploy settings configuration.\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn schema_prints_the_document_selected_by_the_flag() {
+        let repository = ConfigRepository::new(std::path::PathBuf::from("missing-context.toml"));
+        let credentials = MemoryCredentialStore::default();
+        let mut schemas = Vec::new();
+        for arguments in [
+            vec!["dokploy", "schema"],
+            vec!["dokploy", "schema", "--document", "settings"],
+        ] {
+            let cli = Cli::try_parse_from(arguments).expect("command line is valid");
+            let mut output = Vec::new();
+            execute(cli, &repository, &credentials, &mut output)
+                .await
+                .expect("schema succeeds");
+            schemas.push(String::from_utf8(output).expect("output is UTF-8"));
+        }
+
+        assert_ne!(schemas[0], schemas[1]);
+        assert!(schemas[0].contains("\"project\""));
+        assert!(schemas[1].contains("\"settings\""));
+    }
+
+    #[tokio::test]
     async fn init_never_overwrites_an_existing_path() {
         let temporary_directory = tempfile::tempdir().expect("temporary directory is available");
         let target = temporary_directory.path().join("dokploy.yaml");

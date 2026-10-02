@@ -169,6 +169,33 @@ fn every_current_kind_belongs_to_the_project_scope() {
     assert_eq!(StateScope::Settings.to_string(), "settings");
 }
 
+#[test]
+fn a_tag_is_a_settings_resource_with_no_containment_parent() {
+    assert_eq!(ResourceKind::Tag.scope(), StateScope::Settings);
+    assert_eq!(
+        "tag".parse::<ResourceKind>().expect("kind parses"),
+        ResourceKind::Tag
+    );
+    let mut settings = settings_state();
+    settings
+        .upsert_resource(
+            "tag.prod".parse().expect("address parses"),
+            project_resource(ResourceKind::Tag, "tag-1"),
+        )
+        .expect("a tag belongs in settings state");
+
+    let error = project_state()
+        .upsert_resource(
+            "tag.prod".parse().expect("address parses"),
+            project_resource(ResourceKind::Tag, "tag-1"),
+        )
+        .expect_err("a tag does not belong in project state");
+    assert!(
+        matches!(error, StateError::ResourceOutOfScope { .. }),
+        "{error}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The store
 // ---------------------------------------------------------------------------

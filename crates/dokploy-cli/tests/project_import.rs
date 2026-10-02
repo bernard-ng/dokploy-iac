@@ -1242,3 +1242,72 @@ async fn an_external_name_outside_the_selector_grammar_fails_closed() {
     assert!(matches!(error, ImportError::ExternalAssociation), "{error}");
     assert_nothing_written(workspace.path());
 }
+
+#[tokio::test]
+async fn project_tags_import_as_sorted_name_selectors_and_plan_clean() {
+    let mut world = platform();
+    world
+        .tag("tag-b", "prod", Some("#e11d48"), true)
+        .tag("tag-a", "critical", None, true)
+        .tag("tag-c", "unused", None, false);
+    let router = world.router();
+    let workspace = tempfile::tempdir().unwrap();
+
+    import(&router, workspace.path())
+        .await
+        .expect("a tagged project imports");
+
+    assert_read_only(&router);
+    let source = config_text(workspace.path());
+    assert!(
+        source.contains("tags:") && source.contains("critical") && source.contains("prod"),
+        "{source}"
+    );
+    assert!(!source.contains("unused"), "{source}");
+    let state = read_state(&router, workspace.path());
+    let project = state.resource(&address("project.platform")).unwrap();
+    assert_eq!(
+        project.last_applied().as_json()["tags"],
+        serde_json::json!(["critical", "prod"])
+    );
+    assert_plans_clean(&router, workspace.path()).await;
+}
+
+#[tokio::test]
+async fn an_untagged_project_never_reads_the_tag_collection() {
+    let mut world = platform();
+    world.tag("tag-c", "unused", None, false);
+    let router = world.router();
+    let workspace = tempfile::tempdir().unwrap();
+
+    import(&router, workspace.path())
+        .await
+        .expect("an untagged project imports");
+
+    assert!(router.matching("GET /api/tag.all").is_empty());
+    assert!(!config_text(workspace.path()).contains("tags:"));
+}
+
+#[tokio::test]
+async fn project_tags_with_a_shared_or_unlisted_identity_fail_closed() {
+    let mut shared = platform();
+    shared
+        .tag("tag-1", "prod", None, true)
+        .tag("tag-2", "prod", None, false);
+    let mut unlisted = platform();
+    unlisted.tag("tag-1", "prod", None, true);
+
+    for (world, hidden) in [(shared, None), (unlisted, Some("tag-1"))] {
+        let overrides = hidden
+            .map(|_| vec![("GET /api/tag.all".to_owned(), vec![ok("[]")])])
+            .unwrap_or_default();
+        let router = world.router_with(overrides);
+        let workspace = tempfile::tempdir().unwrap();
+
+        import(&router, workspace.path())
+            .await
+            .expect_err("an ambiguous tag identity is never guessed");
+
+        assert_nothing_written(workspace.path());
+    }
+}

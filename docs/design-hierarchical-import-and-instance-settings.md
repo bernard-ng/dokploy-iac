@@ -1,8 +1,8 @@
 # Design: hierarchical project import and instance settings
 
-Status: proposed (revision 3). Slices A1 (nested `project.environments`, `DOKCFG032`) through A4 (recursive project import) are implemented; see "A4 as built". Baseline: `master` at `30f26b7`
+Status: proposed (revision 3). Slices A1 (nested `project.environments`, `DOKCFG032`) through A4 (recursive project import) and S0 (settings foundation and the `tag` kind, ADR 0050) are implemented; see "A4 as built" and "S0 as built". Baseline: `master` at `30f26b7`
 (Phase 8 complete, ADRs 0001–0048). New ADRs are numbered in the order they
-land, starting at 0049.
+land, starting at 0049 (0049 is reserved for A5; S0 landed as 0050).
 
 Goal: configure Dokploy entirely from code, never from the Dokploy UI.
 
@@ -493,6 +493,23 @@ Two parts, because a tag is both an instance object and a project attribute.
 - Project import (A4) writes the project's tags as selectors once this lands. The
   SDK's project read projection must be extended to carry tag names; ambiguous or
   duplicate tag names fail closed, like ambiguous server names.
+
+### S0 as built
+
+ADR 0050 records the decisions. Where the build differs from the plan above:
+
+- One `DokployConfig` type carries a `scope()` instead of a two-variant enum, so
+  `compile_desired` and the planner needed no change. The scope is read by a
+  key peek (`peek_scope`); a missing file or unparseable text counts as project.
+- `StateStore::new` kept its signature and `with_scope` was added, so no existing
+  caller changed.
+- Tags are matched by name in both the document and discovery. Identities never
+  enter a document; the executor resolves names to identities from a fresh
+  `tag.all` just before mutating.
+- `ScheduleName` became `Name`, shared by Schedules and Tags.
+- The tag response shapes are unproven live (`projectTags` is empty in every
+  recorded fixture), so reads fail closed and
+  `scripts/integration/capture-tag-contract.sh` records value-free shape evidence.
 
 ### S4. Config, core and CLI work common to every kind (slice S0)
 

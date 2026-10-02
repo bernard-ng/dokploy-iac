@@ -350,6 +350,8 @@ pub struct World {
     servers: Vec<(String, String)>,
     registries: Vec<(String, String)>,
     destinations: Vec<(String, String)>,
+    tags: Vec<Value>,
+    project_tags: Vec<String>,
 }
 
 fn slug(name: &str) -> String {
@@ -367,7 +369,19 @@ impl World {
             servers: Vec::new(),
             registries: Vec::new(),
             destinations: Vec::new(),
+            tags: Vec::new(),
+            project_tags: Vec::new(),
         }
+    }
+
+    /// Adds an instance tag, optionally attached to the project.
+    pub fn tag(&mut self, id: &str, name: &str, color: Option<&str>, attached: bool) -> &mut Self {
+        self.tags
+            .push(json!({ "tagId": id, "name": name, "color": color }));
+        if attached {
+            self.project_tags.push(id.to_owned());
+        }
+        self
     }
 
     pub fn environment(&mut self, id: &str, name: &str) -> &mut Self {
@@ -447,6 +461,11 @@ impl World {
         json!({
             "projectId": self.project_id, "name": self.project_name,
             "description": self.project_description, "environments": environments,
+            "projectTags": self
+                .project_tags
+                .iter()
+                .map(|id| json!({ "tagId": id }))
+                .collect::<Vec<_>>(),
         })
     }
 
@@ -461,6 +480,7 @@ impl World {
             project.clone(),
         );
         push("GET /api/project.all".to_owned(), json!([project]));
+        push("GET /api/tag.all".to_owned(), json!(self.tags));
         push(
             one("environment.byProjectId", "projectId", &self.project_id),
             json!(
