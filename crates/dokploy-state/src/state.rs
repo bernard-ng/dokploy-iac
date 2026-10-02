@@ -8,9 +8,13 @@ use uuid::Uuid;
 
 use crate::sensitive::valid_environment_name;
 use crate::strict_json::reject_duplicate_keys;
-use crate::{ResourceAddress, ResourceKind, SensitiveInputs, SensitivePropertyPath};
+use crate::{ResourceAddress, ResourceKind, SensitiveInputs, SensitivePropertyPath, StateScope};
 
-const CURRENT_FORMAT_VERSION: u32 = 3;
+/// Format 4 records the document scope. Format 3 has no scope field and always
+/// describes a project workspace, so it decodes as one and is rewritten as
+/// format 4 by the next checkpoint.
+const CURRENT_FORMAT_VERSION: u32 = 4;
+const PROJECT_ONLY_FORMAT_VERSION: u32 = 3;
 
 const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "password",
@@ -596,6 +600,7 @@ fn ensure_disjoint_inputs(
 pub struct StateFile {
     format_version: u32,
     cli_version: Version,
+    scope: StateScope,
     lineage: Uuid,
     serial: u64,
     instance: InstanceIdentity,
@@ -608,6 +613,7 @@ impl fmt::Debug for StateFile {
             .debug_struct("StateFile")
             .field("format_version", &self.format_version)
             .field("cli_version", &self.cli_version)
+            .field("scope", &self.scope)
             .field("lineage", &self.lineage)
             .field("serial", &self.serial)
             .field("instance", &self.instance)
@@ -622,6 +628,8 @@ impl fmt::Debug for StateFile {
 struct SerializedStateFile {
     format_version: u32,
     cli_version: Version,
+    #[serde(default)]
+    scope: Option<StateScope>,
     lineage: Uuid,
     serial: u64,
     instance: InstanceIdentity,
@@ -650,12 +658,23 @@ impl StateRevision {
 }
 
 impl StateFile {
-    /// Starts a new state lineage at serial zero.
+    /// Starts a new project-scope state lineage at serial zero.
     #[must_use]
     pub fn new(cli_version: Version, instance: InstanceIdentity) -> Self {
+        Self::new_in_scope(cli_version, instance, StateScope::Project)
+    }
+
+    /// Starts a new state lineage for one document scope at serial zero.
+    #[must_use]
+    pub fn new_in_scope(
+        cli_version: Version,
+        instance: InstanceIdentity,
+        scope: StateScope,
+    ) -> Self {
         Self {
             format_version: CURRENT_FORMAT_VERSION,
             cli_version,
+            scope,
             lineage: Uuid::new_v4(),
             serial: 0,
             instance,
@@ -663,10 +682,20 @@ impl StateFile {
         }
     }
 
-    /// Starts a new state lineage at serial zero with an atomically imported resource set.
+    /// Starts a new project-scope lineage with an atomically imported resource set.
     pub fn new_with_resources(
         cli_version: Version,
         instance: InstanceIdentity,
+        resources: BTreeMap<ResourceAddress, ResourceState>,
+    ) -> Result<Self, StateError> {
+        Self::new_with_resources_in_scope(cli_version, instance, StateScope::Project, resources)
+    }
+
+    /// Starts a new lineage for one scope with an atomically imported resource set.
+    pub fn new_with_resources_in_scope(
+        cli_version: Version,
+        instance: InstanceIdentity,
+        scope: StateScope,
         resources: BTreeMap<ResourceAddress, ResourceState>,
     ) -> Result<Self, StateError> {
         let mut identities = BTreeMap::new();
@@ -700,6 +729,7 @@ impl StateFile {
         Self::from_serialized(SerializedStateFile {
             format_version: CURRENT_FORMAT_VERSION,
             cli_version,
+            scope: Some(scope),
             lineage: Uuid::new_v4(),
             serial: 0,
             instance,
@@ -726,6 +756,12 @@ impl StateFile {
     #[must_use]
     pub const fn cli_version(&self) -> &Version {
         &self.cli_version
+    }
+
+    /// Returns the document scope whose resources this lineage tracks.
+    #[must_use]
+    pub const fn scope(&self) -> StateScope {
+        self.scope
     }
 
     /// Returns the stable state-history identifier.
@@ -789,6 +825,13 @@ impl StateFile {
             return Err(StateError::ResourceKindMismatch {
                 address,
                 state_kind: resource.kind(),
+            });
+        }
+
+        if address.kind().scope() != self.scope {
+            return Err(StateError::ResourceOutOfScope {
+                address,
+                scope: self.scope,
             });
         }
 
@@ -929,12 +972,22 @@ impl StateFile {
     }
 
     fn from_serialized(state: SerializedStateFile) -> Result<Self, StateError> {
-        if state.format_version != CURRENT_FORMAT_VERSION {
-            return Err(StateError::UnsupportedFormatVersion {
-                found: state.format_version,
-                supported: CURRENT_FORMAT_VERSION,
-            });
-        }
+        let scope = match (state.format_version, state.scope) {
+            // Format 3 predates scopes and only ever described a project workspace.
+            (PROJECT_ONLY_FORMAT_VERSION, None) => StateScope::Project,
+            (CURRENT_FORMAT_VERSION, Some(scope)) => scope,
+            (PROJECT_ONLY_FORMAT_VERSION | CURRENT_FORMAT_VERSION, _) => {
+                return Err(StateError::InvalidScopeField {
+                    format_version: state.format_version,
+                });
+            }
+            (found, _) => {
+                return Err(StateError::UnsupportedFormatVersion {
+                    found,
+                    supported: CURRENT_FORMAT_VERSION,
+                });
+            }
+        };
 
         if state.lineage.is_nil() {
             return Err(StateError::NilLineage);
@@ -947,11 +1000,19 @@ impl StateFile {
                     state_kind: resource.kind(),
                 });
             }
+            if address.kind().scope() != scope {
+                return Err(StateError::ResourceOutOfScope {
+                    address: address.clone(),
+                    scope,
+                });
+            }
         }
 
         Ok(Self {
-            format_version: state.format_version,
+            // A legacy file is upgraded in memory; the next checkpoint writes format 4.
+            format_version: CURRENT_FORMAT_VERSION,
             cli_version: state.cli_version,
+            scope,
             lineage: state.lineage,
             serial: state.serial,
             instance: state.instance,
@@ -1006,6 +1067,13 @@ pub enum StateError {
     },
     #[error("unsupported state format version {found}; this CLI supports version {supported}")]
     UnsupportedFormatVersion { found: u32, supported: u32 },
+    #[error("state format version {format_version} has an invalid scope field")]
+    InvalidScopeField { format_version: u32 },
+    #[error("resource `{address}` does not belong in {scope} state")]
+    ResourceOutOfScope {
+        address: ResourceAddress,
+        scope: StateScope,
+    },
     #[error("state serial cannot advance beyond its maximum value")]
     SerialOverflow,
     #[error("state lineage cannot be the nil UUID")]

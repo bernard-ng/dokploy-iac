@@ -3,6 +3,40 @@ use std::{cmp::Ordering, fmt, str::FromStr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use thiserror::Error;
 
+/// The document and durable state a resource kind belongs to.
+///
+/// A workspace can hold a project document and a settings document side by side.
+/// Each owns an independent state lineage, so a crash or recovery in one scope
+/// never blocks the other.
+#[derive(
+    Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum StateScope {
+    /// Projects, environments, services, and everything below them.
+    #[default]
+    Project,
+    /// Instance-level settings such as tags.
+    Settings,
+}
+
+impl StateScope {
+    /// Returns the canonical scope name used in state files and diagnostics.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Project => "project",
+            Self::Settings => "settings",
+        }
+    }
+}
+
+impl fmt::Display for StateScope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 /// A kind supported by the initial declarative resource model.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -51,6 +85,30 @@ impl ResourceKind {
             Self::Mount => "mount",
             Self::Schedule => "schedule",
             Self::Backup => "backup",
+        }
+    }
+
+    /// Returns the document scope this kind is declared and tracked in.
+    #[must_use]
+    pub const fn scope(self) -> StateScope {
+        match self {
+            Self::Project
+            | Self::Environment
+            | Self::Application
+            | Self::Compose
+            | Self::Postgres
+            | Self::MySql
+            | Self::MariaDb
+            | Self::Mongo
+            | Self::LibSql
+            | Self::Redis
+            | Self::Domain
+            | Self::Port
+            | Self::Redirect
+            | Self::Security
+            | Self::Mount
+            | Self::Schedule
+            | Self::Backup => StateScope::Project,
         }
     }
 
