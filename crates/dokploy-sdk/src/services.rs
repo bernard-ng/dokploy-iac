@@ -10,20 +10,21 @@ use crate::{
     ProjectTopology, RedirectCollection, RedirectDetails, RedirectId, RedisCollection,
     RedisDetails, RedisId, RegistryCollection, ScheduleCollection, ScheduleDetails, ScheduleId,
     ScheduleTarget, SecurityCollection, SecurityDetails, SecurityId, ServerCollection,
-    ServiceTarget,
+    ServiceTarget, TagCollection, TagDetails, TagId,
 };
 
 use crate::{
     ChangeLibSqlPassword, ChangeMariaDbPassword, ChangeMongoPassword, ChangeMySqlPassword,
     CreateApplication, CreateBackup, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql,
     CreateMariaDb, CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres,
-    CreateProject, CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreatedApplication,
-    CreatedBackup, CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql,
-    CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres,
-    CreatedProject, CreatedRedirect, CreatedRedis, CreatedSchedule, CreatedSecurity,
-    UpdateApplication, UpdateBackup, UpdateCompose, UpdateDomain, UpdateEnvironment, UpdateLibSql,
-    UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres,
-    UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule, UpdateSecurity,
+    CreateProject, CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreateTag,
+    CreatedApplication, CreatedBackup, CreatedCompose, CreatedDomain, CreatedEnvironment,
+    CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql, CreatedPort,
+    CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSchedule,
+    CreatedSecurity, CreatedTag, UpdateApplication, UpdateBackup, UpdateCompose, UpdateDomain,
+    UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql,
+    UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule,
+    UpdateSecurity, UpdateTag,
 };
 
 /// Read operations for external Dokploy servers.
@@ -789,5 +790,63 @@ impl<'a> Domains<'a> {
     /// Permanently removes one domain attachment.
     pub async fn delete(&self, domain_id: DomainId) -> Result<(), Error> {
         self.client.domain_delete(domain_id).await
+    }
+}
+
+/// Read and mutation operations for Dokploy tags and their project associations.
+pub struct Tags<'a> {
+    client: &'a Dokploy,
+}
+
+impl<'a> Tags<'a> {
+    pub(crate) fn new(client: &'a Dokploy) -> Self {
+        Self { client }
+    }
+
+    /// Reads the authoritative bounded tag collection.
+    pub async fn all(&self) -> Result<TagCollection, Error> {
+        self.client.tag_all().await
+    }
+
+    /// Reads one tag and requires the authoritative collection to agree.
+    pub async fn get(&self, tag_id: TagId) -> Result<TagDetails, Error> {
+        self.client.tag_get(&tag_id).await
+    }
+
+    /// Creates a tag and validates the complete record returned by Dokploy.
+    pub async fn create(&self, input: CreateTag) -> Result<CreatedTag, Error> {
+        self.client.tag_create(input).await
+    }
+
+    /// Writes the selected tag fields; omitted fields are untouched.
+    pub async fn update(&self, input: UpdateTag) -> Result<(), Error> {
+        self.client.tag_update(input).await
+    }
+
+    /// Permanently removes one tag by physical identity.
+    pub async fn delete(&self, tag_id: TagId) -> Result<(), Error> {
+        self.client.tag_delete(tag_id).await
+    }
+
+    /// Associates one tag with one project.
+    pub async fn assign_to_project(
+        &self,
+        project_id: ProjectId,
+        tag_id: TagId,
+    ) -> Result<(), Error> {
+        self.client
+            .tag_assign_to_project(&project_id, &tag_id)
+            .await
+    }
+
+    /// Removes one tag association from one project.
+    pub async fn remove_from_project(
+        &self,
+        project_id: ProjectId,
+        tag_id: TagId,
+    ) -> Result<(), Error> {
+        self.client
+            .tag_remove_from_project(&project_id, &tag_id)
+            .await
     }
 }
