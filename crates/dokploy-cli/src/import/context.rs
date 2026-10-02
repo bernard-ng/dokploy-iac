@@ -31,7 +31,7 @@ pub(super) struct ImportContext {
     project: ResourceAddress,
 }
 
-fn protected() -> LifecycleDocument {
+pub(super) fn protected_lifecycle() -> LifecycleDocument {
     LifecycleDocument {
         protect: Field::Set(true),
         ..LifecycleDocument::default()
@@ -42,17 +42,21 @@ impl ImportContext {
     /// Starts a workspace for one project under an explicit project address.
     pub(super) fn new(
         project: &ProjectDetails,
+        tags: Option<&[String]>,
         address: &ResourceAddress,
     ) -> Result<Self, ImportError> {
         let mut document = ConfigDocument::new(address.name().clone());
         document.project_mut().description = response_field(&project.description);
-        let state = resource_state(
-            address,
-            project.project_id.as_str(),
-            false,
-            description_inputs(&project.description),
-            None,
-        )?;
+        let mut inputs = description_inputs(&project.description);
+        if let Some(tags) = tags {
+            document.project_mut().tags = Field::Set(
+                tags.iter()
+                    .map(|name| ExternalSelector::named(name.as_str()))
+                    .collect(),
+            );
+            inputs.insert("tags".to_owned(), serde_json::json!(tags));
+        }
+        let state = resource_state(address, project.project_id.as_str(), false, inputs, None)?;
 
         Ok(Self {
             document,
@@ -174,7 +178,7 @@ impl ImportContext {
                     PortProtocol::Udp => PortProtocolConfig::Udp,
                 },
                 depends_on: Vec::new(),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
             },
         )?;
         self.push(
@@ -220,7 +224,7 @@ impl ImportContext {
                     .ok_or(ImportError::InvalidRemoteTopology)?,
                 permanent: redirect.permanent,
                 depends_on: Vec::new(),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
             },
         )?;
         self.push(
@@ -259,7 +263,7 @@ impl ImportContext {
                     .ok_or(ImportError::InvalidRemoteTopology)?,
                 password: Field::Unmanaged,
                 depends_on: Vec::new(),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
             },
         )?;
         self.push(
@@ -318,7 +322,7 @@ impl ImportContext {
             ComposeDocument {
                 description: response_field(&compose.description),
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..ComposeDocument::default()
             },
         )?;
@@ -345,7 +349,7 @@ impl ImportContext {
                 database: response_field(&database.database_name),
                 username: response_field(&database.database_user),
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..PostgresDocument::default()
             },
         )?;
@@ -373,7 +377,7 @@ impl ImportContext {
             address.name().clone(),
             RedisDocument {
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..RedisDocument::default()
             },
         )?;
@@ -400,7 +404,7 @@ impl ImportContext {
                 database: response_field(&database.database_name),
                 username: response_field(&database.database_user),
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..MySqlDocument::default()
             },
         )?;
@@ -430,7 +434,7 @@ impl ImportContext {
                 database: response_field(&database.database_name),
                 username: response_field(&database.database_user),
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..MariaDbDocument::default()
             },
         )?;
@@ -460,7 +464,7 @@ impl ImportContext {
                 username: response_field(&database.database_user),
                 replica_sets: response_field(&database.replica_sets),
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..MongoDocument::default()
             },
         )?;
@@ -495,7 +499,7 @@ impl ImportContext {
                 username: response_field(&database.database_user),
                 node: Field::Set(node.clone()),
                 server: imported_server_selector(server),
-                lifecycle: protected(),
+                lifecycle: protected_lifecycle(),
                 ..LibSqlDocument::default()
             },
         )?;

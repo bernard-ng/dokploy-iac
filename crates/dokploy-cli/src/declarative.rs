@@ -5,29 +5,40 @@ use std::path::Path;
 use clap::CommandFactory;
 use miette::{IntoDiagnostic, Result};
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, SchemaDocument};
 
 /// Executes a declarative command without constructing connection dependencies.
 pub fn execute(cli: Cli, output: &mut dyn Write, terminal_available: bool) -> Result<()> {
     match cli.command {
-        Command::Init { file, empty } => {
+        Command::Init {
+            file,
+            empty,
+            settings,
+        } => {
             if !empty && !terminal_available {
                 return Err(miette::miette!(
                     "non-interactive init requires the explicit `--empty` option"
                 ));
             }
 
-            dokploy_config::initialize(file).into_diagnostic()?;
-            writeln!(output, "Created dokploy configuration.").into_diagnostic()?;
+            if settings {
+                let file = file.unwrap_or_else(|| dokploy_config::DEFAULT_SETTINGS_FILE.into());
+                dokploy_config::initialize_settings(file).into_diagnostic()?;
+                writeln!(output, "Created dokploy settings configuration.").into_diagnostic()?;
+            } else {
+                let file = file.unwrap_or_else(|| dokploy_config::DEFAULT_CONFIG_FILE.into());
+                dokploy_config::initialize(file).into_diagnostic()?;
+                writeln!(output, "Created dokploy configuration.").into_diagnostic()?;
+            }
 
             Ok(())
         }
-        Command::Schema => {
-            serde_json::to_writer_pretty(
-                &mut *output,
-                &dokploy_config::DokployConfig::json_schema(),
-            )
-            .into_diagnostic()?;
+        Command::Schema { document } => {
+            let schema = match document {
+                SchemaDocument::Project => dokploy_config::DokployConfig::json_schema(),
+                SchemaDocument::Settings => dokploy_config::DokployConfig::settings_json_schema(),
+            };
+            serde_json::to_writer_pretty(&mut *output, &schema).into_diagnostic()?;
             writeln!(output).into_diagnostic()?;
 
             Ok(())

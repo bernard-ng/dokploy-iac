@@ -44,6 +44,9 @@ mod mount;
 mod names;
 mod project;
 mod schedule;
+mod settings;
+
+pub use settings::{SettingsImportReport, SettingsImportRequest, import_settings};
 
 /// A complete project import selection.
 pub struct ImportRequest {
@@ -327,6 +330,20 @@ pub async fn import_project(
 
 fn persist_import(
     document: &ConfigDocument,
+    config_file: &Path,
+    checkpoint: impl FnOnce() -> Result<(), dokploy_state::StateStoreError>,
+) -> Result<(), ImportError> {
+    document.write(config_file)?;
+    if let Err(error) = checkpoint() {
+        std::fs::remove_file(config_file).map_err(|source| ImportError::Rollback { source })?;
+        return Err(ImportError::State(error));
+    }
+
+    Ok(())
+}
+
+fn persist_settings(
+    document: &dokploy_config::SettingsDocument,
     config_file: &Path,
     checkpoint: impl FnOnce() -> Result<(), dokploy_state::StateStoreError>,
 ) -> Result<(), ImportError> {
@@ -667,7 +684,7 @@ fn canonical_workspace(config_file: &Path) -> Result<PathBuf, ImportError> {
 /// A redaction-safe import failure.
 #[derive(Debug, Error)]
 pub enum ImportError {
-    #[error("dokploy.yaml already exists")]
+    #[error("the configuration file already exists")]
     ConfigExists,
     #[error("durable state already exists")]
     StateExists,

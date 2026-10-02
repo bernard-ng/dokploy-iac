@@ -26,7 +26,7 @@ impl Cli {
         matches!(
             self.command,
             Command::Init { .. }
-                | Command::Schema
+                | Command::Schema { .. }
                 | Command::Validate { .. }
                 | Command::Completions { .. }
         )
@@ -37,21 +37,26 @@ impl Cli {
 pub enum Command {
     /// Create a starter declarative configuration.
     Init {
-        /// Configuration file to create.
-        #[arg(
-            long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
-            value_name = "PATH"
-        )]
-        file: PathBuf,
+        /// Configuration file to create. Defaults to `dokploy.yaml`, or to
+        /// `dokploy.settings.yaml` with `--settings`.
+        #[arg(long, value_name = "PATH")]
+        file: Option<PathBuf>,
 
         /// Create the canonical empty configuration without prompting.
         #[arg(long)]
         empty: bool,
+
+        /// Create an instance settings document instead of a project document.
+        #[arg(long)]
+        settings: bool,
     },
 
     /// Print the declarative configuration JSON Schema.
-    Schema,
+    Schema {
+        /// Which document the schema describes.
+        #[arg(long, value_enum, default_value_t = SchemaDocument::Project)]
+        document: SchemaDocument,
+    },
 
     /// Parse and validate a declarative configuration offline.
     Validate {
@@ -178,6 +183,15 @@ pub enum Command {
     Imperative(Box<ImperativeCommand>),
 }
 
+/// Document kinds that have a JSON Schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum SchemaDocument {
+    /// A `project:` document.
+    Project,
+    /// A `settings:` document.
+    Settings,
+}
+
 #[derive(Subcommand)]
 pub enum ImportCommand {
     /// Adopt one whole project, with every environment and resource below it.
@@ -192,6 +206,20 @@ pub enum ImportCommand {
         #[arg(
             long,
             default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+    },
+
+    /// Adopt the instance settings (tags) into a settings document.
+    ///
+    /// Like project import, this only creates a new workspace: it refuses to
+    /// run when the settings file or the settings state already exists.
+    Settings {
+        /// Settings file to create.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_SETTINGS_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
@@ -261,7 +289,7 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, Command, ContextCommand, ImportCommand, StateCommand};
+    use super::{Cli, Command, ContextCommand, ImportCommand, SchemaDocument, StateCommand};
 
     #[test]
     fn parses_direct_and_interactive_project_import() {
@@ -345,8 +373,11 @@ mod tests {
 
         assert!(matches!(
             cli.command,
-            Command::Init { file, empty: true }
-                if file.as_path() == Path::new("dokploy.yaml")
+            Command::Init {
+                file: None,
+                empty: true,
+                settings: false
+            }
         ));
     }
 
@@ -361,7 +392,46 @@ mod tests {
     fn parses_schema_as_an_offline_top_level_command() {
         let cli = Cli::try_parse_from(["dokploy", "schema"]).expect("command line is valid");
 
-        assert!(matches!(cli.command, Command::Schema));
+        assert!(matches!(
+            cli.command,
+            Command::Schema {
+                document: SchemaDocument::Project
+            }
+        ));
+    }
+
+    #[test]
+    fn schema_and_init_select_the_settings_document() {
+        let cli = Cli::try_parse_from(["dokploy", "schema", "--document", "settings"])
+            .expect("command line is valid");
+        assert!(matches!(
+            cli.command,
+            Command::Schema {
+                document: SchemaDocument::Settings
+            }
+        ));
+
+        let cli = Cli::try_parse_from(["dokploy", "init", "--settings", "--empty"])
+            .expect("command line is valid");
+        assert!(matches!(
+            cli.command,
+            Command::Init {
+                settings: true,
+                file: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn import_settings_defaults_to_the_settings_file() {
+        let cli =
+            Cli::try_parse_from(["dokploy", "import", "settings"]).expect("command line is valid");
+        assert!(matches!(
+            cli.command,
+            Command::Import { command: ImportCommand::Settings { file } }
+                if file.as_path() == Path::new("dokploy.settings.yaml")
+        ));
     }
 
     #[test]
