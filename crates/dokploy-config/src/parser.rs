@@ -187,6 +187,8 @@ struct RawCompose {
     #[serde(default)]
     document: Field<SecretSource>,
     #[serde(default)]
+    server: Field<ExternalSelector>,
+    #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
     #[serde(default)]
@@ -202,6 +204,8 @@ struct RawPostgres {
     username: Field<String>,
     #[serde(default)]
     password: Field<SecretSource>,
+    #[serde(default)]
+    server: Field<ExternalSelector>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -221,6 +225,8 @@ struct RawMySql {
     #[serde(default)]
     root_password: Field<SecretSource>,
     #[serde(default)]
+    server: Field<ExternalSelector>,
+    #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
     #[serde(default)]
@@ -232,6 +238,8 @@ struct RawMySql {
 struct RawRedis {
     #[serde(default)]
     password: Field<SecretSource>,
+    #[serde(default)]
+    server: Field<ExternalSelector>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -251,6 +259,8 @@ struct RawMariaDb {
     #[serde(default)]
     root_password: Field<SecretSource>,
     #[serde(default)]
+    server: Field<ExternalSelector>,
+    #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
     #[serde(default)]
@@ -266,6 +276,8 @@ struct RawMongo {
     password: Field<SecretSource>,
     #[serde(default)]
     replica_sets: Field<bool>,
+    #[serde(default)]
+    server: Field<ExternalSelector>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -303,6 +315,8 @@ struct RawLibSql {
     password: Field<SecretSource>,
     #[serde(default)]
     node: Field<RawLibSqlNode>,
+    #[serde(default)]
+    server: Field<ExternalSelector>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -646,6 +660,7 @@ impl DokployConfig {
                     ResourceConfig::Compose(ComposeConfig {
                         description: raw_config.description,
                         document: raw_config.document,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -667,6 +682,7 @@ impl DokployConfig {
                         database: raw_config.database,
                         username: raw_config.username,
                         password: raw_config.password,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -688,6 +704,7 @@ impl DokployConfig {
                         username: raw_config.username,
                         password: raw_config.password,
                         root_password: raw_config.root_password,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -710,6 +727,7 @@ impl DokployConfig {
                         username: raw_config.username,
                         password: raw_config.password,
                         root_password: raw_config.root_password,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -730,6 +748,7 @@ impl DokployConfig {
                         username: raw_config.username,
                         password: raw_config.password,
                         replica_sets: raw_config.replica_sets,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -756,6 +775,7 @@ impl DokployConfig {
                         username: raw_config.username,
                         password: raw_config.password,
                         node,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -774,6 +794,7 @@ impl DokployConfig {
                     environment_address.as_ref(),
                     ResourceConfig::Redis(RedisConfig {
                         password: raw_config.password,
+                        server: raw_config.server,
                         depends_on: raw_config.depends_on,
                         lifecycle: raw_config.lifecycle,
                     }),
@@ -1116,9 +1137,9 @@ fn validate_resources(
                 );
             }
         }
-        if let ResourceConfig::Application(application) = config
-            && matches!(application.server, Field::Clear)
-        {
+        let server_cleared = matches!(config.server_placement(), Some(Field::Clear))
+            || matches!(&*config, ResourceConfig::Application(application) if matches!(application.server, Field::Clear));
+        if server_cleared {
             emit(
                 diagnostics,
                 ValidationIssue::ServerPlacementCannotBeCleared,
@@ -1532,13 +1553,13 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
                 | "rollback_registry"
                 | "deployment.status"
         ),
-        ResourceKind::Compose => value == "description",
+        ResourceKind::Compose => matches!(value.as_str(), "description" | "server"),
         ResourceKind::Postgres | ResourceKind::MySql | ResourceKind::MariaDb => {
-            matches!(value.as_str(), "database" | "username")
+            matches!(value.as_str(), "database" | "username" | "server")
         }
-        ResourceKind::Mongo => matches!(value.as_str(), "username" | "replica_sets"),
-        ResourceKind::LibSql => matches!(value.as_str(), "description" | "username"),
-        ResourceKind::Redis => false,
+        ResourceKind::Mongo => matches!(value.as_str(), "username" | "replica_sets" | "server"),
+        ResourceKind::LibSql => matches!(value.as_str(), "description" | "username" | "server"),
+        ResourceKind::Redis => value == "server",
         ResourceKind::Mount => matches!(
             value.as_str(),
             "mount_path" | "host_path" | "volume_name" | "file_path"

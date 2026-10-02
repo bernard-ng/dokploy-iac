@@ -210,6 +210,7 @@ impl ConfigDocument {
                         ComposeDocument {
                             description: config.description.clone(),
                             document: config.document.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -222,6 +223,7 @@ impl ConfigDocument {
                             database: config.database.clone(),
                             username: config.username.clone(),
                             password: config.password.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -235,6 +237,7 @@ impl ConfigDocument {
                             username: config.username.clone(),
                             password: config.password.clone(),
                             root_password: config.root_password.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -248,6 +251,7 @@ impl ConfigDocument {
                             username: config.username.clone(),
                             password: config.password.clone(),
                             root_password: config.root_password.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -260,6 +264,7 @@ impl ConfigDocument {
                             username: config.username.clone(),
                             password: config.password.clone(),
                             replica_sets: config.replica_sets.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -273,6 +278,7 @@ impl ConfigDocument {
                             username: config.username.clone(),
                             password: config.password.clone(),
                             node: config.node.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -283,6 +289,7 @@ impl ConfigDocument {
                         address.name().clone(),
                         RedisDocument {
                             password: config.password.clone(),
+                            server: config.server.clone(),
                             depends_on: config.depends_on.clone(),
                             lifecycle: lifecycle_document(&config.lifecycle),
                         },
@@ -630,6 +637,7 @@ pub struct PortDocument {
 pub struct ComposeDocument {
     pub description: Field<String>,
     pub document: Field<SecretSource>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -640,6 +648,7 @@ pub struct PostgresDocument {
     pub database: Field<String>,
     pub username: Field<String>,
     pub password: Field<SecretSource>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -651,6 +660,7 @@ pub struct MySqlDocument {
     pub username: Field<String>,
     pub password: Field<SecretSource>,
     pub root_password: Field<SecretSource>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -662,6 +672,7 @@ pub struct MariaDbDocument {
     pub username: Field<String>,
     pub password: Field<SecretSource>,
     pub root_password: Field<SecretSource>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -672,6 +683,7 @@ pub struct MongoDocument {
     pub username: Field<String>,
     pub password: Field<SecretSource>,
     pub replica_sets: Field<bool>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -683,6 +695,7 @@ pub struct LibSqlDocument {
     pub username: Field<String>,
     pub password: Field<SecretSource>,
     pub node: Field<LibSqlNodeConfig>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -691,6 +704,7 @@ pub struct LibSqlDocument {
 #[derive(Clone, Default)]
 pub struct RedisDocument {
     pub password: Field<SecretSource>,
+    pub server: Field<ExternalSelector>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -1065,6 +1079,7 @@ fn render_port_document(output: &mut String, indent: usize, config: &PortDocumen
 fn render_compose_document(output: &mut String, indent: usize, config: &ComposeDocument) {
     string_field(output, indent, "description", &config.description);
     secret_field(output, indent, "document", &config.document);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -1072,6 +1087,7 @@ fn render_postgres_document(output: &mut String, indent: usize, config: &Postgre
     string_field(output, indent, "database", &config.database);
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -1080,11 +1096,13 @@ fn render_mysql_document(output: &mut String, indent: usize, config: &MySqlDocum
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     secret_field(output, indent, "root_password", &config.root_password);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
 fn render_redis_document(output: &mut String, indent: usize, config: &RedisDocument) {
     secret_field(output, indent, "password", &config.password);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -1093,6 +1111,7 @@ fn render_mariadb_document(output: &mut String, indent: usize, config: &MariaDbD
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     secret_field(output, indent, "root_password", &config.root_password);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -1100,6 +1119,7 @@ fn render_mongo_document(output: &mut String, indent: usize, config: &MongoDocum
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     bool_field(output, indent, "replica_sets", &config.replica_sets);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -1108,6 +1128,7 @@ fn render_libsql_document(output: &mut String, indent: usize, config: &LibSqlDoc
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     libsql_node_field(output, indent, &config.node);
+    selector_field(output, indent, "server", &config.server);
     document_common_fields(output, indent, &config.depends_on, &config.lifecycle);
 }
 
@@ -1800,6 +1821,7 @@ fn render_compose(
 
     string_field(output, indent, "description", &config.description);
     secret_field(output, indent, "document", &config.document);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1817,6 +1839,7 @@ fn render_postgres(
     string_field(output, indent, "database", &config.database);
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1835,6 +1858,7 @@ fn render_mysql(
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     secret_field(output, indent, "root_password", &config.root_password);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1850,6 +1874,7 @@ fn render_redis(
     };
 
     secret_field(output, indent, "password", &config.password);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1868,6 +1893,7 @@ fn render_mariadb(
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     secret_field(output, indent, "root_password", &config.root_password);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1885,6 +1911,7 @@ fn render_mongo(
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     bool_field(output, indent, "replica_sets", &config.replica_sets);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())
@@ -1903,6 +1930,7 @@ fn render_libsql(
     string_field(output, indent, "username", &config.username);
     secret_field(output, indent, "password", &config.password);
     libsql_node_field(output, indent, &config.node);
+    selector_field(output, indent, "server", &config.server);
     common_fields(output, indent, resource.depends_on(), resource.lifecycle());
 
     Ok(())

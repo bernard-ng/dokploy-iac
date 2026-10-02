@@ -503,6 +503,9 @@ impl ResourceConfig {
                 }
             }
         }
+        if let Some(Field::Set(selector)) = self.server_placement() {
+            selectors.push(("server", crate::SelectorKind::Server, selector));
+        }
         if let Self::Backup(config) = self {
             selectors.push((
                 "destination",
@@ -511,6 +514,23 @@ impl ResourceConfig {
             ));
         }
         selectors
+    }
+
+    /// Returns the create-only server placement field of a Compose or database service.
+    ///
+    /// Application declares its placement alongside its other associations.
+    #[must_use]
+    pub const fn server_placement(&self) -> Option<&Field<ExternalSelector>> {
+        match self {
+            Self::Compose(config) => Some(&config.server),
+            Self::Postgres(config) => Some(&config.server),
+            Self::MySql(config) => Some(&config.server),
+            Self::MariaDb(config) => Some(&config.server),
+            Self::Mongo(config) => Some(&config.server),
+            Self::LibSql(config) => Some(&config.server),
+            Self::Redis(config) => Some(&config.server),
+            _ => None,
+        }
     }
 
     pub(crate) fn environment_names_valid(&self) -> bool {
@@ -966,11 +986,22 @@ redacted_debug!(BackupConfig, "BackupConfig");
 pub struct ComposeConfig {
     pub(crate) description: Field<String>,
     pub(crate) document: Field<SecretSource>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl ComposeConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn description(&self) -> &Field<String> {
         &self.description
@@ -989,11 +1020,22 @@ pub struct PostgresConfig {
     pub(crate) database: Field<String>,
     pub(crate) username: Field<String>,
     pub(crate) password: Field<SecretSource>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl PostgresConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn database(&self) -> &Field<String> {
         &self.database
@@ -1018,11 +1060,22 @@ pub struct MySqlConfig {
     pub(crate) username: Field<String>,
     pub(crate) password: Field<SecretSource>,
     pub(crate) root_password: Field<SecretSource>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl MySqlConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn database(&self) -> &Field<String> {
         &self.database
@@ -1052,11 +1105,22 @@ pub struct MariaDbConfig {
     pub(crate) username: Field<String>,
     pub(crate) password: Field<SecretSource>,
     pub(crate) root_password: Field<SecretSource>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl MariaDbConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn database(&self) -> &Field<String> {
         &self.database
@@ -1085,11 +1149,22 @@ pub struct MongoConfig {
     pub(crate) username: Field<String>,
     pub(crate) password: Field<SecretSource>,
     pub(crate) replica_sets: Field<bool>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl MongoConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn username(&self) -> &Field<String> {
         &self.username
@@ -1134,11 +1209,22 @@ pub struct LibSqlConfig {
     pub(crate) username: Field<String>,
     pub(crate) password: Field<SecretSource>,
     pub(crate) node: Field<LibSqlNodeConfig>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl LibSqlConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn description(&self) -> &Field<String> {
         &self.description
@@ -1165,11 +1251,22 @@ redacted_debug!(LibSqlConfig, "LibSqlConfig");
 #[derive(Clone, Eq, PartialEq)]
 pub struct RedisConfig {
     pub(crate) password: Field<SecretSource>,
+    pub(crate) server: Field<ExternalSelector>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
 
 impl RedisConfig {
+    /// Returns the create-only server placement selector.
+    ///
+    /// Dokploy accepts a server only when the service is created, so a changed
+    /// placement replaces the service. `null` is rejected because local
+    /// placement is the explicit `local` selector.
+    #[must_use]
+    pub const fn server(&self) -> &Field<ExternalSelector> {
+        &self.server
+    }
+
     #[must_use]
     pub const fn password(&self) -> &Field<SecretSource> {
         &self.password

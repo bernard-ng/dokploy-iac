@@ -26,7 +26,8 @@ const SELECTOR_PATHS: [(PropertyPath, &str); 5] = [
 ];
 
 #[test]
-fn selector_paths_use_config_compatible_strings_and_only_apply_to_applications() {
+fn selector_paths_use_config_compatible_strings_and_only_apply_to_applications_and_server_placement()
+ {
     for (path, expected) in SELECTOR_PATHS {
         assert_eq!(path.to_string(), expected);
         assert_eq!(expected.parse::<PropertyPath>().expect("parses"), path);
@@ -49,19 +50,22 @@ fn selector_paths_use_config_compatible_strings_and_only_apply_to_applications()
             )]),
         )
         .expect("application selectors are valid");
-        let error = DesiredState::try_new(
+        let result = DesiredState::try_new(
             digest(),
             BTreeMap::from([(
                 compose.clone(),
                 DesiredResource::new(BTreeMap::from([(path.clone(), selector_for(&path))]))
                     .with_containment(Some(address("environment.production"))),
             )]),
-        )
-        .expect_err("selectors are not yet valid for Compose");
-        assert!(matches!(
-            error,
-            DesiredStateError::InvalidPropertyPath { .. }
-        ));
+        );
+        if path == PropertyPath::Server {
+            result.expect("server placement is valid for Compose");
+        } else {
+            assert!(matches!(
+                result.expect_err("only server placement applies to Compose"),
+                DesiredStateError::InvalidPropertyPath { .. }
+            ));
+        }
     }
 }
 
@@ -234,7 +238,7 @@ fn resolution_attachment_rejects_unobserved_misplaced_or_duplicate_selectors() {
             ExternalResolution::Unmatched,
         ),
         (
-            (compose.clone(), PropertyPath::Server),
+            (compose.clone(), PropertyPath::Registry),
             ExternalResolution::Unmatched,
         ),
         (

@@ -226,26 +226,39 @@ impl PropertyPath {
                     | Self::RollbackRegistry
                     | Self::DeploymentStatus
             ),
-            ResourceKind::Compose => matches!(self, Self::Description | Self::ComposeDocument),
-            ResourceKind::Postgres => {
-                matches!(self, Self::Database | Self::Username | Self::Password)
-            }
+            ResourceKind::Compose => matches!(
+                self,
+                Self::Description | Self::ComposeDocument | Self::Server
+            ),
+            ResourceKind::Postgres => matches!(
+                self,
+                Self::Database | Self::Username | Self::Password | Self::Server
+            ),
             ResourceKind::MySql => matches!(
                 self,
-                Self::Database | Self::Username | Self::Password | Self::RootPassword
+                Self::Database
+                    | Self::Username
+                    | Self::Password
+                    | Self::RootPassword
+                    | Self::Server
             ),
             ResourceKind::MariaDb => matches!(
                 self,
-                Self::Database | Self::Username | Self::Password | Self::RootPassword
+                Self::Database
+                    | Self::Username
+                    | Self::Password
+                    | Self::RootPassword
+                    | Self::Server
             ),
-            ResourceKind::Mongo => {
-                matches!(self, Self::Username | Self::Password | Self::ReplicaSets)
-            }
+            ResourceKind::Mongo => matches!(
+                self,
+                Self::Username | Self::Password | Self::ReplicaSets | Self::Server
+            ),
             ResourceKind::LibSql => matches!(
                 self,
-                Self::Description | Self::Username | Self::Password | Self::Node
+                Self::Description | Self::Username | Self::Password | Self::Node | Self::Server
             ),
-            ResourceKind::Redis => matches!(self, Self::Password),
+            ResourceKind::Redis => matches!(self, Self::Password | Self::Server),
             ResourceKind::Domain => matches!(self, Self::Host | Self::Application),
             ResourceKind::Port => matches!(
                 self,
