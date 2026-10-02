@@ -47,7 +47,11 @@ use dokploy_api::{
     SERVER_ALL, ScheduleCreateRequestBodyScheduleType, ScheduleDeleteRequest,
     ScheduleIdRequestBody, ScheduleListRequest, ScheduleListRequestQuery, ScheduleOneRequest,
     ScheduleOneRequestQuery, SecurityDeleteRequest, SecurityIdRequestBody, SecurityOneRequest,
-    SecurityOneRequestQuery, endpoint_by_operation, validate_request,
+    SecurityOneRequestQuery, TAG_ALL, TAG_ASSIGN_TO_PROJECT, TAG_CREATE, TAG_ONE, TAG_REMOVE,
+    TAG_REMOVE_FROM_PROJECT, TAG_UPDATE, TagAllRequest, TagAssignToProjectRequest,
+    TagAssignToProjectRequestBody, TagCreateRequest, TagCreateRequestBody, TagIdRequestBody,
+    TagOneRequest, TagOneRequestQuery, TagRemoveFromProjectRequest, TagRemoveRequest,
+    TagUpdateRequest, TagUpdateRequestBody, endpoint_by_operation, validate_request,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -66,9 +70,9 @@ use crate::models::{
     ApplicationPortCollectionResponse, ApplicationRedirectCollectionResponse,
     ApplicationSearchPage, ApplicationSecurityCollectionResponse,
     ApplicationSecurityProofCollectionResponse, BackupCollection, BackupDetails, ComposeCollection,
-    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, DestinationCollection,
-    DestinationSummary, DomainCollection, DomainCreateResponse, DomainDetails,
-    EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
+    ComposeCreateResponse, ComposeDetails, ComposeSearchPage, CreateTag, CreatedTag,
+    DestinationCollection, DestinationSummary, DomainCollection, DomainCreateResponse,
+    DomainDetails, EnvironmentCollection, EnvironmentCreateResponse, EnvironmentDetails,
     LibSqlBackupCollectionResponse, LibSqlCollection, LibSqlDetails,
     MariaDbBackupCollectionResponse, MariaDbCollection, MariaDbCreateResponse, MariaDbDetails,
     MariaDbSearchPage, MongoBackupCollectionResponse, MongoCollection, MongoCreateResponse,
@@ -79,12 +83,12 @@ use crate::models::{
     RedirectCollection, RedirectDetails, RedisCollection, RedisCreateResponse, RedisDetails,
     RedisSearchPage, RegistryCollection, RegistrySummary, ScheduleCollection, ScheduleDetails,
     ScheduleProofDetails, SecurityCollection, SecurityDetails, SecurityProofDetails,
-    ServerCollection, ServerSummary,
+    ServerCollection, ServerSummary, TagCollection, TagDetails, TagId, UpdateTag,
 };
 use crate::services::{
     Applications, Backups, Composes, Destinations, Domains, Environments, LibSql, MariaDb, Mongo,
     Mounts, MySql, Ports, Postgres, Projects, Redirects, Redis, Registries, Schedules, Security,
-    Servers,
+    Servers, Tags,
 };
 use crate::{
     ApplicationId, BackupId, BackupTarget, ChangeLibSqlPassword, ChangeMariaDbPassword,
@@ -126,6 +130,7 @@ const REDIRECT_LIST_ITEM_LIMIT: usize = 10_000;
 const SCHEDULE_LIST_ITEM_LIMIT: usize = 10_000;
 const SECURITY_LIST_ITEM_LIMIT: usize = 10_000;
 const EXTERNAL_SELECTOR_ITEM_LIMIT: usize = 10_000;
+const TAG_ITEM_LIMIT: usize = 10_000;
 const MYSQL_SEARCH_PAGE_SIZE: usize = 100;
 const MYSQL_SEARCH_ITEM_LIMIT: usize = 10_000;
 const POSTGRES_SEARCH_PAGE_SIZE: usize = 100;
@@ -208,6 +213,12 @@ impl Dokploy {
     #[must_use]
     pub fn projects(&self) -> Projects<'_> {
         Projects::new(self)
+    }
+
+    /// Returns access to tag read and mutation operations.
+    #[must_use]
+    pub fn tags(&self) -> Tags<'_> {
+        Tags::new(self)
     }
 
     /// Returns access to external server selector reads.
@@ -371,6 +382,142 @@ impl Dokploy {
         )?;
 
         Ok(DestinationCollection { destinations })
+    }
+
+    /// Reads every tag of the organization from one bounded, validated response.
+    pub(crate) async fn tag_all(&self) -> Result<TagCollection, Error> {
+        validate_generated_request(TAG_ALL, &TagAllRequest {})?;
+        let tags: Vec<TagDetails> = self.read_json_secret(TAG_ALL).await?;
+        let mut ids = HashSet::with_capacity(tags.len());
+        let mut names = HashSet::with_capacity(tags.len());
+        // A tag name is the collision key, so a repeated name is a contradiction.
+        let contradictory = tags.len() > TAG_ITEM_LIMIT
+            || tags.iter().any(|tag| {
+                !tag.is_valid()
+                    || !ids.insert(tag.tag_id.as_str())
+                    || !names.insert(tag.name.as_str())
+            });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: TAG_ALL.operation(),
+            });
+        }
+
+        Ok(TagCollection { tags })
+    }
+
+    /// Reads one tag directly and requires the authoritative collection to agree.
+    pub(crate) async fn tag_get(&self, tag_id: &TagId) -> Result<TagDetails, Error> {
+        let request = TagOneRequest {
+            query: TagOneRequestQuery {
+                tag_id: tag_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(TAG_ONE, &request)?;
+        let details: TagDetails = self.read_query_json_secret(TAG_ONE, &request.query).await?;
+        if !details.is_valid() || details.tag_id != *tag_id {
+            return Err(Error::UnexpectedResponse {
+                operation: TAG_ONE.operation(),
+            });
+        }
+        let collection = self.tag_all().await?;
+        if collection.tags().iter().find(|tag| tag.tag_id == *tag_id) != Some(&details) {
+            return Err(Error::UnexpectedResponse {
+                operation: TAG_ONE.operation(),
+            });
+        }
+
+        Ok(details)
+    }
+
+    pub(crate) async fn tag_create(&self, input: CreateTag) -> Result<CreatedTag, Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                TAG_CREATE.operation(),
+                "Tag create fields are invalid",
+            ));
+        }
+        let request = TagCreateRequest {
+            body: TagCreateRequestBody {
+                name: input.name().to_owned(),
+                color: input.color().map(str::to_owned),
+            },
+        };
+        validate_generated_request(TAG_CREATE, &request)?;
+        let response: TagDetails = self.mutate_body_json_secret(TAG_CREATE, &input).await?;
+        if !input.matches(&response) {
+            return Err(Error::UnexpectedResponse {
+                operation: TAG_CREATE.operation(),
+            });
+        }
+
+        Ok(CreatedTag::new(response.tag_id))
+    }
+
+    pub(crate) async fn tag_update(&self, input: UpdateTag) -> Result<(), Error> {
+        if !input.is_valid() {
+            return Err(invalid_request(
+                TAG_UPDATE.operation(),
+                "Tag update fields are invalid",
+            ));
+        }
+        let request = TagUpdateRequest {
+            body: TagUpdateRequestBody {
+                tag_id: input.tag_id().as_str().to_owned(),
+                name: input.new_name().map(str::to_owned),
+                color: input.new_color().map(str::to_owned),
+                created_at: None,
+                organization_id: None,
+            },
+        };
+        validate_generated_request(TAG_UPDATE, &request)?;
+
+        self.mutate_body_ok_secret(TAG_UPDATE, &input).await
+    }
+
+    pub(crate) async fn tag_delete(&self, tag_id: TagId) -> Result<(), Error> {
+        let request = TagRemoveRequest {
+            body: TagIdRequestBody {
+                tag_id: tag_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(TAG_REMOVE, &request)?;
+
+        self.mutate_body_ok_secret(TAG_REMOVE, &request.body).await
+    }
+
+    pub(crate) async fn tag_assign_to_project(
+        &self,
+        project_id: &ProjectId,
+        tag_id: &TagId,
+    ) -> Result<(), Error> {
+        let request = TagAssignToProjectRequest {
+            body: TagAssignToProjectRequestBody {
+                project_id: project_id.as_str().to_owned(),
+                tag_id: tag_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(TAG_ASSIGN_TO_PROJECT, &request)?;
+
+        self.mutate_body_ok_secret(TAG_ASSIGN_TO_PROJECT, &request.body)
+            .await
+    }
+
+    pub(crate) async fn tag_remove_from_project(
+        &self,
+        project_id: &ProjectId,
+        tag_id: &TagId,
+    ) -> Result<(), Error> {
+        let request = TagRemoveFromProjectRequest {
+            body: TagAssignToProjectRequestBody {
+                project_id: project_id.as_str().to_owned(),
+                tag_id: tag_id.as_str().to_owned(),
+            },
+        };
+        validate_generated_request(TAG_REMOVE_FROM_PROJECT, &request)?;
+
+        self.mutate_body_ok_secret(TAG_REMOVE_FROM_PROJECT, &request.body)
+            .await
     }
 
     pub(crate) async fn project_get(&self, project_id: &str) -> Result<ProjectDetails, Error> {

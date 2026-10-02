@@ -50,6 +50,7 @@ identifier!(RedirectId);
 identifier!(RedisId);
 identifier!(DomainId);
 identifier!(SecurityId);
+identifier!(TagId);
 identifier!(ScheduleId);
 identifier!(BackupId);
 identifier!(ServerId);
@@ -5624,6 +5625,9 @@ pub struct ProjectDetails {
     pub description: ResponseField<String>,
     #[serde(default)]
     pub environments: Vec<EnvironmentTopology>,
+    /// The tags associated with the project, when the read returns them.
+    #[serde(default, rename = "projectTags")]
+    pub tags: ResponseField<Vec<ProjectTag>>,
 }
 
 /// An environment and the initial MVP resource summaries nested below it.
@@ -5717,6 +5721,199 @@ pub struct RedisSummary {
     pub application_status: Option<String>,
     #[serde(default)]
     pub server_id: ResponseField<ServerId>,
+}
+
+/// One Dokploy tag as returned by `tag.all` and `tag.one`.
+///
+/// Organization identity, creation time, and any nested relations are
+/// intentionally ignored. A tag's name is unique within its organization.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TagDetails {
+    pub tag_id: TagId,
+    pub name: String,
+    #[serde(default)]
+    pub color: ResponseField<String>,
+}
+
+impl TagDetails {
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.tag_id.as_str().is_empty() && !self.name.is_empty()
+    }
+}
+
+/// The complete bounded tag collection returned by `tag.all`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TagCollection {
+    pub(crate) tags: Vec<TagDetails>,
+}
+
+impl TagCollection {
+    /// Returns every tag authoritatively reported for the organization.
+    #[must_use]
+    pub fn tags(&self) -> &[TagDetails] {
+        &self.tags
+    }
+}
+
+/// A tag association embedded in a project read.
+///
+/// Dokploy embeds either the tag identity directly or a nested tag record; both
+/// forms resolve to one identity, and a record that carries neither is rejected.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectTag {
+    pub tag_id: TagId,
+}
+
+impl<'de> Deserialize<'de> for ProjectTag {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Nested {
+            tag_id: TagId,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Raw {
+            #[serde(default)]
+            tag_id: Option<TagId>,
+            #[serde(default)]
+            tag: Option<Nested>,
+        }
+
+        let raw = Raw::deserialize(deserializer)?;
+        let nested = raw.tag.map(|nested| nested.tag_id);
+        match (raw.tag_id, nested) {
+            (Some(direct), Some(nested)) if direct != nested => {
+                Err(de::Error::custom("project tag identities disagree"))
+            }
+            (Some(tag_id), _) | (None, Some(tag_id)) => Ok(Self { tag_id }),
+            (None, None) => Err(de::Error::custom("project tag has no identity")),
+        }
+    }
+}
+
+/// Inputs required to create one tag.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTag {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
+}
+
+impl CreateTag {
+    /// Creates one tag with an optional color.
+    #[must_use]
+    pub fn new(name: impl Into<String>, color: Option<String>) -> Self {
+        Self {
+            name: name.into(),
+            color,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.name.is_empty() && self.color.as_deref().is_none_or(|color| !color.is_empty())
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn color(&self) -> Option<&str> {
+        self.color.as_deref()
+    }
+
+    pub(crate) fn matches(&self, details: &TagDetails) -> bool {
+        details.is_valid()
+            && details.name == self.name
+            && match (&self.color, &details.color) {
+                (Some(color), ResponseField::Value(actual)) => color == actual,
+                (Some(_), _) => false,
+                (None, ResponseField::Value(_)) => false,
+                (None, _) => true,
+            }
+    }
+}
+
+/// Physical identity returned by Dokploy when a tag is created.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreatedTag {
+    tag_id: TagId,
+}
+
+impl CreatedTag {
+    pub(crate) fn new(tag_id: TagId) -> Self {
+        Self { tag_id }
+    }
+
+    /// Returns the new tag identity.
+    #[must_use]
+    pub const fn tag_id(&self) -> &TagId {
+        &self.tag_id
+    }
+}
+
+/// The owned tag fields written by one update; omitted fields are untouched.
+///
+/// A color cannot be cleared: Dokploy's update body has no proven way to send
+/// an explicit null for it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateTag {
+    tag_id: TagId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
+}
+
+impl UpdateTag {
+    /// Selects one tag with no field changes yet.
+    #[must_use]
+    pub fn new(tag_id: TagId) -> Self {
+        Self {
+            tag_id,
+            name: None,
+            color: None,
+        }
+    }
+
+    /// Renames the tag.
+    #[must_use]
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Sets the tag color.
+    #[must_use]
+    pub fn color(mut self, color: impl Into<String>) -> Self {
+        self.color = Some(color.into());
+        self
+    }
+
+    pub(crate) const fn tag_id(&self) -> &TagId {
+        &self.tag_id
+    }
+
+    pub(crate) fn new_name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub(crate) fn new_color(&self) -> Option<&str> {
+        self.color.as_deref()
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        !self.tag_id.as_str().is_empty()
+            && (self.name.is_some() || self.color.is_some())
+            && self.name.as_deref().is_none_or(|name| !name.is_empty())
+            && self.color.as_deref().is_none_or(|color| !color.is_empty())
+    }
 }
 
 #[cfg(test)]
