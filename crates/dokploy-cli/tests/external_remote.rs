@@ -98,8 +98,9 @@ fn compile(yaml: &str) -> dokploy_cli::desired::CompiledDesired {
 }
 
 fn config(application: &str) -> String {
+    let application = format!("  {}", application.replace('\n', "\n  "));
     format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n{application}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n{application}\n"
     )
 }
 

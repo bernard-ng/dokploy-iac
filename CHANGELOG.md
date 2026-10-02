@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Breaking:** nest `environments` under `project` in `dokploy.yaml`
+  (`project.environments`), matching the Dokploy hierarchy and preparing
+  whole-project import. A document that still has a top-level `environments`
+  key is rejected with `DOKCFG032`. Move the block two spaces deeper under
+  `project:`; `moves` and `removed` stay at the document root. Resource
+  addresses and state are unchanged, so existing state files stay valid.
 - Send an explicit `serverId: null` when a LibSQL create leaves placement
   unmanaged. `libsql.create` declares the key required and Dokploy `v0.30.6`
   rejects a body that omits it, so unmanaged LibSQL creation had stopped working

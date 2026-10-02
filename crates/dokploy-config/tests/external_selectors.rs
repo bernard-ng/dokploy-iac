@@ -10,23 +10,23 @@ const FULL: &str = r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        server:
-          name: edge-1
-        build_server:
-          name: builder
-        registry:
-          name: main
-        build_registry: null
-        rollback_registry:
-          name: archive
-      worker:
-        server:
-          local: true
-      plain: {}
+  environments:
+    production:
+      applications:
+        api:
+          server:
+            name: edge-1
+          build_server:
+            name: builder
+          registry:
+            name: main
+          build_registry: null
+          rollback_registry:
+            name: archive
+        worker:
+          server:
+            local: true
+        plain: {}
 "#;
 
 #[test]
@@ -63,15 +63,15 @@ fn selector_vocabulary_distinguishes_local_from_a_record_named_local() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        server:
-          name: local
-      worker:
-        server:
-          local: true
+  environments:
+    production:
+      applications:
+        api:
+          server:
+            name: local
+        worker:
+          server:
+            local: true
 "#,
     )
     .expect("a record may literally be named local");
@@ -103,7 +103,7 @@ fn malformed_selector_shapes_fail_with_location_only_parse_errors() {
         "build_server: edge",
     ] {
         let source = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        {body}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          {body}\n"
         );
         let error = DokployConfig::parse(&source).expect_err("malformed selector");
         assert!(
@@ -163,7 +163,7 @@ fn semantic_selector_errors_have_stable_dokcfg_codes_and_never_echo_values() {
 
     for (body, issue, code) in cases {
         let source = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        {body}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          {body}\n"
         );
         let error = DokployConfig::parse(&source).expect_err(body);
         assert!(error.issues().contains(&issue), "{body}");
@@ -172,7 +172,7 @@ fn semantic_selector_errors_have_stable_dokcfg_codes_and_never_echo_values() {
     }
 
     let over_long = format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        server: {{ name: \"{}\" }}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          server: {{ name: \"{}\" }}\n",
         "x".repeat(257)
     );
     let error = DokployConfig::parse(&over_long).expect_err("over-long name");
@@ -183,7 +183,7 @@ fn semantic_selector_errors_have_stable_dokcfg_codes_and_never_echo_values() {
     );
 
     let named = format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        registry: {{ local: true }}\n        server: {{ name: {CANARY} }}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          registry: {{ local: true }}\n          server: {{ name: {CANARY} }}\n"
     );
     let error = DokployConfig::parse(&named).expect_err("local registry");
     let rendered = format!("{error} {error:?}");
@@ -193,7 +193,7 @@ fn semantic_selector_errors_have_stable_dokcfg_codes_and_never_echo_values() {
 #[test]
 fn debug_output_redacts_selector_names() {
     let config = DokployConfig::parse(&format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        server: {{ name: {CANARY} }}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          server: {{ name: {CANARY} }}\n"
     ))
     .expect("valid");
     let api = application(&config, "application.api");
@@ -210,16 +210,16 @@ fn selector_properties_can_be_ignored_by_lifecycle_rules() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        server:
-          name: edge-1
-        registry:
-          name: main
-        lifecycle:
-          ignore_changes: [server, registry, build_server, build_registry, rollback_registry]
+  environments:
+    production:
+      applications:
+        api:
+          server:
+            name: edge-1
+          registry:
+            name: main
+          lifecycle:
+            ignore_changes: [server, registry, build_server, build_registry, rollback_registry]
 "#,
     )
     .expect("selector paths are ignorable");

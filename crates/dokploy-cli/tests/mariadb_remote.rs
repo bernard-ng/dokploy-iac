@@ -154,14 +154,14 @@ async fn authoritative_absence_allows_mariadb_create_without_a_root_password() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mariadb:
-      main:
-        database: app
-        username: app
-        password:
-          file: mariadb-password
+  environments:
+    production:
+      mariadb:
+        main:
+          database: app
+          username: app
+          password:
+            file: mariadb-password
 "#,
     )
     .expect("configuration is valid");
@@ -222,11 +222,12 @@ async fn duplicate_mariadb_names_in_one_environment_fail_closed() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main: {}
 "#,
     )
     .unwrap();
@@ -269,11 +270,12 @@ async fn duplicate_mariadb_identities_fail_closed() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main: {}
 "#,
     )
     .unwrap();
@@ -339,15 +341,16 @@ async fn managed_mariadb_requires_direct_and_collection_agreement_and_redacts_cr
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main:
-        database: app
-        username: app
-        password: null
-        root_password: null
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main:
+          database: app
+          username: app
+          password: null
+          root_password: null
 "#,
     )
     .unwrap();
@@ -433,13 +436,14 @@ async fn unavailable_mariadb_collection_blocks_a_successful_direct_read_and_any_
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main:
-        database: next
-        username: next
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main:
+          database: next
+          username: next
 "#,
     )
     .unwrap();
@@ -509,13 +513,14 @@ async fn mariadb_database_and_username_changes_update_in_place() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main:
-        database: next
-        username: next
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main:
+          database: next
+          username: next
 "#,
     )
     .unwrap();
@@ -600,15 +605,16 @@ async fn mariadb_password_changes_after_create_are_unsupported() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main:
-        database: app
-        username: app
-        password: null
-        root_password: null
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main:
+          database: app
+          username: app
+          password: null
+          root_password: null
 "#,
     )
     .unwrap();
@@ -658,11 +664,12 @@ async fn partial_mariadb_search_cannot_prove_absence() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main: {}
 "#,
     )
     .unwrap();
@@ -720,11 +727,12 @@ async fn mariadb_direct_and_collection_disagreement_fails_closed() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mariadb:
+        main: {}
 "#,
     )
     .unwrap();

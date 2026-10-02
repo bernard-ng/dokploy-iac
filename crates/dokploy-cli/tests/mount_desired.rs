@@ -12,16 +12,20 @@ fn digest() -> ConfigDigest {
 }
 
 fn config(mounts: &str) -> DokployConfig {
+    let mounts = mounts
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     DokployConfig::parse(&format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {{}}
-    mounts:
+  environments:
+    production:
+      applications:
+        api: {{}}
+      mounts:
 {mounts}
 "#
     ))
@@ -135,19 +139,20 @@ fn instance_compilation_resolves_file_content_once_as_a_fingerprinted_receipt() 
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    applications:
-      api: {}
-    mounts:
-      settings:
-        target: application.api
-        mount_path: /etc/settings.conf
-        source:
-          type: file
-          file_path: settings.conf
-          content: { file: settings.conf }
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api: {}
+      mounts:
+        settings:
+          target: application.api
+          mount_path: /etc/settings.conf
+          source:
+            type: file
+            file_path: settings.conf
+            content: { file: settings.conf }
 "#,
     )
     .expect("configuration is valid");

@@ -539,11 +539,11 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 external selector validation
-environments:
-  production:
-    description: Managed by the Phase 8 external selector integration check
-    applications:
-      api:
+  environments:
+    production:
+      description: Managed by the Phase 8 external selector integration check
+      applications:
+        api:
 $server
 $build_server
 $registry
@@ -554,15 +554,15 @@ EOF
 }
 
 named() {
-    printf '        %s:\n          name: %s' "$1" "$2"
+    printf '          %s:\n            name: %s' "$1" "$2"
 }
 
 local_server() {
-    printf '        server:\n          local: true'
+    printf '          server:\n            local: true'
 }
 
 null_field() {
-    printf '        %s: null' "$1"
+    printf '          %s: null' "$1"
 }
 
 run_apply() {

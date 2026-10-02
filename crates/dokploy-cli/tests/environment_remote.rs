@@ -183,8 +183,8 @@ async fn combined_discovery_proves_an_unmanaged_environment_missing_under_a_pres
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -238,8 +238,8 @@ async fn replacement_project_is_not_a_trusted_parent_for_an_unmanaged_environmen
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -275,8 +275,8 @@ async fn replacement_project_is_not_a_trusted_parent_through_a_move_target() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 moves:
   - from: project.legacy
     to: project.platform
@@ -326,9 +326,9 @@ async fn managed_environment_is_matched_by_id_and_projects_requested_description
 version: 1
 project:
   name: platform
-environments:
-  production:
-    description: New
+  environments:
+    production:
+      description: New
 "#,
     );
 
@@ -394,9 +394,9 @@ async fn same_name_replacement_for_a_missing_managed_environment_is_not_adopted(
 version: 1
 project:
   name: platform
-environments:
-  production:
-    description: Old
+  environments:
+    production:
+      description: Old
 "#,
     );
 
@@ -437,8 +437,8 @@ async fn partial_environment_collection_cannot_prove_absence() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
     let authority = DiscoveryAuthority {
@@ -505,8 +505,8 @@ async fn managed_environment_in_another_project_fails_closed() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -549,8 +549,8 @@ async fn environment_move_resolves_a_simultaneously_moved_parent_project() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 moves:
   - from: project.legacy
     to: project.platform
@@ -663,8 +663,8 @@ async fn combined_discovery_rejects_instance_mismatch_before_transport() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -699,8 +699,8 @@ async fn environment_collection_authentication_failure_is_closed() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -737,8 +737,8 @@ async fn exhausted_environment_collection_throttling_is_unavailable() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -772,8 +772,8 @@ async fn every_combined_discovery_invocation_performs_fresh_reads() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -825,8 +825,8 @@ async fn duplicate_environment_names_within_a_project_are_rejected() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -864,8 +864,8 @@ async fn duplicate_environment_ids_within_a_project_are_rejected() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -894,8 +894,8 @@ async fn empty_environment_id_is_rejected() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -927,8 +927,8 @@ async fn unowned_environment_description_is_not_projected() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 
@@ -977,11 +977,11 @@ async fn ignored_environment_description_is_not_requested_or_planned() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    description: Desired
-    lifecycle:
-      ignore_changes: [description]
+  environments:
+    production:
+      description: Desired
+      lifecycle:
+        ignore_changes: [description]
 "#,
     );
 
@@ -1037,9 +1037,9 @@ async fn omitted_owned_environment_description_is_unknown() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    description: Desired
+  environments:
+    production:
+      description: Desired
 "#,
     );
 

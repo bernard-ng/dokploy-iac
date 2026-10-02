@@ -92,69 +92,69 @@ fn compiles_all_mvp_resource_shapes_and_field_states() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    description: Production
-    applications:
-      api:
-        description: API
-        replicas: 2
-        source:
-          type: github
-          repository: legalterlaw/platform
-          branch: null
-        environment:
-          OMITTED: null
-      cleared:
-        source: null
-        environment: null
-      empty:
-        environment: {}
-    compose:
-      web:
-        description: Web stack
-        lifecycle:
-          protect: true
-    postgres:
-      main:
-        database: app
-        username: null
-        password: null
-      unmanaged: {}
-    mysql:
-      primary:
-        database: app
-        username: app
-        password: null
-        root_password: null
-      unmanaged: {}
-    mariadb:
-      reporting:
-        database: reports
-        username: reporter
-        password: null
-        root_password: null
-    mongo:
-      documents:
-        username: app
-        password: null
-        replica_sets: true
-    libsql:
-      edge:
-        description: Edge
-        username: app
-        password: null
-        node:
-          type: replica
-          primary_url: https://primary.example.test
-    redis:
-      cache:
-        password: null
-      unmanaged: {}
-    domains:
-      public:
-        host: api.example.test
-        application: application.api
+  environments:
+    production:
+      description: Production
+      applications:
+        api:
+          description: API
+          replicas: 2
+          source:
+            type: github
+            repository: legalterlaw/platform
+            branch: null
+          environment:
+            OMITTED: null
+        cleared:
+          source: null
+          environment: null
+        empty:
+          environment: {}
+      compose:
+        web:
+          description: Web stack
+          lifecycle:
+            protect: true
+      postgres:
+        main:
+          database: app
+          username: null
+          password: null
+        unmanaged: {}
+      mysql:
+        primary:
+          database: app
+          username: app
+          password: null
+          root_password: null
+        unmanaged: {}
+      mariadb:
+        reporting:
+          database: reports
+          username: reporter
+          password: null
+          root_password: null
+      mongo:
+        documents:
+          username: app
+          password: null
+          replica_sets: true
+      libsql:
+        edge:
+          description: Edge
+          username: app
+          password: null
+          node:
+            type: replica
+            primary_url: https://primary.example.test
+      redis:
+        cache:
+          password: null
+        unmanaged: {}
+      domains:
+        public:
+          host: api.example.test
+          application: application.api
 "#,
     )
     .expect("valid configuration");
@@ -337,25 +337,25 @@ fn derives_canonical_dependencies_and_preserves_containment_parents() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    depends_on: [project.platform]
-    postgres:
-      main: {}
-    redis:
-      cache: {}
-    applications:
-      api:
-        depends_on:
-          - environment.production
-          - postgres.main
-          - redis.cache
-    domains:
-      public:
-        application: application.api
-        depends_on:
-          - environment.production
-          - application.api
+  environments:
+    production:
+      depends_on: [project.platform]
+      postgres:
+        main: {}
+      redis:
+        cache: {}
+      applications:
+        api:
+          depends_on:
+            - environment.production
+            - postgres.main
+            - redis.cache
+      domains:
+        public:
+          application: application.api
+          depends_on:
+            - environment.production
+            - application.api
 "#,
     )
     .expect("valid configuration");
@@ -418,14 +418,14 @@ fn preserves_logical_bindings_without_leaking_non_sensitive_values_in_debug_outp
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {{}}
-    domains:
-      public:
-        host: {host_canary}
-        application: application.api
+  environments:
+    production:
+      applications:
+        api: {{}}
+      domains:
+        public:
+          host: {host_canary}
+          application: application.api
 "#
     ))
     .expect("valid configuration");
@@ -450,14 +450,14 @@ fn compiles_lifecycle_paths_moves_and_removals() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        lifecycle:
-          ignore_changes:
-            - deployment.status
-            - replicas
+  environments:
+    production:
+      applications:
+        api:
+          lifecycle:
+            ignore_changes:
+              - deployment.status
+              - replicas
 moves:
   - from: application.backend
     to: application.api
@@ -501,13 +501,13 @@ fn rejects_every_concrete_sensitive_intent_before_planning() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          VALUE:
-            value: {canary}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            VALUE:
+              value: {canary}
 "#
         ),
         format!(
@@ -515,29 +515,29 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mysql:
-      main:
-        password:
-          env: {canary}
-        root_password:
-          env: {canary}_ROOT
+  environments:
+    production:
+      mysql:
+        main:
+          password:
+            env: {canary}
+          root_password:
+            env: {canary}_ROOT
 "#
         ),
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          DATABASE_URL:
-            from: postgres.main.connection_url
-    postgres:
-      main: {}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            DATABASE_URL:
+              from: postgres.main.connection_url
+      postgres:
+        main: {}
 "#
         .to_owned(),
         format!(
@@ -545,14 +545,14 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          SECRET:
-            secret:
-              env: {canary}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            SECRET:
+              secret:
+                env: {canary}
 "#
         ),
         format!(
@@ -560,12 +560,12 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main:
-        password:
-          env: {canary}
+  environments:
+    production:
+      postgres:
+        main:
+          password:
+            env: {canary}
 "#
         ),
         format!(
@@ -573,12 +573,12 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    redis:
-      cache:
-        password:
-          env: {canary}
+  environments:
+    production:
+      redis:
+        cache:
+          password:
+            env: {canary}
 "#
         ),
         format!(
@@ -586,15 +586,15 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        security:
-          admin:
-            username: admin
-            password:
-              env: {canary}
+  environments:
+    production:
+      applications:
+        api:
+          security:
+            admin:
+              username: admin
+              password:
+                env: {canary}
 "#
         ),
     ];
@@ -624,16 +624,16 @@ fn compiles_complete_port_ownership_and_application_containment() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        ports:
-          http:
-            published_port: 8080
-            target_port: 80
-            publish_mode: ingress
-            protocol: tcp
+  environments:
+    production:
+      applications:
+        api:
+          ports:
+            http:
+              published_port: 8080
+              target_port: 80
+              publish_mode: ingress
+              protocol: tcp
 "#,
     )
     .expect("valid nested Port configuration");
@@ -667,15 +667,15 @@ fn compiles_complete_redirect_ownership_and_application_containment() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        redirects:
-          www:
-            regex: "^/old/(.*)"
-            replacement: "/new/${1}"
-            permanent: false
+  environments:
+    production:
+      applications:
+        api:
+          redirects:
+            www:
+              regex: "^/old/(.*)"
+              replacement: "/new/${1}"
+              permanent: false
 "#,
     )
     .expect("valid nested Redirect configuration");
@@ -713,13 +713,13 @@ fn compiles_security_username_and_leaves_an_unmanaged_password_unowned() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        security:
-          admin:
-            username: admin
+  environments:
+    production:
+      applications:
+        api:
+          security:
+            admin:
+              username: admin
 "#,
     )
     .expect("valid nested Security configuration");

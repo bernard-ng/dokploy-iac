@@ -70,7 +70,7 @@ fn non_interactive_destroy_requires_auto_approve_before_delete() {
     let config = workspace.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject: { name: platform, description: Managed }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  description: Managed\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
     let instance = InstanceIdentity::parse(&server.url).expect("server URL is valid");
@@ -105,7 +105,7 @@ fn non_interactive_recovery_requires_auto_approve_before_state_change() {
     let config = workspace.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject: { name: platform }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
     let url = "http://127.0.0.1:1";

@@ -746,7 +746,7 @@ async fn configurations_without_backups_perform_no_destination_or_backup_reads()
     let fake = Fake::start();
     let state = state(&fake, vec![]);
     let desired = desired(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    postgres:\n      main: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      postgres:\n        main: {}\n",
     );
 
     observe(

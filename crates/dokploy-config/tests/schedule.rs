@@ -9,25 +9,30 @@ const SCHEDULE_BASE: &str = r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {}
-    compose:
-      stack:
-        document:
-          env: STACK_DOCUMENT
-    postgres:
-      main: {}
-  staging:
-    applications:
-      preview: {}
+  environments:
+    production:
+      applications:
+        api: {}
+      compose:
+        stack:
+          document:
+            env: STACK_DOCUMENT
+      postgres:
+        main: {}
+    staging:
+      applications:
+        preview: {}
 "#;
+
+/// Indents a YAML fragment two spaces so it nests under `project.environments`.
+fn nest(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
+}
 
 fn with_schedules(schedules: &str) -> String {
     SCHEDULE_BASE.replace(
-        "  staging:",
-        &format!("    schedules:\n{schedules}  staging:"),
+        "    staging:",
+        &format!("      schedules:\n{}    staging:", nest(schedules)),
     )
 }
 
@@ -477,8 +482,8 @@ fn schedules_cannot_be_referenced_as_outputs() {
         "      nightly:\n        name: nightly\n        target: application.api\n        cron_expression: \"0 3 * * *\"\n        shell_type: sh\n        enabled: false\n        command: { env: X }\n",
     )
     .replace(
-        "      api: {}\n",
-        "      api:\n        environment:\n          VALUE:\n            from: schedule.nightly.name\n",
+        "        api: {}\n",
+        "        api:\n          environment:\n            VALUE:\n              from: schedule.nightly.name\n",
     );
     let error =
         DokployConfig::parse(&source).expect_err("Schedules expose no referenceable output");
@@ -593,10 +598,13 @@ fn canonical_writer_round_trips_schedules_without_executable_bytes() {
     let rendered = render(&config).expect("Schedule configuration renders");
 
     assert_eq!(DokployConfig::parse(&rendered).unwrap(), config);
-    assert!(rendered.contains("    schedules:\n      imported:\n        name: \"imported-job\"\n"));
-    assert!(rendered.contains("        service_name: \"worker\"\n"));
-    assert!(rendered.contains("        command:\n          env: \"SCHEDULE_COMMAND\"\n"));
-    assert!(rendered.contains("          file: \".secrets/schedule-script\"\n"));
+    assert!(
+        rendered
+            .contains("      schedules:\n        imported:\n          name: \"imported-job\"\n")
+    );
+    assert!(rendered.contains("          service_name: \"worker\"\n"));
+    assert!(rendered.contains("          command:\n            env: \"SCHEDULE_COMMAND\"\n"));
+    assert!(rendered.contains("            file: \".secrets/schedule-script\"\n"));
     assert_eq!(
         ConfigDocument::from_config(&config)
             .unwrap()
@@ -646,8 +654,8 @@ fn typed_document_writes_imported_schedule_with_unmanaged_executables() {
 
     let rendered = document.render().expect("imported Schedule renders");
 
-    assert!(rendered.contains("        shell_type: \"bash\"\n        enabled: false\n"));
+    assert!(rendered.contains("          shell_type: \"bash\"\n          enabled: false\n"));
     assert!(!rendered.contains("command"));
     assert!(!rendered.contains("script"));
-    assert!(rendered.contains("        lifecycle:\n          protect: true\n"));
+    assert!(rendered.contains("          lifecycle:\n            protect: true\n"));
 }

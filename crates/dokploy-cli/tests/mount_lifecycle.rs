@@ -22,8 +22,9 @@ fn address(value: &str) -> ResourceAddress {
 }
 
 fn config(mounts: &str) -> String {
+    let mounts = support::nest_yaml(mounts);
     format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api: {{}}\n      worker: {{}}\n    mounts:\n{mounts}"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {{}}\n        worker: {{}}\n      mounts:\n{mounts}"
     )
 }
 
@@ -347,7 +348,7 @@ async fn removing_a_mount_and_its_target_deletes_the_mount_first() {
     apply_workspace(&client, &config_file).await.unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      worker: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        worker: {}\n",
     )
     .unwrap();
 
@@ -602,7 +603,7 @@ async fn compose_target_uses_the_typed_compose_service_identity() {
     fs::write(directory.path().join("compose.yaml"), "services: {}\n").unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      stack:\n        document: { file: compose.yaml }\n    mounts:\n      data:\n        target: compose.stack\n        mount_path: /data\n        source: { type: volume, volume_name: stack-data }\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        stack:\n          document: { file: compose.yaml }\n      mounts:\n        data:\n          target: compose.stack\n          mount_path: /data\n          source: { type: volume, volume_name: stack-data }\n",
     )
     .unwrap();
 

@@ -137,14 +137,14 @@ async fn postgres_owned_fields_update_in_place() {
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    postgres:\n",
-                "      main:\n",
-                "        database: {}\n",
-                "        username: {}\n",
-                "        password:\n",
-                "          file: .secrets/postgres\n",
+                "  environments:\n",
+                "    production:\n",
+                "      postgres:\n",
+                "        main:\n",
+                "          database: {}\n",
+                "          username: {}\n",
+                "          password:\n",
+                "            file: .secrets/postgres\n",
             ),
             database, username,
         )
@@ -219,13 +219,13 @@ async fn compose_create_update_and_delete_preserve_volumes_without_persisting_th
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    compose:\n",
-                "      web:\n",
-                "        description: {:?}\n",
-                "        document:\n",
-                "          file: compose.yaml\n",
+                "  environments:\n",
+                "    production:\n",
+                "      compose:\n",
+                "        web:\n",
+                "          description: {:?}\n",
+                "          document:\n",
+                "            file: compose.yaml\n",
             ),
             description,
         )
@@ -259,9 +259,9 @@ async fn compose_create_update_and_delete_preserve_volumes_without_persisting_th
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    compose: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      compose: {}\n",
             "removed:\n",
             "  - from: compose.web\n",
             "    destroy: true\n",
@@ -326,12 +326,12 @@ async fn compose_unknown_create_outcome_keeps_the_document_step_recoverable() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    compose:\n",
-            "      web:\n",
-            "        document:\n",
-            "          file: compose.yaml\n",
+            "  environments:\n",
+            "    production:\n",
+            "      compose:\n",
+            "        web:\n",
+            "          document:\n",
+            "            file: compose.yaml\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -403,16 +403,16 @@ async fn mysql_create_metadata_update_and_delete_are_checkpointed_without_secret
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    mysql:\n",
-                "      main:\n",
-                "        database: {}\n",
-                "        username: {}\n",
-                "        password:\n",
-                "          file: .secrets/mysql-user\n",
-                "        root_password:\n",
-                "          file: .secrets/mysql-root\n",
+                "  environments:\n",
+                "    production:\n",
+                "      mysql:\n",
+                "        main:\n",
+                "          database: {}\n",
+                "          username: {}\n",
+                "          password:\n",
+                "            file: .secrets/mysql-user\n",
+                "          root_password:\n",
+                "            file: .secrets/mysql-root\n",
             ),
             database, username,
         )
@@ -436,9 +436,9 @@ async fn mysql_create_metadata_update_and_delete_are_checkpointed_without_secret
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mysql: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mysql: {}\n",
             "removed:\n",
             "  - from: mysql.main\n",
             "    destroy: true\n",
@@ -521,16 +521,16 @@ async fn mariadb_create_metadata_update_and_delete_are_checkpointed_without_secr
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    mariadb:\n",
-                "      main:\n",
-                "        database: {}\n",
-                "        username: {}\n",
-                "        password:\n",
-                "          file: .secrets/mariadb-user\n",
-                "        root_password:\n",
-                "          file: .secrets/mariadb-root\n",
+                "  environments:\n",
+                "    production:\n",
+                "      mariadb:\n",
+                "        main:\n",
+                "          database: {}\n",
+                "          username: {}\n",
+                "          password:\n",
+                "            file: .secrets/mariadb-user\n",
+                "          root_password:\n",
+                "            file: .secrets/mariadb-root\n",
             ),
             database, username,
         )
@@ -554,9 +554,9 @@ async fn mariadb_create_metadata_update_and_delete_are_checkpointed_without_secr
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mariadb: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mariadb: {}\n",
             "removed:\n",
             "  - from: mariadb.main\n",
             "    destroy: true\n",
@@ -618,16 +618,16 @@ async fn mariadb_unknown_create_outcome_keeps_the_journal_step_recoverable() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mariadb:\n",
-            "      main:\n",
-            "        database: app\n",
-            "        username: app\n",
-            "        password:\n",
-            "          file: .secrets/mariadb-user\n",
-            "        root_password:\n",
-            "          file: .secrets/mariadb-root\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mariadb:\n",
+            "        main:\n",
+            "          database: app\n",
+            "          username: app\n",
+            "          password:\n",
+            "            file: .secrets/mariadb-user\n",
+            "          root_password:\n",
+            "            file: .secrets/mariadb-root\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -706,14 +706,14 @@ async fn mongo_create_metadata_update_and_delete_are_checkpointed_without_secret
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    mongo:\n",
-                "      main:\n",
-                "        username: {}\n",
-                "        password:\n",
-                "          file: .secrets/mongo\n",
-                "        replica_sets: {}\n",
+                "  environments:\n",
+                "    production:\n",
+                "      mongo:\n",
+                "        main:\n",
+                "          username: {}\n",
+                "          password:\n",
+                "            file: .secrets/mongo\n",
+                "          replica_sets: {}\n",
             ),
             username, replica_sets,
         )
@@ -737,9 +737,9 @@ async fn mongo_create_metadata_update_and_delete_are_checkpointed_without_secret
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mongo: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mongo: {}\n",
             "removed:\n",
             "  - from: mongo.main\n",
             "    destroy: true\n",
@@ -798,14 +798,14 @@ async fn mongo_unknown_create_outcome_keeps_the_journal_step_recoverable() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mongo:\n",
-            "      main:\n",
-            "        username: app\n",
-            "        password:\n",
-            "          file: .secrets/mongo\n",
-            "        replica_sets: false\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mongo:\n",
+            "        main:\n",
+            "          username: app\n",
+            "          password:\n",
+            "            file: .secrets/mongo\n",
+            "          replica_sets: false\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -893,18 +893,20 @@ async fn libsql_updates_secrets_separately_and_replaces_nodes_delete_before_crea
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    libsql:\n",
-                "      main:\n",
-                "        description: {}\n",
-                "        username: {}\n",
-                "        password:\n",
-                "          file: .secrets/libsql\n",
-                "        node:\n",
+                "  environments:\n",
+                "    production:\n",
+                "      libsql:\n",
+                "        main:\n",
+                "          description: {}\n",
+                "          username: {}\n",
+                "          password:\n",
+                "            file: .secrets/libsql\n",
+                "          node:\n",
                 "{}",
             ),
-            description, username, node,
+            description,
+            username,
+            nest_yaml(node),
         )
     };
     fs::write(
@@ -950,9 +952,9 @@ async fn libsql_updates_secrets_separately_and_replaces_nodes_delete_before_crea
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql: {}\n",
             "removed:\n",
             "  - from: libsql.main\n",
             "    destroy: true\n",
@@ -1033,14 +1035,14 @@ async fn libsql_replacement_unknown_delete_keeps_the_old_identity_recoverable() 
         &config,
         concat!(
             "version: 1\n",
-            "project: { name: platform }\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql:\n",
-            "      main:\n",
-            "        username: app\n",
-            "        password: { file: password }\n",
-            "        node: { type: primary }\n",
+            "project:\n  name: platform\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql:\n",
+            "        main:\n",
+            "          username: app\n",
+            "          password: { file: password }\n",
+            "          node: { type: primary }\n",
         ),
     )
     .unwrap();
@@ -1050,16 +1052,16 @@ async fn libsql_replacement_unknown_delete_keeps_the_old_identity_recoverable() 
         &config,
         concat!(
             "version: 1\n",
-            "project: { name: platform }\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql:\n",
-            "      main:\n",
-            "        username: app\n",
-            "        password: { file: password }\n",
-            "        node:\n",
-            "          type: replica\n",
-            "          primary_url: http://primary.internal\n",
+            "project:\n  name: platform\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql:\n",
+            "        main:\n",
+            "          username: app\n",
+            "          password: { file: password }\n",
+            "          node:\n",
+            "            type: replica\n",
+            "            primary_url: http://primary.internal\n",
         ),
     )
     .unwrap();
@@ -1129,14 +1131,14 @@ async fn libsql_replacement_checkpoints_delete_before_an_uncertain_create_prefli
         &config,
         concat!(
             "version: 1\n",
-            "project: { name: platform }\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql:\n",
-            "      main:\n",
-            "        username: app\n",
-            "        password: { file: password }\n",
-            "        node: { type: primary }\n",
+            "project:\n  name: platform\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql:\n",
+            "        main:\n",
+            "          username: app\n",
+            "          password: { file: password }\n",
+            "          node: { type: primary }\n",
         ),
     )
     .unwrap();
@@ -1146,16 +1148,16 @@ async fn libsql_replacement_checkpoints_delete_before_an_uncertain_create_prefli
         &config,
         concat!(
             "version: 1\n",
-            "project: { name: platform }\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql:\n",
-            "      main:\n",
-            "        username: app\n",
-            "        password: { file: password }\n",
-            "        node:\n",
-            "          type: replica\n",
-            "          primary_url: http://primary.internal\n",
+            "project:\n  name: platform\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql:\n",
+            "        main:\n",
+            "          username: app\n",
+            "          password: { file: password }\n",
+            "          node:\n",
+            "            type: replica\n",
+            "            primary_url: http://primary.internal\n",
         ),
     )
     .unwrap();
@@ -1324,16 +1326,16 @@ async fn mysql_unknown_create_outcome_keeps_the_journal_step_recoverable() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mysql:\n",
-            "      main:\n",
-            "        database: app\n",
-            "        username: app\n",
-            "        password:\n",
-            "          file: .secrets/mysql-user\n",
-            "        root_password:\n",
-            "          file: .secrets/mysql-root\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mysql:\n",
+            "        main:\n",
+            "          database: app\n",
+            "          username: app\n",
+            "          password:\n",
+            "            file: .secrets/mysql-user\n",
+            "          root_password:\n",
+            "            file: .secrets/mysql-root\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1408,16 +1410,16 @@ async fn mysql_invalid_create_identity_keeps_the_journal_step_recoverable() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    mysql:\n",
-            "      main:\n",
-            "        database: app\n",
-            "        username: app\n",
-            "        password:\n",
-            "          file: .secrets/mysql-user\n",
-            "        root_password:\n",
-            "          file: .secrets/mysql-root\n",
+            "  environments:\n",
+            "    production:\n",
+            "      mysql:\n",
+            "        main:\n",
+            "          database: app\n",
+            "          username: app\n",
+            "          password:\n",
+            "            file: .secrets/mysql-user\n",
+            "          root_password:\n",
+            "            file: .secrets/mysql-root\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1559,11 +1561,11 @@ async fn deploy_unknown_outcome_keeps_the_journal_step_recoverable() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        replicas: 1\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          replicas: 1\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1618,12 +1620,12 @@ async fn redis_password_rotation_uses_the_new_one_shot_secret_value() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    redis:\n",
-            "      cache:\n",
-            "        password:\n",
-            "          file: .secrets/redis\n",
+            "  environments:\n",
+            "    production:\n",
+            "      redis:\n",
+            "        cache:\n",
+            "          password:\n",
+            "            file: .secrets/redis\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1697,14 +1699,14 @@ async fn application_environment_rotation_preserves_unowned_remote_entries() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        environment:\n",
-            "          TOKEN:\n",
-            "            secret:\n",
-            "              file: .secrets/token\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          environment:\n",
+            "            TOKEN:\n",
+            "              secret:\n",
+            "                file: .secrets/token\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -1833,14 +1835,14 @@ fn write_libsql_primary_config(workspace: &std::path::Path, secret: &str) -> std
         &config,
         concat!(
             "version: 1\n",
-            "project: { name: platform }\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql:\n",
-            "      main:\n",
-            "        username: app\n",
-            "        password: { file: password }\n",
-            "        node: { type: primary }\n",
+            "project:\n  name: platform\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql:\n",
+            "        main:\n",
+            "          username: app\n",
+            "          password: { file: password }\n",
+            "          node: { type: primary }\n",
         ),
     )
     .unwrap();
@@ -2015,7 +2017,7 @@ async fn project_apply_checkpoints_and_the_next_plan_converges() {
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\n  description: Managed\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  description: Managed\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
     let client = server.client();
@@ -2070,7 +2072,7 @@ async fn project_default_environment_is_checkpointed_without_a_duplicate_create(
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production: {}\n",
     )
     .expect("configuration fixture is writable");
     let client = server.client();
@@ -2127,16 +2129,16 @@ async fn port_create_checkpoints_complete_fields_without_deploying() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        ports:\n",
-            "          http:\n",
-            "            published_port: 8080\n",
-            "            target_port: 80\n",
-            "            publish_mode: ingress\n",
-            "            protocol: tcp\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          ports:\n",
+            "            http:\n",
+            "              published_port: 8080\n",
+            "              target_port: 80\n",
+            "              publish_mode: ingress\n",
+            "              protocol: tcp\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2213,16 +2215,16 @@ async fn port_update_uses_a_fresh_read_and_complete_replacement_without_deployin
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    applications:\n",
-                "      api:\n",
-                "        ports:\n",
-                "          http:\n",
-                "            published_port: 8080\n",
-                "            target_port: {}\n",
-                "            publish_mode: ingress\n",
-                "            protocol: tcp\n",
+                "  environments:\n",
+                "    production:\n",
+                "      applications:\n",
+                "        api:\n",
+                "          ports:\n",
+                "            http:\n",
+                "              published_port: 8080\n",
+                "              target_port: {}\n",
+                "              publish_mode: ingress\n",
+                "              protocol: tcp\n",
             ),
             target,
         )
@@ -2318,8 +2320,9 @@ async fn port_containment_change_deletes_before_creating_under_the_new_applicati
         } else {
             "      worker: {}\n"
         };
+        let fragment = nest_yaml(&format!("{api}{worker}"));
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n{api}{worker}"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n{fragment}"
         )
     };
     fs::write(&config, port_config(false)).expect("initial configuration fixture is writable");
@@ -2359,9 +2362,9 @@ async fn project_default_environment_is_configured_after_adoption() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    description: Managed\n",
+            "  environments:\n",
+            "    production:\n",
+            "      description: Managed\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2401,7 +2404,7 @@ async fn non_default_environment_is_created_under_the_checkpointed_project() {
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  staging: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    staging: {}\n",
     )
     .expect("configuration fixture is writable");
 
@@ -2452,10 +2455,10 @@ async fn application_is_created_under_the_checkpointed_environment() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api: {}\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2525,24 +2528,24 @@ async fn all_mvp_resources_are_created_and_checkpointed_in_dependency_order() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api: {}\n",
-            "    postgres:\n",
-            "      main:\n",
-            "        database: app\n",
-            "        username: app\n",
-            "        password:\n",
-            "          file: .secrets/postgres\n",
-            "    redis:\n",
-            "      cache:\n",
-            "        password:\n",
-            "          file: .secrets/redis\n",
-            "    domains:\n",
-            "      public:\n",
-            "        host: api.example.test\n",
-            "        application: application.api\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api: {}\n",
+            "      postgres:\n",
+            "        main:\n",
+            "          database: app\n",
+            "          username: app\n",
+            "          password:\n",
+            "            file: .secrets/postgres\n",
+            "      redis:\n",
+            "        cache:\n",
+            "          password:\n",
+            "            file: .secrets/redis\n",
+            "      domains:\n",
+            "        public:\n",
+            "          host: api.example.test\n",
+            "          application: application.api\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2607,30 +2610,30 @@ async fn independent_database_mutations_overlap_and_checkpoint_a_successful_sibl
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    postgres:\n",
-            "      main:\n",
-            "        database: app\n",
-            "        username: app\n",
-            "        password:\n",
-            "          file: .secrets/postgres\n",
-            "    redis:\n",
-            "      cache:\n",
-            "        password:\n",
-            "          file: .secrets/redis\n",
-            "    mariadb:\n",
-            "      records:\n",
-            "        database: records\n",
-            "        username: records\n",
-            "        password:\n",
-            "          file: .secrets/mariadb\n",
-            "    mongo:\n",
-            "      documents:\n",
-            "        username: documents\n",
-            "        password:\n",
-            "          file: .secrets/mongo\n",
-            "        replica_sets: false\n",
+            "  environments:\n",
+            "    production:\n",
+            "      postgres:\n",
+            "        main:\n",
+            "          database: app\n",
+            "          username: app\n",
+            "          password:\n",
+            "            file: .secrets/postgres\n",
+            "      redis:\n",
+            "        cache:\n",
+            "          password:\n",
+            "            file: .secrets/redis\n",
+            "      mariadb:\n",
+            "        records:\n",
+            "          database: records\n",
+            "          username: records\n",
+            "          password:\n",
+            "            file: .secrets/mariadb\n",
+            "      mongo:\n",
+            "        documents:\n",
+            "          username: documents\n",
+            "          password:\n",
+            "            file: .secrets/mongo\n",
+            "          replica_sets: false\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2730,10 +2733,10 @@ async fn database_create_without_required_inputs_is_blocked_before_mutation() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    postgres:\n",
-            "      main: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      postgres:\n",
+            "        main: {}\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2777,20 +2780,20 @@ async fn configured_application_is_checkpointed_then_configured_and_deployed() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        description: API\n",
-            "        replicas: 2\n",
-            "        source:\n",
-            "          type: github\n",
-            "          repository: legalterlaw/platform\n",
-            "          branch: main\n",
-            "        environment:\n",
-            "          TOKEN:\n",
-            "            secret:\n",
-            "              file: .secrets/token\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          description: API\n",
+            "          replicas: 2\n",
+            "          source:\n",
+            "            type: github\n",
+            "            repository: legalterlaw/platform\n",
+            "            branch: main\n",
+            "          environment:\n",
+            "            TOKEN:\n",
+            "              secret:\n",
+            "                file: .secrets/token\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -2863,15 +2866,15 @@ async fn changed_application_configuration_updates_then_deploys_without_recreati
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    applications:\n",
-                "      api:\n",
-                "        replicas: {}\n",
-                "        source:\n",
-                "          type: github\n",
-                "          repository: legalterlaw/platform\n",
-                "          branch: {}\n",
+                "  environments:\n",
+                "    production:\n",
+                "      applications:\n",
+                "        api:\n",
+                "          replicas: {}\n",
+                "          source:\n",
+                "            type: github\n",
+                "            repository: legalterlaw/platform\n",
+                "            branch: {}\n",
             ),
             replicas, branch,
         )
@@ -2928,7 +2931,7 @@ async fn project_update_checkpoints_and_the_next_plan_converges() {
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\n  description: Old\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  description: Old\n  environments: {}\n",
     )
     .expect("initial configuration fixture is writable");
     let client = server.client();
@@ -2937,7 +2940,7 @@ async fn project_update_checkpoints_and_the_next_plan_converges() {
         .expect("initial project apply succeeds");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\n  description: New\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  description: New\n  environments: {}\n",
     )
     .expect("updated configuration fixture is writable");
 
@@ -2981,7 +2984,7 @@ async fn state_only_project_move_preserves_identity_and_protection_without_remot
             "version: 1\n",
             "project:\n  name: platform\n",
             "  lifecycle:\n    protect: true\n",
-            "environments: {}\n",
+            "  environments: {}\n",
         ),
     )
     .unwrap();
@@ -2993,7 +2996,7 @@ async fn state_only_project_move_preserves_identity_and_protection_without_remot
             "version: 1\n",
             "project:\n  name: renamed\n",
             "  lifecycle:\n    protect: true\n",
-            "environments: {}\n",
+            "  environments: {}\n",
             "moves:\n",
             "  - from: project.platform\n",
             "    to: project.renamed\n",
@@ -3059,7 +3062,7 @@ async fn project_move_with_remote_update_updates_once_then_converges() {
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\n  description: Old\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  description: Old\n  environments: {}\n",
     )
     .unwrap();
     let client = server.client();
@@ -3069,7 +3072,7 @@ async fn project_move_with_remote_update_updates_once_then_converges() {
         concat!(
             "version: 1\n",
             "project:\n  name: renamed\n  description: New\n",
-            "environments: {}\n",
+            "  environments: {}\n",
             "moves:\n",
             "  - from: project.platform\n",
             "    to: project.renamed\n",
@@ -3168,14 +3171,14 @@ async fn domain_host_update_uses_the_typed_in_place_mutation() {
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    applications:\n",
-                "      api: {}\n",
-                "    domains:\n",
-                "      public:\n",
-                "        host: {}\n",
-                "        application: application.api\n",
+                "  environments:\n",
+                "    production:\n",
+                "      applications:\n",
+                "        api: {}\n",
+                "      domains:\n",
+                "        public:\n",
+                "          host: {}\n",
+                "          application: application.api\n",
             ),
             "{}", host,
         )
@@ -3217,7 +3220,7 @@ async fn protection_change_is_a_state_only_checkpoint_without_remote_mutation() 
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments: {}\n",
     )
     .expect("initial configuration fixture is writable");
     let client = server.client();
@@ -3232,7 +3235,7 @@ async fn protection_change_is_a_state_only_checkpoint_without_remote_mutation() 
             "  name: platform\n",
             "  lifecycle:\n",
             "    protect: true\n",
-            "environments: {}\n",
+            "  environments: {}\n",
         ),
     )
     .expect("protected configuration fixture is writable");
@@ -3397,21 +3400,21 @@ fn domain_configuration(destroy: Option<bool>) -> String {
     let mut configuration = concat!(
         "version: 1\n",
         "project:\n  name: platform\n",
-        "environments:\n",
-        "  production:\n",
-        "    applications:\n",
-        "      api: {}\n",
+        "  environments:\n",
+        "    production:\n",
+        "      applications:\n",
+        "        api: {}\n",
     )
     .to_owned();
     match destroy {
         None => configuration.push_str(concat!(
-            "    domains:\n",
-            "      public:\n",
-            "        host: api.example.test\n",
-            "        application: application.api\n",
+            "      domains:\n",
+            "        public:\n",
+            "          host: api.example.test\n",
+            "          application: application.api\n",
         )),
         Some(destroy) => configuration.push_str(&format!(
-            "    domains: {{}}\nremoved:\n  - from: domain.public\n    destroy: {destroy}\n"
+            "      domains: {{}}\nremoved:\n  - from: domain.public\n    destroy: {destroy}\n"
         )),
     }
 
@@ -3457,15 +3460,15 @@ fn redirect_configuration(replacement: &str, permanent: bool) -> String {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        redirects:\n",
-            "          www:\n",
-            "            regex: \"^/old\"\n",
-            "            replacement: \"{}\"\n",
-            "            permanent: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          redirects:\n",
+            "            www:\n",
+            "              regex: \"^/old\"\n",
+            "              replacement: \"{}\"\n",
+            "              permanent: {}\n",
         ),
         replacement, permanent,
     )
@@ -3637,8 +3640,9 @@ async fn redirect_containment_change_deletes_before_creating_under_the_new_appli
                 String::from("      worker: {}\n"),
             )
         };
+        let fragment = nest_yaml(&format!("{api}{worker}"));
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n{api}{worker}"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n{fragment}"
         )
     };
     fs::write(&config, configuration(false)).expect("initial configuration is writable");
@@ -3694,10 +3698,10 @@ async fn removed_redirect_is_deleted_and_forgotten_durably() {
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api: {}\n",
             "removed:\n",
             "  - from: redirect.www\n",
             "    destroy: true\n",
@@ -3734,16 +3738,17 @@ fn security_configuration(username: &str, password_file: Option<&str>) -> String
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        security:\n",
-            "          admin:\n",
-            "            username: {}\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          security:\n",
+            "            admin:\n",
+            "              username: {}\n",
             "{}",
         ),
-        username, password,
+        username,
+        nest_yaml(&password),
     )
 }
 
@@ -3926,4 +3931,9 @@ async fn security_update_without_a_declared_password_fails_before_any_mutation()
         |request| !request.contains("security-initial-password-canary")
             || request.starts_with("POST /api/security.create")
     ));
+}
+
+/// Indents a YAML fragment so it nests one level deeper under `project`.
+fn nest_yaml(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
 }

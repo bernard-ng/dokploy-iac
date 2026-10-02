@@ -331,12 +331,12 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Security executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Security integration check
-    applications:
-      api: $api_security
-      worker: $worker_security
+  environments:
+    production:
+      description: Managed by the Phase 8 Security integration check
+      applications:
+        api: $api_security
+        worker: $worker_security
 EOF
     chmod 600 "$config_file"
 }
@@ -347,12 +347,12 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Security executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Security integration check
-    applications:
-      api: {}
-      worker: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 Security integration check
+      applications:
+        api: {}
+        worker: {}
 removed:
   - from: security.admin
     destroy: true

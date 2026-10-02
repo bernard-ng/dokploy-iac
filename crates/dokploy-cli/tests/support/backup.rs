@@ -725,10 +725,16 @@ pub fn backup_state(
 
 /// A configuration with the standard database targets and the given backups.
 pub fn config(backups: &str) -> String {
+    let backups = nest_yaml(backups);
     format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    postgres:\n      main: {{}}\n      other: {{}}\n    mysql:\n      sql: {{}}\n    backups:\n{backups}"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      postgres:\n        main: {{}}\n        other: {{}}\n      mysql:\n        sql: {{}}\n      backups:\n{backups}"
     )
 }
 
 /// The standard disabled Backup configuration under `postgres.main`.
 pub const NIGHTLY: &str = "      nightly:\n        target: postgres.main\n        destination: { name: offsite }\n        schedule: \"0 3 * * *\"\n        prefix: nightly\n        database: app\n        enabled: false\n        keep_latest: 7\n";
+
+/// Indents a YAML fragment so it nests one level deeper under `project`.
+pub fn nest_yaml(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
+}

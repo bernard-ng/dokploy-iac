@@ -341,3 +341,8 @@ pub fn schedule_record(
     })
     .to_string()
 }
+
+/// Indents a YAML fragment so it nests one level deeper under `project`.
+pub fn nest_yaml(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
+}

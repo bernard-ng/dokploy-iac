@@ -1324,6 +1324,7 @@ pub enum ValidationIssue {
     InvalidBackupTarget,
     InvalidBackupField,
     DuplicateBackupCollision,
+    EnvironmentsMustNestUnderProject,
 }
 
 impl ValidationIssue {
@@ -1377,6 +1378,7 @@ impl ValidationIssue {
             Self::InvalidBackupTarget => "DOKCFG060",
             Self::InvalidBackupField => "DOKCFG061",
             Self::DuplicateBackupCollision => "DOKCFG062",
+            Self::EnvironmentsMustNestUnderProject => "DOKCFG032",
         }
     }
 
@@ -1463,6 +1465,9 @@ impl ValidationIssue {
             }
             Self::DuplicateBackupCollision => {
                 "Backup target, destination, prefix, and database are duplicated"
+            }
+            Self::EnvironmentsMustNestUnderProject => {
+                "`environments` moved under `project`; nest the block as `project.environments`"
             }
         }
     }

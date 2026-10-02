@@ -20,7 +20,7 @@ const SECTIONS: [(&str, &str); 7] = [
 
 fn source(section: &str, body: &str) -> String {
     format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {section}:\n      main:\n        lifecycle:\n          protect: true\n        {body}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      {section}:\n        main:\n          lifecycle:\n            protect: true\n          {body}\n"
     )
 }
 
@@ -73,7 +73,7 @@ fn every_supported_service_kind_parses_local_named_and_unmanaged_server_placemen
 
 #[test]
 fn typed_accessors_expose_the_same_field_for_each_kind() {
-    let text = "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      main:\n        server: { name: edge-1 }\n        lifecycle: { protect: true }\n    postgres:\n      main:\n        server: { name: edge-1 }\n    mysql:\n      main:\n        server: { name: edge-1 }\n    mariadb:\n      main:\n        server: { name: edge-1 }\n    mongo:\n      main:\n        server: { name: edge-1 }\n    libsql:\n      main:\n        server: { name: edge-1 }\n    redis:\n      main:\n        server: { name: edge-1 }\n";
+    let text = "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        main:\n          server: { name: edge-1 }\n          lifecycle: { protect: true }\n      postgres:\n        main:\n          server: { name: edge-1 }\n      mysql:\n        main:\n          server: { name: edge-1 }\n      mariadb:\n        main:\n          server: { name: edge-1 }\n      mongo:\n        main:\n          server: { name: edge-1 }\n      libsql:\n        main:\n          server: { name: edge-1 }\n      redis:\n        main:\n          server: { name: edge-1 }\n";
     let config = DokployConfig::parse(text).expect("valid");
     let expected = Field::Set(ExternalSelector::named("edge-1"));
     let get = |section: &str| config.resource(&address(section)).unwrap();
@@ -163,7 +163,7 @@ fn service_server_diagnostics_reuse_the_selector_codes_and_never_echo_values() {
 fn service_server_can_be_ignored_by_lifecycle_rules() {
     for (section, _) in SECTIONS {
         let text = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {section}:\n      main:\n        server: {{ name: edge-1 }}\n        lifecycle:\n          protect: true\n          ignore_changes: [server]\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      {section}:\n        main:\n          server: {{ name: edge-1 }}\n          lifecycle:\n            protect: true\n            ignore_changes: [server]\n"
         );
         DokployConfig::parse(&text).unwrap_or_else(|error| panic!("{section}: {error:?}"));
     }
@@ -207,7 +207,7 @@ fn debug_output_redacts_service_selector_names() {
 
 #[test]
 fn canonical_writer_round_trips_service_selectors_deterministically() {
-    let text = "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      app:\n        server: { name: edge-1 }\n        lifecycle: { protect: true }\n    postgres:\n      main:\n        server: { local: true }\n    mysql:\n      main:\n        server: { name: edge-2 }\n    mariadb:\n      main:\n        server: { name: edge-3 }\n    mongo:\n      main:\n        server: { name: edge-4 }\n    libsql:\n      main:\n        server: { name: edge-5 }\n    redis:\n      main:\n        server: { name: edge-6 }\n";
+    let text = "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        app:\n          server: { name: edge-1 }\n          lifecycle: { protect: true }\n      postgres:\n        main:\n          server: { local: true }\n      mysql:\n        main:\n          server: { name: edge-2 }\n      mariadb:\n        main:\n          server: { name: edge-3 }\n      mongo:\n        main:\n          server: { name: edge-4 }\n      libsql:\n        main:\n          server: { name: edge-5 }\n      redis:\n        main:\n          server: { name: edge-6 }\n";
     let config = DokployConfig::parse(text).expect("valid");
     let first = render(&config).expect("renders");
     let reparsed = DokployConfig::parse(&first).expect("reparses");

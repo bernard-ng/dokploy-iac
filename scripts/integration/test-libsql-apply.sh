@@ -172,20 +172,20 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 LibSQL executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 LibSQL integration check
-    libsql:
-      main:
-        description: $description
-        username: $username
-        password:
-          env: PHASE8_LIBSQL_PASSWORD
-        node:
-          type: $node
+  environments:
+    production:
+      description: Managed by the Phase 8 LibSQL integration check
+      libsql:
+        main:
+          description: $description
+          username: $username
+          password:
+            env: PHASE8_LIBSQL_PASSWORD
+          node:
+            type: $node
 EOF
     if [[ "$node" == "replica" ]]; then
-        printf '          primary_url: http://primary.internal:8080\n' >>"$config_file"
+        printf '            primary_url: http://primary.internal:8080\n' >>"$config_file"
     fi
     chmod 600 "$config_file"
 }
@@ -309,10 +309,10 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 LibSQL executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 LibSQL integration check
-    libsql: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 LibSQL integration check
+      libsql: {}
 removed:
   - from: libsql.main
     destroy: true

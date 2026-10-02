@@ -315,12 +315,12 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Redirect executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Redirect integration check
-    applications:
-      api: $api_redirects
-      worker: $worker_redirects
+  environments:
+    production:
+      description: Managed by the Phase 8 Redirect integration check
+      applications:
+        api: $api_redirects
+        worker: $worker_redirects
 EOF
     chmod 600 "$config_file"
 }
@@ -331,12 +331,12 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Redirect executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Redirect integration check
-    applications:
-      api: {}
-      worker: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 Redirect integration check
+      applications:
+        api: {}
+        worker: {}
 removed:
   - from: redirect.legacy
     destroy: true

@@ -862,6 +862,7 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
         &document.project.lifecycle,
     );
 
+    let environments_start = output.len();
     if document.environments.is_empty() {
         output.push_str("environments: {}\n");
     } else {
@@ -953,6 +954,8 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
         collapse_empty_mapping(&mut output, item_start, 2, name.as_str());
     }
 
+    nest_under_project(&mut output, environments_start);
+
     if !document.moves.is_empty() {
         output.push_str("moves:\n");
         for (from, to) in &document.moves {
@@ -975,6 +978,17 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
     }
 
     output
+}
+
+/// Indents the rendered `environments` block so it sits under `project`.
+fn nest_under_project(output: &mut String, start: usize) {
+    let block = output.split_off(start);
+    for line in block.split_inclusive('\n') {
+        if line != "\n" {
+            output.push_str("  ");
+        }
+        output.push_str(line);
+    }
 }
 
 fn render_document_children<T>(
@@ -1336,6 +1350,7 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
         })
         .collect::<Vec<_>>();
 
+    let environments_start = output.len();
     if environments.is_empty() {
         output.push_str("environments: {}\n");
     } else {
@@ -1459,6 +1474,8 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             environment_address.name().as_str(),
         );
     }
+
+    nest_under_project(&mut output, environments_start);
 
     if !config.moves.is_empty() {
         output.push_str("moves:\n");

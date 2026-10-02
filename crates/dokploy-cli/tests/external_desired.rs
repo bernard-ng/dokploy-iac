@@ -20,9 +20,14 @@ fn api() -> ResourceAddress {
     "application.api".parse().unwrap()
 }
 
+fn nest(fragment: &str) -> String {
+    format!("  {}", fragment.replace('\n', "\n  "))
+}
+
 fn compile(application: &str) -> dokploy_cli::desired::CompiledDesired {
+    let application = nest(application);
     let config = DokployConfig::parse(&format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n{application}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n{application}\n"
     ))
     .expect("valid configuration");
     compile_desired(&config, digest()).expect("configuration compiles")

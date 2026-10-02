@@ -30,9 +30,10 @@ struct RawDocument {
     version: u32,
     #[schemars(with = "RawProject")]
     project: Spanned<RawProject>,
-    #[serde(default)]
-    #[schemars(with = "BTreeMap<String, RawEnvironment>")]
-    environments: BTreeMap<String, Spanned<RawEnvironment>>,
+    /// Detects the pre-nesting layout so it gets a dedicated diagnostic.
+    #[serde(default, rename = "environments")]
+    #[schemars(skip)]
+    legacy_environments: Option<Spanned<serde::de::IgnoredAny>>,
     #[serde(default)]
     #[schemars(with = "Vec<MoveDeclaration>")]
     moves: Vec<Spanned<MoveDeclaration>>,
@@ -52,6 +53,9 @@ struct RawProject {
     depends_on: Vec<ResourceAddress>,
     #[serde(default)]
     lifecycle: Lifecycle,
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawEnvironment>")]
+    environments: BTreeMap<String, Spanned<RawEnvironment>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -494,6 +498,17 @@ impl DokployConfig {
             return Err(ConfigError::UnsupportedVersion { found: raw.version });
         }
 
+        if let Some(legacy) = raw.legacy_environments {
+            let diagnostic = ValidationDiagnostic::new(
+                ValidationIssue::EnvironmentsMustNestUnderProject,
+                source_location(legacy.defined),
+            );
+            return Err(ConfigError::Invalid {
+                issues: vec![diagnostic.issue()],
+                diagnostics: vec![diagnostic],
+            });
+        }
+
         let mut resources = BTreeMap::new();
         let mut parents = BTreeMap::new();
         let mut locations = BTreeMap::new();
@@ -522,7 +537,7 @@ impl DokployConfig {
             );
         }
 
-        for (environment_name, environment) in raw.environments {
+        for (environment_name, environment) in project.environments {
             let environment_location = source_location(environment.defined);
             let environment = environment.value;
             let environment_address = address(

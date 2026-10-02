@@ -367,38 +367,38 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Schedule executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Schedule integration check
-    applications:
-      api: {}
-      worker: {}
-    compose:
-      web:
-        document:
-          file: compose.yaml
-    schedules:
-      nightly:
-        name: nightly-$run_id
-        target: application.$nightly_target
-        cron_expression: "$nightly_cron"
-        shell_type: bash
-        enabled: false
-        description: $nightly_description
-        timezone: $nightly_timezone
-        command:
-          file: $nightly_command_file
-        script:
-          file: $nightly_script_file
-      compose-job:
-        name: compose-job-$run_id
-        target: compose.web
-        service_name: web
-        cron_expression: "17 6 1 1 *"
-        shell_type: sh
-        enabled: false
-        command:
-          file: private/command-compose$reports
+  environments:
+    production:
+      description: Managed by the Phase 8 Schedule integration check
+      applications:
+        api: {}
+        worker: {}
+      compose:
+        web:
+          document:
+            file: compose.yaml
+      schedules:
+        nightly:
+          name: nightly-$run_id
+          target: application.$nightly_target
+          cron_expression: "$nightly_cron"
+          shell_type: bash
+          enabled: false
+          description: $nightly_description
+          timezone: $nightly_timezone
+          command:
+            file: $nightly_command_file
+          script:
+            file: $nightly_script_file
+        compose-job:
+          name: compose-job-$run_id
+          target: compose.web
+          service_name: web
+          cron_expression: "17 6 1 1 *"
+          shell_type: sh
+          enabled: false
+          command:
+            file: private/command-compose$reports
 $removed_block
 EOF
     chmod 600 "$config_file"

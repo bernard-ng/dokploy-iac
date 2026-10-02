@@ -336,7 +336,7 @@ async fn removing_a_backup_and_its_target_deletes_the_backup_first() {
     apply_workspace(&client, &config_file).await.unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    postgres:\n      other: {}\n    mysql:\n      sql: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      postgres:\n        other: {}\n      mysql:\n        sql: {}\n",
     )
     .unwrap();
 

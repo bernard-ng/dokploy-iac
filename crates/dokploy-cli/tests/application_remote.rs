@@ -176,15 +176,19 @@ fn base_state(server: &TestServer) -> StateFile {
 }
 
 fn config(application: &str) -> String {
+    let application = application
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
+  environments:
+    production:
+      applications:
+        api:
 {application}
 "#
     )
@@ -264,14 +268,14 @@ async fn combined_discovery_plans_an_absent_domain_under_a_managed_application()
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {}
-    domains:
-      public:
-        host: api.example.test
-        application: application.api
+  environments:
+    production:
+      applications:
+        api: {}
+      domains:
+        public:
+          host: api.example.test
+          application: application.api
 "#,
     );
 
@@ -936,11 +940,11 @@ async fn same_address_reparenting_validates_the_stored_physical_environment() {
 version: 1
 project:
   name: platform
-environments:
-  new:
-    applications:
-      api: {}
-  old: {}
+  environments:
+    new:
+      applications:
+        api: {}
+    old: {}
 "#,
     );
 
@@ -1026,11 +1030,11 @@ async fn same_address_reparenting_reports_a_conclusive_target_name_collision() {
 version: 1
 project:
   name: platform
-environments:
-  new:
-    applications:
-      api: {}
-  old: {}
+  environments:
+    new:
+      applications:
+        api: {}
+    old: {}
 "#,
     );
 
@@ -1114,11 +1118,11 @@ async fn managed_404_and_unavailable_reparent_target_fail_closed() {
 version: 1
 project:
   name: platform
-environments:
-  new:
-    applications:
-      api: {}
-  old: {}
+  environments:
+    new:
+      applications:
+        api: {}
+    old: {}
 "#,
     );
 
@@ -1206,11 +1210,11 @@ async fn managed_404_and_target_search_with_the_same_stored_id_fail_closed() {
 version: 1
 project:
   name: platform
-environments:
-  new:
-    applications:
-      api: {}
-  old: {}
+  environments:
+    new:
+      applications:
+        api: {}
+    old: {}
 "#,
     );
 
@@ -1291,10 +1295,10 @@ async fn application_move_resolves_a_simultaneously_moved_environment_by_stored_
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {}
+  environments:
+    production:
+      applications:
+        api: {}
 moves:
   - from: environment.legacy
     to: environment.production
@@ -1352,10 +1356,10 @@ async fn persisted_application_move_observes_source_and_managed_target_idempoten
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {}
+  environments:
+    production:
+      applications:
+        api: {}
 moves:
   - from: application.backend
     to: application.api
@@ -1416,8 +1420,8 @@ async fn state_backed_application_removal_is_observed_by_remote_id() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 removed:
   - from: application.legacy
     destroy: true
@@ -1455,8 +1459,8 @@ async fn persisted_application_removal_needs_no_parent_or_remote_probe() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 removed:
   - from: application.legacy
     destroy: true
@@ -1636,13 +1640,13 @@ async fn duplicate_application_ids_across_environments_are_rejected() {
 version: 1
 project:
   name: platform
-environments:
-  one:
-    applications:
-      api: {}
-  two:
-    applications:
-      worker: {}
+  environments:
+    one:
+      applications:
+        api: {}
+    two:
+      applications:
+        worker: {}
 "#,
     );
 

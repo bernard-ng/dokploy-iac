@@ -132,7 +132,7 @@ fn base_state(server: &TestServer) -> StateFile {
 
 fn protected_config(description: &str) -> DokployConfig {
     DokployConfig::parse(&format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      web:\n        description: {description:?}\n        lifecycle:\n          protect: true\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        web:\n          description: {description:?}\n          lifecycle:\n            protect: true\n"
     ))
     .expect("protected Compose configuration is valid")
 }
@@ -166,13 +166,13 @@ async fn authoritative_absence_allows_compose_create_with_an_opaque_document() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    compose:
-      web:
-        description: Web stack
-        document:
-          file: compose.yaml
+  environments:
+    production:
+      compose:
+        web:
+          description: Web stack
+          document:
+            file: compose.yaml
 "#,
     )
     .expect("configuration is valid");
@@ -311,13 +311,14 @@ async fn opaque_document_ownership_fails_closed_for_a_non_raw_compose_source() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    compose:
-      web:
-        description: Web stack
-        document: { file: compose.yaml }
+project:
+  name: platform
+  environments:
+    production:
+      compose:
+        web:
+          description: Web stack
+          document: { file: compose.yaml }
 "#,
     )
     .expect("configuration is valid");

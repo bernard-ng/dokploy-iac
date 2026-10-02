@@ -213,8 +213,9 @@ fn resource(
 }
 
 fn config(application: &str) -> String {
+    let application = format!("  {}", application.replace('\n', "\n  "));
     format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n{application}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n{application}\n"
     )
 }
 
@@ -479,7 +480,7 @@ async fn replacement_with_durable_dependents_is_refused_before_any_mutation() {
     let server = TestServer::respond_in_sequence(responses);
     let (directory, config_file) = workspace(
         &server,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        server:\n          name: edge-2\n      worker:\n        depends_on: [application.api]\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          server:\n            name: edge-2\n        worker:\n          depends_on: [application.api]\n",
         vec![
             (
                 "application.api",

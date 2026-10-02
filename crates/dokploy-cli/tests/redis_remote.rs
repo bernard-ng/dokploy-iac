@@ -176,15 +176,19 @@ fn base_state(server: &TestServer) -> StateFile {
 }
 
 fn config(redis: &str) -> String {
+    let redis = redis
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    redis:
-      cache:
+  environments:
+    production:
+      redis:
+        cache:
 {redis}
 "#
     )
@@ -496,12 +500,13 @@ async fn redis_physical_reparent_is_rejected_before_any_redis_request() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production: {}
-  staging:
-    redis:
-      cache: {}
+project:
+  name: platform
+  environments:
+    production: {}
+    staging:
+      redis:
+        cache: {}
 "#,
     );
 
@@ -521,20 +526,22 @@ async fn redis_move_and_state_backed_removal_preserve_managed_identity() {
     for yaml in [
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    redis:
-      cache: {}
+project:
+  name: platform
+  environments:
+    production:
+      redis:
+        cache: {}
 moves:
   - from: redis.legacy
     to: redis.cache
 "#,
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production: {}
+project:
+  name: platform
+  environments:
+    production: {}
 removed:
   - from: redis.legacy
     destroy: true
@@ -596,9 +603,10 @@ async fn persisted_redis_removal_needs_no_parent_or_remote_probe() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production: {}
+project:
+  name: platform
+  environments:
+    production: {}
 removed:
   - from: redis.legacy
     destroy: true
@@ -701,11 +709,12 @@ async fn environment_move_keeps_redis_on_the_same_physical_parent() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    redis:
-      cache: {}
+project:
+  name: platform
+  environments:
+    production:
+      redis:
+        cache: {}
 moves:
   - from: environment.legacy
     to: environment.production
@@ -858,14 +867,15 @@ async fn duplicate_redis_identity_across_environments_is_rejected() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    redis:
-      cache: {}
-  staging:
-    redis:
-      sessions: {}
+project:
+  name: platform
+  environments:
+    production:
+      redis:
+        cache: {}
+    staging:
+      redis:
+        sessions: {}
 "#,
     );
 

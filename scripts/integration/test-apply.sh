@@ -148,25 +148,25 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 6 executor validation
-environments:
-  production:
-    description: Managed by the Phase 6 integration check
-    applications:
-      api: {}
-    postgres:
-      main:
-        database: phase6
-        username: phase6
-        password:
-          env: PHASE6_POSTGRES_PASSWORD
-    redis:
-      cache:
-        password:
-          env: PHASE6_REDIS_PASSWORD
-    domains:
-      public:
-        host: $project_name.example.test
-        application: application.api
+  environments:
+    production:
+      description: Managed by the Phase 6 integration check
+      applications:
+        api: {}
+      postgres:
+        main:
+          database: phase6
+          username: phase6
+          password:
+            env: PHASE6_POSTGRES_PASSWORD
+      redis:
+        cache:
+          password:
+            env: PHASE6_REDIS_PASSWORD
+      domains:
+        public:
+          host: $project_name.example.test
+          application: application.api
 EOF
 chmod 600 "$config_file"
 

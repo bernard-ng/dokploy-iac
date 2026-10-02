@@ -358,14 +358,14 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Compose executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Compose integration check
-    compose:
-      $compose_name:
-        description: $description
-        document:
-          env: PHASE8_COMPOSE_DOCUMENT
+  environments:
+    production:
+      description: Managed by the Phase 8 Compose integration check
+      compose:
+        $compose_name:
+          description: $description
+          document:
+            env: PHASE8_COMPOSE_DOCUMENT
 EOF
     chmod 600 "$config_file"
 }
@@ -376,10 +376,10 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Compose executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Compose integration check
-    compose: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 Compose integration check
+      compose: {}
 removed:
   - from: compose.$compose_name
     destroy: true

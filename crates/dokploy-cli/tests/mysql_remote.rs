@@ -163,15 +163,19 @@ fn base_state(server: &TestServer) -> StateFile {
 }
 
 fn config(mysql: &str) -> String {
+    let mysql = mysql
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mysql:
-      main:
+  environments:
+    production:
+      mysql:
+        main:
 {mysql}
 "#
     )

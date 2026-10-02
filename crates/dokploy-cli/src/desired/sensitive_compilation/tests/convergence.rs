@@ -9,16 +9,16 @@ fn mysql_passwords_have_independent_receipts_and_digest_identity() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mysql:
-      primary:
-        database: app
-        username: app
-        password:
-          env: MYSQL_PASSWORD
-        root_password:
-          env: MYSQL_ROOT_PASSWORD
+  environments:
+    production:
+      mysql:
+        primary:
+          database: app
+          username: app
+          password:
+            env: MYSQL_PASSWORD
+          root_password:
+            env: MYSQL_ROOT_PASSWORD
 "#,
     )
     .unwrap();
@@ -124,14 +124,14 @@ fn content_key_and_descriptor_rotation_have_the_required_digest_effects() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          TOKEN:
-            secret:
-              env: {environment_name}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            TOKEN:
+              secret:
+                env: {environment_name}
 "#
         ))
         .unwrap()
@@ -213,13 +213,13 @@ fn receipt_converges_and_raw_value_never_reaches_debug_plan_state_or_journal() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          TOKEN:
-            value: {canary}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            TOKEN:
+              value: {canary}
 "#
     ))
     .unwrap();
@@ -371,12 +371,12 @@ fn content_rotation_plans_exactly_one_sensitive_update() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    redis:
-      cache:
-        password:
-          env: CACHE_PASSWORD
+  environments:
+    production:
+      redis:
+        cache:
+          password:
+            env: CACHE_PASSWORD
 "#,
     )
     .unwrap();

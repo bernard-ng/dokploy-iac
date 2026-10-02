@@ -358,46 +358,46 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Backup validation
-environments:
-  production:
-    description: Managed by the Phase 8 Backup integration check
-    postgres:
-      main:
-        database: app
-        username: app
-        password:
-          env: PHASE8_BACKUP_POSTGRES_PASSWORD
-    mysql:
-      sql:
-        database: app
-        username: app
-        password:
-          env: PHASE8_BACKUP_MYSQL_PASSWORD
-        root_password:
-          env: PHASE8_BACKUP_MYSQL_ROOT_PASSWORD
-    backups:
-      my:
-        target: mysql.sql
-        destination:
-          name: $my_destination
-        schedule: "29 4 * * 2"
-        prefix: "/my-$run_id/"
-        database: app
-        enabled: false
-        keep_latest: 3
+  environments:
+    production:
+      description: Managed by the Phase 8 Backup integration check
+      postgres:
+        main:
+          database: app
+          username: app
+          password:
+            env: PHASE8_BACKUP_POSTGRES_PASSWORD
+      mysql:
+        sql:
+          database: app
+          username: app
+          password:
+            env: PHASE8_BACKUP_MYSQL_PASSWORD
+          root_password:
+            env: PHASE8_BACKUP_MYSQL_ROOT_PASSWORD
+      backups:
+        my:
+          target: mysql.sql
+          destination:
+            name: $my_destination
+          schedule: "29 4 * * 2"
+          prefix: "/my-$run_id/"
+          database: app
+          enabled: false
+          keep_latest: 3
 EOF
         if [[ "$include_pg" == true ]]; then
             cat <<EOF
-      pg:
-        target: $pg_target
-        destination:
-          name: $pg_destination
-        schedule: "$pg_schedule"
-        prefix: "$pg_prefix"
-        database: $pg_database
-        enabled: false
-        keep_latest: $pg_keep
-        include_encryption_key: $pg_include
+        pg:
+          target: $pg_target
+          destination:
+            name: $pg_destination
+          schedule: "$pg_schedule"
+          prefix: "$pg_prefix"
+          database: $pg_database
+          enabled: false
+          keep_latest: $pg_keep
+          include_encryption_key: $pg_include
 EOF
         fi
         if [[ -n "$removed_block" ]]; then
