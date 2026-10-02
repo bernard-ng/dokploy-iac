@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `cargo xtask goldens` and `goldens/`: a ledger of the 891 first-engine tests that
+  define "done" for each ported kind (ADR 0016). Each test is mined (operations,
+  expected request lines, fixtures, canned data) and classified `pending`, `covered`,
+  or `dropped`; `cargo xtask goldens --check` runs in CI and refuses a legacy test
+  that is unlisted, stale, or deleted while still `pending`.
+
 - `dokploy-spec` crate and `specs/`: the kind spec format (grammar v0) with a parser,
   structural lint, cross-spec registry, and an OpenAPI coverage ledger, plus working
   specs for `registry`, `redirect`, and partial `application`, `environment`, and

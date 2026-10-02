@@ -1,0 +1,274 @@
+{
+  "bucket": "port",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/port_remote::authoritative_parent_absence_plans_port_creation",
+      "file": "crates/dokploy-cli/tests/port_remote.rs",
+      "test": "authoritative_parent_absence_plans_port_creation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_PORTS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/port_remote::complete_field_change_plans_one_in_place_update",
+      "file": "crates/dokploy-cli/tests/port_remote.rs",
+      "test": "complete_field_change_plans_one_in_place_update",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PORT",
+        "PORTS",
+        "PROJECTS"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/port_remote::duplicate_parent_collision_keys_fail_closed",
+      "file": "crates/dokploy-cli/tests/port_remote.rs",
+      "test": "duplicate_parent_collision_keys_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PORT",
+        "PROJECTS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/port_remote::managed_port_requires_direct_and_parent_collection_agreement",
+      "file": "crates/dokploy-cli/tests/port_remote.rs",
+      "test": "managed_port_requires_direct_and_parent_collection_agreement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PORT",
+        "PORTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/port_remote::port_one_400_proves_absence_only_with_authoritative_parent_absence",
+      "file": "crates/dokploy-cli/tests/port_remote.rs",
+      "test": "port_one_400_proves_absence_only_with_authoritative_parent_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_PORTS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_port::live_port_adapter_converges_without_deploying_its_application",
+      "file": "crates/dokploy-sdk/tests/live_port.rs",
+      "test": "live_port_adapter_converges_without_deploying_its_application",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::application_one_is_the_authoritative_bounded_port_collection",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "application_one_is_the_authoritative_bounded_port_collection",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one"
+      ],
+      "requests": [
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "PORT_RESPONSE"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_create_validates_the_complete_returned_identity",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_create_validates_the_complete_returned_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "PORT_RESPONSE"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_get_uses_the_exact_operation_and_validates_identity",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_get_uses_the_exact_operation_and_validates_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "port.one"
+      ],
+      "requests": [
+        "GET /api/port.one?portId=port-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "PORT_RESPONSE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_input_serializes_nonzero_u16_values_as_json_integers",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_input_serializes_nonzero_u16_values_as_json_integers",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_mutations_are_single_attempt_and_report_unknown_outcomes",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_mutations_are_single_attempt_and_report_unknown_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_rejects_empty_identities_before_transport",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_rejects_empty_identities_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_response_is_safe_tolerant_and_rejects_invalid_port_numbers",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_response_is_safe_tolerant_and_rejects_invalid_port_numbers",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/port-one.created.owner.json"
+      ],
+      "data": [
+        "PORT_RESPONSE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/ports::port_update_and_delete_use_exact_complete_requests",
+      "file": "crates/dokploy-sdk/tests/ports.rs",
+      "test": "port_update_and_delete_use_exact_complete_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

@@ -1,0 +1,469 @@
+{
+  "bucket": "tag",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/settings_tags::a_tag_collection_that_changes_during_import_writes_nothing",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "a_tag_collection_that_changes_during_import_writes_nothing",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "import",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::an_unknown_desired_project_tag_blocks_the_plan_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "an_unknown_desired_project_tag_blocks_the_plan_before_any_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::an_unreadable_tag_collection_blocks_the_plan_and_mutates_nothing",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "an_unreadable_tag_collection_blocks_the_plan_and_mutates_nothing",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "ONE_TAG",
+        "SETTINGS"
+      ],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::apply_creates_a_tag_then_converges_and_destroy_removes_it",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "apply_creates_a_tag_then_converges_and_destroy_removes_it",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all",
+        "tag.create",
+        "tag.remove"
+      ],
+      "requests": [
+        "GET /api/tag.all",
+        "POST /api/tag.remove",
+        "POST /api/tag.create"
+      ],
+      "fixtures": [],
+      "data": [
+        "ONE_TAG",
+        "SETTINGS"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::apply_renames_and_recolors_a_tag_in_place",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "apply_renames_and_recolors_a_tag_in_place",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all",
+        "tag.create",
+        "tag.update"
+      ],
+      "requests": [
+        "GET /api/tag.all",
+        "POST /api/tag.update",
+        "POST /api/tag.create"
+      ],
+      "fixtures": [],
+      "data": [
+        "ONE_TAG",
+        "SETTINGS"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::project_tags_are_assigned_and_removed_by_resolved_identity",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "project_tags_are_assigned_and_removed_by_resolved_identity",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "project.all",
+        "tag.",
+        "tag.assignToProject",
+        "tag.removeFromProject"
+      ],
+      "requests": [
+        "POST /api/tag.",
+        "GET /api/project.all",
+        "POST /api/tag.assignToProject",
+        "POST /api/tag.removeFromProject"
+      ],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::settings_import_adopts_tags_into_scoped_state_and_plans_clean",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "settings_import_adopts_tags_into_scoped_state_and_plans_clean",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "import",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::settings_import_fails_closed_on_shared_names_and_existing_workspaces",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "settings_import_fails_closed_on_shared_names_and_existing_workspaces",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "import",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::state_commands_follow_the_document_scope",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "state_commands_follow_the_document_scope",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "state",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/settings_tags::the_cli_imports_settings_and_validates_the_result",
+      "file": "crates/dokploy-cli/tests/settings_tags.rs",
+      "test": "the_cli_imports_settings_and_validates_the_result",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "SETTINGS"
+      ],
+      "category": "import",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::all_reads_the_authoritative_collection_and_keeps_color_presence",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "all_reads_the_authoritative_collection_and_keeps_color_presence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "tag.all"
+      ],
+      "requests": [
+        "GET /api/tag.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::all_rejects_a_collection_over_the_item_bound_and_a_non_array",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "all_rejects_a_collection_over_the_item_bound_and_a_non_array",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::all_rejects_contradictory_collections",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "all_rejects_contradictory_collections",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::create_rejects_a_record_that_does_not_echo_the_request",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "create_rejects_a_record_that_does_not_echo_the_request",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::create_sends_only_present_fields_and_validates_the_returned_record",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "create_sends_only_present_fields_and_validates_the_returned_record",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::delete_and_project_association_use_the_exact_operations",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "delete_and_project_association_use_the_exact_operations",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::failure_bodies_are_never_retained",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "failure_bodies_are_never_retained",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::get_fails_closed_on_identity_or_collection_disagreement",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "get_fails_closed_on_identity_or_collection_disagreement",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::get_reads_directly_and_requires_the_collection_to_agree",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "get_reads_directly_and_requires_the_collection_to_agree",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "tag.all",
+        "tag.one"
+      ],
+      "requests": [
+        "GET /api/tag.one?tagId=tag-1 HTTP/1.1",
+        "GET /api/tag.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::invalid_inputs_are_rejected_before_any_request",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "invalid_inputs_are_rejected_before_any_request",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::project_tags_fail_closed_on_unusable_records",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "project_tags_fail_closed_on_unusable_records",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::project_tags_keep_empty_absent_and_null_apart",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "project_tags_keep_empty_absent_and_null_apart",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::project_tags_resolve_direct_and_nested_identities",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "project_tags_resolve_direct_and_nested_identities",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::tag_details_ignore_unknown_fields",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "tag_details_ignore_unknown_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/tags::update_writes_only_the_selected_fields",
+      "file": "crates/dokploy-sdk/tests/tags.rs",
+      "test": "update_writes_only_the_selected_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

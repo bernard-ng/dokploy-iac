@@ -1,0 +1,1413 @@
+{
+  "bucket": "backup",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/src/remote/backup::tests::only_the_five_database_kinds_map_to_backup_targets",
+      "file": "crates/dokploy-cli/src/remote/backup.rs",
+      "test": "only_the_five_database_kinds_map_to_backup_targets",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/src/remote/backup::tests::prefix_normalization_mirrors_the_runtime_collision_rule",
+      "file": "crates/dokploy-cli/src/remote/backup.rs",
+      "test": "prefix_normalization_mirrors_the_runtime_collision_rule",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_desired::binds_the_destination_selector_and_the_collision_inputs_for_discovery",
+      "file": "crates/dokploy-cli/tests/backup_desired.rs",
+      "test": "binds_the_destination_selector_and_the_collision_inputs_for_discovery",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_desired::compiles_typed_backup_ownership_dependency_and_environment_containment",
+      "file": "crates/dokploy-cli/tests/backup_desired.rs",
+      "test": "compiles_typed_backup_ownership_dependency_and_environment_containment",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "ordering",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_desired::ignored_in_place_properties_are_recorded_for_the_planner",
+      "file": "crates/dokploy-cli/tests/backup_desired.rs",
+      "test": "ignored_in_place_properties_are_recorded_for_the_planner",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::a_backup_never_executes_deploys_or_contacts_its_destination",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "a_backup_never_executes_deploys_or_contacts_its_destination",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create",
+        "backup.remove",
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.create",
+        "POST /api/backup.update",
+        "POST /api/backup.remove"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::an_unmanaged_backup_at_the_collision_key_blocks_planning",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "an_unmanaged_backup_at_the_collision_key_blocks_planning",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create",
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.create",
+        "POST /api/backup.update"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::an_unresolved_destination_blocks_apply_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "an_unresolved_destination_blocks_apply_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::create_sends_the_complete_disabled_policy_and_converges_to_a_no_op",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "create_sends_the_complete_disabled_policy_and_converges_to_a_no_op",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::declarative_removal_of_only_the_backup_proves_absence_and_converges",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "declarative_removal_of_only_the_backup_proves_absence_and_converges",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.remove"
+      ],
+      "requests": [
+        "POST /api/backup.remove"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::definitive_create_rejection_fails_the_step_without_retry_or_state",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "definitive_create_rejection_fails_the_step_without_retry_or_state",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::destination_reselection_updates_the_association_in_place",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "destination_reselection_updates_the_association_in_place",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.remove",
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.update",
+        "POST /api/backup.remove"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::destroy_removes_backups_before_their_targets",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "destroy_removes_backups_before_their_targets",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.remove"
+      ],
+      "requests": [
+        "POST /api/backup.remove"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::every_mutable_field_updates_in_place_with_a_complete_replacement",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "every_mutable_field_updates_in_place_with_a_complete_replacement",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create",
+        "backup.one",
+        "backup.remove",
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.update",
+        "GET /api/backup.one",
+        "GET /api/",
+        "POST /api/backup.create",
+        "POST /api/backup.remove"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::ignored_fields_carry_the_freshly_read_remote_value",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "ignored_fields_carry_the_freshly_read_remote_value",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.update"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::omitted_retention_leaves_the_remote_value_unmanaged",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "omitted_retention_leaves_the_remote_value_unmanaged",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.update"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::outcome_unknown_create_stays_in_progress_and_is_never_retried",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "outcome_unknown_create_stays_in_progress_and_is_never_retried",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::outcome_unknown_update_stays_in_progress_and_is_never_retried",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "outcome_unknown_update_stays_in_progress_and_is_never_retried",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.update"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::protected_backup_replacement_is_blocked_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "protected_backup_replacement_is_blocked_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::removing_a_backup_and_its_target_deletes_the_backup_first",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "removing_a_backup_and_its_target_deletes_the_backup_first",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.remove",
+        "postgres.remove"
+      ],
+      "requests": [
+        "POST /api/backup.remove",
+        "POST /api/postgres.remove"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_lifecycle::target_change_deletes_before_creating_under_the_new_target",
+      "file": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "test": "target_change_deletes_before_creating_under_the_new_target",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create",
+        "backup.remove",
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.remove",
+        "POST /api/backup.create",
+        "POST /api/backup.update"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::an_interrupted_apply_is_recovered_and_the_next_apply_creates_nothing_more",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "an_interrupted_apply_is_recovered_and_the_next_apply_creates_nothing_more",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::recovery_needs_manual_intervention_when_the_destination_no_longer_resolves",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "recovery_needs_manual_intervention_when_the_destination_no_longer_resolves",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_create_adopts_one_exact_collision_key_without_retrying",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_create_adopts_one_exact_collision_key_without_retrying",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_create_with_a_different_backup_at_the_key_needs_manual_intervention",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_create_with_a_different_backup_at_the_key_needs_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_create_with_authoritative_absence_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_create_with_authoritative_absence_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_delete_is_confirmed_by_authoritative_absence",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_delete_is_confirmed_by_authoritative_absence",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_delete_that_did_not_apply_confirms_no_change_and_is_not_retried",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_delete_that_did_not_apply_confirms_no_change_and_is_not_retried",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_update_is_confirmed_only_from_authoritative_complete_state",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_update_is_confirmed_only_from_authoritative_complete_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_update_that_did_not_apply_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_update_that_did_not_apply_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_recovery::uncertain_update_that_landed_somewhere_else_needs_manual_intervention",
+      "file": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "test": "uncertain_update_that_landed_somewhere_else_needs_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::a_backup_on_another_destination_or_prefix_is_not_a_collision",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "a_backup_on_another_destination_or_prefix_is_not_a_collision",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::a_direct_read_missing_from_its_collection_is_not_trusted",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "a_direct_read_missing_from_its_collection_is_not_trusted",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::a_key_change_landing_on_another_backup_fails_closed",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "a_key_change_landing_on_another_backup_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::a_missing_target_makes_its_backup_missing_without_reading_a_collection",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "a_missing_target_makes_its_backup_missing_without_reading_a_collection",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "backup.one"
+      ],
+      "requests": [
+        "GET /api/backup.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::a_target_change_landing_on_another_backup_fails_closed",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "a_target_change_landing_on_another_backup_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::an_unmanaged_backup_at_the_collision_key_is_observed_and_blocks_as_a_collision",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "an_unmanaged_backup_at_the_collision_key_is_observed_and_blocks_as_a_collision",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::an_unreadable_destination_collection_blocks_without_guessing",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "an_unreadable_destination_collection_blocks_without_guessing",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::authoritative_target_collection_absence_plans_a_create",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "authoritative_target_collection_absence_plans_a_create",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "backup.one",
+        "destination.all"
+      ],
+      "requests": [
+        "GET /api/destination.all",
+        "GET /api/backup.one",
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::configurations_without_backups_perform_no_destination_or_backup_reads",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "configurations_without_backups_perform_no_destination_or_backup_reads",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "backup.one",
+        "destination.all"
+      ],
+      "requests": [
+        "GET /api/destination.all",
+        "GET /api/backup.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::conflict_diagnostics_have_stable_codes",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "conflict_diagnostics_have_stable_codes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::direct_404_while_the_collection_lists_the_identity_is_contradictory",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "direct_404_while_the_collection_lists_the_identity_is_contradictory",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::direct_404_with_authoritative_absence_is_missing_and_partial_authority_is_not",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "direct_404_with_authoritative_absence_is_missing_and_partial_authority_is_not",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::direct_and_collection_records_that_disagree_block_planning",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "direct_and_collection_records_that_disagree_block_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::discovery_never_leaks_destination_credentials_or_identities",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "discovery_never_leaks_destination_credentials_or_identities",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::drifted_destination_association_is_observed_by_name_and_planned_in_place",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "drifted_destination_association_is_observed_by_name_and_planned_in_place",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "drift",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::malformed_or_unsupported_stored_targets_fail_closed",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "malformed_or_unsupported_stored_targets_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::managed_backup_agreeing_with_its_collection_is_observed_and_a_no_op",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "managed_backup_agreeing_with_its_collection_is_observed_and_a_no_op",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "backup.one"
+      ],
+      "requests": [
+        "GET /api/backup.one",
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::nullable_remote_fields_observe_as_absent_and_converge_by_update",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "nullable_remote_fields_observe_as_absent_and_converge_by_update",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::one_identity_in_two_target_collections_fails_closed",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "one_identity_in_two_target_collections_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::partial_authority_downgrades_absence_to_an_unavailable_observation",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "partial_authority_downgrades_absence_to_an_unavailable_observation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::target_change_is_planned_as_delete_before_create_replacement",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "target_change_is_planned_as_delete_before_create_replacement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_remote::unresolved_destinations_block_planning_with_value_free_diagnostics",
+      "file": "crates/dokploy-cli/tests/backup_remote.rs",
+      "test": "unresolved_destinations_block_planning_with_value_free_diagnostics",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_saved_plan::a_saved_plan_applies_while_the_destination_resolution_is_unchanged",
+      "file": "crates/dokploy-cli/tests/backup_saved_plan.rs",
+      "test": "a_saved_plan_applies_while_the_destination_resolution_is_unchanged",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_saved_plan::a_saved_plan_is_refused_when_the_destination_becomes_ambiguous_or_disappears",
+      "file": "crates/dokploy-cli/tests/backup_saved_plan.rs",
+      "test": "a_saved_plan_is_refused_when_the_destination_becomes_ambiguous_or_disappears",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_saved_plan::a_saved_plan_is_refused_when_the_destination_is_recreated_under_the_same_name",
+      "file": "crates/dokploy-cli/tests/backup_saved_plan.rs",
+      "test": "a_saved_plan_is_refused_when_the_destination_is_recreated_under_the_same_name",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create",
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/backup_saved_plan::an_unresolved_destination_makes_planning_report_a_value_free_blocker",
+      "file": "crates/dokploy-cli/tests/backup_saved_plan.rs",
+      "test": "an_unresolved_destination_makes_planning_report_a_value_free_blocker",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::backup_ignored_changes_are_limited_to_safe_in_place_properties",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "backup_ignored_changes_are_limited_to_safe_in_place_properties",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::backup_issue_codes_are_stable_and_message_safe",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "backup_issue_codes_are_stable_and_message_safe",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::canonical_writer_round_trips_every_backup_field",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "canonical_writer_round_trips_every_backup_field",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::debug_output_redacts_backup_values",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "debug_output_redacts_backup_values",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE",
+        "CANARY",
+        "VALID"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::destination_is_a_required_name_selector_and_local_is_rejected",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "destination_is_a_required_name_selector_and_local_is_rejected",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE",
+        "CANARY",
+        "VALID"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::generated_schema_models_the_closed_backup_shape",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "generated_schema_models_the_closed_backup_shape",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::parses_every_supported_database_target_with_owned_fields_and_defaults",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "parses_every_supported_database_target_with_owned_fields_and_defaults",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::rejects_duplicate_collision_keys_but_allows_distinguishing_components",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "rejects_duplicate_collision_keys_but_allows_distinguishing_components",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::rejects_targets_outside_the_closed_same_environment_database_union",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "rejects_targets_outside_the_closed_same_environment_database_union",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE",
+        "VALID"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::rejects_unsafe_schedules_prefixes_databases_and_retention",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "rejects_unsafe_schedules_prefixes_databases_and_retention",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "BASE",
+        "VALID"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::typed_document_writes_imported_backup_with_a_name_selector",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "typed_document_writes_imported_backup_with_a_name_selector",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/backup::writer_rejects_a_destination_the_parser_would_reject",
+      "file": "crates/dokploy-config/tests/backup.rs",
+      "test": "writer_rejects_a_destination_the_parser_would_reject",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CANARY"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::ambiguous_create_and_update_or_delete_postflight_failures_are_outcome_unknown",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "ambiguous_create_and_update_or_delete_postflight_failures_are_outcome_unknown",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "DESTINATIONS",
+        "SECRET_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::captured_v0306_backup_fixtures_decode_through_safe_public_models",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "captured_v0306_backup_fixtures_decode_through_safe_public_models",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/backup-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/postgres-one.backup-created.owner.json"
+      ],
+      "data": [
+        "DESTINATIONS"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::create_postflight_failures_are_outcome_unknown_and_never_retried",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "create_postflight_failures_are_outcome_unknown_and_never_retried",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "DESTINATIONS",
+        "SECRET_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::create_uses_exact_integer_wire_body_and_one_new_identity_proof",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "create_uses_exact_integer_wire_body_and_one_new_identity_proof",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "backup.create"
+      ],
+      "requests": [
+        "POST /api/backup.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "DESTINATIONS",
+        "SECRET_CANARY"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::delete_requires_target_and_authoritative_absence",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "delete_requires_target_and_authoritative_absence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "backup.remove"
+      ],
+      "requests": [
+        "POST /api/backup.remove HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "DESTINATIONS",
+        "SECRET_CANARY"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::every_supported_target_reads_its_authoritative_collection",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "every_supported_target_reads_its_authoritative_collection",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/{kind}.one?{kind}Id={kind}-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::missing_authoritative_relation_and_unsupported_direct_targets_fail_closed",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "missing_authoritative_relation_and_unsupported_direct_targets_fail_closed",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::preflight_failures_are_definitive_and_do_not_mutate",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "preflight_failures_are_definitive_and_do_not_mutate",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "destination.all"
+      ],
+      "requests": [
+        "GET /api/destination.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::target_collections_fail_closed_on_unsupported_metadata_and_duplicate_runtime_prefixes",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "target_collections_fail_closed_on_unsupported_metadata_and_duplicate_runtime_prefixes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/backups::update_proves_target_collision_and_direct_collection_agreement",
+      "file": "crates/dokploy-sdk/tests/backups.rs",
+      "test": "update_proves_target_collision_and_direct_collection_agreement",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "backup.update"
+      ],
+      "requests": [
+        "POST /api/backup.update HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "DESTINATIONS",
+        "SECRET_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_backup::live_backup_adapter_converges_without_execution_or_deployment",
+      "file": "crates/dokploy-sdk/tests/live_backup.rs",
+      "test": "live_backup_adapter_converges_without_execution_or_deployment",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

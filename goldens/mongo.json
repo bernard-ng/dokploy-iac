@@ -1,0 +1,270 @@
+{
+  "bucket": "mongo",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/mongo_remote::authoritative_absence_allows_mongo_create_with_required_credentials",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "authoritative_absence_allows_mongo_create_with_required_credentials",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "mongo.search"
+      ],
+      "requests": [
+        "GET /api/mongo.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::duplicate_mongo_identities_fail_closed",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "duplicate_mongo_identities_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::duplicate_mongo_names_in_one_environment_fail_closed",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "duplicate_mongo_names_in_one_environment_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::managed_mongo_requires_direct_and_collection_agreement_and_redacts_credentials",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "managed_mongo_requires_direct_and_collection_agreement_and_redacts_credentials",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mongo-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/mongo-search.created.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::mongo_direct_and_collection_disagreement_fails_closed",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "mongo_direct_and_collection_disagreement_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::mongo_password_changes_after_create_are_unsupported",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "mongo_password_changes_after_create_are_unsupported",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::mongo_username_and_replica_sets_changes_update_in_place",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "mongo_username_and_replica_sets_changes_update_in_place",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::partial_mongo_search_cannot_prove_absence",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "partial_mongo_search_cannot_prove_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mongo_remote::unavailable_mongo_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "file": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "test": "unavailable_mongo_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_by_environment_collects_authoritative_bounded_pages",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_by_environment_collects_authoritative_bounded_pages",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mongo.search"
+      ],
+      "requests": [
+        "GET /api/mongo.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_by_environment_rejects_ambiguous_pagination",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_by_environment_rejects_ambiguous_pagination",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_create_supports_explicit_replica_sets_without_leaking_the_password",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_create_supports_explicit_replica_sets_without_leaking_the_password",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mongo-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_get_uses_a_strong_id_and_safe_tolerant_model",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_get_uses_a_strong_id_and_safe_tolerant_model",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mongo.one"
+      ],
+      "requests": [
+        "GET /api/mongo.one?mongoId=mongo-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mongo-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_invalid_inputs_are_rejected_before_transport",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_invalid_inputs_are_rejected_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mongo::mongo_update_and_password_change_use_exact_narrow_requests",
+      "file": "crates/dokploy-sdk/tests/mongo.rs",
+      "test": "mongo_update_and_password_change_use_exact_narrow_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

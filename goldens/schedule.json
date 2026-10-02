@@ -1,0 +1,1974 @@
+{
+  "bucket": "schedule",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/schedule_desired::compiles_typed_schedule_ownership_dependency_and_environment_containment",
+      "file": "crates/dokploy-cli/tests/schedule_desired.rs",
+      "test": "compiles_typed_schedule_ownership_dependency_and_environment_containment",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "ordering",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_desired::concrete_executables_fail_closed_offline_and_never_enter_debug_output",
+      "file": "crates/dokploy-cli/tests/schedule_desired.rs",
+      "test": "concrete_executables_fail_closed_offline_and_never_enter_debug_output",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_desired::distinct_command_and_script_bytes_produce_distinct_receipts_and_stable_repeats",
+      "file": "crates/dokploy-cli/tests/schedule_desired.rs",
+      "test": "distinct_command_and_script_bytes_produce_distinct_receipts_and_stable_repeats",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_desired::instance_compilation_resolves_command_and_script_once_as_fingerprinted_receipts",
+      "file": "crates/dokploy-cli/tests/schedule_desired.rs",
+      "test": "instance_compilation_resolves_command_and_script_once_as_fingerprinted_receipts",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_desired::missing_command_file_is_a_redacted_compile_failure",
+      "file": "crates/dokploy-cli/tests/schedule_desired.rs",
+      "test": "missing_command_file_is_a_redacted_compile_failure",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::a_collision_found_by_the_sdk_preflight_is_never_adopted_and_stays_recoverable",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "a_collision_found_by_the_sdk_preflight_is_never_adopted_and_stays_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "POST /api/schedule.create",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::an_empty_command_is_rejected_before_any_journal_step_or_mutation",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "an_empty_command_is_rejected_before_any_journal_step_or_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "POST /api/schedule.create",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::an_ignored_field_is_preserved_from_the_fresh_remote_read_on_update",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "an_ignored_field_is_preserved_from_the_fresh_remote_read_on_update",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list",
+        "schedule.one",
+        "schedule.update"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "POST /api/schedule.update",
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::compose_target_uses_the_typed_compose_service_identity",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "compose_target_uses_the_typed_compose_service_identity",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "compose.create",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list"
+      ],
+      "requests": [
+        "POST /api/compose.create",
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|compose-1",
+        "GET /api/schedule.list",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::create_checkpoints_the_target_dependency_and_the_next_apply_is_a_no_op",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "create_checkpoints_the_target_dependency_and_the_next_apply_is_a_no_op",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "ordering",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::definitive_create_rejection_fails_the_step_without_retry_or_state",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "definitive_create_rejection_fails_the_step_without_retry_or_state",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::destroy_removes_schedules_before_their_targets",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "destroy_removes_schedules_before_their_targets",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.delete",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "environment.remove",
+        "project.all",
+        "project.create",
+        "project.remove",
+        "schedule.create",
+        "schedule.delete",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|application-1",
+        "POST /api/schedule.delete",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "POST /api/application.delete",
+        "POST /api/project.remove",
+        "POST /api/environment.remove",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::in_place_update_resends_complete_state_including_rotated_executables",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "in_place_update_resends_complete_state_including_rotated_executables",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.delete",
+        "schedule.list",
+        "schedule.one",
+        "schedule.update"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "POST /api/schedule.update",
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "POST /api/schedule.delete",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "ROTATED_COMMAND",
+        "ROTATED_SCRIPT",
+        "SCRIPT_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::outcome_unknown_create_stays_in_progress_and_is_never_retried",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "outcome_unknown_create_stays_in_progress_and_is_never_retried",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::removing_a_schedule_and_its_target_deletes_the_schedule_first",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "removing_a_schedule_and_its_target_deletes_the_schedule_first",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.delete",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.delete",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|application-1",
+        "POST /api/schedule.delete",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "POST /api/application.delete",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::target_change_deletes_before_creating_under_the_new_target",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "target_change_deletes_before_creating_under_the_new_target",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.delete",
+        "schedule.list",
+        "schedule.one",
+        "schedule.update"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|application-1",
+        "POST /api/schedule.delete",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "POST /api/schedule.update",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::unmanaged_command_is_never_created_as_an_empty_command",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "unmanaged_command_is_never_created_as_an_empty_command",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "POST /api/schedule.create",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::updating_a_schedule_whose_command_is_unmanaged_is_refused_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "updating_a_schedule_whose_command_is_unmanaged_is_refused_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list",
+        "schedule.one",
+        "schedule.update"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "POST /api/schedule.update",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_lifecycle::updating_around_an_unmanaged_remote_script_is_refused_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "test": "updating_around_an_unmanaged_remote_script_is_refused_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "project.create",
+        "schedule.create",
+        "schedule.list",
+        "schedule.one",
+        "schedule.update"
+      ],
+      "requests": [
+        "POST /api/schedule.create",
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "POST /api/schedule.update",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_command_or_script_rotation_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_command_or_script_rotation_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_create_adopts_one_exact_collision_key_without_retrying_or_exposing_text",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_create_adopts_one_exact_collision_key_without_retrying_or_exposing_text",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_create_with_a_different_schedule_or_script_at_the_key_needs_manual_intervention",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_create_with_a_different_schedule_or_script_at_the_key_needs_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_create_with_authoritative_absence_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_create_with_authoritative_absence_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_delete_is_confirmed_by_authoritative_absence_and_otherwise_no_change",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_delete_is_confirmed_by_authoritative_absence_and_otherwise_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_update_is_confirmed_only_from_authoritative_complete_state",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_update_is_confirmed_only_from_authoritative_complete_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_recovery::uncertain_update_of_a_schedule_with_executable_receipts_is_never_assumed_unapplied",
+      "file": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "test": "uncertain_update_of_a_schedule_with_executable_receipts_is_never_assumed_unapplied",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::a_direct_record_on_another_target_is_a_topology_conflict",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "a_direct_record_on_another_target_is_a_topology_conflict",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::a_rename_that_would_land_on_another_schedule_fails_closed",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "a_rename_that_would_land_on_another_schedule_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::a_target_change_reads_the_new_collection_and_blocks_on_a_collision_there",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "a_target_change_reads_the_new_collection_and_blocks_on_a_collision_there",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::a_target_change_to_a_free_name_plans_replacement",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "a_target_change_to_a_free_name_plans_replacement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list|application-2",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::an_unmanaged_schedule_at_the_collision_key_blocks_planning_and_is_never_adopted",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "an_unmanaged_schedule_at_the_collision_key_blocks_planning_and_is_never_adopted",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::authoritative_collection_absence_is_missing_and_unmanaged_command_blocks_creation",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "authoritative_collection_absence_is_missing_and_unmanaged_command_blocks_creation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.list",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::contradictory_direct_and_collection_reads_fail_closed",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "contradictory_direct_and_collection_reads_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::cron_drift_plans_an_in_place_update",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "cron_drift_plans_an_in_place_update",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "drift",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::direct_not_found_is_absence_only_from_an_authoritative_collection",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "direct_not_found_is_absence_only_from_an_authoritative_collection",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::duplicate_names_and_privileged_targets_make_the_collection_unavailable",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "duplicate_names_and_privileged_targets_make_the_collection_unavailable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::matching_direct_and_collection_records_are_present_without_leaking_executables",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "matching_direct_and_collection_records_are_present_without_leaking_executables",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/schedule.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/schedule_remote::partial_authority_downgrades_absence_to_an_unavailable_observation",
+      "file": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "test": "partial_authority_downgrades_absence_to_an_unavailable_observation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "project.all",
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list|application-1",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::accepts_conservative_cron_shapes_including_macros_and_seconds",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "accepts_conservative_cron_shapes_including_macros_and_seconds",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::canonical_writer_round_trips_schedules_without_executable_bytes",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "canonical_writer_round_trips_schedules_without_executable_bytes",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::command_and_script_are_descriptor_only_and_clear_or_unmanaged_is_restricted",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "command_and_script_are_descriptor_only_and_clear_or_unmanaged_is_restricted",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::description_and_timezone_cannot_be_cleared",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "description_and_timezone_cannot_be_cleared",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::generated_schema_models_the_typed_schedule",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "generated_schema_models_the_typed_schedule",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::parses_application_and_compose_schedules_with_descriptor_only_executables",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "parses_application_and_compose_schedules_with_descriptor_only_executables",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::rejects_duplicate_names_per_target_but_allows_other_targets",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "rejects_duplicate_names_per_target_but_allows_other_targets",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::rejects_malformed_names_cron_service_timezone_and_description",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "rejects_malformed_names_cron_service_timezone_and_description",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::rejects_schedule_targets_outside_the_closed_same_environment_union",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "rejects_schedule_targets_outside_the_closed_same_environment_union",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::schedule_ignored_changes_are_limited_to_safe_non_sensitive_in_place_properties",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "schedule_ignored_changes_are_limited_to_safe_non_sensitive_in_place_properties",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::schedule_issue_codes_are_stable_and_message_safe",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "schedule_issue_codes_are_stable_and_message_safe",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::schedules_cannot_be_referenced_as_outputs",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "schedules_cannot_be_referenced_as_outputs",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::schedules_on_one_compose_must_share_one_service_name",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "schedules_on_one_compose_must_share_one_service_name",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::shell_type_and_enabled_are_required_and_strictly_typed",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "shell_type_and_enabled_are_required_and_strictly_typed",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SCHEDULE_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/schedule::typed_document_writes_imported_schedule_with_unmanaged_executables",
+      "file": "crates/dokploy-config/tests/schedule.rs",
+      "test": "typed_document_writes_imported_schedule_with_unmanaged_executables",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "import",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_schedule::live_schedule_adapter_converges_without_deploying_or_executing_targets",
+      "file": "crates/dokploy-sdk/tests/live_schedule.rs",
+      "test": "live_schedule_adapter_converges_without_deploying_or_executing_targets",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::compose_wide_list_rejects_an_empty_compose_before_transport",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "compose_wide_list_rejects_an_empty_compose_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::compose_wide_list_spans_services_and_is_bounded_and_owner_consistent",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "compose_wide_list_spans_services_and_is_bounded_and_owner_consistent",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "COMPOSE_RESPONSE",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::safe_schedule_models_consume_commands_and_reject_privileged_targets",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "safe_schedule_models_consume_commands_and_reject_privileged_targets",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/schedule-one.application-created.owner.json"
+      ],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "COMPOSE_RESPONSE",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_create_checks_collision_returned_identity_and_list",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_create_checks_collision_returned_identity_and_list",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_create_rejects_mismatched_or_uncollected_identity",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_create_rejects_mismatched_or_uncollected_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_create_requires_exact_new_identity_and_executable_proof",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_create_requires_exact_new_identity_and_executable_proof",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_delete_requires_target_agreement_and_authoritative_absence",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_delete_requires_target_agreement_and_authoritative_absence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_get_requires_direct_and_authoritative_list_agreement",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_get_requires_direct_and_authoritative_list_agreement",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "schedule.list",
+        "schedule.one"
+      ],
+      "requests": [
+        "GET /api/schedule.one?scheduleId=schedule-1 HTTP/1.1",
+        "GET /api/schedule.list?id=application-1&scheduleType=application HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_inputs_serialize_exact_target_shapes_and_redact_debug",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_inputs_serialize_exact_target_shapes_and_redact_debug",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_list_is_bounded_target_consistent_and_unique",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_list_is_bounded_target_consistent_and_unique",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "COMPOSE_RESPONSE",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_mutation_rejections_never_retain_echoed_commands_or_scripts",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_mutation_rejections_never_retain_echoed_commands_or_scripts",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_mutations_are_single_attempt_and_secret_safe_on_unknown_outcome",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_mutations_are_single_attempt_and_secret_safe_on_unknown_outcome",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_mutations_reject_privileged_schedule_identities_before_post",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_mutations_reject_privileged_schedule_identities_before_post",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_reads_never_retain_echoed_commands_or_scripts",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_reads_never_retain_echoed_commands_or_scripts",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_rejects_invalid_inputs_before_transport",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_rejects_invalid_inputs_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_update_and_delete_use_exact_requests",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_update_and_delete_use_exact_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "schedule.list"
+      ],
+      "requests": [
+        "GET /api/schedule.list?id=application-1&scheduleType=application HTTP/1.1",
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_update_preflight_rejects_rename_collisions_and_wrong_targets",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_update_preflight_rejects_rename_collisions_and_wrong_targets",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_update_requires_exact_command_and_script_proof",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_update_requires_exact_command_and_script_proof",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/schedules::schedule_update_requires_safe_response_and_collection_proof",
+      "file": "crates/dokploy-sdk/tests/schedules.rs",
+      "test": "schedule_update_requires_safe_response_and_collection_proof",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION_RESPONSE",
+        "COMMAND_CANARY",
+        "RESPONSE_COMMAND_CANARY",
+        "RESPONSE_SCRIPT_CANARY",
+        "SCRIPT_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

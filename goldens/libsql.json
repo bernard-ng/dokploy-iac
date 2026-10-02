@@ -1,0 +1,335 @@
+{
+  "bucket": "libsql",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/libsql_remote::authoritative_absence_allows_libsql_create_with_required_inputs",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "authoritative_absence_allows_libsql_create_with_required_inputs",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_LIBSQL",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/libsql_remote::duplicate_names_and_direct_disagreement_fail_closed",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "duplicate_names_and_direct_disagreement_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/libsql_remote::failed_required_collection_blocks_a_successful_direct_read",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "failed_required_collection_blocks_a_successful_direct_read",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "LIBSQL_ONE",
+        "PROJECTS"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/libsql_remote::managed_libsql_requires_direct_agreement_and_projects_atomic_node",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "managed_libsql_requires_direct_agreement_and_projects_atomic_node",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "LIBSQL_ONE",
+        "POPULATED_LIBSQL",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/libsql_remote::node_change_is_delete_before_create_replacement",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "node_change_is_delete_before_create_replacement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "LIBSQL_ONE",
+        "POPULATED_LIBSQL",
+        "PROJECTS"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/libsql_remote::partial_project_topology_cannot_prove_libsql_absence",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "partial_project_topology_cannot_prove_libsql_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_LIBSQL",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/libsql_remote::password_rotation_and_metadata_are_one_applyable_update_plan",
+      "file": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "test": "password_rotation_and_metadata_are_one_applyable_update_plan",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "LIBSQL_ONE",
+        "POPULATED_LIBSQL",
+        "PROJECTS"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_by_environment_fails_closed_when_the_scope_is_not_authoritative",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_by_environment_fails_closed_when_the_scope_is_not_authoritative",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_by_environment_uses_exact_project_topology",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_by_environment_uses_exact_project_topology",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "project.one"
+      ],
+      "requests": [
+        "GET /api/project.one?projectId=project-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "POPULATED_TOPOLOGY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_create_fails_closed_on_preexisting_or_missing_identity",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_create_fails_closed_on_preexisting_or_missing_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_TOPOLOGY",
+        "POPULATED_TOPOLOGY"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_create_marks_unproven_post_mutation_results_outcome_unknown_without_retrying_post",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_create_marks_unproven_post_mutation_results_outcome_unknown_without_retrying_post",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "libsql.create"
+      ],
+      "requests": [
+        "POST /api/libsql.create"
+      ],
+      "fixtures": [],
+      "data": [
+        "AMBIGUOUS_TOPOLOGY",
+        "EMPTY_TOPOLOGY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_create_proves_absence_then_recovers_one_identity",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_create_proves_absence_then_recovers_one_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "project.one"
+      ],
+      "requests": [
+        "GET /api/project.one?projectId=project-1 HTTP/1.1",
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "EMPTY_TOPOLOGY",
+        "POPULATED_TOPOLOGY"
+      ],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_create_sanitizes_postflight_transport_and_api_failures_as_outcome_unknown",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_create_sanitizes_postflight_transport_and_api_failures_as_outcome_unknown",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "libsql.create"
+      ],
+      "requests": [
+        "POST /api/libsql.create"
+      ],
+      "fixtures": [],
+      "data": [
+        "EMPTY_TOPOLOGY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_get_uses_a_strong_id_and_never_retains_credentials",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_get_uses_a_strong_id_and_never_retains_credentials",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "libsql.one"
+      ],
+      "requests": [
+        "GET /api/libsql.one?libsqlId=libsql-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "LIBSQL_RESPONSE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_invalid_inputs_are_rejected_before_transport",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_invalid_inputs_are_rejected_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/libsql::libsql_update_and_password_change_use_narrow_redacted_requests",
+      "file": "crates/dokploy-sdk/tests/libsql.rs",
+      "test": "libsql_update_and_password_change_use_narrow_redacted_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

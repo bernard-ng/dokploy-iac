@@ -1,0 +1,1012 @@
+{
+  "bucket": "sdk",
+  "scenarios": [
+    {
+      "id": "dokploy-sdk/src/models::tests::application_details_tolerate_unknown_runtime_fields",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "application_details_tolerate_unknown_runtime_fields",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-one.owner.json"
+      ],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/src/models::tests::application_environment_shape_never_retains_runtime_bytes",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "application_environment_shape_never_retains_runtime_bytes",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/src/models::tests::application_fields_preserve_omitted_null_and_value",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "application_fields_preserve_omitted_null_and_value",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/src/models::tests::postgres_details_ignore_secret_bearing_runtime_fields",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "postgres_details_ignore_secret_bearing_runtime_fields",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/postgres-one.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/src/models::tests::postgres_owned_fields_preserve_omitted_null_and_value",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "postgres_owned_fields_preserve_omitted_null_and_value",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/src/models::tests::project_description_preserves_omitted_null_and_string_responses",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "project_description_preserves_omitted_null_and_string_responses",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/src/models::tests::project_topology_accepts_role_dependent_service_summaries",
+      "file": "crates/dokploy-sdk/src/models.rs",
+      "test": "project_topology_accepts_role_dependent_service_summaries",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-all.populated.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_by_environment_reads_every_page_through_one_narrow_interface",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_by_environment_reads_every_page_through_one_narrow_interface",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.search"
+      ],
+      "requests": [
+        "GET /api/application.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_by_environment_rejects_an_empty_parent_before_transport",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_by_environment_rejects_an_empty_parent_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_by_environment_rejects_pages_over_the_declared_total",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_by_environment_rejects_pages_over_the_declared_total",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_by_environment_rejects_premature_empty_pages",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_by_environment_rejects_premature_empty_pages",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_by_environment_rejects_totals_above_the_collection_cap",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_by_environment_rejects_totals_above_the_collection_cap",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_by_environment_rejects_totals_that_change_between_pages",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_by_environment_rejects_totals_that_change_between_pages",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::applications_get_uses_a_strong_id_and_decodes_application_details",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "applications_get_uses_a_strong_id_and_decodes_application_details",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one"
+      ],
+      "requests": [
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::builder_normalizes_an_existing_api_suffix",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "builder_normalizes_an_existing_api_suffix",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "{}/api/",
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::client_exposes_its_normalized_api_base_url_without_credentials",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "client_exposes_its_normalized_api_base_url_without_credentials",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::environment_reads_reject_empty_identifiers_before_transport",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "environment_reads_reject_empty_identifiers_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::environments_by_project_preserves_description_presence",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "environments_by_project_preserves_description_presence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "environment.byProjectId"
+      ],
+      "requests": [
+        "GET /api/environment.byProjectId?projectId=project-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::environments_get_uses_a_strong_id_and_omits_secret_bearing_fields",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "environments_get_uses_a_strong_id_and_omits_secret_bearing_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "environment.one"
+      ],
+      "requests": [
+        "GET /api/environment.one?environmentId=environment-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::generated_request_validation_rejects_an_empty_project_id_before_transport",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "generated_request_validation_rejects_an_empty_project_id_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::imperative_gets_retry_transient_server_failures",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "imperative_gets_retry_transient_server_failures",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::imperative_multipart_requests_stream_text_and_file_fields",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "imperative_multipart_requests_stream_text_and_file_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.dropDeployment"
+      ],
+      "requests": [
+        "POST /api/application.dropDeployment HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::imperative_mutations_send_json_once_and_return_remote_status",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "imperative_mutations_send_json_once_and_return_remote_status",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::imperative_reads_return_the_unmodified_json_contract",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "imperative_reads_return_the_unmodified_json_contract",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one"
+      ],
+      "requests": [
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::imperative_request_debug_output_redacts_all_user_values",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "imperative_request_debug_output_redacts_all_user_values",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::imperative_requests_must_match_generated_endpoint_metadata",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "imperative_requests_must_match_generated_endpoint_metadata",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::invalid_api_key_diagnostics_do_not_expose_the_secret",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "invalid_api_key_diagnostics_do_not_expose_the_secret",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::json_responses_accept_exact_and_under_limit_bodies",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "json_responses_accept_exact_and_under_limit_bodies",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::json_responses_reject_declared_and_streamed_bodies_over_the_byte_limit",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "json_responses_reject_declared_and_streamed_bodies_over_the_byte_limit",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::malformed_and_oversized_successful_mutation_responses_are_outcome_unknown",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "malformed_and_oversized_successful_mutation_responses_are_outcome_unknown",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::malformed_successful_reads_remain_decode_errors",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "malformed_successful_reads_remain_decode_errors",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::mutation_transport_failure_after_dispatch_has_an_unknown_outcome",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "mutation_transport_failure_after_dispatch_has_an_unknown_outcome",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::oversized_non_success_responses_preserve_only_safe_status_details",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "oversized_non_success_responses_preserve_only_safe_status_details",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::projects_all_reads_the_runtime_topology",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "projects_all_reads_the_runtime_topology",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-all.populated.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::projects_get_uses_a_strong_id_and_decodes_project_details",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "projects_get_uses_a_strong_id_and_decodes_project_details",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "project.one"
+      ],
+      "requests": [
+        "GET /api/project.one?projectId=project-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::requests_authenticate_without_exposing_transport_configuration",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "requests_authenticate_without_exposing_transport_configuration",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::safe_reads_retry_transient_server_failures",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "safe_reads_retry_transient_server_failures",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::sensitive_reads_discard_remote_error_text_and_preserve_status",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "sensitive_reads_discard_remote_error_text_and_preserve_status",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/client::sparse_authentication_errors_receive_a_stable_fallback_code",
+      "file": "crates/dokploy-sdk/tests/client.rs",
+      "test": "sparse_authentication_errors_receive_a_stable_fallback_code",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::applications_get_reads_the_selected_live_application",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "applications_get_reads_the_selected_live_application",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::environments_read_the_live_parent_collection_and_selected_environment",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "environments_read_the_live_parent_collection_and_selected_environment",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::invalid_authentication_returns_a_structured_unauthorized_error",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "invalid_authentication_returns_a_structured_unauthorized_error",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::postgres_reads_the_selected_live_database_and_parent_collection",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "postgres_reads_the_selected_live_database_and_parent_collection",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::projects_all_reads_the_live_remote_topology",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "projects_all_reads_the_live_remote_topology",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::projects_get_reads_the_selected_live_project",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "projects_get_reads_the_selected_live_project",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live::redis_reads_the_live_empty_parent_collection",
+      "file": "crates/dokploy-sdk/tests/live.rs",
+      "test": "redis_reads_the_live_empty_parent_collection",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LIVE_TEST_FLAG"
+      ],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::application_create_returns_its_physical_identity",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "application_create_returns_its_physical_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::application_update_and_deploy_use_narrow_typed_requests",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "application_update_and_deploy_use_narrow_typed_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.deploy",
+        "application.update"
+      ],
+      "requests": [
+        "POST /api/application.update HTTP/1.1",
+        "POST /api/application.deploy HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::domain_create_returns_its_physical_identity",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "domain_create_returns_its_physical_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "domain.create"
+      ],
+      "requests": [
+        "POST /api/domain.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/domain-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::environment_create_returns_its_physical_identity",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "environment_create_returns_its_physical_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "environment.create"
+      ],
+      "requests": [
+        "POST /api/environment.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::postgres_create_returns_its_physical_identity_without_debugging_the_password",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "postgres_create_returns_its_physical_identity_without_debugging_the_password",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "postgres.create"
+      ],
+      "requests": [
+        "POST /api/postgres.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/postgres-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::project_create_returns_both_physical_identities",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "project_create_returns_both_physical_identities",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/project.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::redis_create_returns_its_physical_identity_without_debugging_the_password",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "redis_create_returns_its_physical_identity_without_debugging_the_password",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "redis.create"
+      ],
+      "requests": [
+        "POST /api/redis.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/redis-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::resource_delete_preserves_remote_rejection_and_unknown_outcome",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "resource_delete_preserves_remote_rejection_and_unknown_outcome",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::resource_deletes_use_the_owned_typed_endpoints",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "resource_deletes_use_the_owned_typed_endpoints",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mutations::resource_updates_send_only_the_owned_fields",
+      "file": "crates/dokploy-sdk/tests/mutations.rs",
+      "test": "resource_updates_send_only_the_owned_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "domain.update",
+        "environment.update",
+        "postgres.update",
+        "project.update",
+        "redis.update"
+      ],
+      "requests": [
+        "POST /api/project.update HTTP/1.1",
+        "POST /api/environment.update HTTP/1.1",
+        "POST /api/postgres.update HTTP/1.1",
+        "POST /api/redis.update HTTP/1.1",
+        "POST /api/domain.update HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/secret_error_policy::an_unregistered_generated_endpoint_fails_closed",
+      "file": "crates/dokploy-sdk/tests/secret_error_policy.rs",
+      "test": "an_unregistered_generated_endpoint_fails_closed",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "OWNED_ENDPOINTS",
+        "PRESERVE_ERROR_BODY_ENDPOINTS",
+        "SECRET_CANARY"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/secret_error_policy::every_owned_endpoint_obeys_the_complete_policy_partition",
+      "file": "crates/dokploy-sdk/tests/secret_error_policy.rs",
+      "test": "every_owned_endpoint_obeys_the_complete_policy_partition",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "{} /api/{}"
+      ],
+      "fixtures": [],
+      "data": [
+        "OWNED_ENDPOINTS",
+        "PRESERVE_ERROR_BODY_ENDPOINTS",
+        "SECRET_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

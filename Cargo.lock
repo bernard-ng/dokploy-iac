@@ -3857,7 +3857,11 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "dokploy-spec",
+ "proc-macro2",
+ "quote",
+ "serde",
  "serde_json",
+ "syn 2.0.119",
  "tempfile",
  "thiserror",
 ]

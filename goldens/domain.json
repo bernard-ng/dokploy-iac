@@ -1,0 +1,46 @@
+{
+  "bucket": "domain",
+  "scenarios": [
+    {
+      "id": "dokploy-sdk/tests/domain::domain_details_expose_only_owned_reconciliation_fields",
+      "file": "crates/dokploy-sdk/tests/domain.rs",
+      "test": "domain_details_expose_only_owned_reconciliation_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/domain-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/domain::domains_read_by_strong_identity_and_application_scope",
+      "file": "crates/dokploy-sdk/tests/domain.rs",
+      "test": "domains_read_by_strong_identity_and_application_scope",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "domain.byApplicationId",
+        "domain.one"
+      ],
+      "requests": [
+        "GET /api/domain.one?domainId=domain-1 HTTP/1.1",
+        "GET /api/domain.byApplicationId?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/domain-by-application.created.owner.json",
+        "fixtures/api/live/v0.30.6/domain-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

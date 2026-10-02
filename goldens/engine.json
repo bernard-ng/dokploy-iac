@@ -1,0 +1,1925 @@
+{
+  "bucket": "engine",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/desired_compiler::compiles_all_mvp_resource_shapes_and_field_states",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "compiles_all_mvp_resource_shapes_and_field_states",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::compiles_complete_port_ownership_and_application_containment",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "compiles_complete_port_ownership_and_application_containment",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::compiles_complete_redirect_ownership_and_application_containment",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "compiles_complete_redirect_ownership_and_application_containment",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::compiles_lifecycle_paths_moves_and_removals",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "compiles_lifecycle_paths_moves_and_removals",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::compiles_project_owned_fields_through_one_public_seam",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "compiles_project_owned_fields_through_one_public_seam",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::compiles_security_username_and_leaves_an_unmanaged_password_unowned",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "compiles_security_username_and_leaves_an_unmanaged_password_unowned",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::derives_canonical_dependencies_and_preserves_containment_parents",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "derives_canonical_dependencies_and_preserves_containment_parents",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "ordering",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::instance_bound_compilation_without_sensitive_inputs_preserves_the_source_digest",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "instance_bound_compilation_without_sensitive_inputs_preserves_the_source_digest",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::preserves_logical_bindings_without_leaking_non_sensitive_values_in_debug_output",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "preserves_logical_bindings_without_leaking_non_sensitive_values_in_debug_output",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::rejects_every_concrete_sensitive_intent_before_planning",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "rejects_every_concrete_sensitive_intent_before_planning",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/desired_compiler::rejects_null_protection_instead_of_coercing_it",
+      "file": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "test": "rejects_null_protection_instead_of_coercing_it",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::all_mvp_resources_are_created_and_checkpointed_in_dependency_order",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "all_mvp_resources_are_created_and_checkpointed_in_dependency_order",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "domain.create",
+        "postgres.create",
+        "redis.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1",
+        "POST /api/domain.create HTTP/1.1",
+        "POST /api/postgres.create HTTP/1.1",
+        "POST /api/redis.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/domain-create.owner.json",
+        "fixtures/api/live/v0.30.6/postgres-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json",
+        "fixtures/api/live/v0.30.6/redis-create.owner.json"
+      ],
+      "data": [],
+      "category": "ordering",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::application_environment_rotation_preserves_unowned_remote_entries",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "application_environment_rotation_preserves_unowned_remote_entries",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.deploy",
+        "application.one",
+        "application.update"
+      ],
+      "requests": [
+        "GET /api/application.one?applicationId=application-1",
+        "POST /api/application.update HTTP/1.1",
+        "POST /api/application.deploy HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::application_is_created_under_the_checkpointed_environment",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "application_is_created_under_the_checkpointed_environment",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::changed_application_configuration_updates_then_deploys_without_recreating",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "changed_application_configuration_updates_then_deploys_without_recreating",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.deploy",
+        "application.update"
+      ],
+      "requests": [
+        "POST /api/application.update HTTP/1.1",
+        "POST /api/application.deploy HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::compose_create_update_and_delete_preserve_volumes_without_persisting_the_document",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "compose_create_update_and_delete_preserve_volumes_without_persisting_the_document",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "compose.create",
+        "compose.delete",
+        "compose.update"
+      ],
+      "requests": [
+        "POST /api/compose.create HTTP/1.1",
+        "POST /api/compose.update HTTP/1.1",
+        "POST /api/compose.delete HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/compose-delete.owner.json",
+        "fixtures/api/live/v0.30.6/compose-update.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::compose_unknown_create_outcome_keeps_the_document_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "compose_unknown_create_outcome_keeps_the_document_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::configured_application_is_checkpointed_then_configured_and_deployed",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "configured_application_is_checkpointed_then_configured_and_deployed",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.deploy",
+        "application.update"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1",
+        "POST /api/application.update HTTP/1.1",
+        "POST /api/application.deploy HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::database_create_without_required_inputs_is_blocked_before_mutation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "database_create_without_required_inputs_is_blocked_before_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::deploy_unknown_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "deploy_unknown_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::destroy_deletes_every_tracked_resource_and_leaves_initialized_empty_state",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "destroy_deletes_every_tracked_resource_and_leaves_initialized_empty_state",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.remove"
+      ],
+      "requests": [
+        "POST /api/project.remove HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::destroy_without_state_is_a_noop_without_remote_reads_or_state_creation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "destroy_without_state_is_a_noop_without_remote_reads_or_state_creation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::domain_host_update_uses_the_typed_in_place_mutation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "domain_host_update_uses_the_typed_in_place_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "domain.update"
+      ],
+      "requests": [
+        "POST /api/domain.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/application-one.domain-created.owner.json",
+        "fixtures/api/live/v0.30.6/domain-by-application.created.owner.json",
+        "fixtures/api/live/v0.30.6/domain-create.owner.json",
+        "fixtures/api/live/v0.30.6/domain-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::independent_database_mutations_overlap_and_checkpoint_a_successful_sibling",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "independent_database_mutations_overlap_and_checkpoint_a_successful_sibling",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "mariadb.create",
+        "mongo.create",
+        "postgres.create",
+        "redis.create"
+      ],
+      "requests": [
+        "POST /api/postgres.create",
+        "POST /api/redis.create",
+        "POST /api/mariadb.create",
+        "POST /api/mongo.create"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mariadb-create.owner.json",
+        "fixtures/api/live/v0.30.6/mongo-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json",
+        "fixtures/api/live/v0.30.6/redis-create.owner.json"
+      ],
+      "data": [],
+      "category": "state",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::libsql_definite_create_rejection_closes_the_journal_step",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "libsql_definite_create_rejection_closes_the_journal_step",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::libsql_post_create_direct_proof_transport_failure_stays_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "libsql_post_create_direct_proof_transport_failure_stays_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "libsql.create",
+        "libsql.one"
+      ],
+      "requests": [
+        "GET /api/libsql.one?",
+        "POST /api/libsql.create"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::libsql_post_create_topology_transport_failure_stays_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "libsql_post_create_topology_transport_failure_stays_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "libsql.create"
+      ],
+      "requests": [
+        "POST /api/libsql.create"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::libsql_replacement_checkpoints_delete_before_an_uncertain_create_preflight",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "libsql_replacement_checkpoints_delete_before_an_uncertain_create_preflight",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "libsql.create",
+        "libsql.remove",
+        "project.one"
+      ],
+      "requests": [
+        "POST /api/libsql.remove",
+        "GET /api/project.one?",
+        "POST /api/libsql.create"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::libsql_replacement_unknown_delete_keeps_the_old_identity_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "libsql_replacement_unknown_delete_keeps_the_old_identity_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "libsql.create",
+        "libsql.remove"
+      ],
+      "requests": [
+        "POST /api/libsql.remove",
+        "POST /api/libsql.create"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::libsql_updates_secrets_separately_and_replaces_nodes_delete_before_create",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "libsql_updates_secrets_separately_and_replaces_nodes_delete_before_create",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "libsql.create",
+        "libsql.remove",
+        "libsql.update"
+      ],
+      "requests": [
+        "POST /api/libsql.create HTTP/1.1",
+        "POST /api/libsql.update HTTP/1.1",
+        "POST /api/libsql.remove HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mariadb_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mariadb_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "mariadb.create",
+        "mariadb.remove",
+        "mariadb.update"
+      ],
+      "requests": [
+        "POST /api/mariadb.create HTTP/1.1",
+        "POST /api/mariadb.update HTTP/1.1",
+        "POST /api/mariadb.remove HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mariadb_unknown_create_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mariadb_unknown_create_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mongo_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mongo_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "mongo.create",
+        "mongo.remove",
+        "mongo.update"
+      ],
+      "requests": [
+        "POST /api/mongo.create HTTP/1.1",
+        "POST /api/mongo.update HTTP/1.1",
+        "POST /api/mongo.remove HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mongo_unknown_create_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mongo_unknown_create_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mysql_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mysql_create_metadata_update_and_delete_are_checkpointed_without_secret_leaks",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "mysql.create",
+        "mysql.remove",
+        "mysql.update"
+      ],
+      "requests": [
+        "POST /api/mysql.create HTTP/1.1",
+        "POST /api/mysql.update HTTP/1.1",
+        "POST /api/mysql.remove HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mysql_invalid_create_identity_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mysql_invalid_create_identity_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::mysql_unknown_create_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "mysql_unknown_create_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::non_default_environment_is_created_under_the_checkpointed_project",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "non_default_environment_is_created_under_the_checkpointed_project",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "environment.create"
+      ],
+      "requests": [
+        "POST /api/environment.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::port_containment_change_deletes_before_creating_under_the_new_application",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "port_containment_change_deletes_before_creating_under_the_new_application",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "port.create",
+        "port.delete"
+      ],
+      "requests": [
+        "POST /api/port.delete HTTP/1.1",
+        "POST /api/port.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::port_create_checkpoints_complete_fields_without_deploying",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "port_create_checkpoints_complete_fields_without_deploying",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "port.create"
+      ],
+      "requests": [
+        "POST /api/port.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::port_update_uses_a_fresh_read_and_complete_replacement_without_deploying",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "port_update_uses_a_fresh_read_and_complete_replacement_without_deploying",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "port.one",
+        "port.update"
+      ],
+      "requests": [
+        "GET /api/port.one?portId=port-1",
+        "POST /api/port.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::postgres_owned_fields_update_in_place",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "postgres_owned_fields_update_in_place",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "postgres.update"
+      ],
+      "requests": [
+        "POST /api/postgres.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/postgres-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::project_apply_checkpoints_and_the_next_plan_converges",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "project_apply_checkpoints_and_the_next_plan_converges",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1",
+        "POST /api/project.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::project_default_environment_is_checkpointed_without_a_duplicate_create",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "project_default_environment_is_checkpointed_without_a_duplicate_create",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1",
+        "POST /api/project.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::project_default_environment_is_configured_after_adoption",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "project_default_environment_is_configured_after_adoption",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "environment.update"
+      ],
+      "requests": [
+        "POST /api/environment.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::project_move_with_remote_update_updates_once_then_converges",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "project_move_with_remote_update_updates_once_then_converges",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.remove",
+        "project.update"
+      ],
+      "requests": [
+        "POST /api/project.update",
+        "POST /api/project.remove"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::project_update_checkpoints_and_the_next_plan_converges",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "project_update_checkpoints_and_the_next_plan_converges",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.update"
+      ],
+      "requests": [
+        "POST /api/project.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::protection_change_is_a_state_only_checkpoint_without_remote_mutation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "protection_change_is_a_state_only_checkpoint_without_remote_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::redirect_containment_change_deletes_before_creating_under_the_new_application",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "redirect_containment_change_deletes_before_creating_under_the_new_application",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "redirects.create",
+        "redirects.delete"
+      ],
+      "requests": [
+        "POST /api/redirects.delete HTTP/1.1",
+        "POST /api/redirects.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "LEAF_ENVIRONMENT",
+        "LEAF_ENVIRONMENT_COLLECTION",
+        "REDIRECT_EMPTY",
+        "REDIRECT_OLD",
+        "REDIRECT_OLD_COLLECTION"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::redirect_create_discovers_its_identity_and_never_deploys",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "redirect_create_discovers_its_identity_and_never_deploys",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "redirects.create"
+      ],
+      "requests": [
+        "POST /api/redirects.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "REDIRECT_EMPTY",
+        "REDIRECT_OLD_COLLECTION"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::redirect_update_uses_a_fresh_read_and_complete_replacement_without_deploying",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "redirect_update_uses_a_fresh_read_and_complete_replacement_without_deploying",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "redirects.one",
+        "redirects.update"
+      ],
+      "requests": [
+        "GET /api/redirects.one?redirectId=redirect-1",
+        "POST /api/redirects.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "LEAF_APPLICATION",
+        "LEAF_APPLICATION_COLLECTION",
+        "LEAF_ENVIRONMENT",
+        "LEAF_ENVIRONMENT_COLLECTION",
+        "LEAF_PROJECT_TOPOLOGY",
+        "REDIRECT_EMPTY",
+        "REDIRECT_NEW_COLLECTION",
+        "REDIRECT_OLD",
+        "REDIRECT_OLD_COLLECTION"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::redis_password_rotation_uses_the_new_one_shot_secret_value",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "redis_password_rotation_uses_the_new_one_shot_secret_value",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "redis.update"
+      ],
+      "requests": [
+        "POST /api/redis.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json",
+        "fixtures/api/live/v0.30.6/redis-create.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::removed_domain_is_deleted_and_forgotten_durably",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "removed_domain_is_deleted_and_forgotten_durably",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "domain.delete"
+      ],
+      "requests": [
+        "POST /api/domain.delete HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/domain-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::removed_redirect_is_deleted_and_forgotten_durably",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "removed_redirect_is_deleted_and_forgotten_durably",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "redirects.delete"
+      ],
+      "requests": [
+        "POST /api/redirects.delete HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "LEAF_APPLICATION",
+        "LEAF_APPLICATION_COLLECTION",
+        "LEAF_ENVIRONMENT",
+        "LEAF_ENVIRONMENT_COLLECTION",
+        "LEAF_PROJECT_TOPOLOGY",
+        "REDIRECT_EMPTY",
+        "REDIRECT_OLD",
+        "REDIRECT_OLD_COLLECTION"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::retained_domain_is_forgotten_without_a_remote_mutation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "retained_domain_is_forgotten_without_a_remote_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/domain-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::security_create_sends_the_password_once_and_never_persists_it",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "security_create_sends_the_password_once_and_never_persists_it",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "security.create"
+      ],
+      "requests": [
+        "POST /api/security.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "SECURITY_EMPTY",
+        "SECURITY_OLD_COLLECTION"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::security_rotation_sends_complete_credentials_and_stays_secret_free",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "security_rotation_sends_complete_credentials_and_stays_secret_free",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "security.update"
+      ],
+      "requests": [
+        "POST /api/security.update HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "LEAF_APPLICATION",
+        "LEAF_APPLICATION_COLLECTION",
+        "LEAF_ENVIRONMENT",
+        "LEAF_ENVIRONMENT_COLLECTION",
+        "LEAF_PROJECT_TOPOLOGY",
+        "SECURITY_EMPTY",
+        "SECURITY_NEW_COLLECTION",
+        "SECURITY_OLD",
+        "SECURITY_OLD_COLLECTION"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::security_update_without_a_declared_password_fails_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "security_update_without_a_declared_password_fails_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "security.create"
+      ],
+      "requests": [
+        "POST /api/security.create"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-create.owner.json",
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [
+        "LEAF_APPLICATION",
+        "LEAF_APPLICATION_COLLECTION",
+        "LEAF_ENVIRONMENT",
+        "LEAF_ENVIRONMENT_COLLECTION",
+        "LEAF_PROJECT_TOPOLOGY",
+        "SECURITY_EMPTY",
+        "SECURITY_OLD",
+        "SECURITY_OLD_COLLECTION"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::serial_create_unknown_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "serial_create_unknown_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::serial_delete_unknown_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "serial_delete_unknown_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::serial_update_unknown_outcome_keeps_the_journal_step_recoverable",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "serial_update_unknown_outcome_keeps_the_journal_step_recoverable",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/executor::state_only_project_move_preserves_identity_and_protection_without_remote_mutation",
+      "file": "crates/dokploy-cli/tests/executor.rs",
+      "test": "state_only_project_move_preserves_identity_and_protection_without_remote_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "project.create",
+        "project.remove",
+        "project.update"
+      ],
+      "requests": [
+        "POST /api/project.create",
+        "POST /api/project.remove",
+        "POST /api/project.update"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/planning::absent_workspace_plan_is_deterministic_and_read_only",
+      "file": "crates/dokploy-cli/tests/planning.rs",
+      "test": "absent_workspace_plan_is_deterministic_and_read_only",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/planning::declarative_databases_observe_absence_and_require_create_properties",
+      "file": "crates/dokploy-cli/tests/planning.rs",
+      "test": "declarative_databases_observe_absence_and_require_create_properties",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/planning::public_apply_rejects_a_saved_plan_after_configuration_changes",
+      "file": "crates/dokploy-cli/tests/planning.rs",
+      "test": "public_apply_rejects_a_saved_plan_after_configuration_changes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/planning::public_apply_revalidates_and_executes_a_saved_plan",
+      "file": "crates/dokploy-cli/tests/planning.rs",
+      "test": "public_apply_revalidates_and_executes_a_saved_plan",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1",
+        "POST /api/project.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-create.owner.json"
+      ],
+      "data": [],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/planning::public_apply_without_a_terminal_fails_closed_before_mutation",
+      "file": "crates/dokploy-cli/tests/planning.rs",
+      "test": "public_apply_without_a_terminal_fails_closed_before_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/planning::public_plan_json_uses_detailed_exit_code_two_for_changes",
+      "file": "crates/dokploy-cli/tests/planning.rs",
+      "test": "public_plan_json_uses_detailed_exit_code_two_for_changes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::interrupted_libsql_create_with_authoritative_absence_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "interrupted_libsql_create_with_authoritative_absence_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::interrupted_move_recovers_atomically_without_remote_requests",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "interrupted_move_recovers_atomically_without_remote_requests",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::killed_apply_is_recovered_from_fresh_remote_evidence_without_duplicate_create",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "killed_apply_is_recovered_from_fresh_remote_evidence_without_duplicate_create",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1",
+        "POST /api/project.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::replacement_crash_after_delete_checkpoint_resolves_without_remote_retry",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "replacement_crash_after_delete_checkpoint_resolves_without_remote_retry",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_compose_create_adopts_one_matching_resource_without_retrying_the_document",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_compose_create_adopts_one_matching_resource_without_retrying_the_document",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_compose_document_update_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_compose_document_update_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_compose_metadata_update_is_recovered_when_document_is_unchanged",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_compose_metadata_update_is_recovered_when_document_is_unchanged",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_create_adopts_one_exact_fresh_resource_without_retrying",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_create_adopts_one_exact_fresh_resource_without_retrying",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_libsql_create_adopts_topology_identity_without_retrying_secrets",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_libsql_create_adopts_topology_identity_without_retrying_secrets",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_libsql_metadata_update_is_recovered_when_password_is_unchanged",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_libsql_metadata_update_is_recovered_when_password_is_unchanged",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_libsql_password_rotation_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_libsql_password_rotation_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mariadb_create_adopts_one_matching_resource_without_retrying_secrets",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mariadb_create_adopts_one_matching_resource_without_retrying_secrets",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mariadb_metadata_update_is_recovered_from_readable_fresh_state",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mariadb_metadata_update_is_recovered_from_readable_fresh_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mongo_create_adopts_one_matching_resource_without_retrying_secrets",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mongo_create_adopts_one_matching_resource_without_retrying_secrets",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mongo_metadata_update_is_recovered_from_readable_fresh_state",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mongo_metadata_update_is_recovered_from_readable_fresh_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mysql_create_adopts_one_matching_resource_without_retrying_secrets",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mysql_create_adopts_one_matching_resource_without_retrying_secrets",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mysql_metadata_update_is_recovered_from_readable_fresh_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_mysql_secret_rotation_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_mysql_secret_rotation_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_port_create_adopts_one_exact_collision_key_without_retrying",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_port_create_adopts_one_exact_collision_key_without_retrying",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_port_update_is_recovered_from_authoritative_complete_state",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_port_update_is_recovered_from_authoritative_complete_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_redirect_create_adopts_one_exact_collision_key_without_retrying",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_redirect_create_adopts_one_exact_collision_key_without_retrying",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "REDIRECT_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_redirect_create_with_a_different_record_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_redirect_create_with_a_different_record_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "REDIRECT_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_redirect_update_is_recovered_from_authoritative_complete_state",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_redirect_update_is_recovered_from_authoritative_complete_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "REDIRECT_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_redirect_update_with_stale_remote_state_requires_no_change_confirmation",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_redirect_update_with_stale_remote_state_requires_no_change_confirmation",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "REDIRECT_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_security_create_adopts_one_exact_username_without_retrying_the_password",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_security_create_adopts_one_exact_username_without_retrying_the_password",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "SECURITY_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_security_password_rotation_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_security_password_rotation_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "SECURITY_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/recovery::uncertain_security_username_update_is_recovered_when_the_password_is_unchanged",
+      "file": "crates/dokploy-cli/tests/recovery.rs",
+      "test": "uncertain_security_username_update_is_recovered_when_the_password_is_unchanged",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "LEAF_TOPOLOGY",
+        "SECURITY_CONFIG"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/saved_plan::saved_plan_reader_rejects_unknown_duplicate_and_tampered_fields",
+      "file": "crates/dokploy-cli/tests/saved_plan.rs",
+      "test": "saved_plan_reader_rejects_unknown_duplicate_and_tampered_fields",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/saved_plan::saved_plan_rejects_each_stale_execution_boundary",
+      "file": "crates/dokploy-cli/tests/saved_plan.rs",
+      "test": "saved_plan_rejects_each_stale_execution_boundary",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/saved_plan::saved_plan_round_trip_rebinds_fresh_evidence_and_is_owner_only",
+      "file": "crates/dokploy-cli/tests/saved_plan.rs",
+      "test": "saved_plan_round_trip_rebinds_fresh_evidence_and_is_owner_only",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "bucket": "registry",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/external_apply::changing_a_registry_updates_in_place_by_resolved_identity",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "changing_a_registry_updates_in_place_by_resolved_identity",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.update"
+      ],
+      "requests": [
+        "POST /api/application.update HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "API_SEARCH",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "OK",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::clearing_a_registry_sends_an_explicit_null",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "clearing_a_registry_sends_an_explicit_null",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.update"
+      ],
+      "requests": [
+        "POST /api/application.update HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "API_SEARCH",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "OK",
+        "PROJECT"
+      ],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_recovery::ambiguous_registry_names_leave_an_uncertain_update_for_manual_intervention",
+      "file": "crates/dokploy-cli/tests/external_recovery.rs",
+      "test": "ambiguous_registry_names_leave_an_uncertain_update_for_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_recovery::uncertain_registry_update_that_did_not_apply_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/external_recovery.rs",
+      "test": "uncertain_registry_update_that_did_not_apply_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::changed_registry_updates_in_place_and_changed_server_replaces",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "changed_registry_updates_in_place_and_changed_server_replaces",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "ONE_APPLICATION",
+        "PROJECT"
+      ],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::registry_all_uses_exact_operation_and_exposes_only_safe_fields",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "registry_all_uses_exact_operation_and_exposes_only_safe_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "registry.all"
+      ],
+      "requests": [
+        "GET /api/registry.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

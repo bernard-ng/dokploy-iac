@@ -1,0 +1,515 @@
+{
+  "sources": [
+    {
+      "path": "crates/dokploy-cli/tests/application_remote.rs",
+      "bucket": "application",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/backup_desired.rs",
+      "bucket": "backup",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/backup_lifecycle.rs",
+      "bucket": "backup",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/backup_recovery.rs",
+      "bucket": "backup",
+      "layer": "cli-recovery"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/backup_remote.rs",
+      "bucket": "backup",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/backup_saved_plan.rs",
+      "bucket": "backup",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/compose_remote.rs",
+      "bucket": "compose",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/desired_compiler.rs",
+      "bucket": "engine",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/environment_remote.rs",
+      "bucket": "environment",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/executor.rs",
+      "bucket": "engine",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/external_apply.rs",
+      "bucket": "external",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/external_desired.rs",
+      "bucket": "external",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/external_recovery.rs",
+      "bucket": "external",
+      "layer": "cli-recovery"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/external_remote.rs",
+      "bucket": "external",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/libsql_remote.rs",
+      "bucket": "libsql",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/live_external_selectors.rs",
+      "bucket": "external",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "bucket": "mariadb",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mongo_remote.rs",
+      "bucket": "mongo",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "bucket": "mysql",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "bucket": "postgres",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/redis_remote.rs",
+      "bucket": "redis",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mount_desired.rs",
+      "bucket": "mount",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "bucket": "mount",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "bucket": "mount",
+      "layer": "cli-recovery"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/mount_remote.rs",
+      "bucket": "mount",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/planning.rs",
+      "bucket": "engine",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/port_remote.rs",
+      "bucket": "port",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/project_import.rs",
+      "bucket": "import",
+      "layer": "cli-import"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/project_remote.rs",
+      "bucket": "project",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/recovery.rs",
+      "bucket": "engine",
+      "layer": "cli-recovery"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "bucket": "redirect",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/saved_plan.rs",
+      "bucket": "engine",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/schedule_desired.rs",
+      "bucket": "schedule",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/schedule_lifecycle.rs",
+      "bucket": "schedule",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/schedule_recovery.rs",
+      "bucket": "schedule",
+      "layer": "cli-recovery"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/schedule_remote.rs",
+      "bucket": "schedule",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/security_remote.rs",
+      "bucket": "security",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "bucket": "placement",
+      "layer": "cli-apply"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/service_placement_desired.rs",
+      "bucket": "placement",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/service_placement_recovery.rs",
+      "bucket": "placement",
+      "layer": "cli-recovery"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "bucket": "placement",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/tests/settings_tags.rs",
+      "bucket": "tag",
+      "layer": "cli-remote"
+    },
+    {
+      "path": "crates/dokploy-cli/src/desired/sensitive_compilation/tests/convergence.rs",
+      "bucket": "secrets",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/src/desired/sensitive_compilation/tests/file_security.rs",
+      "bucket": "secrets",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/src/desired/sensitive_compilation/tests/sources.rs",
+      "bucket": "secrets",
+      "layer": "cli-desired"
+    },
+    {
+      "path": "crates/dokploy-cli/src/import.rs",
+      "bucket": "import",
+      "layer": "cli-import"
+    },
+    {
+      "path": "crates/dokploy-cli/src/import/converge.rs",
+      "bucket": "import",
+      "layer": "cli-import"
+    },
+    {
+      "path": "crates/dokploy-cli/src/import/names.rs",
+      "bucket": "import",
+      "layer": "cli-import"
+    },
+    {
+      "path": "crates/dokploy-cli/src/external.rs",
+      "bucket": "external",
+      "layer": "unit"
+    },
+    {
+      "path": "crates/dokploy-cli/src/remote/backup.rs",
+      "bucket": "backup",
+      "layer": "unit"
+    },
+    {
+      "path": "crates/dokploy-config/tests/backup.rs",
+      "bucket": "backup",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/config.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/external_selectors.rs",
+      "bucket": "external",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/mount.rs",
+      "bucket": "mount",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/schedule.rs",
+      "bucket": "schedule",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/service_placement.rs",
+      "bucket": "placement",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/settings.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/writer.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/src/file.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/backups.rs",
+      "bucket": "backup",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/client.rs",
+      "bucket": "sdk",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/compose.rs",
+      "bucket": "compose",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/domain.rs",
+      "bucket": "domain",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/external_associations.rs",
+      "bucket": "external",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "bucket": "external",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/libsql.rs",
+      "bucket": "libsql",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mariadb.rs",
+      "bucket": "mariadb",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mongo.rs",
+      "bucket": "mongo",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mounts.rs",
+      "bucket": "mount",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mutations.rs",
+      "bucket": "sdk",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mysql.rs",
+      "bucket": "mysql",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/ports.rs",
+      "bucket": "port",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/postgres.rs",
+      "bucket": "postgres",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/redirects.rs",
+      "bucket": "redirect",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/redis.rs",
+      "bucket": "redis",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/schedules.rs",
+      "bucket": "schedule",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/secret_error_policy.rs",
+      "bucket": "sdk",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/security.rs",
+      "bucket": "security",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/sparse_project_topology.rs",
+      "bucket": "project",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/tags.rs",
+      "bucket": "tag",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live.rs",
+      "bucket": "sdk",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_backup.rs",
+      "bucket": "backup",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_external_selectors.rs",
+      "bucket": "external",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_mount.rs",
+      "bucket": "mount",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_port.rs",
+      "bucket": "port",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_redirect.rs",
+      "bucket": "redirect",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_schedule.rs",
+      "bucket": "schedule",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_security.rs",
+      "bucket": "security",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/src/models.rs",
+      "bucket": "sdk",
+      "layer": "unit"
+    }
+  ],
+  "excluded": [
+    {
+      "path": "crates/dokploy-core/",
+      "reason": "Kernel (ADR 0016): the planner carries over; its tests are rewritten in the M1 property-path slice, not ported."
+    },
+    {
+      "path": "crates/dokploy-state/",
+      "reason": "Kernel (ADR 0016): state storage and journal carry over; state format 5 is an M1 slice."
+    },
+    {
+      "path": "crates/dokploy-spec/",
+      "reason": "The v2 spec crate; not legacy."
+    },
+    {
+      "path": "crates/dokploy-api/",
+      "reason": "Generated API crate."
+    },
+    {
+      "path": "xtask/",
+      "reason": "Build tooling."
+    },
+    {
+      "path": "crates/dokploy-cli/tests/completions.rs",
+      "reason": "Shell completions carry over (ADR 0016)."
+    },
+    {
+      "path": "crates/dokploy-cli/tests/state_commands.rs",
+      "reason": "State commands carry over until M1's state slice."
+    },
+    {
+      "path": "crates/dokploy-cli/tests/terminal_contract.rs",
+      "reason": "Terminal contract of the CLI shell; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/tests/support/",
+      "reason": "Test helpers, not tests."
+    },
+    {
+      "path": "crates/dokploy-cli/src/lib.rs",
+      "reason": "CLI shell (contexts, init, schema); carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/cli.rs",
+      "reason": "Argument parsing of the CLI shell; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/config.rs",
+      "reason": "Context configuration; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/settings.rs",
+      "reason": "Connection settings precedence; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/credentials.rs",
+      "reason": "Credential storage; carries over (ADR 0016)."
+    },
+    {
+      "path": "crates/dokploy-cli/src/sensitive.rs",
+      "reason": "Fingerprinting; carries over (ADR 0016)."
+    },
+    {
+      "path": "crates/dokploy-cli/src/imperative.rs",
+      "reason": "Imperative command catalog; carries over."
+    }
+  ]
+}

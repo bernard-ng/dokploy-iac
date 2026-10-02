@@ -1,0 +1,270 @@
+{
+  "bucket": "mariadb",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::authoritative_absence_allows_mariadb_create_without_a_root_password",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "authoritative_absence_allows_mariadb_create_without_a_root_password",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "mariadb.search"
+      ],
+      "requests": [
+        "GET /api/mariadb.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::duplicate_mariadb_identities_fail_closed",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "duplicate_mariadb_identities_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::duplicate_mariadb_names_in_one_environment_fail_closed",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "duplicate_mariadb_names_in_one_environment_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::managed_mariadb_requires_direct_and_collection_agreement_and_redacts_credentials",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "managed_mariadb_requires_direct_and_collection_agreement_and_redacts_credentials",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mariadb-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/mariadb-search.created.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::mariadb_database_and_username_changes_update_in_place",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "mariadb_database_and_username_changes_update_in_place",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::mariadb_direct_and_collection_disagreement_fails_closed",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "mariadb_direct_and_collection_disagreement_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::mariadb_password_changes_after_create_are_unsupported",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "mariadb_password_changes_after_create_are_unsupported",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::partial_mariadb_search_cannot_prove_absence",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "partial_mariadb_search_cannot_prove_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mariadb_remote::unavailable_mariadb_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "file": "crates/dokploy-cli/tests/mariadb_remote.rs",
+      "test": "unavailable_mariadb_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_by_environment_collects_authoritative_bounded_pages",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_by_environment_collects_authoritative_bounded_pages",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mariadb.search"
+      ],
+      "requests": [
+        "GET /api/mariadb.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_by_environment_rejects_ambiguous_pagination",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_by_environment_rejects_ambiguous_pagination",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_create_supports_an_optional_root_password_without_leaking_secrets",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_create_supports_an_optional_root_password_without_leaking_secrets",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mariadb-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_get_uses_a_strong_id_and_safe_tolerant_model",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_get_uses_a_strong_id_and_safe_tolerant_model",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mariadb.one"
+      ],
+      "requests": [
+        "GET /api/mariadb.one?mariadbId=mariadb-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mariadb-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_invalid_inputs_are_rejected_before_transport",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_invalid_inputs_are_rejected_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mariadb::mariadb_update_and_password_targets_use_exact_narrow_requests",
+      "file": "crates/dokploy-sdk/tests/mariadb.rs",
+      "test": "mariadb_update_and_password_targets_use_exact_narrow_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

@@ -1,0 +1,532 @@
+{
+  "bucket": "security",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/security_remote::authoritative_parent_absence_plans_security_creation_only_when_a_password_is_declared",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "authoritative_parent_absence_plans_security_creation_only_when_a_password_is_declared",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_ENTRIES",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::collection_naming_another_application_is_unavailable_not_authoritative",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "collection_naming_another_application_is_unavailable_not_authoritative",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::direct_identity_under_another_application_fails_closed",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "direct_identity_under_another_application_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENTRIES",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::duplicate_usernames_make_the_parent_collection_unavailable",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "duplicate_usernames_make_the_parent_collection_unavailable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENTRY",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::managed_entry_requires_agreement_and_never_retains_the_password",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "managed_entry_requires_agreement_and_never_retains_the_password",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENTRIES",
+        "ENTRY",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::partial_authority_downgrades_absence_to_an_incomplete_plan",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "partial_authority_downgrades_absence_to_an_incomplete_plan",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_ENTRIES",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::security_one_404_proves_absence_only_with_authoritative_parent_absence",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "security_one_404_proves_absence_only_with_authoritative_parent_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_ENTRIES",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NOT_FOUND",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::security_one_404_while_the_collection_lists_the_identity_is_not_absence",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "security_one_404_while_the_collection_lists_the_identity_is_not_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENTRIES",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NOT_FOUND",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::unmanaged_entry_with_the_same_username_is_matched_by_collision_key",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "unmanaged_entry_with_the_same_username_is_matched_by_collision_key",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENTRIES",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/security_remote::username_change_plans_one_in_place_update",
+      "file": "crates/dokploy-cli/tests/security_remote.rs",
+      "test": "username_change_plans_one_in_place_update",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENTRIES",
+        "ENTRY",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_security::live_security_adapter_converges_without_deploying_its_application",
+      "file": "crates/dokploy-sdk/tests/live_security.rs",
+      "test": "live_security_adapter_converges_without_deploying_its_application",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::application_one_is_authoritative_and_rejects_duplicate_ids_or_usernames",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "application_one_is_authoritative_and_rejects_duplicate_ids_or_usernames",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_create_postflight_failures_are_secret_safe_outcome_unknown",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_create_postflight_failures_are_secret_safe_outcome_unknown",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_create_proves_exactly_one_new_matching_identity",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_create_proves_exactly_one_new_matching_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_create_rejects_collisions_and_ambiguous_evidence",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_create_rejects_collisions_and_ambiguous_evidence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_decode_errors_do_not_echo_response_canaries",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_decode_errors_do_not_echo_response_canaries",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_get_requires_safe_direct_and_parent_agreement",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_get_requires_safe_direct_and_parent_agreement",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one",
+        "security.one"
+      ],
+      "requests": [
+        "GET /api/security.one?securityId=security-1 HTTP/1.1",
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_mutation_rejections_never_retain_echoed_passwords",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_mutation_rejections_never_retain_echoed_passwords",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_mutations_are_single_attempt_with_secret_safe_unknown_outcomes",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_mutations_are_single_attempt_with_secret_safe_unknown_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_rejects_empty_inputs_before_transport",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_rejects_empty_inputs_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY"
+      ],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_response_consumes_password_and_retains_only_presence",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_response_consumes_password_and_retains_only_presence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/security-one.created.owner.json"
+      ],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_update_and_delete_require_authoritative_preflight",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_update_and_delete_require_authoritative_preflight",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_update_and_delete_require_secret_safe_postflight_proof",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_update_and_delete_require_secret_safe_postflight_proof",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "security.delete",
+        "security.update"
+      ],
+      "requests": [
+        "POST /api/security.update",
+        "POST /api/security.delete"
+      ],
+      "fixtures": [],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_update_and_delete_use_exact_complete_requests",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_update_and_delete_use_exact_complete_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/security::security_update_rejects_application_scoped_username_collisions",
+      "file": "crates/dokploy-sdk/tests/security.rs",
+      "test": "security_update_rejects_application_scoped_username_collisions",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PASSWORD_CANARY",
+        "REQUEST_PASSWORD_CANARY",
+        "SECURITY_RESPONSE"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

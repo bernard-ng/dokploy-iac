@@ -36,6 +36,9 @@ jobs:
       - name: Check kind specs against the OpenAPI contract
         run: cargo xtask specs --check
 
+      - name: Check the legacy-test ledger
+        run: cargo xtask goldens --check
+
   generated-sdk:
     name: Generated SDK compilation
     runs-on: ubuntu-24.04

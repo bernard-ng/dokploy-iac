@@ -35,9 +35,10 @@ once M2 is done.
 
 Done: `dokploy-spec` (parser, lint, registry, request-side ledger), grammar v0 and five
 working specs (`registry`, `redirect` full; `application`, `environment`, `project`
-partial), `cargo xtask specs --check` in CI. Remaining: the golden-mining tool for the
-legacy tests, the manually dispatched capture workflow (ADR 0015), and merging the
-`dokploy api` prefix branch (`claude/api-command-prefix`).
+partial), `cargo xtask specs --check` in CI, the `dokploy api` command prefix, and the
+golden-mining tool (`cargo xtask goldens`, [`docs/design/golden-ledger.md`](design/golden-ledger.md)):
+891 legacy scenarios in `goldens/`, all `pending`. Remaining: the manually dispatched
+capture workflow (ADR 0015).
 
 ## Cost gate (end of M2)
 
