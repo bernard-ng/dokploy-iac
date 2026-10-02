@@ -1,6 +1,6 @@
 # dokploy-iac
 
-Read `CONTEXT.md` (domain language) and `ARCHITECTURE.md` before changing behavior.
+Read `CONTEXT.md` (domain language), `ARCHITECTURE.md` (layers and invariants), and the ADRs in `docs/decisions/` before changing behavior. The v2 engine is specified, not yet built: see `docs/roadmap.md` for what exists at each milestone.
 
 ## Before finishing
 
@@ -15,6 +15,9 @@ cargo xtask codegen --check
 
 ## Rules
 
+- The product is unreleased: breaking changes to the CLI, document format, state format, and Rust APIs are allowed (ADR 0001). Record them in `CHANGELOG.md`.
+- Behavior of a resource kind belongs in its spec under `specs/`, not in engine Rust (ADR 0002). A new field is a spec entry, a new flat kind is a spec file.
+- Never add per-kind code to the legacy layers slated for deletion (ADR 0016); the tag `engine-v1` (created at M0) is the reference.
 - `crates/dokploy-api/src/generated` is generated; never hand-edit it. Regenerate with `cargo xtask codegen`.
 - Generated response types must not be used as reconciliation read models (see `dokploy-api` docs).
 - Fixtures under `fixtures/api/live` are captured from a real Dokploy; do not hand-edit them.

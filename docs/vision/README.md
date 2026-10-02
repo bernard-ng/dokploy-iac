@@ -15,4 +15,4 @@ modeled, `✎` a design proposal that changes a shape, `[c]` create-only, `[s]`
 secret, `[a]` adopt-only, `[x]` deliberately not configuration. Both files are
 derived from `openapi/dokploy.json` and parse as YAML.
 
-Companion: [`../beta-roadmap.md`](../beta-roadmap.md) for the gap analysis and plan.
+Companion: [`../roadmap.md`](../roadmap.md) for the plan.
