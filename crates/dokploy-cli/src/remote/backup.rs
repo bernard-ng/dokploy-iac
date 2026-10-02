@@ -40,6 +40,7 @@ pub(crate) fn backup_target(kind: ResourceKind, id: &str) -> Option<BackupTarget
         | ResourceKind::Tag
         | ResourceKind::Schedule
         | ResourceKind::Backup => return None,
+        _ => return None,
     })
 }
 

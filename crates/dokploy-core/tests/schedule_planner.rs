@@ -493,6 +493,9 @@ fn stored_seam_rejects_malformed_schedule_state_and_projects_executables_as_rece
         json!({"service_name": ""}),
         json!({"description": null}),
         json!({"timezone": 5}),
+        // A clear holds no text, so the state layer stores it; a Schedule's command is
+        // receipt-only, so the planner's stored seam refuses it.
+        json!({"command": null}),
     ] {
         let mut state = base_state();
         state_resource(
@@ -515,7 +518,6 @@ fn stored_seam_rejects_malformed_schedule_state_and_projects_executables_as_rece
     for managed in [
         json!({"command": COMMAND_CANARY}),
         json!({"script": SCRIPT_CANARY}),
-        json!({"command": null}),
     ] {
         let error = ManagedInputs::try_from_json(managed)
             .expect_err("executable text can never enter managed state");

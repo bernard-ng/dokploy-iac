@@ -31,3 +31,4 @@ pub use snapshot::{
     RemoteStateError, RemovalDirective, ResourceObservationMatch, StoredState, StoredStateError,
     compare_resource_observation,
 };
+pub use spec_property::register_spec_kinds;

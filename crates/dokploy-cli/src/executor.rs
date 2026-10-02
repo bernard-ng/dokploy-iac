@@ -734,6 +734,7 @@ async fn apply_workspace_with_expectation(
                 RemoteId::new(created.security_id().as_str())
                     .map_err(|_| ApplyWorkspaceError::InvalidRemoteIdentity)?
             }
+            _ => return Err(ApplyWorkspaceError::UnsupportedChange),
         };
         let resource = checkpoint.materialize(change.address(), remote_id.clone())?;
         state.upsert_resource(change.address().clone(), resource)?;
@@ -1321,6 +1322,7 @@ async fn prepare_move_mutation(
         | ResourceKind::Security
         | ResourceKind::Mount
         | ResourceKind::Backup => Err(ApplyWorkspaceError::UnsupportedChange),
+        _ => Err(ApplyWorkspaceError::UnsupportedChange),
     }
 }
 
@@ -1472,6 +1474,7 @@ async fn delete_remote_resource(
         ),
         ResourceKind::Backup => None,
         ResourceKind::Tag => Some(client.tags().delete(TagId::new(remote_id.as_str())).await),
+        _ => None,
     }
 }
 
@@ -3307,6 +3310,7 @@ async fn execute_existing_change(
             )
             .await?,
         ),
+        _ => return Err(ApplyWorkspaceError::UnsupportedChange),
     };
 
     let token = journal.start_recoverable_step(

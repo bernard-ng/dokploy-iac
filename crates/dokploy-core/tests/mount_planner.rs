@@ -430,6 +430,9 @@ fn stored_seam_rejects_malformed_mount_state_and_projects_content_as_a_receipt()
         json!({"mount_path": ""}),
         json!({"volume_name": null}),
         json!({"mount_path": 5}),
+        // The state layer stores a clear, since a clear holds no bytes. A Mount's content
+        // is receipt-only, so the planner's stored seam refuses a managed `content`.
+        json!({"content": null}),
     ] {
         let mut state = base_state();
         state_resource(
@@ -452,7 +455,6 @@ fn stored_seam_rejects_malformed_mount_state_and_projects_content_as_a_receipt()
     let error = ManagedInputs::try_from_json(json!({"content": CONTENT_CANARY}))
         .expect_err("file content can never enter managed state");
     assert!(!error.to_string().contains(CONTENT_CANARY));
-    assert!(ManagedInputs::try_from_json(json!({"content": null})).is_err());
 }
 
 #[test]

@@ -259,6 +259,9 @@ fn managed_inputs_store_only_canonical_sensitive_clears() {
         json!({ "environment": null }),
         json!({ "environment": {} }),
         json!({ "environment": { "API_TOKEN": null, "_INTERNAL": null } }),
+        json!({ "environment": { "lowercase": null } }),
+        json!({ "nested": { "password": null } }),
+        json!({ "build_args": { "TOKEN": null } }),
     ] {
         let inputs = ManagedInputs::try_from_json(allowed.clone())
             .expect("canonical sensitive clears must be durable");
@@ -270,8 +273,11 @@ fn managed_inputs_store_only_canonical_sensitive_clears() {
         json!({ "root_password": "raw-root-password-canary" }),
         json!({ "environment": "raw-environment-canary" }),
         json!({ "environment": { "API_TOKEN": "raw-env-canary" } }),
-        json!({ "environment": { "lowercase": null } }),
-        json!({ "nested": { "password": null } }),
+        json!({ "environment": { "API-TOKEN": null } }),
+        json!({ "nested": { "password": "raw-password-canary" } }),
+        json!({ "nested": [{ "environment": { "A": "raw-env-canary" } }] }),
+        json!({ "build_args": { "TOKEN": "raw-env-canary" } }),
+        json!({ "build_args": ["raw-env-canary"] }),
     ] {
         let debug = format!(
             "{:?}",
@@ -314,15 +320,29 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
         ])
         .is_err()
     );
+    // State checks the syntax only; which paths are legal is the spec's decision.
     for invalid in [
+        "",
+        "Environment",
+        "environment.",
+        "environment.API-TOKEN",
+        "environment.1ABC",
+        "environment..A",
+        "password extra",
+        "a.b.c.d.e",
+    ] {
+        assert!(
+            SensitivePropertyPath::parse(invalid).is_err(),
+            "`{invalid}`"
+        );
+    }
+    for valid in [
         "environment",
         "environment.lowercase",
-        "environment.API-TOKEN",
+        "limits.token",
         "description",
-        "password.extra",
-        "root_password.extra",
     ] {
-        assert!(SensitivePropertyPath::parse(invalid).is_err());
+        SensitivePropertyPath::parse(valid).expect("a well-formed path parses");
     }
 
     for managed in [
@@ -516,7 +536,7 @@ fn state_mutations_advance_one_lineage_serial() {
     let address: ResourceAddress = "application.api".parse().expect("address must parse");
     let resource = resource_state(ResourceKind::Application, "application-1");
 
-    assert_eq!(state.format_version(), 4);
+    assert_eq!(state.format_version(), 5);
     assert_eq!(state.serial(), 0);
     assert_eq!(state.revision().serial(), 0);
     assert_eq!(state.revision().lineage(), lineage);
@@ -827,7 +847,7 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
     );
 
     let mut unsupported = serde_json::to_value(&state).expect("state must serialize");
-    unsupported["formatVersion"] = json!(5);
+    unsupported["formatVersion"] = json!(6);
     let unsupported = serde_json::to_vec(&unsupported).expect("state JSON must serialize");
     assert!(StateFile::from_json_slice(&unsupported).is_err());
 

@@ -13,7 +13,7 @@ use dokploy_core::Plan;
 use super::*;
 
 /// Returns whether Dokploy lets a create call of this kind place the service.
-pub(super) const fn is_placed_service(kind: ResourceKind) -> bool {
+pub(super) fn is_placed_service(kind: ResourceKind) -> bool {
     matches!(
         kind,
         ResourceKind::Compose

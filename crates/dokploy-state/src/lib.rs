@@ -1,5 +1,6 @@
 //! Durable domain types for Dokploy infrastructure state.
 
+mod document;
 mod journal;
 mod resource;
 mod sensitive;
@@ -7,6 +8,7 @@ mod state;
 mod storage;
 mod strict_json;
 
+pub use document::{DocumentId, DocumentIdParseError};
 pub use journal::{
     ExpectedCheckpoint, ExpectedCheckpointError, FailureCode, JournalAction,
     JournalDurabilityStage, JournalError, OperationJournal, PlanDigest, PlanDigestError,
@@ -14,7 +16,8 @@ pub use journal::{
     RecoveryStepOutcome, RecoverySummary, StepToken,
 };
 pub use resource::{
-    ResourceAddress, ResourceAddressParseError, ResourceKind, ResourceKindParseError, ResourceName,
+    AddressSegment, AddressSuffixError, KindRegistrationError, ResourceAddress,
+    ResourceAddressParseError, ResourceKind, ResourceKindParseError, ResourceName,
     ResourceNameError, StateScope,
 };
 pub use sensitive::{

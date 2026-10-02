@@ -6,6 +6,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- State format 5 (milestone M1, ADR 0009; [`docs/design/state-format.md`](docs/design/state-format.md)).
+  Resources are keyed by hierarchical address (`project.shop/environment.staging/application.api`),
+  the file records its document (`settings`, `project.<slug>`), and each document has its own
+  directory, lock, journal, and backup. `ResourceKind` is open: the first engine's kinds stay
+  constants, and spec kinds are registered (`dokploy_core::register_spec_kinds`).
+  `SensitivePropertyPath` is a validated dotted path, so spec-declared secrets checkpoint.
+  Addresses support suffix resolution and subtree moves. First-engine addresses are one-segment
+  paths and keep their text. **Breaking:** formats 3 and 4 are refused (re-import); there is no
+  migration. Managed inputs now store a clear (`null`) under any secret-looking key, since a clear
+  holds no secret; a value is still rejected wherever it appears. Sensitive collection keys may
+  be lowercase.
 - Spec-driven property paths (milestone M1). `dokploy-spec` resolves a dotted path against a
   kind spec (`KindSpec::property`, `SpecRegistry::property`): which paths are legal, their
   type, class, mutability, nullability, selector kind, and whether they are required on create;

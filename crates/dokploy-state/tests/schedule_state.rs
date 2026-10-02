@@ -107,9 +107,7 @@ fn command_and_script_are_canonical_sensitive_paths_and_never_managed_state() {
 
     for value in [
         json!({"command": COMMAND_CANARY}),
-        json!({"command": null}),
         json!({"script": SCRIPT_CANARY}),
-        json!({"script": null}),
         json!({"nested": {"command": COMMAND_CANARY}}),
         json!({"nested": {"script": SCRIPT_CANARY}}),
     ] {
@@ -118,6 +116,10 @@ fn command_and_script_are_canonical_sensitive_paths_and_never_managed_state() {
         let rendered = format!("{error} {error:?}");
         assert!(!rendered.contains(COMMAND_CANARY));
         assert!(!rendered.contains(SCRIPT_CANARY));
+    }
+    // A clear carries no text. Whether a field may be cleared is its spec's `nullable`.
+    for cleared in [json!({"command": null}), json!({"script": null})] {
+        ManagedInputs::try_from_json(cleared).expect("a clear stores no text");
     }
 }
 

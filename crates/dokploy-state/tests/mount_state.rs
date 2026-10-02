@@ -93,11 +93,12 @@ fn file_content_is_a_canonical_sensitive_path_and_never_managed_state() {
 
     for managed in [
         json!({"content": CONTENT_CANARY}),
-        json!({"content": null}),
         json!({"nested": {"content": CONTENT_CANARY}}),
     ] {
         let error = ManagedInputs::try_from_json(managed)
             .expect_err("content bytes cannot enter non-sensitive managed state");
         assert!(!error.to_string().contains(CONTENT_CANARY));
     }
+    // A clear carries no bytes. Whether a field may be cleared is its spec's `nullable`.
+    ManagedInputs::try_from_json(json!({"content": null})).expect("a clear stores no bytes");
 }

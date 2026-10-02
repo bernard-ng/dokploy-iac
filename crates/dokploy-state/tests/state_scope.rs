@@ -3,8 +3,8 @@
 use std::{collections::BTreeMap, fs};
 
 use dokploy_state::{
-    ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
-    ResourceState, StateError, StateFile, StateScope, StateStore, StateStoreError,
+    DocumentId, ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress,
+    ResourceKind, ResourceState, StateError, StateFile, StateScope, StateStore, StateStoreError,
 };
 use semver::Version;
 use serde_json::json;
@@ -33,13 +33,15 @@ fn project_resource(kind: ResourceKind, id: &str) -> ResourceState {
     )
 }
 
-fn legacy_v3_json() -> serde_json::Value {
+/// A file as the previous formats wrote it: no `document`, and an older version.
+fn older_format_json(version: u32) -> serde_json::Value {
     let mut value = serde_json::to_value(project_state()).expect("state must serialize");
-    value["formatVersion"] = json!(3);
-    value
-        .as_object_mut()
-        .expect("state is an object")
-        .remove("scope");
+    value["formatVersion"] = json!(version);
+    let object = value.as_object_mut().expect("state is an object");
+    object.remove("document");
+    if version >= 4 {
+        object.insert("scope".to_owned(), json!("project"));
+    }
     value
 }
 
@@ -52,14 +54,16 @@ fn decode(value: &serde_json::Value) -> Result<StateFile, dokploy_state::StateDe
 // ---------------------------------------------------------------------------
 
 #[test]
-fn new_states_default_to_project_scope_in_format_four() {
+fn new_states_default_to_the_workspace_project_document_in_format_five() {
     let state = project_state();
 
     assert_eq!(state.scope(), StateScope::Project);
-    assert_eq!(state.format_version(), 4);
+    assert_eq!(state.document(), &DocumentId::Workspace);
+    assert_eq!(state.format_version(), 5);
     let encoded = serde_json::to_value(&state).expect("state must serialize");
-    assert_eq!(encoded["scope"], "project");
-    assert_eq!(encoded["formatVersion"], 4);
+    assert_eq!(encoded["document"], "project");
+    assert_eq!(encoded["formatVersion"], 5);
+    assert!(encoded.get("scope").is_none(), "the scope is derived");
 }
 
 #[test]
@@ -67,37 +71,45 @@ fn settings_scope_round_trips_through_json() {
     let state = settings_state();
     let encoded = serde_json::to_value(&state).expect("state must serialize");
 
-    assert_eq!(encoded["scope"], "settings");
+    assert_eq!(encoded["document"], "settings");
     assert_eq!(decode(&encoded).expect("settings state decodes"), state);
 }
 
 #[test]
-fn a_format_three_file_decodes_as_a_project_and_is_upgraded_in_memory() {
-    let legacy = legacy_v3_json();
-    assert_eq!(legacy["formatVersion"], 3);
-
-    let state = decode(&legacy).expect("a legacy project state must still decode");
-
-    assert_eq!(state.scope(), StateScope::Project);
-    assert_eq!(state.format_version(), 4);
-    let rewritten = serde_json::to_value(&state).expect("state must serialize");
-    assert_eq!(rewritten["formatVersion"], 4);
-    assert_eq!(rewritten["scope"], "project");
+fn older_formats_are_refused_with_a_message_that_says_to_reimport() {
+    for version in [3, 4] {
+        let error = StateFile::from_json_slice(
+            &serde_json::to_vec(&older_format_json(version)).expect("JSON serializes"),
+        );
+        assert!(error.is_err(), "format {version} has no migration");
+    }
+    let refusal = StateError::UnsupportedFormatVersion {
+        found: 4,
+        supported: 5,
+    };
+    assert!(refusal.to_string().contains("re-import"), "{refusal}");
 }
 
 #[test]
-fn the_scope_field_must_agree_with_the_format_version() {
-    let mut legacy_with_scope = legacy_v3_json();
-    legacy_with_scope["scope"] = json!("project");
-    assert!(decode(&legacy_with_scope).is_err(), "format 3 has no scope");
-
+fn the_document_field_is_required_and_must_be_known() {
     let mut missing = serde_json::to_value(project_state()).expect("state must serialize");
-    missing.as_object_mut().expect("object").remove("scope");
-    assert!(decode(&missing).is_err(), "format 4 requires a scope");
+    missing.as_object_mut().expect("object").remove("document");
+    assert!(decode(&missing).is_err(), "format 5 requires a document");
 
-    let mut unknown = serde_json::to_value(project_state()).expect("state must serialize");
-    unknown["scope"] = json!("cluster");
-    assert!(decode(&unknown).is_err(), "an unknown scope is rejected");
+    for unknown in ["cluster", "project.", "project.UPPER", "settings.x", ""] {
+        let mut value = serde_json::to_value(project_state()).expect("state must serialize");
+        value["document"] = json!(unknown);
+        assert!(decode(&value).is_err(), "`{unknown}` is not a document");
+    }
+
+    let mut project = serde_json::to_value(project_state()).expect("state must serialize");
+    project["document"] = json!("project.leganews-platform");
+    assert_eq!(
+        decode(&project)
+            .expect("a named project decodes")
+            .document(),
+        &DocumentId::Project("leganews-platform".parse().expect("slug is valid"))
+    );
 }
 
 #[test]
@@ -319,41 +331,21 @@ fn a_store_refuses_to_write_or_read_another_scope() {
 }
 
 #[test]
-fn a_legacy_project_file_is_readable_and_rewritten_as_format_four() {
+fn a_store_refuses_a_file_from_an_older_format_instead_of_upgrading_it() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let directory = workspace.path().join(".dokploy");
     fs::create_dir(&directory).expect("state directory is created");
-    let legacy = legacy_v3_json();
     fs::write(
         directory.join("state.json"),
-        serde_json::to_vec(&legacy).expect("legacy JSON serializes"),
+        serde_json::to_vec(&older_format_json(4)).expect("JSON serializes"),
     )
-    .expect("legacy state is written");
+    .expect("old state is written");
     let store = StateStore::new(workspace.path(), instance()).expect("project store binds");
 
-    let loaded = store
-        .inspect()
-        .expect("legacy state is readable")
-        .expect("legacy state exists");
-    assert_eq!(loaded.scope(), StateScope::Project);
-
-    let mut next = loaded.clone();
-    next.upsert_resource(
-        "project.main".parse().expect("address parses"),
-        project_resource(ResourceKind::Project, "project-1"),
-    )
-    .expect("a resource is added");
-    store
-        .begin_write()
-        .expect("lock is acquired")
-        .checkpoint(ExpectedState::from_state(&loaded), &next)
-        .expect("the next checkpoint succeeds");
-
-    let rewritten: serde_json::Value =
-        serde_json::from_slice(&fs::read(directory.join("state.json")).expect("state is read"))
-            .expect("state is JSON");
-    assert_eq!(rewritten["formatVersion"], 4);
-    assert_eq!(rewritten["scope"], "project");
+    assert!(matches!(
+        store.inspect(),
+        Err(StateStoreError::StateCorrupt)
+    ));
 }
 
 #[cfg(unix)]

@@ -986,6 +986,7 @@ fn mutation_contract(kind: ResourceKind) -> MutationContract {
             .with_property(PropertyPath::Username, set_only)
             .with_property(PropertyPath::Password, set_only)
             .with_containment(MutationMode::Replace),
+        _ => MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate),
     }
 }
 

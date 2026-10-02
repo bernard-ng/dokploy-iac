@@ -47,9 +47,10 @@ M0 is complete once the capture workflow has run once in GitHub Actions.
 
 Done: spec-validated property paths (`dokploy-spec` path catalog, `PropertyPath::Spec`,
 `MutationContract::from_spec`; [`spec-format.md`](design/spec-format.md#property-paths)).
-Next: state format 5 with hierarchical addresses (this also opens the closed
-`ResourceKind` and `SensitivePropertyPath`, which a spec-declared kind outside the legacy
-list needs), the document model, the `Transport` trait, and the engine skeleton.
+State format 5 with hierarchical addresses, document ids, per-document directories, open kinds,
+and open sensitive paths ([`state-format.md`](design/state-format.md)); a `registry`, which has no
+first-engine code, plans and checkpoints from its spec alone (kernel test).
+Next: the document model, the `Transport` trait, and the engine skeleton.
 
 ## Cost gate (end of M2)
 

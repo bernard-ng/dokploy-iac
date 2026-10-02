@@ -776,11 +776,10 @@ fn paths_compare_by_kind_and_dotted_path() {
     assert!(!path("application", "description").is_collection_root());
 }
 
-/// A spec-declared secret in a kind the closed durable-state grammar does not know can
-/// be planned, but cannot yet be checkpointed: `SensitivePropertyPath` is closed until
-/// state format 5 opens it (roadmap M1). This pins that boundary so the change is visible.
+/// A spec-declared secret in a kind the first engine never knew plans and checkpoints: the
+/// durable receipt grammar is syntactic, and the spec decides which paths are secret.
 #[test]
-fn a_secret_outside_the_closed_state_grammar_plans_but_does_not_yet_checkpoint() {
+fn a_secret_outside_the_first_engines_vocabulary_plans_and_checkpoints() {
     let spec = dokploy_spec::parse_spec(
         r#"
 kind: application
@@ -819,13 +818,175 @@ fields:
     let plan = plan(&desired, &StoredState::absent(instance()), &remote);
     assert!(plan.applyable(), "{plan:?}");
     let checkpoint = plan.changes()[0].checkpoint().present().expect("present");
-    assert!(
-        checkpoint
-            .materialize(
-                &address("application.api"),
-                RemoteId::new("application-1").unwrap()
-            )
-            .is_err(),
-        "the durable receipt grammar is still closed"
+    let state = checkpoint
+        .materialize(
+            &address("application.api"),
+            RemoteId::new("application-1").unwrap(),
+        )
+        .expect("the receipt is stored without a value");
+    let receipts: Vec<String> = state
+        .sensitive_inputs()
+        .paths()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(receipts, ["token"]);
+    assert_eq!(state.last_applied().as_json(), &json!({}));
+}
+
+/// Registers the repository's kinds with the state layer once per test binary.
+fn registered() {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        dokploy_core::register_spec_kinds(specs()).expect("repository kinds register");
+    });
+}
+
+#[test]
+fn registering_spec_kinds_makes_them_addressable_and_keeps_the_first_engines_facts() {
+    registered();
+    let registry: ResourceKind = "registry".parse().expect("registry is registered");
+    assert_eq!(registry.scope(), dokploy_state::StateScope::Settings);
+    assert_eq!(registry.containment_parent_kind(), None);
+    assert_eq!(address("registry.main").kind(), registry);
+
+    // Kinds the first engine already has keep their constants and facts.
+    assert_eq!(
+        "redirect".parse::<ResourceKind>().unwrap(),
+        ResourceKind::Redirect
     );
+    assert_eq!(
+        ResourceKind::Redirect.containment_parent_kind(),
+        Some(ResourceKind::Application)
+    );
+    // Registering twice is harmless.
+    dokploy_core::register_spec_kinds(specs()).expect("idempotent");
+}
+
+/// The kernel half of "plan a settings document containing a registry": a kind that has
+/// no first-engine code at all, planned and checkpointed from its spec alone, secret
+/// included, with nothing but the spec to say what its paths mean.
+#[test]
+fn a_registry_is_planned_and_checkpointed_from_its_spec_alone() {
+    registered();
+    let registry_spec = specs().get("registry").expect("registry has a spec");
+    let paths = |name: &str| PropertyPath::from_spec(registry_spec, name).unwrap();
+    let desired_properties = || {
+        BTreeMap::from([
+            (paths("type"), value(json!("cloud"))),
+            (paths("url"), value(json!("ghcr.io"))),
+            (paths("username"), value(json!("ci"))),
+            (paths("password"), secret(7)),
+            (paths("image_prefix"), OwnedValue::Null),
+        ])
+    };
+    let desired = desired_one("registry.main", DesiredResource::new(desired_properties()))
+        .expect("desired state is valid");
+    let contract = || MutationContract::from_spec(registry_spec);
+    let missing = RemoteState::try_new_with_contracts(
+        instance(),
+        [(address("registry.main"), RemoteObservation::Missing)],
+        [(address("registry.main"), contract())],
+    )
+    .unwrap();
+
+    let created = plan(&desired, &StoredState::absent(instance()), &missing);
+    assert!(created.applyable(), "{created:?}");
+    assert_eq!(created.changes()[0].kind(), ChangeKind::Create);
+    assert!(
+        !format!("{created:?}").contains("ghcr.io"),
+        "a plan never shows values"
+    );
+
+    // Apply: the checkpoint becomes durable state with the secret as a receipt only.
+    let checkpoint = created.changes()[0]
+        .checkpoint()
+        .present()
+        .expect("present");
+    let resource = checkpoint
+        .materialize(
+            &address("registry.main"),
+            RemoteId::new("registry-1").unwrap(),
+        )
+        .expect("the registry checkpoint materializes");
+    let mut file = StateFile::new_for_document(
+        Version::new(0, 1, 0),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    );
+    file.upsert_resource(address("registry.main"), resource)
+        .unwrap();
+    let text = serde_json::to_string(&file).unwrap();
+    assert!(text.contains("\"password\"") && !text.contains("ghcr.io-secret"));
+
+    // The next plan, against what the checkpoint recorded, converges.
+    let stored = StoredState::try_from_state_with_specs(&file, specs()).expect("projects");
+    let observed = present(
+        "registry-1",
+        "registry",
+        vec![
+            ("type", known(json!("cloud"))),
+            ("url", known(json!("ghcr.io"))),
+            ("username", known(json!("ci"))),
+            (
+                "password",
+                PropertyObservation::Unknown(dokploy_core::PropertyUnknownReason::Sensitive),
+            ),
+            ("image_prefix", PropertyObservation::KnownAbsent),
+        ],
+    );
+    let remote = RemoteState::try_new_with_contracts(
+        instance(),
+        [(address("registry.main"), observed)],
+        [(address("registry.main"), contract())],
+    )
+    .unwrap();
+    let converged = plan(&desired, &stored, &remote);
+    assert!(converged.applyable(), "{converged:?}");
+    assert!(converged.changes().is_empty(), "{converged:?}");
+
+    // Rotating the password plans one in-place update, naming only the path.
+    let mut rotated = desired_properties();
+    rotated.insert(paths("password"), secret(8));
+    let rotation = desired_one("registry.main", DesiredResource::new(rotated)).unwrap();
+    let updated = plan(&rotation, &stored, &remote);
+    assert_eq!(
+        updated.changes()[0].kind(),
+        ChangeKind::Update,
+        "{updated:?}"
+    );
+    let changed: Vec<String> = updated.changes()[0]
+        .fields()
+        .iter()
+        .map(|field| field.key().to_string())
+        .collect();
+    assert_eq!(changed, ["password"]);
+}
+
+#[test]
+fn a_nested_desired_address_must_name_its_containment() {
+    let nested = address("project.shop/environment.staging/application.api");
+    let wrong = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            nested.clone(),
+            application(vec![("replicas", value(json!(1)))]),
+        )]),
+    );
+    assert!(matches!(
+        wrong,
+        Err(DesiredStateError::ContainmentAddressMismatch { .. })
+    ));
+
+    let right = DesiredState::try_new(
+        digest(),
+        BTreeMap::from([(
+            nested,
+            DesiredResource::new(BTreeMap::from([(
+                path("application", "replicas"),
+                value(json!(1)),
+            )]))
+            .with_containment(Some(address("project.shop/environment.staging"))),
+        )]),
+    );
+    right.expect("containment equal to the address parent is accepted");
 }

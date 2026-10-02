@@ -479,7 +479,7 @@ fn sorted<T>(items: &[T], id: impl Fn(&T) -> &str) -> Vec<&T> {
 }
 
 /// The fixed kind order of the walk.
-const fn kind_rank(kind: ResourceKind) -> u8 {
+fn kind_rank(kind: ResourceKind) -> u8 {
     match kind {
         ResourceKind::Application => 0,
         ResourceKind::Compose => 1,

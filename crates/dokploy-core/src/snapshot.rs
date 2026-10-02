@@ -338,6 +338,11 @@ pub enum DesiredStateError {
     /// A top-level resource cannot have a containment parent.
     #[error("desired resource `{address}` cannot have a containment parent")]
     UnexpectedContainment { address: ResourceAddress },
+    /// A nested address is not contained by the resource its path names.
+    #[error(
+        "desired resource `{address}` is not contained by the resource its address is nested under"
+    )]
+    ContainmentAddressMismatch { address: ResourceAddress },
     /// A containment parent has the wrong resource kind.
     #[error("desired resource `{address}` has an invalid containment parent `{parent}`")]
     InvalidContainmentKind {
@@ -350,6 +355,14 @@ fn validate_desired_containment(
     address: &ResourceAddress,
     resource: &DesiredResource,
 ) -> Result<(), DesiredStateError> {
+    // A nested address is contained by the resource its path names (ADR 0006).
+    if let Some(parent) = address.parent()
+        && resource.containment.as_ref() != Some(&parent)
+    {
+        return Err(DesiredStateError::ContainmentAddressMismatch {
+            address: address.clone(),
+        });
+    }
     match (
         address.kind().containment_parent_kind(),
         resource.containment.as_ref(),

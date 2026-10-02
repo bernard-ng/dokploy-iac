@@ -79,7 +79,7 @@ struct RenamedReport {
 impl ImportReport {
     /// The number of resources recorded in the new state.
     #[must_use]
-    pub const fn resource_count(&self) -> usize {
+    pub fn resource_count(&self) -> usize {
         self.resources
     }
 }
@@ -133,7 +133,7 @@ impl fmt::Display for ImportReport {
     }
 }
 
-const fn kind_label(kind: ResourceKind) -> &'static str {
+fn kind_label(kind: ResourceKind) -> &'static str {
     match kind {
         ResourceKind::Project => "project",
         ResourceKind::Environment => "environment",
@@ -153,6 +153,7 @@ const fn kind_label(kind: ResourceKind) -> &'static str {
         ResourceKind::Schedule => "schedule",
         ResourceKind::Backup => "backup",
         ResourceKind::Tag => "tag",
+        _ => kind.as_str(),
     }
 }
 

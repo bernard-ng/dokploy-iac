@@ -12,13 +12,12 @@ use tempfile::NamedTempFile;
 use thiserror::Error;
 
 use crate::journal::{RecoveryScanError, scan_recovery};
-use crate::{InstanceIdentity, RecoveryStatus, StateFile, StateRevision, StateScope};
+use crate::{DocumentId, InstanceIdentity, RecoveryStatus, StateFile, StateRevision, StateScope};
 
 const DEFAULT_MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
 const DEFAULT_MAX_JOURNAL_BYTES: u64 = 16 * 1024 * 1024;
 const DEFAULT_MAX_JOURNAL_RECORDS: usize = 10_000;
 const STATE_DIRECTORY: &str = ".dokploy";
-const SETTINGS_DIRECTORY: &str = "settings";
 const STATE_FILE: &str = "state.json";
 const BACKUP_FILE: &str = "state.backup.json";
 const LOCK_FILE: &str = "state.lock";
@@ -62,7 +61,7 @@ impl ExpectedState {
 #[derive(Clone, Debug)]
 pub struct StateStore {
     workspace: PathBuf,
-    scope: StateScope,
+    document: DocumentId,
     state_directory: PathBuf,
     instance: InstanceIdentity,
     max_state_bytes: u64,
@@ -71,7 +70,8 @@ pub struct StateStore {
 }
 
 impl StateStore {
-    /// Binds project-scope state below an existing canonical workspace to one instance.
+    /// Binds the first engine's project state below an existing canonical workspace to
+    /// one instance.
     pub fn new(
         workspace: impl AsRef<Path>,
         instance: InstanceIdentity,
@@ -81,15 +81,27 @@ impl StateStore {
 
     /// Binds the state of one document scope below an existing workspace.
     ///
-    /// Project state lives in `<workspace>/.dokploy/`. Settings state lives in
-    /// `<workspace>/.dokploy/settings/`, with its own lock, journal, and backup,
-    /// so the two scopes never block each other.
+    /// The scope's first-engine document is used: project state lives in
+    /// `<workspace>/.dokploy/` and settings state in `<workspace>/.dokploy/settings/`.
     pub fn with_scope(
         workspace: impl AsRef<Path>,
         instance: InstanceIdentity,
         scope: StateScope,
     ) -> Result<Self, StateStoreError> {
-        Self::build(workspace, instance, scope, DEFAULT_MAX_STATE_BYTES)
+        Self::for_document(workspace, instance, DocumentId::for_scope(scope))
+    }
+
+    /// Binds the state of one document below an existing workspace (ADR 0009).
+    ///
+    /// Each document has its own directory with its own lock, journal, and backup, so
+    /// a crash while applying one never blocks another: `.dokploy/settings/` for the
+    /// settings document and `.dokploy/projects/<slug>/` for each project.
+    pub fn for_document(
+        workspace: impl AsRef<Path>,
+        instance: InstanceIdentity,
+        document: DocumentId,
+    ) -> Result<Self, StateStoreError> {
+        Self::build(workspace, instance, document, DEFAULT_MAX_STATE_BYTES)
     }
 
     /// Binds project-scope state with an explicit defensive read limit.
@@ -98,13 +110,13 @@ impl StateStore {
         instance: InstanceIdentity,
         max_state_bytes: u64,
     ) -> Result<Self, StateStoreError> {
-        Self::build(workspace, instance, StateScope::Project, max_state_bytes)
+        Self::build(workspace, instance, DocumentId::Workspace, max_state_bytes)
     }
 
     fn build(
         workspace: impl AsRef<Path>,
         instance: InstanceIdentity,
-        scope: StateScope,
+        document: DocumentId,
         max_state_bytes: u64,
     ) -> Result<Self, StateStoreError> {
         let workspace = fs::canonicalize(workspace.as_ref())
@@ -113,15 +125,14 @@ impl StateStore {
             return Err(StateStoreError::WorkspaceNotDirectory);
         }
 
-        let project_directory = workspace.join(STATE_DIRECTORY);
-        let state_directory = match scope {
-            StateScope::Project => project_directory,
-            StateScope::Settings => project_directory.join(SETTINGS_DIRECTORY),
-        };
+        let mut state_directory = workspace.join(STATE_DIRECTORY);
+        for component in document.directories() {
+            state_directory.push(component);
+        }
         let store = Self {
             state_directory,
             workspace,
-            scope,
+            document,
             instance,
             max_state_bytes,
             max_journal_bytes: DEFAULT_MAX_JOURNAL_BYTES,
@@ -132,10 +143,16 @@ impl StateStore {
         Ok(store)
     }
 
+    /// Returns the document whose state this store owns.
+    #[must_use]
+    pub const fn document(&self) -> &DocumentId {
+        &self.document
+    }
+
     /// Returns the document scope whose state this store owns.
     #[must_use]
     pub const fn scope(&self) -> StateScope {
-        self.scope
+        self.document.scope()
     }
 
     /// Reads one atomic state snapshot without taking the writer lock.
@@ -214,10 +231,16 @@ impl StateStore {
         state
             .ensure_instance(&self.instance)
             .map_err(|_| StateStoreError::StateInstanceMismatch)?;
-        if state.scope() != self.scope {
+        if state.scope() != self.scope() {
             return Err(StateStoreError::StateScopeMismatch {
                 found: state.scope(),
-                expected: self.scope,
+                expected: self.scope(),
+            });
+        }
+        if state.document() != &self.document {
+            return Err(StateStoreError::StateDocumentMismatch {
+                found: state.document().clone(),
+                expected: self.document.clone(),
             });
         }
 
@@ -242,15 +265,18 @@ impl StateStore {
     }
 
     fn ensure_state_directory(&self) -> Result<DirectoryIdentity, StateStoreError> {
-        if self.scope == StateScope::Settings {
-            // The settings directory nests inside the project state directory, which
-            // is created and hardened first and is never reused as settings state.
-            let parent = self.workspace.join(STATE_DIRECTORY);
-            self.ensure_directory(&parent, &self.workspace)?;
-            return self.ensure_directory(&self.state_directory, &parent);
+        // `.dokploy/` first, then each directory below it, each created and hardened
+        // before the next. A document's directory is never reused by another.
+        let mut parent = self.workspace.clone();
+        let mut directory = parent.join(STATE_DIRECTORY);
+        let mut identity = self.ensure_directory(&directory, &parent)?;
+        for component in self.document.directories() {
+            parent = directory;
+            directory = parent.join(component);
+            identity = self.ensure_directory(&directory, &parent)?;
         }
-
-        self.ensure_directory(&self.state_directory, &self.workspace)
+        debug_assert_eq!(directory, self.state_directory);
+        Ok(identity)
     }
 
     fn ensure_directory(
@@ -394,10 +420,16 @@ impl WriteSession<'_> {
     ) -> Result<(), StateStoreError> {
         self.revalidate_state_directory()?;
         self.store.verify_existing_artifacts()?;
-        if proposed.scope() != self.store.scope {
+        if proposed.scope() != self.store.scope() {
             return Err(StateStoreError::ProposedScopeMismatch {
                 found: proposed.scope(),
-                expected: self.store.scope,
+                expected: self.store.scope(),
+            });
+        }
+        if proposed.document() != &self.store.document {
+            return Err(StateStoreError::ProposedDocumentMismatch {
+                found: proposed.document().clone(),
+                expected: self.store.document.clone(),
             });
         }
 
@@ -805,6 +837,16 @@ pub enum StateStoreError {
     ProposedScopeMismatch {
         found: StateScope,
         expected: StateScope,
+    },
+    #[error("the observed state tracks document `{found}`, but this store owns `{expected}`")]
+    StateDocumentMismatch {
+        found: DocumentId,
+        expected: DocumentId,
+    },
+    #[error("proposed state for document `{found}` cannot be written to `{expected}`")]
+    ProposedDocumentMismatch {
+        found: DocumentId,
+        expected: DocumentId,
     },
     #[error("the caller's expected state belongs to another Dokploy instance")]
     ExpectedInstanceMismatch,

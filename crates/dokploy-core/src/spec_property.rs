@@ -275,7 +275,6 @@ pub(crate) fn materialize(
         OwnedValue::EmptyCollection => Value::Object(serde_json::Map::new()),
         OwnedValue::Value(value) => value.as_json().clone(),
         OwnedValue::Sensitive(intent) => {
-            // The durable receipt grammar is closed until state format 5 opens it.
             let path = SensitivePropertyPath::parse(&info.path).map_err(|_| invalid())?;
             sensitive.push((path, intent.fingerprint().clone()));
             return Ok(());
@@ -306,6 +305,50 @@ fn insert_nested(
         .entry((*first).to_owned())
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
     insert_nested(child.as_object_mut()?, rest, value)
+}
+
+/// Registers every kind of a spec registry with the state layer, parents first.
+///
+/// State and journals can only name kinds registered here (or the first engine's).
+/// Registering is idempotent, and a spec that contradicts a kind already registered,
+/// or the first engine's built-in facts for it, is an error.
+pub fn register_spec_kinds(
+    specs: &dokploy_spec::SpecRegistry,
+) -> Result<(), dokploy_state::KindRegistrationError> {
+    use dokploy_spec::Scope;
+    use dokploy_state::{ResourceKind, StateScope};
+
+    let mut registered: BTreeMap<String, ResourceKind> = BTreeMap::new();
+    let mut pending: Vec<&KindSpec> = specs.kinds().collect();
+    while !pending.is_empty() {
+        let before = pending.len();
+        let mut waiting = Vec::new();
+        for spec in pending {
+            let parent = match &spec.parent {
+                None => None,
+                Some(parent) => match registered.get(parent) {
+                    Some(kind) => Some(*kind),
+                    None => {
+                        waiting.push(spec);
+                        continue;
+                    }
+                },
+            };
+            let scope = match spec.scope {
+                Scope::Project => StateScope::Project,
+                Scope::Settings => StateScope::Settings,
+            };
+            let kind = ResourceKind::register(&spec.kind, scope, parent)?;
+            registered.insert(spec.kind.clone(), kind);
+        }
+        // A registry is validated, so parents exist and chains end; this guards a loop.
+        if waiting.len() == before {
+            break;
+        }
+        pending = waiting;
+    }
+
+    Ok(())
 }
 
 impl MutationContract {

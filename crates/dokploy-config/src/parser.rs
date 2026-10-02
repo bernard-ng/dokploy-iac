@@ -1827,6 +1827,7 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Schedule
         | ResourceKind::Backup
         | ResourceKind::Tag => false,
+        _ => false,
     }
 }
 
@@ -1875,6 +1876,7 @@ fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPat
         ),
         ResourceKind::Redirect => matches!(value.as_str(), "regex" | "replacement" | "permanent"),
         ResourceKind::Security => value == "username",
+        _ => false,
     }
 }
 

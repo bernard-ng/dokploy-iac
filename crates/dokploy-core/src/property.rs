@@ -436,6 +436,8 @@ impl PropertyPath {
                     | Self::KeepLatest
                     | Self::IncludeEncryptionKey
             ),
+            // A kind outside the first engine's vocabulary has spec paths only.
+            _ => false,
         }
     }
 }
