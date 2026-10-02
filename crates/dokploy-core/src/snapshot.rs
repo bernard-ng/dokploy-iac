@@ -872,6 +872,20 @@ impl StoredState {
             .get(address)
             .and_then(|resource| resource.properties.get(path))
     }
+
+    /// Returns every value-free durable property projection of one resource.
+    ///
+    /// Offline callers use this to prove that desired state and durable state own
+    /// exactly the same properties, which a per-path lookup cannot show.
+    #[must_use]
+    pub fn properties(
+        &self,
+        address: &ResourceAddress,
+    ) -> Option<&BTreeMap<PropertyPath, OwnedValue>> {
+        self.resources
+            .get(address)
+            .map(|resource| &resource.properties)
+    }
 }
 
 impl fmt::Debug for StoredState {

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 use crate::imperative_generated::ImperativeCommand;
 
@@ -147,27 +147,10 @@ pub enum Command {
         auto_approve: bool,
     },
 
-    /// Adopt an existing Dokploy resource into canonical configuration and state.
+    /// Adopt an existing Dokploy project into canonical configuration and state.
     Import {
-        /// Resource kind to import. Omit all positional arguments for interactive selection.
-        #[arg(value_enum, requires = "remote_id", requires = "address")]
-        kind: Option<ImportKind>,
-
-        /// Existing Dokploy physical identifier.
-        #[arg(requires = "kind", requires = "address")]
-        remote_id: Option<String>,
-
-        /// Logical address to assign, such as `application.api`.
-        #[arg(long = "as", value_name = "ADDRESS", requires = "kind")]
-        address: Option<String>,
-
-        /// Configuration file to create.
-        #[arg(
-            long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
-            value_name = "PATH"
-        )]
-        file: PathBuf,
+        #[command(subcommand)]
+        command: ImportCommand,
     },
 
     /// Inspect resources tracked in the local workspace state.
@@ -195,29 +178,24 @@ pub enum Command {
     Imperative(Box<ImperativeCommand>),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum ImportKind {
-    Project,
-    Environment,
-    Application,
-    Compose,
-    Postgres,
-    #[value(name = "mysql")]
-    MySql,
-    #[value(name = "mariadb")]
-    MariaDb,
-    #[value(name = "mongo")]
-    Mongo,
-    #[value(name = "libsql")]
-    LibSql,
-    Redis,
-    Domain,
-    Port,
-    Redirect,
-    Security,
-    Mount,
-    Schedule,
-    Backup,
+#[derive(Subcommand)]
+pub enum ImportCommand {
+    /// Adopt one whole project, with every environment and resource below it.
+    ///
+    /// Import only creates a new workspace; it refuses to run when the
+    /// configuration file or durable state already exists.
+    Project {
+        /// Existing Dokploy project identifier. Omit it to choose from a list.
+        project_id: Option<String>,
+
+        /// Configuration file to create.
+        #[arg(
+            long,
+            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            value_name = "PATH"
+        )]
+        file: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -283,116 +261,68 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, Command, ContextCommand, ImportKind, StateCommand};
+    use super::{Cli, Command, ContextCommand, ImportCommand, StateCommand};
 
     #[test]
-    fn parses_noninteractive_import_and_interactive_import() {
+    fn parses_direct_and_interactive_project_import() {
         let direct = Cli::try_parse_from([
             "dokploy",
             "import",
-            "postgres",
-            "postgres-1",
-            "--as",
-            "postgres.main",
+            "project",
+            "project-1",
+            "--file",
+            "platform.yaml",
         ])
-        .expect("direct import is valid");
+        .expect("direct project import is valid");
         assert!(matches!(
             direct.command,
             Command::Import {
-                kind: Some(ImportKind::Postgres),
-                remote_id: Some(ref id),
-                address: Some(ref address),
-                ..
-            } if id == "postgres-1" && address == "postgres.main"
+                command: ImportCommand::Project {
+                    project_id: Some(ref id),
+                    ref file,
+                },
+            } if id == "project-1" && file.as_path() == Path::new("platform.yaml")
         ));
 
-        let mysql = Cli::try_parse_from([
-            "dokploy",
-            "import",
-            "mysql",
-            "mysql-1",
-            "--as",
-            "mysql.main",
-        ])
-        .expect("MySQL import is valid");
-        assert!(matches!(
-            mysql.command,
-            Command::Import {
-                kind: Some(ImportKind::MySql),
-                remote_id: Some(ref id),
-                address: Some(ref address),
-                ..
-            } if id == "mysql-1" && address == "mysql.main"
-        ));
-
-        let mariadb = Cli::try_parse_from([
-            "dokploy",
-            "import",
-            "mariadb",
-            "mariadb-1",
-            "--as",
-            "mariadb.main",
-        ])
-        .expect("MariaDB import is valid");
-        assert!(matches!(
-            mariadb.command,
-            Command::Import {
-                kind: Some(ImportKind::MariaDb),
-                remote_id: Some(ref id),
-                address: Some(ref address),
-                ..
-            } if id == "mariadb-1" && address == "mariadb.main"
-        ));
-
-        let mongo = Cli::try_parse_from([
-            "dokploy",
-            "import",
-            "mongo",
-            "mongo-1",
-            "--as",
-            "mongo.main",
-        ])
-        .expect("MongoDB import is valid");
-        assert!(matches!(
-            mongo.command,
-            Command::Import {
-                kind: Some(ImportKind::Mongo),
-                remote_id: Some(ref id),
-                address: Some(ref address),
-                ..
-            } if id == "mongo-1" && address == "mongo.main"
-        ));
-
-        let libsql = Cli::try_parse_from([
-            "dokploy",
-            "import",
-            "libsql",
-            "libsql-1",
-            "--as",
-            "libsql.main",
-        ])
-        .expect("LibSQL import is valid");
-        assert!(matches!(
-            libsql.command,
-            Command::Import {
-                kind: Some(ImportKind::LibSql),
-                remote_id: Some(ref id),
-                address: Some(ref address),
-                ..
-            } if id == "libsql-1" && address == "libsql.main"
-        ));
-
-        let interactive =
-            Cli::try_parse_from(["dokploy", "import"]).expect("interactive import is valid");
+        let interactive = Cli::try_parse_from(["dokploy", "import", "project"])
+            .expect("interactive project import is valid");
         assert!(matches!(
             interactive.command,
             Command::Import {
-                kind: None,
-                remote_id: None,
-                address: None,
-                ..
-            }
+                command: ImportCommand::Project {
+                    project_id: None,
+                    ref file,
+                },
+            } if file.as_path() == Path::new("dokploy.yaml")
         ));
+    }
+
+    #[test]
+    fn rejects_the_removed_per_resource_import_forms() {
+        for arguments in [
+            vec!["dokploy", "import"],
+            vec![
+                "dokploy",
+                "import",
+                "postgres",
+                "postgres-1",
+                "--as",
+                "postgres.main",
+            ],
+            vec![
+                "dokploy",
+                "import",
+                "project",
+                "project-1",
+                "--as",
+                "project.main",
+            ],
+        ] {
+            assert!(
+                Cli::try_parse_from(&arguments).is_err(),
+                "{arguments:?} must no longer parse"
+            );
+        }
     }
 
     #[test]

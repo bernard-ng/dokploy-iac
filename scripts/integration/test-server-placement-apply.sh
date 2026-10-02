@@ -726,75 +726,70 @@ for kind in $kinds; do
     assert_group_placement late2 "$server_d_id" fresh
     assert_no_contact saved-plan
 
-    # 7. Protected import writes name selectors, converges, and fails closed on ambiguity.
-    import_target() {
-        local kind="$1" group="$2" directory="$3"
-
-        mkdir -p "$directory"
-        chmod 700 "$directory"
-        # Dokploy identities may begin with a dash, so the positionals follow `--`.
-        cli import --as "$kind.adopted" --file "$directory/dokploy.yaml" \
-            -- "$kind" "$(state_value "$state_file" "$kind.$group")" \
-            >"$workspace/import.$kind.$group.stdout" 2>"$workspace/import.$kind.$group.stderr"
-    }
-
-for kind in $kinds; do
-        import_directory="$workspace/import-$kind"
-        import_target "$kind" late "$import_directory"
-        if ! jq -e --arg address "$kind.adopted" --arg server "$server_c_name" '
-            .resources[$address].lastApplied.server == {name:$server}
+    # 7. Protected project import writes name selectors, converges, and fails closed on ambiguity.
+    # Import adopts the whole project in one pass, so every kind and every placement
+    # is checked in the one adopted workspace. Each service is found by its remote
+    # identity, because its address is derived from its name.
+    import_directory="$workspace/import"
+    mkdir -p "$import_directory"
+    chmod 700 "$import_directory"
+    cli import project "$project_id" --file "$import_directory/dokploy.yaml" \
+        >"$workspace/import.stdout" 2>"$workspace/import.stderr"
+    for kind in $kinds; do
+        late_id="$(state_value "$state_file" "$kind.late")"
+        if ! jq -e --arg id "$late_id" --arg server "$server_c_name" '
+            [.resources[] | select(.remoteId == $id) | .lastApplied] as $imported
+            | ($imported | length) == 1 and $imported[0].server == {name:$server}
         ' "$import_directory/.dokploy/state.json" >/dev/null; then
             echo "the imported $kind does not hold a name selector in durable state" >&2
             exit 1
         fi
-        if ! grep -q -F -- "$server_c_name" "$import_directory/dokploy.yaml" \
-            || ! grep -q 'protect: true' "$import_directory/dokploy.yaml"
-        then
-            echo "the imported $kind configuration is not a protected name selector" >&2
-            exit 1
-        fi
-        for identity in "$server_c_id" "$server_a_id" "$server_b_id"; do
-            if grep -q -F -- "$identity" "$import_directory/dokploy.yaml" \
-                "$import_directory/.dokploy/state.json"; then
-                echo "the imported $kind workspace contains an external identity" >&2
-                exit 1
-            fi
-        done
-        cli plan --file "$import_directory/dokploy.yaml" --json --detailed-exitcode \
-            >"$workspace/after-import.$kind.stdout" 2>"$workspace/after-import.$kind.stderr"
 
         # A service on the local host stays unmanaged: nothing is invented.
-        plain_directory="$workspace/import-plain-$kind"
-        import_target "$kind" plain "$plain_directory"
-        if grep -q 'server:' "$plain_directory/dokploy.yaml"; then
+        plain_id="$(state_value "$state_file" "$kind.plain")"
+        if ! jq -e --arg id "$plain_id" '
+            [.resources[] | select(.remoteId == $id) | .lastApplied] as $imported
+            | ($imported | length) == 1 and ($imported[0] | has("server") | not)
+        ' "$import_directory/.dokploy/state.json" >/dev/null; then
             echo "an unplaced $kind was imported with a server selector" >&2
             exit 1
         fi
-        cli plan --file "$plain_directory/dokploy.yaml" --json --detailed-exitcode \
-            >"$workspace/after-import-plain.$kind.stdout" 2>"$workspace/after-import-plain.$kind.stderr"
     done
+    if ! grep -q -F -- "$server_c_name" "$import_directory/dokploy.yaml" \
+        || ! grep -q 'protect: true' "$import_directory/dokploy.yaml"
+    then
+        echo "the imported configuration is not a protected name selector" >&2
+        exit 1
+    fi
+    for identity in "$server_a_id" "$server_b_id" "$server_c_id" "$server_d_id"; do
+        if grep -q -F -- "$identity" "$import_directory/dokploy.yaml" \
+            "$import_directory/.dokploy/state.json"; then
+            echo "the imported workspace contains an external identity" >&2
+            exit 1
+        fi
+    done
+    cli plan --file "$import_directory/dokploy.yaml" --json --detailed-exitcode \
+        >"$workspace/after-import.stdout" 2>"$workspace/after-import.stderr"
 
-    # A second record with the same name makes the attached server ambiguous.
+    # A second record with the same name makes the attached server ambiguous, which
+    # fails the whole project import closed.
     server_c_duplicate_id="$(create_server "$server_c_name" c-duplicate)"
-for kind in $kinds; do
-        ambiguous_directory="$workspace/import-ambiguous-$kind"
-        mkdir -p "$ambiguous_directory"
-        if cli import --as "$kind.ambiguous" --file "$ambiguous_directory/dokploy.yaml" \
-            -- "$kind" "$(state_value "$state_file" "$kind.late")" \
-            >"$workspace/import-ambiguous.$kind.stdout" 2>"$workspace/import-ambiguous.$kind.stderr"
-        then
-            echo "an ambiguous $kind placement was imported" >&2
-            exit 1
-        fi
-        if ! grep -q "shared by another record" "$workspace/import-ambiguous.$kind.stderr"; then
-            echo "the ambiguous $kind import did not report the closed diagnostic" >&2
-            exit 1
-        fi
-        if [[ -e "$ambiguous_directory/dokploy.yaml" || -e "$ambiguous_directory/.dokploy" ]]; then
-            echo "a failed $kind import left files behind" >&2
-            exit 1
-        fi
-    done
+    ambiguous_directory="$workspace/import-ambiguous"
+    mkdir -p "$ambiguous_directory"
+    if cli import project "$project_id" --file "$ambiguous_directory/dokploy.yaml" \
+        >"$workspace/import-ambiguous.stdout" 2>"$workspace/import-ambiguous.stderr"
+    then
+        echo "an ambiguous placement was imported" >&2
+        exit 1
+    fi
+    if ! grep -q "shared by another record" "$workspace/import-ambiguous.stderr"; then
+        echo "the ambiguous import did not report the closed diagnostic" >&2
+        exit 1
+    fi
+    if [[ -e "$ambiguous_directory/dokploy.yaml" || -e "$ambiguous_directory/.dokploy" ]]; then
+        echo "a failed import left files behind" >&2
+        exit 1
+    fi
     remove_server "$server_c_duplicate_id"
 
     # 8. The managed workspace still converges and nothing was deployed or contacted.

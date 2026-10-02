@@ -1,6 +1,20 @@
-//! Read-only adoption of existing Dokploy resources into one new workspace.
+//! Read-only adoption of one existing Dokploy project into a new workspace.
+//!
+//! Import always selects a **project** and always adopts everything below it in
+//! one pass. The pipeline has five stages and only the first and last do I/O:
+//!
+//! 1. [`inventory`]: crawl the project into a plain remote tree;
+//! 2. [`project::validate`]: prove the tree is consistent and resolve external names;
+//! 3. [`names`]: allocate deterministic logical names;
+//! 4. [`project::build`]: append every resource to an [`ImportContext`], then
+//!    prove offline that the first plan will be empty ([`converge`]);
+//! 5. re-read the project topology and refuse if it changed during the crawl.
+//!
+//! Nothing is written unless every stage succeeds. Import only creates a new
+//! workspace; there is no merge or refresh mode.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use dokploy_config::{
@@ -11,10 +25,8 @@ use dokploy_config::{
     RedisDocument, SecurityDocument, SelectorKind, SourceDocument,
 };
 use dokploy_sdk::{
-    ApplicationDetails, ApplicationId, ComposeId, Dokploy, DomainId, EnvironmentDetails,
-    EnvironmentId, Error as SdkError, LibSqlId, MariaDbId, MongoId, MySqlId, PortDetails, PortId,
-    PortProtocol, PostgresId, ProjectDetails, ProjectId, PublishMode, RedirectDetails, RedirectId,
-    RedisId, ResponseField, SecurityDetails, SecurityId,
+    ApplicationDetails, Dokploy, EnvironmentDetails, Error as SdkError, PortDetails, PortProtocol,
+    ProjectDetails, ProjectId, PublishMode, RedirectDetails, ResponseField, SecurityDetails,
 };
 use dokploy_state::{
     ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -22,38 +34,170 @@ use dokploy_state::{
 };
 use thiserror::Error;
 
-use crate::cli::ImportKind;
 use crate::external::ExternalDirectory;
-
-use self::context::{EnvScope, ImportContext};
 
 mod backup;
 mod context;
+mod converge;
+mod inventory;
 mod mount;
+mod names;
+mod project;
 mod schedule;
 
-const INTERACTIVE_LIBSQL_ITEM_LIMIT: usize = 10_000;
-
-/// A complete noninteractive import selection.
+/// A complete project import selection.
 pub struct ImportRequest {
-    pub kind: ImportKind,
-    pub remote_id: String,
-    pub address: ResourceAddress,
+    pub project_id: String,
     pub config_file: PathBuf,
+}
+
+/// What an import adopted, for the operator.
+#[derive(Debug)]
+pub struct ImportReport {
+    resources: usize,
+    project: ResourceAddress,
+    environments: Vec<EnvironmentReport>,
+    renamed: Vec<RenamedReport>,
+    unmanaged: Vec<&'static str>,
+}
+
+#[derive(Debug)]
+struct EnvironmentReport {
+    address: ResourceAddress,
+    counts: BTreeMap<ResourceKind, usize>,
+}
+
+#[derive(Debug)]
+struct RenamedReport {
+    address: ResourceAddress,
+    remote_name: String,
+}
+
+impl ImportReport {
+    /// The number of resources recorded in the new state.
+    #[must_use]
+    pub const fn resource_count(&self) -> usize {
+        self.resources
+    }
+}
+
+/// The per-environment table, renamed addresses, and deliberately unmanaged fields.
+impl fmt::Display for ImportReport {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(formatter, "Project {}", self.project)?;
+        for environment in &self.environments {
+            let counts = environment
+                .counts
+                .iter()
+                .filter(|(kind, _)| **kind != ResourceKind::Environment)
+                .map(|(kind, count)| format!("{count} {}", kind_label(*kind)))
+                .collect::<Vec<_>>();
+            if counts.is_empty() {
+                writeln!(formatter, "  {}: empty", environment.address)?;
+            } else {
+                writeln!(
+                    formatter,
+                    "  {}: {}",
+                    environment.address,
+                    counts.join(", ")
+                )?;
+            }
+        }
+        if !self.renamed.is_empty() {
+            writeln!(
+                formatter,
+                "Renamed to keep addresses unique (rename later with `moves:`):"
+            )?;
+            for renamed in &self.renamed {
+                writeln!(
+                    formatter,
+                    "  {} (remote: {})",
+                    renamed.address, renamed.remote_name
+                )?;
+            }
+        }
+        if !self.unmanaged.is_empty() {
+            writeln!(
+                formatter,
+                "Left unmanaged, never read into configuration or state:"
+            )?;
+            for field in &self.unmanaged {
+                writeln!(formatter, "  {field}")?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+const fn kind_label(kind: ResourceKind) -> &'static str {
+    match kind {
+        ResourceKind::Project => "project",
+        ResourceKind::Environment => "environment",
+        ResourceKind::Application => "application",
+        ResourceKind::Compose => "compose",
+        ResourceKind::Postgres => "postgres",
+        ResourceKind::MySql => "mysql",
+        ResourceKind::MariaDb => "mariadb",
+        ResourceKind::Mongo => "mongo",
+        ResourceKind::LibSql => "libsql",
+        ResourceKind::Redis => "redis",
+        ResourceKind::Domain => "domain",
+        ResourceKind::Port => "port",
+        ResourceKind::Redirect => "redirect",
+        ResourceKind::Security => "security",
+        ResourceKind::Mount => "mount",
+        ResourceKind::Schedule => "schedule",
+        ResourceKind::Backup => "backup",
+    }
+}
+
+/// Fields the importer never reads, by the kinds the project actually contains.
+fn unmanaged_fields(kinds: &std::collections::BTreeSet<ResourceKind>) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    let has = |kind| kinds.contains(&kind);
+    if has(ResourceKind::Application) {
+        fields.push("application environment variables and non-GitHub sources");
+    }
+    if has(ResourceKind::Compose) {
+        fields.push("compose documents");
+    }
+    if [
+        ResourceKind::Postgres,
+        ResourceKind::MySql,
+        ResourceKind::MariaDb,
+        ResourceKind::Mongo,
+        ResourceKind::LibSql,
+        ResourceKind::Redis,
+    ]
+    .into_iter()
+    .any(has)
+    {
+        fields.push("database passwords");
+    }
+    if has(ResourceKind::Security) {
+        fields.push("security passwords");
+    }
+    if has(ResourceKind::Mount) {
+        fields.push("mount file contents");
+    }
+    if has(ResourceKind::Schedule) {
+        fields.push("schedule commands and scripts");
+    }
+    fields
 }
 
 /// Injectable terminal selection seam used by the interactive import workflow.
 #[doc(hidden)]
 pub trait ImportPrompter {
     fn select(&mut self, choices: &[String]) -> Result<usize, ImportError>;
-    fn address(&mut self, default: &str) -> Result<String, ImportError>;
 }
 
 struct InquirePrompter;
 
 impl ImportPrompter for InquirePrompter {
     fn select(&mut self, choices: &[String]) -> Result<usize, ImportError> {
-        let selected = inquire::Select::new("Select a Dokploy resource", choices.to_vec())
+        let selected = inquire::Select::new("Select a Dokploy project", choices.to_vec())
             .prompt()
             .map_err(|_| ImportError::Prompt)?;
         choices
@@ -61,16 +205,9 @@ impl ImportPrompter for InquirePrompter {
             .position(|choice| choice == &selected)
             .ok_or(ImportError::InvalidSelection)
     }
-
-    fn address(&mut self, default: &str) -> Result<String, ImportError> {
-        inquire::Text::new("Logical address")
-            .with_default(default)
-            .prompt()
-            .map_err(|_| ImportError::Prompt)
-    }
 }
 
-/// Discovers visible MVP resources and asks a terminal user which one to import.
+/// Lists the visible projects and asks a terminal user which one to import.
 pub async fn select_interactively(
     client: &Dokploy,
     config_file: PathBuf,
@@ -78,7 +215,7 @@ pub async fn select_interactively(
     select_with_prompter(client, config_file, &mut InquirePrompter).await
 }
 
-/// Runs interactive discovery through an injected deterministic prompt adapter.
+/// Runs project selection through an injected deterministic prompt adapter.
 #[doc(hidden)]
 pub async fn select_with_prompter(
     client: &Dokploy,
@@ -86,257 +223,32 @@ pub async fn select_with_prompter(
     prompter: &mut dyn ImportPrompter,
 ) -> Result<ImportRequest, ImportError> {
     let topology = client.projects().all().await?;
-    let mut libsql_ids = HashSet::new();
-    let mut libsql_count = 0_usize;
-    for project in topology.projects() {
-        for environment in &project.environments {
-            for database in &environment.libsql {
-                libsql_count = libsql_count
-                    .checked_add(1)
-                    .ok_or(ImportError::InvalidRemoteTopology)?;
-                if libsql_count > INTERACTIVE_LIBSQL_ITEM_LIMIT
-                    || database.libsql_id.as_str().is_empty()
-                    || !libsql_ids.insert(database.libsql_id.as_str())
-                {
-                    return Err(ImportError::InvalidRemoteTopology);
-                }
-            }
-        }
-    }
-    let mut choices = Vec::new();
-    for project in topology.projects() {
-        choices.push(ImportChoice::new(
-            ImportKind::Project,
-            project.project_id.as_str(),
-            &project.name,
-        ));
-        for environment in &project.environments {
-            choices.push(ImportChoice::new(
-                ImportKind::Environment,
-                environment.environment_id.as_str(),
-                &environment.name,
-            ));
-            for application in &environment.applications {
-                choices.push(ImportChoice::new(
-                    ImportKind::Application,
-                    application.application_id.as_str(),
-                    &application.name,
-                ));
-                for domain in client
-                    .domains()
-                    .by_application(application.application_id.clone())
-                    .await?
-                    .domains()
-                {
-                    choices.push(ImportChoice::new(
-                        ImportKind::Domain,
-                        domain.domain_id.as_str(),
-                        &domain.host,
-                    ));
-                }
-                for port in client
-                    .ports()
-                    .by_application(application.application_id.clone())
-                    .await?
-                    .ports()
-                {
-                    choices.push(ImportChoice::new(
-                        ImportKind::Port,
-                        port.port_id.as_str(),
-                        &format!(
-                            "{}-{}",
-                            port.published_port,
-                            port_protocol_label(port.protocol)
-                        ),
-                    ));
-                }
-                for redirect in client
-                    .redirects()
-                    .by_application(application.application_id.clone())
-                    .await?
-                    .redirects()
-                {
-                    choices.push(ImportChoice::new(
-                        ImportKind::Redirect,
-                        redirect.redirect_id.as_str(),
-                        &redirect.regex,
-                    ));
-                }
-                for entry in client
-                    .security()
-                    .by_application(application.application_id.clone())
-                    .await?
-                    .entries()
-                {
-                    choices.push(ImportChoice::new(
-                        ImportKind::Security,
-                        entry.security_id.as_str(),
-                        &entry.username,
-                    ));
-                }
-            }
-            for database in &environment.postgres {
-                choices.push(ImportChoice::new(
-                    ImportKind::Postgres,
-                    database.postgres_id.as_str(),
-                    database.name.as_deref().unwrap_or("unnamed-postgres"),
-                ));
-            }
-            for compose in client
-                .composes()
-                .by_environment(environment.environment_id.clone())
-                .await?
-                .composes()
-            {
-                choices.push(ImportChoice::new(
-                    ImportKind::Compose,
-                    compose.compose_id.as_str(),
-                    &compose.name,
-                ));
-            }
-            for database in client
-                .mysql()
-                .by_environment(environment.environment_id.clone())
-                .await?
-                .mysql()
-            {
-                choices.push(ImportChoice::new(
-                    ImportKind::MySql,
-                    database.mysql_id.as_str(),
-                    &database.name,
-                ));
-            }
-            for database in client
-                .mariadb()
-                .by_environment(environment.environment_id.clone())
-                .await?
-                .mariadb()
-            {
-                choices.push(ImportChoice::new(
-                    ImportKind::MariaDb,
-                    database.mariadb_id.as_str(),
-                    &database.name,
-                ));
-            }
-            for database in client
-                .mongo()
-                .by_environment(environment.environment_id.clone())
-                .await?
-                .mongo()
-            {
-                choices.push(ImportChoice::new(
-                    ImportKind::Mongo,
-                    database.mongo_id.as_str(),
-                    &database.name,
-                ));
-            }
-            for database in &environment.libsql {
-                let details = client.libsql().get(database.libsql_id.clone()).await?;
-                if details.libsql_id != database.libsql_id
-                    || details.environment_id != environment.environment_id
-                    || details.name.is_empty()
-                {
-                    return Err(ImportError::InvalidRemoteTopology);
-                }
-                choices.push(ImportChoice::new(
-                    ImportKind::LibSql,
-                    details.libsql_id.as_str(),
-                    &details.name,
-                ));
-            }
-            for database in &environment.redis {
-                choices.push(ImportChoice::new(
-                    ImportKind::Redis,
-                    database.redis_id.as_str(),
-                    database.name.as_deref().unwrap_or("unnamed-redis"),
-                ));
-            }
-        }
-    }
-    if choices.is_empty() {
+    let mut projects = topology.projects().iter().collect::<Vec<_>>();
+    projects.sort_by(|left, right| {
+        (&left.name, left.project_id.as_str()).cmp(&(&right.name, right.project_id.as_str()))
+    });
+    if projects.is_empty() {
         return Err(ImportError::NoVisibleResources);
     }
-    let labels = choices
+    // The remote identity disambiguates projects that share a name.
+    let labels = projects
         .iter()
-        .map(|choice| {
-            format!(
-                "{} {} ({})",
-                kind_name(choice.kind),
-                choice.name,
-                choice.remote_id
-            )
-        })
+        .map(|project| format!("{} ({})", project.name, project.project_id.as_str()))
         .collect::<Vec<_>>();
     let index = prompter.select(&labels)?;
-    if index >= choices.len() {
-        return Err(ImportError::InvalidSelection);
-    }
-    let selected = &choices[index];
-    let default = ResourceAddress::new(resource_kind(selected.kind), logical_name(&selected.name));
-    let answer = prompter.address(&default.to_string())?;
-    let address = if answer.trim().is_empty() {
-        default
-    } else {
-        answer
-            .trim()
-            .parse::<ResourceAddress>()
-            .map_err(|_| ImportError::InvalidAddress)?
-    };
+    let selected = projects.get(index).ok_or(ImportError::InvalidSelection)?;
 
     Ok(ImportRequest {
-        kind: selected.kind,
-        remote_id: selected.remote_id.clone(),
-        address,
+        project_id: selected.project_id.as_str().to_owned(),
         config_file,
     })
 }
 
-struct ImportChoice {
-    kind: ImportKind,
-    remote_id: String,
-    name: String,
-}
-
-impl ImportChoice {
-    fn new(kind: ImportKind, remote_id: &str, name: &str) -> Self {
-        Self {
-            kind,
-            remote_id: remote_id.to_owned(),
-            name: name.to_owned(),
-        }
-    }
-}
-
-const fn kind_name(kind: ImportKind) -> &'static str {
-    match kind {
-        ImportKind::Project => "project",
-        ImportKind::Environment => "environment",
-        ImportKind::Application => "application",
-        ImportKind::Compose => "compose",
-        ImportKind::Postgres => "postgres",
-        ImportKind::MySql => "mysql",
-        ImportKind::MariaDb => "mariadb",
-        ImportKind::Mongo => "mongo",
-        ImportKind::LibSql => "libsql",
-        ImportKind::Redis => "redis",
-        ImportKind::Domain => "domain",
-        ImportKind::Port => "port",
-        ImportKind::Redirect => "redirect",
-        ImportKind::Security => "security",
-        ImportKind::Mount => "mount",
-        ImportKind::Schedule => "schedule",
-        ImportKind::Backup => "backup",
-    }
-}
-
-/// Imports one resource and its required containment ancestors without remote mutations.
-pub async fn import_resource(
+/// Imports one whole project without any remote mutation.
+pub async fn import_project(
     client: &Dokploy,
     request: ImportRequest,
-) -> Result<usize, ImportError> {
-    if request.address.kind() != resource_kind(request.kind) {
-        return Err(ImportError::AddressKindMismatch);
-    }
+) -> Result<ImportReport, ImportError> {
     let workspace = canonical_workspace(&request.config_file)?;
     if request.config_file.exists() {
         return Err(ImportError::ConfigExists);
@@ -346,15 +258,17 @@ pub async fn import_resource(
     if store.inspect()?.is_some() {
         return Err(ImportError::StateExists);
     }
+    let project_id = ProjectId::new(request.project_id.as_str());
 
-    let imported = discover(client, request.kind, &request.remote_id, &request.address).await?;
-    imported.document.render()?;
-    let mut session = store.begin_write()?;
-    if store.inspect()?.is_some() || request.config_file.exists() {
-        return Err(ImportError::WorkspaceChanged);
-    }
-
-    let resources = imported
+    // Stage 1: the only crawl.
+    let remote = inventory::crawl(client, &project_id).await?;
+    // Stages 2 to 4 are pure; any failure here writes nothing.
+    let resolved = project::validate(&remote)?;
+    let names = names::allocate(&remote, &resolved)?;
+    let built = project::build(&remote, &names, &resolved)?;
+    let rendered = built.context.document.render()?;
+    let resources = built
+        .context
         .resources
         .into_iter()
         .map(|resource| (resource.address, resource.state))
@@ -366,11 +280,48 @@ pub async fn import_resource(
         instance,
         resources,
     )?;
-    persist_import(&imported.document, &request.config_file, || {
+    converge::verify(&rendered, &state)?;
+
+    // Stage 5: the project must be exactly what the crawl saw.
+    let after = inventory::read_topology(client, &project_id).await?;
+    if after.fingerprint() != remote.topology {
+        return Err(ImportError::RemoteChanged);
+    }
+
+    let mut session = store.begin_write()?;
+    if store.inspect()?.is_some() || request.config_file.exists() {
+        return Err(ImportError::WorkspaceChanged);
+    }
+    persist_import(&built.context.document, &request.config_file, || {
         session.checkpoint(ExpectedState::absent(), &state)
     })?;
 
-    Ok(state.resources().len())
+    let kinds = state
+        .resources()
+        .values()
+        .map(ResourceState::kind)
+        .collect::<std::collections::BTreeSet<_>>();
+    Ok(ImportReport {
+        resources: state.resources().len(),
+        project: names.project.clone(),
+        environments: built
+            .census
+            .into_iter()
+            .map(|census| EnvironmentReport {
+                address: census.address,
+                counts: census.counts,
+            })
+            .collect(),
+        renamed: names
+            .renamed()
+            .iter()
+            .map(|renamed| RenamedReport {
+                address: renamed.address.clone(),
+                remote_name: renamed.remote_name.clone(),
+            })
+            .collect(),
+        unmanaged: unmanaged_fields(&kinds),
+    })
 }
 
 fn persist_import(
@@ -390,341 +341,6 @@ fn persist_import(
 struct ImportedResource {
     address: ResourceAddress,
     state: ResourceState,
-}
-
-async fn discover(
-    client: &Dokploy,
-    kind: ImportKind,
-    remote_id: &str,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    match kind {
-        ImportKind::Project => {
-            let project = client.projects().get(ProjectId::new(remote_id)).await?;
-            build_project(project, target)
-        }
-        ImportKind::Environment => {
-            let environment = client
-                .environments()
-                .get(EnvironmentId::new(remote_id))
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            build_environment(project, environment, target)
-        }
-        ImportKind::Application => {
-            let application = client
-                .applications()
-                .get(ApplicationId::new(remote_id))
-                .await?;
-            let environment = client
-                .environments()
-                .get(application.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            let associations = imported_associations(client, &application).await?;
-            build_application(project, environment, application, &associations, target)
-        }
-        ImportKind::Compose => {
-            let requested_id = ComposeId::new(remote_id);
-            let compose = client.composes().get(requested_id.clone()).await?;
-            if compose.compose_id != requested_id {
-                return Err(ImportError::InvalidRemoteTopology);
-            }
-            let environment = client
-                .environments()
-                .get(compose.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            let collection = client
-                .composes()
-                .by_environment(compose.environment_id.clone())
-                .await?;
-            validate_compose_import_authority(&compose, collection.composes())?;
-            {
-                let server = imported_server(client, &compose.server_id).await?;
-                build_compose(project, environment, compose, server.as_deref(), target)
-            }
-        }
-        ImportKind::Postgres => {
-            let database = client.postgres().get(PostgresId::new(remote_id)).await?;
-            let environment = client
-                .environments()
-                .get(database.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            {
-                let server = imported_server(client, &database.server_id).await?;
-                build_postgres(project, environment, database, server.as_deref(), target)
-            }
-        }
-        ImportKind::MySql => {
-            let database = client.mysql().get(MySqlId::new(remote_id)).await?;
-            let environment = client
-                .environments()
-                .get(database.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            {
-                let server = imported_server(client, &database.server_id).await?;
-                build_mysql(project, environment, database, server.as_deref(), target)
-            }
-        }
-        ImportKind::MariaDb => {
-            let database = client.mariadb().get(MariaDbId::new(remote_id)).await?;
-            let environment = client
-                .environments()
-                .get(database.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            {
-                let server = imported_server(client, &database.server_id).await?;
-                build_mariadb(project, environment, database, server.as_deref(), target)
-            }
-        }
-        ImportKind::Mongo => {
-            let database = client.mongo().get(MongoId::new(remote_id)).await?;
-            let environment = client
-                .environments()
-                .get(database.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            {
-                let server = imported_server(client, &database.server_id).await?;
-                build_mongo(project, environment, database, server.as_deref(), target)
-            }
-        }
-        ImportKind::LibSql => {
-            let database = client.libsql().get(LibSqlId::new(remote_id)).await?;
-            let environment = client
-                .environments()
-                .get(database.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            {
-                let server = imported_server(client, &database.server_id).await?;
-                build_libsql(project, environment, database, server.as_deref(), target)
-            }
-        }
-        ImportKind::Redis => {
-            let database = client.redis().get(RedisId::new(remote_id)).await?;
-            let environment = client
-                .environments()
-                .get(database.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            {
-                let server = imported_server(client, &database.server_id).await?;
-                build_redis(project, environment, database, server.as_deref(), target)
-            }
-        }
-        ImportKind::Domain => {
-            let domain = client.domains().get(DomainId::new(remote_id)).await?;
-            let application_id = domain
-                .application_id
-                .clone()
-                .ok_or(ImportError::MissingContainment)?;
-            let application = client.applications().get(application_id).await?;
-            let environment = client
-                .environments()
-                .get(application.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            let associations = imported_associations(client, &application).await?;
-            build_domain(
-                project,
-                environment,
-                application,
-                &associations,
-                domain,
-                target,
-            )
-        }
-        ImportKind::Port => {
-            let requested_id = PortId::new(remote_id);
-            let port = client.ports().get(requested_id.clone()).await?;
-            if port.port_id != requested_id {
-                return Err(ImportError::InvalidRemoteTopology);
-            }
-            let collection = client
-                .ports()
-                .by_application(port.application_id.clone())
-                .await?;
-            validate_port_import_authority(&port, collection.ports())?;
-            let application = client
-                .applications()
-                .get(port.application_id.clone())
-                .await?;
-            let environment = client
-                .environments()
-                .get(application.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            let associations = imported_associations(client, &application).await?;
-            build_port(
-                project,
-                environment,
-                application,
-                &associations,
-                port,
-                target,
-            )
-        }
-        ImportKind::Redirect => {
-            let requested_id = RedirectId::new(remote_id);
-            let redirect = client.redirects().get(requested_id.clone()).await?;
-            if redirect.redirect_id != requested_id {
-                return Err(ImportError::InvalidRemoteTopology);
-            }
-            let collection = client
-                .redirects()
-                .by_application(redirect.application_id.clone())
-                .await?;
-            validate_redirect_import_authority(&redirect, collection.redirects())?;
-            let application = client
-                .applications()
-                .get(redirect.application_id.clone())
-                .await?;
-            let environment = client
-                .environments()
-                .get(application.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            let associations = imported_associations(client, &application).await?;
-            build_redirect(
-                project,
-                environment,
-                application,
-                &associations,
-                redirect,
-                target,
-            )
-        }
-        ImportKind::Security => {
-            let requested_id = SecurityId::new(remote_id);
-            let entry = client.security().get(requested_id.clone()).await?;
-            if entry.security_id != requested_id {
-                return Err(ImportError::InvalidRemoteTopology);
-            }
-            let collection = client
-                .security()
-                .by_application(entry.application_id.clone())
-                .await?;
-            validate_security_import_authority(&entry, collection.entries())?;
-            let application = client
-                .applications()
-                .get(entry.application_id.clone())
-                .await?;
-            let environment = client
-                .environments()
-                .get(application.environment_id.clone())
-                .await?;
-            let project = client
-                .projects()
-                .get(environment.project_id.clone())
-                .await?;
-            let associations = imported_associations(client, &application).await?;
-            build_security(
-                project,
-                environment,
-                application,
-                &associations,
-                entry,
-                target,
-            )
-        }
-        ImportKind::Mount => mount::discover_mount(client, remote_id, target).await,
-        ImportKind::Schedule => schedule::discover_schedule(client, remote_id, target).await,
-        ImportKind::Backup => backup::discover_backup(client, remote_id, target).await,
-    }
-}
-
-fn validate_redirect_import_authority(
-    direct: &RedirectDetails,
-    collection: &[RedirectDetails],
-) -> Result<(), ImportError> {
-    let matching = collection
-        .iter()
-        .filter(|candidate| candidate.redirect_id == direct.redirect_id)
-        .collect::<Vec<_>>();
-    let collisions = collection
-        .iter()
-        .filter(|candidate| candidate.regex == direct.regex)
-        .count();
-    if matching.as_slice() != [direct] || collisions != 1 {
-        return Err(ImportError::InvalidRemoteTopology);
-    }
-
-    Ok(())
-}
-
-fn validate_security_import_authority(
-    direct: &SecurityDetails,
-    collection: &[SecurityDetails],
-) -> Result<(), ImportError> {
-    let matching = collection
-        .iter()
-        .filter(|candidate| candidate.security_id == direct.security_id)
-        .collect::<Vec<_>>();
-    let collisions = collection
-        .iter()
-        .filter(|candidate| candidate.username == direct.username)
-        .count();
-    if matching.as_slice() != [direct] || collisions != 1 {
-        return Err(ImportError::InvalidRemoteTopology);
-    }
-
-    Ok(())
-}
-
-fn validate_port_import_authority(
-    direct: &PortDetails,
-    collection: &[PortDetails],
-) -> Result<(), ImportError> {
-    let matching = collection
-        .iter()
-        .filter(|candidate| candidate.port_id == direct.port_id)
-        .collect::<Vec<_>>();
-    if matching.as_slice() != [direct] {
-        return Err(ImportError::InvalidRemoteTopology);
-    }
-
-    Ok(())
 }
 
 fn validate_compose_import_authority(
@@ -759,219 +375,6 @@ fn response_fields_agree<T: PartialEq>(left: &ResponseField<T>, right: &Response
         (ResponseField::NotReturned, _) | (_, ResponseField::NotReturned)
     ) || left == right
 }
-
-/// Starts a context holding the project and one environment.
-fn single_environment(
-    project: &ProjectDetails,
-    environment: &EnvironmentDetails,
-) -> Result<(ImportContext, EnvScope), ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let mut context = ImportContext::new(project, &project_address)?;
-    let scope = context.add_environment(
-        environment,
-        address(ResourceKind::Environment, &environment.name)?,
-    )?;
-
-    Ok((context, scope))
-}
-
-fn build_project(
-    project: ProjectDetails,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    ImportContext::new(&project, target)
-}
-
-fn build_environment(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let project_address = address(ResourceKind::Project, &project.name)?;
-    let mut context = ImportContext::new(&project, &project_address)?;
-    context.add_environment(&environment, target.clone())?;
-
-    Ok(context)
-}
-
-fn build_application(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    application: ApplicationDetails,
-    associations: &ImportedAssociations,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_application(&scope, &application, associations, target)?;
-
-    Ok(context)
-}
-
-/// Adds an application's ancestry and returns the context with the application address.
-fn application_ancestry(
-    project: &ProjectDetails,
-    environment: &EnvironmentDetails,
-    application: &ApplicationDetails,
-    associations: &ImportedAssociations,
-) -> Result<(ImportContext, EnvScope, ResourceAddress), ImportError> {
-    let (mut context, scope) = single_environment(project, environment)?;
-    let application_address = address(ResourceKind::Application, &application.name)?;
-    context.add_application(&scope, application, associations, &application_address)?;
-
-    Ok((context, scope, application_address))
-}
-
-fn build_port(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    application: ApplicationDetails,
-    associations: &ImportedAssociations,
-    port: PortDetails,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope, application_address) =
-        application_ancestry(&project, &environment, &application, associations)?;
-    context.add_port(&scope, &application_address, &port, target)?;
-
-    Ok(context)
-}
-
-fn build_redirect(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    application: ApplicationDetails,
-    associations: &ImportedAssociations,
-    redirect: RedirectDetails,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope, application_address) =
-        application_ancestry(&project, &environment, &application, associations)?;
-    context.add_redirect(&scope, &application_address, &redirect, target)?;
-
-    Ok(context)
-}
-
-fn build_security(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    application: ApplicationDetails,
-    associations: &ImportedAssociations,
-    entry: SecurityDetails,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope, application_address) =
-        application_ancestry(&project, &environment, &application, associations)?;
-    context.add_security(&scope, &application_address, &entry, target)?;
-
-    Ok(context)
-}
-
-fn build_domain(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    application: ApplicationDetails,
-    associations: &ImportedAssociations,
-    domain: dokploy_sdk::DomainDetails,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope, application_address) =
-        application_ancestry(&project, &environment, &application, associations)?;
-    context.add_domain(&scope, &application_address, &domain, target)?;
-
-    Ok(context)
-}
-
-fn build_compose(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    compose: dokploy_sdk::ComposeDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_compose(&scope, &compose, server, target)?;
-
-    Ok(context)
-}
-
-fn build_postgres(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    database: dokploy_sdk::PostgresDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_postgres(&scope, &database, server, target)?;
-
-    Ok(context)
-}
-
-fn build_redis(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    database: dokploy_sdk::RedisDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_redis(&scope, &database, server, target)?;
-
-    Ok(context)
-}
-
-fn build_mysql(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    database: dokploy_sdk::MySqlDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_mysql(&scope, &database, server, target)?;
-
-    Ok(context)
-}
-
-fn build_mariadb(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    database: dokploy_sdk::MariaDbDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_mariadb(&scope, &database, server, target)?;
-
-    Ok(context)
-}
-
-fn build_mongo(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    database: dokploy_sdk::MongoDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_mongo(&scope, &database, server, target)?;
-
-    Ok(context)
-}
-
-fn build_libsql(
-    project: ProjectDetails,
-    environment: EnvironmentDetails,
-    database: dokploy_sdk::LibSqlDetails,
-    server: Option<&str>,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let (mut context, scope) = single_environment(&project, &environment)?;
-    context.add_libsql(&scope, &database, server, target)?;
-
-    Ok(context)
-}
-
 fn imported_libsql_node(
     database: &dokploy_sdk::LibSqlDetails,
 ) -> Result<LibSqlNodeConfig, ImportError> {
@@ -1005,13 +408,13 @@ struct ImportedAssociations {
     rollback_registry: Option<String>,
 }
 
-/// Reads fresh minimal collections only when the application has an association.
+/// Resolves an application's external associations from the crawl's directory.
 ///
 /// An identity that is unknown, unreadable, or whose name is shared by another
 /// record cannot be written back as an unambiguous selector, so the import fails
 /// closed instead of guessing.
-async fn imported_associations(
-    client: &Dokploy,
+fn associations_from(
+    directory: &ExternalDirectory,
     application: &ApplicationDetails,
 ) -> Result<ImportedAssociations, ImportError> {
     fn id<T>(field: &ResponseField<T>, as_str: fn(&T) -> &str) -> Option<String> {
@@ -1020,30 +423,6 @@ async fn imported_associations(
             ResponseField::NotReturned | ResponseField::Null => None,
         }
     }
-    let server = id(&application.server_id, dokploy_sdk::ServerId::as_str);
-    let build_server = id(&application.build_server_id, dokploy_sdk::ServerId::as_str);
-    let registry = id(&application.registry_id, dokploy_sdk::RegistryId::as_str);
-    let build_registry = id(
-        &application.build_registry_id,
-        dokploy_sdk::RegistryId::as_str,
-    );
-    let rollback_registry = id(
-        &application.rollback_registry_id,
-        dokploy_sdk::RegistryId::as_str,
-    );
-
-    let mut kinds = std::collections::BTreeSet::new();
-    if server.is_some() || build_server.is_some() {
-        kinds.insert(SelectorKind::Server);
-    }
-    if registry.is_some() || build_registry.is_some() || rollback_registry.is_some() {
-        kinds.insert(SelectorKind::Registry);
-    }
-    if kinds.is_empty() {
-        return Ok(ImportedAssociations::default());
-    }
-
-    let directory = ExternalDirectory::load(client, &kinds).await;
     let name = |kind, id: Option<String>| -> Result<Option<String>, ImportError> {
         id.map(|id| {
             directory
@@ -1055,28 +434,46 @@ async fn imported_associations(
     };
 
     Ok(ImportedAssociations {
-        server: name(SelectorKind::Server, server)?,
-        build_server: name(SelectorKind::Server, build_server)?,
-        registry: name(SelectorKind::Registry, registry)?,
-        build_registry: name(SelectorKind::Registry, build_registry)?,
-        rollback_registry: name(SelectorKind::Registry, rollback_registry)?,
+        server: name(
+            SelectorKind::Server,
+            id(&application.server_id, dokploy_sdk::ServerId::as_str),
+        )?,
+        build_server: name(
+            SelectorKind::Server,
+            id(&application.build_server_id, dokploy_sdk::ServerId::as_str),
+        )?,
+        registry: name(
+            SelectorKind::Registry,
+            id(&application.registry_id, dokploy_sdk::RegistryId::as_str),
+        )?,
+        build_registry: name(
+            SelectorKind::Registry,
+            id(
+                &application.build_registry_id,
+                dokploy_sdk::RegistryId::as_str,
+            ),
+        )?,
+        rollback_registry: name(
+            SelectorKind::Registry,
+            id(
+                &application.rollback_registry_id,
+                dokploy_sdk::RegistryId::as_str,
+            ),
+        )?,
     })
 }
 
-/// Reads the fresh server collection only when a service is attached to a server.
+/// Resolves a service's server placement from the crawl's directory.
 ///
 /// A local (`null`) or omitted placement stays unmanaged. An identity that is
-/// unknown, unreadable, or whose name is shared by another record cannot be
-/// written back as an unambiguous selector, so the import fails closed.
-async fn imported_server(
-    client: &Dokploy,
+/// unknown, unreadable, or whose name is shared by another record fails closed.
+fn server_from(
+    directory: &ExternalDirectory,
     field: &ResponseField<dokploy_sdk::ServerId>,
 ) -> Result<Option<String>, ImportError> {
     let ResponseField::Value(server_id) = field else {
         return Ok(None);
     };
-    let kinds = std::collections::BTreeSet::from([SelectorKind::Server]);
-    let directory = ExternalDirectory::load(client, &kinds).await;
     directory
         .unique_name_of(SelectorKind::Server, server_id.as_str())
         .map(|name| Some(name.to_owned()))
@@ -1220,10 +617,6 @@ fn resource_state_with_dependencies(
     ))
 }
 
-fn address(kind: ResourceKind, name: &str) -> Result<ResourceAddress, ImportError> {
-    Ok(ResourceAddress::new(kind, logical_name(name)))
-}
-
 fn logical_name(value: &str) -> ResourceName {
     let mut slug = String::new();
     let mut separator = false;
@@ -1246,28 +639,6 @@ fn logical_name(value: &str) -> ResourceName {
     }
 
     ResourceName::new(slug).expect("generated slugs satisfy the logical name grammar")
-}
-
-const fn resource_kind(kind: ImportKind) -> ResourceKind {
-    match kind {
-        ImportKind::Project => ResourceKind::Project,
-        ImportKind::Environment => ResourceKind::Environment,
-        ImportKind::Application => ResourceKind::Application,
-        ImportKind::Compose => ResourceKind::Compose,
-        ImportKind::Postgres => ResourceKind::Postgres,
-        ImportKind::MySql => ResourceKind::MySql,
-        ImportKind::MariaDb => ResourceKind::MariaDb,
-        ImportKind::Mongo => ResourceKind::Mongo,
-        ImportKind::LibSql => ResourceKind::LibSql,
-        ImportKind::Redis => ResourceKind::Redis,
-        ImportKind::Domain => ResourceKind::Domain,
-        ImportKind::Port => ResourceKind::Port,
-        ImportKind::Redirect => ResourceKind::Redirect,
-        ImportKind::Security => ResourceKind::Security,
-        ImportKind::Mount => ResourceKind::Mount,
-        ImportKind::Schedule => ResourceKind::Schedule,
-        ImportKind::Backup => ResourceKind::Backup,
-    }
 }
 
 const fn port_publish_mode_label(mode: PublishMode) -> &'static str {
@@ -1295,14 +666,16 @@ fn canonical_workspace(config_file: &Path) -> Result<PathBuf, ImportError> {
 /// A redaction-safe import failure.
 #[derive(Debug, Error)]
 pub enum ImportError {
-    #[error("the logical address kind does not match the selected import kind")]
-    AddressKindMismatch,
     #[error("dokploy.yaml already exists")]
     ConfigExists,
     #[error("durable state already exists")]
     StateExists,
     #[error("the workspace changed during import")]
     WorkspaceChanged,
+    #[error("the project changed while it was being read; run the import again")]
+    RemoteChanged,
+    #[error("the project is larger than an import can safely read")]
+    TooLarge,
     #[error("the selected resource containment is unavailable")]
     MissingContainment,
     #[error("the selected LibSQL node topology is invalid")]
@@ -1310,15 +683,23 @@ pub enum ImportError {
     #[error("the remote resource topology is invalid")]
     InvalidRemoteTopology,
     #[error(
+        "two {kind} resources in one project share a name, which reconciliation cannot tell apart; rename one in Dokploy first"
+    )]
+    DuplicateName { kind: &'static str },
+    #[error(
+        "a Compose has Schedules on more than one of its services, which the configuration model cannot describe yet (DOKCFG055)"
+    )]
+    ComposeSchedulesSpanServices,
+    #[error(
         "an external server, registry, or destination association is unknown, unreadable, or has a name shared by another record"
     )]
     ExternalAssociation,
-    #[error("no importable resources are visible")]
+    #[error("the imported workspace would not plan clean on its first plan ({subject})")]
+    NotConvergent { subject: String },
+    #[error("no importable projects are visible")]
     NoVisibleResources,
     #[error("the interactive import selection is invalid")]
     InvalidSelection,
-    #[error("the logical import address is invalid")]
-    InvalidAddress,
     #[error("failed to resolve the import workspace")]
     Workspace { source: std::io::Error },
     #[error("failed to remove the generated configuration after state persistence failed")]

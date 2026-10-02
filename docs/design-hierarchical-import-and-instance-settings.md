@@ -1,6 +1,6 @@
 # Design: hierarchical project import and instance settings
 
-Status: proposed (revision 3). Slice A1 (nested `project.environments`, `DOKCFG032`) is implemented. Baseline: `master` at `30f26b7`
+Status: proposed (revision 3). Slices A1 (nested `project.environments`, `DOKCFG032`) through A4 (recursive project import) are implemented; see "A4 as built". Baseline: `master` at `30f26b7`
 (Phase 8 complete, ADRs 0001–0048). New ADRs are numbered in the order they
 land, starting at 0049.
 
@@ -211,6 +211,41 @@ New for import: service server placement (ADR 0048) for all seven service
 kinds, not only applications. Project tags are imported once Track S adds them
 (S3); until then the project's tags are simply unmanaged, so the first plan
 still converges.
+
+### A4 as built
+
+The five stages are implemented as `import/inventory.rs` (stage 1 and the
+stage-5 re-read), `import/project.rs` (stages 2 and 4), `import/names.rs`
+(stage 3), and `import/converge.rs` (the offline proof inside stage 4). What
+differs from the plan above, and why:
+
+- **Convergence proof.** It compares what `compile_desired` produces from the
+  rendered document with what `StoredState` projects from the new state:
+  identical resource sets, owned properties (both directions, so an input the
+  state records but the document leaves unmanaged is caught), containment,
+  dependencies, and protection. `StoredState::properties` was added so the
+  comparison can see every owned property of a resource.
+- **Leaves are read from collections only.** A Port, Redirect, Security entry,
+  Domain, Mount, Schedule, or Backup comes from its parent's authoritative
+  collection, the same records reconciliation reads. The per-leaf direct read
+  and its agreement check are dropped; validation instead checks parentage,
+  identity uniqueness across the project, and the natural-key uniqueness the
+  planner needs (Redirect regex, Security username). Compose still checks its
+  search item against the direct read.
+- **Leaf collisions use the parent service as the prefix** (the environment
+  prefix cannot separate two leaves of one environment), then `-2`, `-3`.
+  Services and environments follow the plan above.
+- **Fails closed where the planner cannot plan.** Import refuses a project with
+  two same-named resources of one kind in an environment, two same-named
+  environments, a project name shared with another project, or a Compose with
+  Schedules on more than one service. The last is a standing limit of the
+  configuration model (`DOKCFG055`, ADR 0046): A2 added the SDK read, but the
+  config rule, the planner's target-scoped read, and the executor still assume
+  one service per Compose. Lifting it is separate work. The "Compose with
+  Schedules on two services" test case of A7 therefore became a fail-closed case.
+- **Re-read.** The topology fingerprint covers the project record, the
+  project-scoped environment collection, and the Compose, MySQL, MariaDB, and
+  Mongo collections of every environment, ignoring volatile status fields.
 
 ### A5. Name allocation
 

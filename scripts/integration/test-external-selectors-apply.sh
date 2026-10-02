@@ -786,14 +786,19 @@ jq -n --arg id "$adopted_id" --arg registry "$registry_one_id" --arg rollback "$
 ' >"$private_directory/adopted-update.request.json"
 require_status "$(api_post application.update "$private_directory/adopted-update.request.json" \
     "$private_directory/adopted-update.json")" 200 "application.update adopted"
-cli import application "$adopted_id" --as application.adopted --file "$import_config_file" \
+# Import adopts the whole project, so the managed application is imported with
+# the adopted one. The adopted application is found by its remote identity
+# because its address is derived from its name.
+cli import project "$project_id" --file "$import_config_file" \
     >"$workspace/import.stdout" 2>"$workspace/import.stderr"
 require_noop_plan after-import "$import_config_file"
-if ! jq -e --arg server "$server_a_name" --arg registry "$registry_one_name" \
-    --arg rollback "$registry_two_name" '
-    .resources["application.adopted"].lastApplied.server == {name:$server}
-    and .resources["application.adopted"].lastApplied.registry == {name:$registry}
-    and .resources["application.adopted"].lastApplied.rollback_registry == {name:$rollback}
+if ! jq -e --arg id "$adopted_id" --arg server "$server_a_name" \
+    --arg registry "$registry_one_name" --arg rollback "$registry_two_name" '
+    [.resources[] | select(.kind == "application" and .remoteId == $id) | .lastApplied] as $adopted
+    | ($adopted | length) == 1
+    and $adopted[0].server == {name:$server}
+    and $adopted[0].registry == {name:$registry}
+    and $adopted[0].rollback_registry == {name:$rollback}
 ' "$import_directory/.dokploy/state.json" >/dev/null; then
     echo "the imported application does not hold name selectors in durable state" >&2
     exit 1
@@ -825,7 +830,9 @@ jq -n --arg id "$ambiguous_id" --arg registry "$duplicate_one_id" \
     >"$private_directory/ambiguous-update.request.json"
 require_status "$(api_post application.update "$private_directory/ambiguous-update.request.json" \
     "$private_directory/ambiguous-update.json")" 200 "application.update ambiguous"
-if cli import application "$ambiguous_id" --as application.ambiguous \
+# The project now holds an application attached to a shared registry name, so
+# the whole project import fails closed.
+if cli import project "$project_id" \
     --file "$ambiguous_import_directory/dokploy.yaml" \
     >"$workspace/import-ambiguous.stdout" 2>"$workspace/import-ambiguous.stderr"
 then

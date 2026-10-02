@@ -702,13 +702,17 @@ require_status "$(api_get "mysql.one?mysqlId=$(urlencode "$mysql_id")" \
 oob_id="$(jq -er --arg run "$run_id" \
     '.backups[] | select(.prefix == ("/oob-" + $run + "/")) | .backupId' \
     "$private_directory/mysql-one.oob.json")"
-cli import backup "$oob_id" --as backup.adopted --file "$import_config_file" \
+# Import adopts the whole project; the adopted Backup is found by its remote
+# identity because its address is derived from its target and prefix.
+cli import project "$project_id" --file "$import_config_file" \
     >"$workspace/import.stdout" 2>"$workspace/import.stderr"
 require_noop_plan after-import "$import_config_file"
-if ! jq -e --arg destination "$destination_a_name" '
-    .resources["backup.adopted"].protected == true
-    and .resources["backup.adopted"].lastApplied.destination == {name:$destination}
-    and (.resources["backup.adopted"].dependencies | length) == 1
+if ! jq -e --arg id "$oob_id" --arg destination "$destination_a_name" '
+    [.resources[] | select(.kind == "backup" and .remoteId == $id)] as $adopted
+    | ($adopted | length) == 1
+    and $adopted[0].protected == true
+    and $adopted[0].lastApplied.destination == {name:$destination}
+    and ($adopted[0].dependencies | length) == 1
 ' "$import_directory/.dokploy/state.json" >/dev/null; then
     echo "the imported Backup is not protected or does not hold a destination name selector" >&2
     exit 1

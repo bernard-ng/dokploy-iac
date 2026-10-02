@@ -454,14 +454,17 @@ adopted_redirect_id="$(
         jq -er '.redirects[] | select(.regex == "^/adopted/(.*)$") | .redirectId' "$workspace/application-worker.out-of-band.json"
 )"
 observed_redirect_ids+=("$adopted_redirect_id")
-cli import redirect "$adopted_redirect_id" \
-    --as redirect.adopted \
+# Import adopts the whole project; the adopted Redirect is found by its
+# remote identity because its address is derived from its natural key.
+cli import project "$project_id" \
     --file "$import_config_file" \
     >"$workspace/import.stdout" \
     2>"$workspace/import.stderr"
 require_noop_plan after-import "$import_config_file"
-if ! jq -e '.resources["redirect.adopted"].protected == true' \
-    "$import_directory/.dokploy/state.json" >/dev/null; then
+if ! jq -e --arg id "$adopted_redirect_id" '
+    [.resources[] | select(.kind == "redirect" and .remoteId == $id)] as $adopted
+    | ($adopted | length) == 1 and $adopted[0].protected == true
+' "$import_directory/.dokploy/state.json" >/dev/null; then
     echo "the imported Redirect is not protected in durable state" >&2
     exit 1
 fi
