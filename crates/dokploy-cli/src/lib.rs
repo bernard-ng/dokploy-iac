@@ -1017,7 +1017,7 @@ url = "https://deploy.example.com"
         let target = temporary_directory.path().join("custom.yaml");
         fs::write(
             &target,
-            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments: {}\n",
         )
         .expect("fixture is writable");
         let repository =
@@ -1050,7 +1050,7 @@ url = "https://deploy.example.com"
         fs::write(
             &target,
             format!(
-                "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        depends_on: [redis.{canary}]\n"
+                "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          depends_on: [redis.{canary}]\n"
             ),
         )
         .expect("fixture is writable");
@@ -1086,7 +1086,7 @@ url = "https://deploy.example.com"
         let target = temporary_directory.path().join("invalid.yaml");
         fs::write(
             &target,
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        depends_on: [redis.missing]\n      worker:\n        environment:\n          TOKEN:\n            secret:\n              file: ../unsafe\n",
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          depends_on: [redis.missing]\n        worker:\n          environment:\n            TOKEN:\n              secret:\n                file: ../unsafe\n",
         )
         .expect("fixture is writable");
         let repository =
@@ -1420,7 +1420,7 @@ url = "https://deploy.example.com"
         let config_file = temporary_directory.path().join("dokploy.yaml");
         fs::write(
             &config_file,
-            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments: {}\n",
         )
         .expect("configuration fixture is writable");
         let repository =
@@ -1473,7 +1473,7 @@ url = "https://deploy.example.com"
         let config_file = temporary_directory.path().join("dokploy.yaml");
         fs::write(
             &config_file,
-            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments: {}\n",
         )
         .expect("configuration fixture is writable");
         let repository =
@@ -1515,7 +1515,7 @@ url = "https://deploy.example.com"
         let config_file = temporary_directory.path().join("dokploy.yaml");
         fs::write(
             &config_file,
-            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments: {}\n",
         )
         .expect("configuration fixture is writable");
         let repository =
@@ -1563,7 +1563,7 @@ url = "https://deploy.example.com"
         let config_file = temporary_directory.path().join("dokploy.yaml");
         fs::write(
             &config_file,
-            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments: {}\n",
         )
         .expect("configuration fixture is writable");
         let repository =

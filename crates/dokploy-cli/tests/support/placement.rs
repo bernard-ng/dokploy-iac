@@ -139,8 +139,11 @@ impl Kind {
     /// `server` is the full indented block (or empty to leave placement unmanaged).
     pub fn config(&self, server: &str, extra: &str) -> String {
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {}:\n      main:\n{}{}{}",
-            self.name, self.body, server, extra
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      {}:\n        main:\n{}{}{}",
+            self.name,
+            nest_yaml(self.body),
+            nest_yaml(server),
+            nest_yaml(extra)
         )
     }
 
@@ -178,18 +181,21 @@ impl Kind {
             self.bare_body()
         };
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {}:\n      main:\n{}{}{}",
-            self.name, body, server, extra
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      {}:\n        main:\n{}{}{}",
+            self.name,
+            nest_yaml(body),
+            nest_yaml(server),
+            nest_yaml(extra)
         )
     }
 
     /// Like [`Self::config`] without any secret property (except Compose's document).
     pub fn bare_config(&self, server: &str, extra: &str) -> String {
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {}:\n      main:\n{}{}{}",
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      {}:\n        main:\n{}{}{}",
             self.name,
-            self.bare_body(),
-            server,
+            nest_yaml(self.bare_body()),
+            nest_yaml(server),
             extra
         )
     }
@@ -912,4 +918,9 @@ pub fn state_with(fake: &Fake, extra: Vec<(&str, ResourceState)>) -> StateFile {
         .inspect()
         .expect("state reads")
         .expect("state exists")
+}
+
+/// Indents a YAML fragment so it nests one level deeper under `project`.
+pub fn nest_yaml(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
 }

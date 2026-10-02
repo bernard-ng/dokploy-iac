@@ -27,8 +27,9 @@ fn address(value: &str) -> ResourceAddress {
 }
 
 fn config(schedules: &str) -> String {
+    let schedules = support::nest_yaml(schedules);
     format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api: {{}}\n      worker: {{}}\n    schedules:\n{schedules}"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {{}}\n        worker: {{}}\n      schedules:\n{schedules}"
     )
 }
 
@@ -460,7 +461,7 @@ async fn removing_a_schedule_and_its_target_deletes_the_schedule_first() {
     apply_workspace(&client, &config_file).await.unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      worker: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        worker: {}\n",
     )
     .unwrap();
 
@@ -814,7 +815,7 @@ async fn compose_target_uses_the_typed_compose_service_identity() {
     fs::write(directory.path().join("command.sh"), COMMAND_CANARY).unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      stack:\n        document: { file: compose.yaml }\n    schedules:\n      worker:\n        name: worker-job\n        target: compose.stack\n        service_name: worker\n        cron_expression: \"@daily\"\n        shell_type: sh\n        enabled: false\n        command: { file: command.sh }\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        stack:\n          document: { file: compose.yaml }\n      schedules:\n        worker:\n          name: worker-job\n          target: compose.stack\n          service_name: worker\n          cron_expression: \"@daily\"\n          shell_type: sh\n          enabled: false\n          command: { file: command.sh }\n",
     )
     .unwrap();
 

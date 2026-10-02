@@ -137,7 +137,7 @@ fn open_step(store: &StateStore, action: JournalAction, expected: ExpectedCheckp
 
 fn volume_config(path: &str) -> String {
     format!(
-        "version: 1\nproject: {{ name: platform }}\nenvironments:\n  production:\n    applications:\n      api: {{}}\n    mounts:\n      data:\n        target: application.api\n        mount_path: {path}\n        source: {{ type: volume, volume_name: api-data }}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {{}}\n      mounts:\n        data:\n          target: application.api\n          mount_path: {path}\n          source: {{ type: volume, volume_name: api-data }}\n"
     )
 }
 
@@ -218,7 +218,7 @@ async fn uncertain_file_create_adopts_without_resending_or_exposing_content() {
     fs::write(workspace.path().join("content"), CONTENT_CANARY).unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject: { name: platform }\nenvironments:\n  production:\n    applications:\n      api: {}\n    mounts:\n      data:\n        target: application.api\n        mount_path: /etc/settings.conf\n        source:\n          type: file\n          file_path: settings.conf\n          content: { file: content }\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {}\n      mounts:\n        data:\n          target: application.api\n          mount_path: /etc/settings.conf\n          source:\n            type: file\n            file_path: settings.conf\n            content: { file: content }\n",
     )
     .unwrap();
     let instance = InstanceIdentity::parse(&router.url).unwrap();
@@ -455,7 +455,7 @@ async fn uncertain_content_rotation_requires_manual_intervention() {
     fs::write(workspace.path().join("content"), CONTENT_CANARY).unwrap();
     fs::write(
         &config_file,
-        "version: 1\nproject: { name: platform }\nenvironments:\n  production:\n    applications:\n      api: {}\n    mounts:\n      data:\n        target: application.api\n        mount_path: /etc/settings.conf\n        source:\n          type: file\n          file_path: settings.conf\n          content: { file: content }\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {}\n      mounts:\n        data:\n          target: application.api\n          mount_path: /etc/settings.conf\n          source:\n            type: file\n            file_path: settings.conf\n            content: { file: content }\n",
     )
     .unwrap();
     let inputs = serde_json::json!({
@@ -496,7 +496,7 @@ async fn uncertain_delete_is_confirmed_by_authoritative_absence() {
     let config_file = workspace.path().join("dokploy.yaml");
     fs::write(
         &config_file,
-        "version: 1\nproject: { name: platform }\nenvironments:\n  production:\n    applications:\n      api: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {}\n",
     )
     .unwrap();
     let instance = InstanceIdentity::parse(&router.url).unwrap();

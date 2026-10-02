@@ -395,28 +395,31 @@ write_config() {
 
     {
         printf 'version: 1\nproject:\n  name: %s\n  description: Disposable Phase 8 server placement validation\n' "$project_name"
-        printf 'environments:\n  production:\n    description: Managed by the Phase 8 server placement integration check\n'
-        for kind in $kinds; do
-            printf '    %s:\n' "$kind"
-            printf '      placed:\n'
-            service_body "$kind"
-            printf '%s\n' "$placed"
-            printf '      local:\n'
-            service_body "$kind"
-            printf '%s\n' "$local_group"
-            printf '      plain:\n'
-            service_body "$kind"
-            if [[ "$late" != none ]]; then
-                printf '      late:\n'
+        {
+            # The service blocks below are written at the top level, then nested under `project`.
+            printf 'environments:\n  production:\n    description: Managed by the Phase 8 server placement integration check\n'
+            for kind in $kinds; do
+                printf '    %s:\n' "$kind"
+                printf '      placed:\n'
                 service_body "$kind"
-                printf '%s\n' "$late"
-            fi
-            if [[ "$late2" != none ]]; then
-                printf '      late2:\n'
+                printf '%s\n' "$placed"
+                printf '      local:\n'
                 service_body "$kind"
-                printf '%s\n' "$late2"
-            fi
-        done
+                printf '%s\n' "$local_group"
+                printf '      plain:\n'
+                service_body "$kind"
+                if [[ "$late" != none ]]; then
+                    printf '      late:\n'
+                    service_body "$kind"
+                    printf '%s\n' "$late"
+                fi
+                if [[ "$late2" != none ]]; then
+                    printf '      late2:\n'
+                    service_body "$kind"
+                    printf '%s\n' "$late2"
+                fi
+            done
+        } | sed 's/^\(.\)/  \1/'
     } >"$config_file"
     chmod 600 "$config_file"
 }
@@ -518,296 +521,296 @@ group_ids() {
     local group="$1" kind
 
     for kind in $kinds; do
-        printf '%s=%s\n' "$kind" "$(state_value "$state_file" "$kind.$group")"
-    done
-}
-
-id_of() {
-    local listing="$1" kind="$2"
-
-    printf '%s\n' "$listing" | sed -n "s/^$kind=//p"
-}
-
-# Asserts that every service of a group is on the given server ("null" for local).
-assert_group_placement() {
-    local group="$1" expected="$2" label="$3" kind
-
-    for kind in $kinds; do
-        capture_service "$kind" "$(state_value "$state_file" "$kind.$group")" \
-            "$workspace/$label.$kind.$group.json" "$expected"
-    done
-}
-
-assert_state_selector() {
-    local group="$1" selector="$2" kind
-
-    for kind in $kinds; do
-        if ! jq -e --arg address "$kind.$group" --argjson selector "$selector" '
-            .resources[$address].lastApplied.server == $selector
-        ' "$state_file" >/dev/null; then
-            echo "durable state does not hold $kind.$group as a stable selector" >&2
-            return 1
-        fi
-    done
-}
-
-# 2. Create every kind with a named, local, and unmanaged placement.
-write_config "$(named "$server_a_name")" "$(local_server)" none none
-run_apply create
-require_noop_plan after-create
-project_id="$(state_value "$state_file" "project.$project_name")"
-assert_group_placement placed "$server_a_id" created
-assert_group_placement local null created
-assert_group_placement plain null created
-assert_state_selector placed "$(jq -n --arg name "$server_a_name" '{name:$name}')"
-assert_state_selector local '{"local":true}'
-for kind in $kinds; do
-    if jq -e --arg address "$kind.plain" '.resources[$address].lastApplied | has("server")' \
-        "$state_file" >/dev/null
-    then
-        echo "an unmanaged placement was recorded in durable state" >&2
-        exit 1
-    fi
-done
-# `libsql.create` declares `serverId` required, so a body that omits it is rejected;
-# the SDK therefore sends an explicit null for an unmanaged LibSQL placement (the
-# `libsql.plain` service above was created that way).
-environment_id="$(state_value "$state_file" environment.production)"
-jq -n --arg environment "$environment_id" --arg password "$placement_password" '
-    {
-        name:"omitted-server-probe",appName:"omitted-server-probe",
-        dockerImage:"ghcr.io/tursodatabase/libsql-server:v0.24.32",
-        environmentId:$environment,description:null,databaseUser:"app",
-        databasePassword:$password,sqldNode:"primary",sqldPrimaryUrl:null,
-        enableNamespaces:false
+            printf '%s=%s\n' "$kind" "$(state_value "$state_file" "$kind.$group")"
+        done
     }
-' >"$private_directory/libsql-omitted-server.request.json"
-omitted_status="$(api_post libsql.create "$private_directory/libsql-omitted-server.request.json" \
-    "$private_directory/libsql-omitted-server.json")"
-if [[ "$omitted_status" != 4* ]]; then
-    echo "libsql.create accepted a body without serverId (HTTP $omitted_status)" >&2
-    exit 1
-fi
-require_status "$(api_get "project.one?projectId=$(urlencode "$project_id")" \
-    "$private_directory/project-after-omitted.json")" 200 project.one
-if ! jq -e '[.environments[].libsql[]? | select(.name == "omitted-server-probe")] | length == 0' \
-    "$private_directory/project-after-omitted.json" >/dev/null
-then
-    echo "a rejected libsql.create left a LibSQL record behind" >&2
-    exit 1
-fi
-printf '%s\n' "$omitted_status" >"$workspace/libsql-omitted-server.status"
-placed_before="$(group_ids placed)"
-local_before="$(group_ids local)"
-plain_before="$(group_ids plain)"
-assert_no_contact create
 
-# 3. A changed server replaces each service delete-before-create: non-local to
-# non-local for the placed group, local to non-local for the local group.
-write_config "$(named "$server_b_name")" "$(named "$server_a_name")" none none
-cli plan --file "$config_file" --json >"$workspace/plan-replace.stdout" 2>"$workspace/plan-replace.stderr"
-jq -e '[.changes[] | select(.kind == "replace" and .replacementOrder == "delete_before_create")] | length == 14' \
-    "$workspace/plan-replace.stdout" >/dev/null
-jq -e '[.changes[] | select(.kind != "replace")] | length == 0' \
-    "$workspace/plan-replace.stdout" >/dev/null
-run_apply replace
-require_noop_plan after-replace
-placed_after="$(group_ids placed)"
-local_after="$(group_ids local)"
+    id_of() {
+        local listing="$1" kind="$2"
+
+        printf '%s\n' "$listing" | sed -n "s/^$kind=//p"
+    }
+
+    # Asserts that every service of a group is on the given server ("null" for local).
+    assert_group_placement() {
+        local group="$1" expected="$2" label="$3" kind
+
+    for kind in $kinds; do
+            capture_service "$kind" "$(state_value "$state_file" "$kind.$group")" \
+                "$workspace/$label.$kind.$group.json" "$expected"
+        done
+    }
+
+    assert_state_selector() {
+        local group="$1" selector="$2" kind
+
+    for kind in $kinds; do
+            if ! jq -e --arg address "$kind.$group" --argjson selector "$selector" '
+                .resources[$address].lastApplied.server == $selector
+            ' "$state_file" >/dev/null; then
+                echo "durable state does not hold $kind.$group as a stable selector" >&2
+                return 1
+            fi
+        done
+    }
+
+    # 2. Create every kind with a named, local, and unmanaged placement.
+    write_config "$(named "$server_a_name")" "$(local_server)" none none
+    run_apply create
+    require_noop_plan after-create
+    project_id="$(state_value "$state_file" "project.$project_name")"
+    assert_group_placement placed "$server_a_id" created
+    assert_group_placement local null created
+    assert_group_placement plain null created
+    assert_state_selector placed "$(jq -n --arg name "$server_a_name" '{name:$name}')"
+    assert_state_selector local '{"local":true}'
 for kind in $kinds; do
-    if [[ "$(id_of "$placed_before" "$kind")" == "$(id_of "$placed_after" "$kind")" ]] \
-        || [[ "$(id_of "$local_before" "$kind")" == "$(id_of "$local_after" "$kind")" ]]
-    then
-        echo "a server placement change did not replace the physical $kind service" >&2
-        exit 1
-    fi
-    if ! capture_absence "$kind" "$(id_of "$placed_before" "$kind")" \
-        "$workspace/replaced.$kind.placed.status" \
-        || ! capture_absence "$kind" "$(id_of "$local_before" "$kind")" \
-            "$workspace/replaced.$kind.local.status"
-    then
-        echo "$kind.one did not prove absence of a replaced service" >&2
-        exit 1
-    fi
-done
-if [[ "$(group_ids plain)" != "$plain_before" ]]; then
-    echo "an unmanaged placement was replaced" >&2
-    exit 1
-fi
-assert_group_placement placed "$server_b_id" replaced
-assert_group_placement local "$server_a_id" replaced
-assert_group_placement plain null replaced
-assert_no_contact replace
-
-# 4. Non-local to local also replaces.
-write_config "$(local_server)" "$(named "$server_a_name")" none none
-run_apply to-local
-require_noop_plan after-to-local
-placed_local="$(group_ids placed)"
-for kind in $kinds; do
-    if [[ "$(id_of "$placed_after" "$kind")" == "$(id_of "$placed_local" "$kind")" ]]; then
-        echo "a local placement change did not replace the physical $kind service" >&2
-        exit 1
-    fi
-    if ! capture_absence "$kind" "$(id_of "$placed_after" "$kind")" \
-        "$workspace/to-local.$kind.status"
-    then
-        echo "$kind.one did not prove absence after the move to the local host" >&2
-        exit 1
-    fi
-done
-assert_group_placement placed null to-local
-assert_group_placement local "$server_a_id" to-local
-assert_no_contact to-local
-
-# 5. Unmatched and ambiguous names block planning and apply before any mutation.
-write_config "$(named "$absent_name")" "$(named "$server_a_name")" none none
-require_blocked_plan blocked-unmatched unmatched 7
-write_config "$(named "$duplicate_name")" "$(named "$server_a_name")" none none
-require_blocked_plan blocked-ambiguous ambiguous 7
-write_config "$(local_server)" "$(named "$server_a_name")" none none
-require_noop_plan after-blocked
-assert_group_placement placed null blocked
-assert_group_placement local "$server_a_id" blocked
-
-# 6. A saved plan applies while its resolution is unchanged and is refused when the
-# selected record is re-created (same name, new identity) before apply.
-write_config "$(local_server)" "$(named "$server_a_name")" "$(named "$server_c_name")" none
-cli plan --file "$config_file" --out "$workspace/saved-unchanged.json" \
-    >"$workspace/saved-unchanged.plan.stdout" 2>"$workspace/saved-unchanged.plan.stderr"
-for identity in "$server_a_id" "$server_b_id" "$server_c_id" "$server_d_id" "$duplicate_one_id" "$duplicate_two_id"; do
-    if grep -q -F -- "$identity" "$workspace/saved-unchanged.json"; then
-        echo "the saved plan envelope contains an external identity" >&2
-        exit 1
-    fi
-done
-for name in "$server_a_name" "$server_b_name" "$server_c_name" "$server_d_name" "$duplicate_name"; do
-    if grep -q -F -- "$name" "$workspace/saved-unchanged.json"; then
-        echo "the saved plan envelope contains an external name" >&2
-        exit 1
-    fi
-done
-jq -e '(.remoteReceipt | test("^[0-9a-f]{64}$")) and .plan.applyable == true
-    and (.plan.changes | length) == 7' "$workspace/saved-unchanged.json" >/dev/null
-cli apply "$workspace/saved-unchanged.json" --file "$config_file" --auto-approve --parallelism 1 \
-    >"$workspace/saved-unchanged.apply.stdout" 2>"$workspace/saved-unchanged.apply.stderr"
-require_noop_plan after-saved-unchanged
-assert_group_placement late "$server_c_id" saved
-
-write_config "$(local_server)" "$(named "$server_a_name")" "$(named "$server_c_name")" "$(named "$server_d_name")"
-cli plan --file "$config_file" --out "$workspace/saved-stale.json" \
-    >"$workspace/saved-stale.plan.stdout" 2>"$workspace/saved-stale.plan.stderr"
-jq -e '.plan.applyable == true and (.plan.changes | length) == 7' \
-    "$workspace/saved-stale.json" >/dev/null
-# Remove and re-create the not yet used fourth server so its name selects a new identity.
-remove_server "$server_d_id"
-server_d_id="$(create_server "$server_d_name" d-recreated)"
-if cli apply "$workspace/saved-stale.json" --file "$config_file" --auto-approve \
-    >"$workspace/saved-stale.apply.stdout" 2>"$workspace/saved-stale.apply.stderr"
-then
-    echo "a saved plan was applied after its external resolution changed" >&2
-    exit 1
-fi
-if ! grep -q "saved plan cannot be applied safely" "$workspace/saved-stale.apply.stderr"; then
-    echo "the stale saved plan was not refused by the receipt check" >&2
-    exit 1
-fi
-for kind in $kinds; do
-    if jq -e --arg address "$kind.late2" '.resources | has($address)' "$state_file" >/dev/null; then
-        echo "a refused saved plan created a service" >&2
-        exit 1
-    fi
-done
-run_apply after-refusal
-require_noop_plan after-fresh-apply
-assert_group_placement late2 "$server_d_id" fresh
-assert_no_contact saved-plan
-
-# 7. Protected import writes name selectors, converges, and fails closed on ambiguity.
-import_target() {
-    local kind="$1" group="$2" directory="$3"
-
-    mkdir -p "$directory"
-    chmod 700 "$directory"
-    # Dokploy identities may begin with a dash, so the positionals follow `--`.
-    cli import --as "$kind.adopted" --file "$directory/dokploy.yaml" \
-        -- "$kind" "$(state_value "$state_file" "$kind.$group")" \
-        >"$workspace/import.$kind.$group.stdout" 2>"$workspace/import.$kind.$group.stderr"
-}
-
-for kind in $kinds; do
-    import_directory="$workspace/import-$kind"
-    import_target "$kind" late "$import_directory"
-    if ! jq -e --arg address "$kind.adopted" --arg server "$server_c_name" '
-        .resources[$address].lastApplied.server == {name:$server}
-    ' "$import_directory/.dokploy/state.json" >/dev/null; then
-        echo "the imported $kind does not hold a name selector in durable state" >&2
-        exit 1
-    fi
-    if ! grep -q -F -- "$server_c_name" "$import_directory/dokploy.yaml" \
-        || ! grep -q 'protect: true' "$import_directory/dokploy.yaml"
-    then
-        echo "the imported $kind configuration is not a protected name selector" >&2
-        exit 1
-    fi
-    for identity in "$server_c_id" "$server_a_id" "$server_b_id"; do
-        if grep -q -F -- "$identity" "$import_directory/dokploy.yaml" \
-            "$import_directory/.dokploy/state.json"; then
-            echo "the imported $kind workspace contains an external identity" >&2
+        if jq -e --arg address "$kind.plain" '.resources[$address].lastApplied | has("server")' \
+            "$state_file" >/dev/null
+        then
+            echo "an unmanaged placement was recorded in durable state" >&2
             exit 1
         fi
     done
-    cli plan --file "$import_directory/dokploy.yaml" --json --detailed-exitcode \
-        >"$workspace/after-import.$kind.stdout" 2>"$workspace/after-import.$kind.stderr"
-
-    # A service on the local host stays unmanaged: nothing is invented.
-    plain_directory="$workspace/import-plain-$kind"
-    import_target "$kind" plain "$plain_directory"
-    if grep -q 'server:' "$plain_directory/dokploy.yaml"; then
-        echo "an unplaced $kind was imported with a server selector" >&2
+    # `libsql.create` declares `serverId` required, so a body that omits it is rejected;
+    # the SDK therefore sends an explicit null for an unmanaged LibSQL placement (the
+    # `libsql.plain` service above was created that way).
+    environment_id="$(state_value "$state_file" environment.production)"
+    jq -n --arg environment "$environment_id" --arg password "$placement_password" '
+        {
+            name:"omitted-server-probe",appName:"omitted-server-probe",
+            dockerImage:"ghcr.io/tursodatabase/libsql-server:v0.24.32",
+            environmentId:$environment,description:null,databaseUser:"app",
+            databasePassword:$password,sqldNode:"primary",sqldPrimaryUrl:null,
+            enableNamespaces:false
+        }
+    ' >"$private_directory/libsql-omitted-server.request.json"
+    omitted_status="$(api_post libsql.create "$private_directory/libsql-omitted-server.request.json" \
+        "$private_directory/libsql-omitted-server.json")"
+    if [[ "$omitted_status" != 4* ]]; then
+        echo "libsql.create accepted a body without serverId (HTTP $omitted_status)" >&2
         exit 1
     fi
-    cli plan --file "$plain_directory/dokploy.yaml" --json --detailed-exitcode \
-        >"$workspace/after-import-plain.$kind.stdout" 2>"$workspace/after-import-plain.$kind.stderr"
-done
-
-# A second record with the same name makes the attached server ambiguous.
-server_c_duplicate_id="$(create_server "$server_c_name" c-duplicate)"
-for kind in $kinds; do
-    ambiguous_directory="$workspace/import-ambiguous-$kind"
-    mkdir -p "$ambiguous_directory"
-    if cli import --as "$kind.ambiguous" --file "$ambiguous_directory/dokploy.yaml" \
-        -- "$kind" "$(state_value "$state_file" "$kind.late")" \
-        >"$workspace/import-ambiguous.$kind.stdout" 2>"$workspace/import-ambiguous.$kind.stderr"
+    require_status "$(api_get "project.one?projectId=$(urlencode "$project_id")" \
+        "$private_directory/project-after-omitted.json")" 200 project.one
+    if ! jq -e '[.environments[].libsql[]? | select(.name == "omitted-server-probe")] | length == 0' \
+        "$private_directory/project-after-omitted.json" >/dev/null
     then
-        echo "an ambiguous $kind placement was imported" >&2
+        echo "a rejected libsql.create left a LibSQL record behind" >&2
         exit 1
     fi
-    if ! grep -q "shared by another record" "$workspace/import-ambiguous.$kind.stderr"; then
-        echo "the ambiguous $kind import did not report the closed diagnostic" >&2
-        exit 1
-    fi
-    if [[ -e "$ambiguous_directory/dokploy.yaml" || -e "$ambiguous_directory/.dokploy" ]]; then
-        echo "a failed $kind import left files behind" >&2
-        exit 1
-    fi
-done
-remove_server "$server_c_duplicate_id"
+    printf '%s\n' "$omitted_status" >"$workspace/libsql-omitted-server.status"
+    placed_before="$(group_ids placed)"
+    local_before="$(group_ids local)"
+    plain_before="$(group_ids plain)"
+    assert_no_contact create
 
-# 8. The managed workspace still converges and nothing was deployed or contacted.
-write_config "$(local_server)" "$(named "$server_a_name")" "$(named "$server_c_name")" "$(named "$server_d_name")"
-require_noop_plan final
-assert_group_placement placed null final
-assert_group_placement local "$server_a_id" final
-assert_group_placement plain null final
-assert_group_placement late "$server_c_id" final
-assert_group_placement late2 "$server_d_id" final
-assert_no_contact final
-jq -n --argjson tripwireHits "$(tripwire_hits)" '{tripwireHits:$tripwireHits,deployments:0}' \
-    >"$workspace/contact-summary.json"
-if ! jq -e '.tripwireHits == 0 and .deployments == 0' "$workspace/contact-summary.json" >/dev/null; then
-    echo "the contact summary does not prove an inert run" >&2
-    exit 1
-fi
+    # 3. A changed server replaces each service delete-before-create: non-local to
+    # non-local for the placed group, local to non-local for the local group.
+    write_config "$(named "$server_b_name")" "$(named "$server_a_name")" none none
+    cli plan --file "$config_file" --json >"$workspace/plan-replace.stdout" 2>"$workspace/plan-replace.stderr"
+    jq -e '[.changes[] | select(.kind == "replace" and .replacementOrder == "delete_before_create")] | length == 14' \
+        "$workspace/plan-replace.stdout" >/dev/null
+    jq -e '[.changes[] | select(.kind != "replace")] | length == 0' \
+        "$workspace/plan-replace.stdout" >/dev/null
+    run_apply replace
+    require_noop_plan after-replace
+    placed_after="$(group_ids placed)"
+    local_after="$(group_ids local)"
+for kind in $kinds; do
+        if [[ "$(id_of "$placed_before" "$kind")" == "$(id_of "$placed_after" "$kind")" ]] \
+            || [[ "$(id_of "$local_before" "$kind")" == "$(id_of "$local_after" "$kind")" ]]
+        then
+            echo "a server placement change did not replace the physical $kind service" >&2
+            exit 1
+        fi
+        if ! capture_absence "$kind" "$(id_of "$placed_before" "$kind")" \
+            "$workspace/replaced.$kind.placed.status" \
+            || ! capture_absence "$kind" "$(id_of "$local_before" "$kind")" \
+                "$workspace/replaced.$kind.local.status"
+        then
+            echo "$kind.one did not prove absence of a replaced service" >&2
+            exit 1
+        fi
+    done
+    if [[ "$(group_ids plain)" != "$plain_before" ]]; then
+        echo "an unmanaged placement was replaced" >&2
+        exit 1
+    fi
+    assert_group_placement placed "$server_b_id" replaced
+    assert_group_placement local "$server_a_id" replaced
+    assert_group_placement plain null replaced
+    assert_no_contact replace
 
-echo "Compose and database server placement (named, local, unmanaged), create-only replacement in every direction, unmatched and ambiguous blocking, saved-plan receipt binding, protected name-selector import, zero-deployment, and inert-contact checks passed for compose, postgres, mysql, mariadb, mongo, libsql, and redis."
+    # 4. Non-local to local also replaces.
+    write_config "$(local_server)" "$(named "$server_a_name")" none none
+    run_apply to-local
+    require_noop_plan after-to-local
+    placed_local="$(group_ids placed)"
+for kind in $kinds; do
+        if [[ "$(id_of "$placed_after" "$kind")" == "$(id_of "$placed_local" "$kind")" ]]; then
+            echo "a local placement change did not replace the physical $kind service" >&2
+            exit 1
+        fi
+        if ! capture_absence "$kind" "$(id_of "$placed_after" "$kind")" \
+            "$workspace/to-local.$kind.status"
+        then
+            echo "$kind.one did not prove absence after the move to the local host" >&2
+            exit 1
+        fi
+    done
+    assert_group_placement placed null to-local
+    assert_group_placement local "$server_a_id" to-local
+    assert_no_contact to-local
+
+    # 5. Unmatched and ambiguous names block planning and apply before any mutation.
+    write_config "$(named "$absent_name")" "$(named "$server_a_name")" none none
+    require_blocked_plan blocked-unmatched unmatched 7
+    write_config "$(named "$duplicate_name")" "$(named "$server_a_name")" none none
+    require_blocked_plan blocked-ambiguous ambiguous 7
+    write_config "$(local_server)" "$(named "$server_a_name")" none none
+    require_noop_plan after-blocked
+    assert_group_placement placed null blocked
+    assert_group_placement local "$server_a_id" blocked
+
+    # 6. A saved plan applies while its resolution is unchanged and is refused when the
+    # selected record is re-created (same name, new identity) before apply.
+    write_config "$(local_server)" "$(named "$server_a_name")" "$(named "$server_c_name")" none
+    cli plan --file "$config_file" --out "$workspace/saved-unchanged.json" \
+        >"$workspace/saved-unchanged.plan.stdout" 2>"$workspace/saved-unchanged.plan.stderr"
+    for identity in "$server_a_id" "$server_b_id" "$server_c_id" "$server_d_id" "$duplicate_one_id" "$duplicate_two_id"; do
+        if grep -q -F -- "$identity" "$workspace/saved-unchanged.json"; then
+            echo "the saved plan envelope contains an external identity" >&2
+            exit 1
+        fi
+    done
+    for name in "$server_a_name" "$server_b_name" "$server_c_name" "$server_d_name" "$duplicate_name"; do
+        if grep -q -F -- "$name" "$workspace/saved-unchanged.json"; then
+            echo "the saved plan envelope contains an external name" >&2
+            exit 1
+        fi
+    done
+    jq -e '(.remoteReceipt | test("^[0-9a-f]{64}$")) and .plan.applyable == true
+        and (.plan.changes | length) == 7' "$workspace/saved-unchanged.json" >/dev/null
+    cli apply "$workspace/saved-unchanged.json" --file "$config_file" --auto-approve --parallelism 1 \
+        >"$workspace/saved-unchanged.apply.stdout" 2>"$workspace/saved-unchanged.apply.stderr"
+    require_noop_plan after-saved-unchanged
+    assert_group_placement late "$server_c_id" saved
+
+    write_config "$(local_server)" "$(named "$server_a_name")" "$(named "$server_c_name")" "$(named "$server_d_name")"
+    cli plan --file "$config_file" --out "$workspace/saved-stale.json" \
+        >"$workspace/saved-stale.plan.stdout" 2>"$workspace/saved-stale.plan.stderr"
+    jq -e '.plan.applyable == true and (.plan.changes | length) == 7' \
+        "$workspace/saved-stale.json" >/dev/null
+    # Remove and re-create the not yet used fourth server so its name selects a new identity.
+    remove_server "$server_d_id"
+    server_d_id="$(create_server "$server_d_name" d-recreated)"
+    if cli apply "$workspace/saved-stale.json" --file "$config_file" --auto-approve \
+        >"$workspace/saved-stale.apply.stdout" 2>"$workspace/saved-stale.apply.stderr"
+    then
+        echo "a saved plan was applied after its external resolution changed" >&2
+        exit 1
+    fi
+    if ! grep -q "saved plan cannot be applied safely" "$workspace/saved-stale.apply.stderr"; then
+        echo "the stale saved plan was not refused by the receipt check" >&2
+        exit 1
+    fi
+for kind in $kinds; do
+        if jq -e --arg address "$kind.late2" '.resources | has($address)' "$state_file" >/dev/null; then
+            echo "a refused saved plan created a service" >&2
+            exit 1
+        fi
+    done
+    run_apply after-refusal
+    require_noop_plan after-fresh-apply
+    assert_group_placement late2 "$server_d_id" fresh
+    assert_no_contact saved-plan
+
+    # 7. Protected import writes name selectors, converges, and fails closed on ambiguity.
+    import_target() {
+        local kind="$1" group="$2" directory="$3"
+
+        mkdir -p "$directory"
+        chmod 700 "$directory"
+        # Dokploy identities may begin with a dash, so the positionals follow `--`.
+        cli import --as "$kind.adopted" --file "$directory/dokploy.yaml" \
+            -- "$kind" "$(state_value "$state_file" "$kind.$group")" \
+            >"$workspace/import.$kind.$group.stdout" 2>"$workspace/import.$kind.$group.stderr"
+    }
+
+for kind in $kinds; do
+        import_directory="$workspace/import-$kind"
+        import_target "$kind" late "$import_directory"
+        if ! jq -e --arg address "$kind.adopted" --arg server "$server_c_name" '
+            .resources[$address].lastApplied.server == {name:$server}
+        ' "$import_directory/.dokploy/state.json" >/dev/null; then
+            echo "the imported $kind does not hold a name selector in durable state" >&2
+            exit 1
+        fi
+        if ! grep -q -F -- "$server_c_name" "$import_directory/dokploy.yaml" \
+            || ! grep -q 'protect: true' "$import_directory/dokploy.yaml"
+        then
+            echo "the imported $kind configuration is not a protected name selector" >&2
+            exit 1
+        fi
+        for identity in "$server_c_id" "$server_a_id" "$server_b_id"; do
+            if grep -q -F -- "$identity" "$import_directory/dokploy.yaml" \
+                "$import_directory/.dokploy/state.json"; then
+                echo "the imported $kind workspace contains an external identity" >&2
+                exit 1
+            fi
+        done
+        cli plan --file "$import_directory/dokploy.yaml" --json --detailed-exitcode \
+            >"$workspace/after-import.$kind.stdout" 2>"$workspace/after-import.$kind.stderr"
+
+        # A service on the local host stays unmanaged: nothing is invented.
+        plain_directory="$workspace/import-plain-$kind"
+        import_target "$kind" plain "$plain_directory"
+        if grep -q 'server:' "$plain_directory/dokploy.yaml"; then
+            echo "an unplaced $kind was imported with a server selector" >&2
+            exit 1
+        fi
+        cli plan --file "$plain_directory/dokploy.yaml" --json --detailed-exitcode \
+            >"$workspace/after-import-plain.$kind.stdout" 2>"$workspace/after-import-plain.$kind.stderr"
+    done
+
+    # A second record with the same name makes the attached server ambiguous.
+    server_c_duplicate_id="$(create_server "$server_c_name" c-duplicate)"
+for kind in $kinds; do
+        ambiguous_directory="$workspace/import-ambiguous-$kind"
+        mkdir -p "$ambiguous_directory"
+        if cli import --as "$kind.ambiguous" --file "$ambiguous_directory/dokploy.yaml" \
+            -- "$kind" "$(state_value "$state_file" "$kind.late")" \
+            >"$workspace/import-ambiguous.$kind.stdout" 2>"$workspace/import-ambiguous.$kind.stderr"
+        then
+            echo "an ambiguous $kind placement was imported" >&2
+            exit 1
+        fi
+        if ! grep -q "shared by another record" "$workspace/import-ambiguous.$kind.stderr"; then
+            echo "the ambiguous $kind import did not report the closed diagnostic" >&2
+            exit 1
+        fi
+        if [[ -e "$ambiguous_directory/dokploy.yaml" || -e "$ambiguous_directory/.dokploy" ]]; then
+            echo "a failed $kind import left files behind" >&2
+            exit 1
+        fi
+    done
+    remove_server "$server_c_duplicate_id"
+
+    # 8. The managed workspace still converges and nothing was deployed or contacted.
+    write_config "$(local_server)" "$(named "$server_a_name")" "$(named "$server_c_name")" "$(named "$server_d_name")"
+    require_noop_plan final
+    assert_group_placement placed null final
+    assert_group_placement local "$server_a_id" final
+    assert_group_placement plain null final
+    assert_group_placement late "$server_c_id" final
+    assert_group_placement late2 "$server_d_id" final
+    assert_no_contact final
+    jq -n --argjson tripwireHits "$(tripwire_hits)" '{tripwireHits:$tripwireHits,deployments:0}' \
+        >"$workspace/contact-summary.json"
+    if ! jq -e '.tripwireHits == 0 and .deployments == 0' "$workspace/contact-summary.json" >/dev/null; then
+        echo "the contact summary does not prove an inert run" >&2
+        exit 1
+    fi
+
+    echo "Compose and database server placement (named, local, unmanaged), create-only replacement in every direction, unmatched and ambiguous blocking, saved-plan receipt binding, protected name-selector import, zero-deployment, and inert-contact checks passed for compose, postgres, mysql, mariadb, mongo, libsql, and redis."

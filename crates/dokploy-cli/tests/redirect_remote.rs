@@ -159,16 +159,17 @@ fn desired(replacement: &str) -> dokploy_cli::desired::CompiledDesired {
         &DokployConfig::parse(&format!(
             r#"
 version: 1
-project: {{ name: platform }}
-environments:
-  production:
-    applications:
-      api:
-        redirects:
-          www:
-            regex: "^/old"
-            replacement: "{replacement}"
-            permanent: true
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api:
+          redirects:
+            www:
+              regex: "^/old"
+              replacement: "{replacement}"
+              permanent: true
 "#
         ))
         .unwrap(),

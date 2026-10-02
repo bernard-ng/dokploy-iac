@@ -152,8 +152,9 @@ fn job_config(cron: &str, script: bool) -> String {
     } else {
         ""
     };
+    let script = support::nest_yaml(script);
     format!(
-        "version: 1\nproject: {{ name: platform }}\nenvironments:\n  production:\n    applications:\n      api: {{}}\n    schedules:\n      nightly:\n        name: nightly\n        target: application.api\n        cron_expression: \"{cron}\"\n        shell_type: bash\n        enabled: false\n        command: {{ file: command.sh }}\n{script}"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {{}}\n      schedules:\n        nightly:\n          name: nightly\n          target: application.api\n          cron_expression: \"{cron}\"\n          shell_type: bash\n          enabled: false\n          command: {{ file: command.sh }}\n{script}"
     )
 }
 
@@ -476,7 +477,7 @@ async fn uncertain_delete_is_confirmed_by_authoritative_absence_and_otherwise_no
         (present_router, RecoveryAction::ConfirmNoChange, false),
     ] {
         let (workspace, config_file) = workspace(
-            "version: 1\nproject: { name: platform }\nenvironments:\n  production:\n    applications:\n      api: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {}\n",
         );
         let instance = InstanceIdentity::parse(&router.url).unwrap();
         let store = StateStore::new(workspace.path(), instance.clone()).unwrap();

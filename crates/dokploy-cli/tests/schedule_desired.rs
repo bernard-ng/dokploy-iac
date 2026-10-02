@@ -13,19 +13,23 @@ fn digest() -> ConfigDigest {
 }
 
 fn config(schedules: &str) -> DokployConfig {
+    let schedules = schedules
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     DokployConfig::parse(&format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {{}}
-    compose:
-      stack:
-        lifecycle: {{ protect: true }}
-    schedules:
+  environments:
+    production:
+      applications:
+        api: {{}}
+      compose:
+        stack:
+          lifecycle: {{ protect: true }}
+      schedules:
 {schedules}
 "#
     ))
@@ -177,20 +181,21 @@ fn instance_compilation_resolves_command_and_script_once_as_fingerprinted_receip
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    applications:
-      api: {}
-    schedules:
-      nightly:
-        name: nightly
-        target: application.api
-        cron_expression: "0 3 * * *"
-        shell_type: bash
-        enabled: false
-        command: { file: command.sh }
-        script: { file: script.sh }
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api: {}
+      schedules:
+        nightly:
+          name: nightly
+          target: application.api
+          cron_expression: "0 3 * * *"
+          shell_type: bash
+          enabled: false
+          command: { file: command.sh }
+          script: { file: script.sh }
 "#,
     )
     .expect("configuration is valid");
@@ -238,19 +243,20 @@ fn distinct_command_and_script_bytes_produce_distinct_receipts_and_stable_repeat
         let config = DokployConfig::parse(&format!(
             r#"
 version: 1
-project: {{ name: platform }}
-environments:
-  production:
-    applications:
-      api: {{}}
-    schedules:
-      nightly:
-        name: nightly
-        target: application.api
-        cron_expression: "0 3 * * *"
-        shell_type: bash
-        enabled: false
-        command: {{ file: {file} }}
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api: {{}}
+      schedules:
+        nightly:
+          name: nightly
+          target: application.api
+          cron_expression: "0 3 * * *"
+          shell_type: bash
+          enabled: false
+          command: {{ file: {file} }}
 "#
         ))
         .unwrap();

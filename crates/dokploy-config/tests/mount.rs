@@ -8,23 +8,31 @@ const MOUNT_BASE: &str = r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {}
-    compose:
-      stack:
-        document:
-          env: STACK_DOCUMENT
-    postgres:
-      main: {}
-  staging:
-    applications:
-      preview: {}
+  environments:
+    production:
+      applications:
+        api: {}
+      compose:
+        stack:
+          document:
+            env: STACK_DOCUMENT
+      postgres:
+        main: {}
+    staging:
+      applications:
+        preview: {}
 "#;
 
+/// Indents a YAML fragment two spaces so it nests under `project.environments`.
+fn nest(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
+}
+
 fn with_mounts(mounts: &str) -> String {
-    MOUNT_BASE.replace("  staging:", &format!("    mounts:\n{mounts}  staging:"))
+    MOUNT_BASE.replace(
+        "    staging:",
+        &format!("      mounts:\n{}    staging:", nest(mounts)),
+    )
 }
 
 fn one_mount(body: &str) -> String {
@@ -341,9 +349,13 @@ fn canonical_writer_round_trips_every_mount_source_without_content_bytes() {
     let rendered = render(&config).expect("Mount configuration renders");
 
     assert_eq!(DokployConfig::parse(&rendered).unwrap(), config);
-    assert!(rendered.contains("    mounts:\n      data:\n        target: \"application.api\"\n"));
-    assert!(rendered.contains("          type: \"volume\"\n          volume_name: \"api-data\"\n"));
-    assert!(rendered.contains("            file: \".secrets/settings\"\n"));
+    assert!(
+        rendered.contains("      mounts:\n        data:\n          target: \"application.api\"\n")
+    );
+    assert!(
+        rendered.contains("            type: \"volume\"\n            volume_name: \"api-data\"\n")
+    );
+    assert!(rendered.contains("              file: \".secrets/settings\"\n"));
     assert_eq!(
         ConfigDocument::from_config(&config)
             .unwrap()
@@ -403,8 +415,8 @@ fn typed_document_writes_imported_mount_with_unmanaged_content() {
     let rendered = document.render().expect("imported Mount renders");
 
     assert!(
-        rendered.contains("          type: \"file\"\n          file_path: \"settings.conf\"\n")
+        rendered.contains("            type: \"file\"\n            file_path: \"settings.conf\"\n")
     );
     assert!(!rendered.contains("content"));
-    assert!(rendered.contains("        lifecycle:\n          protect: true\n"));
+    assert!(rendered.contains("          lifecycle:\n            protect: true\n"));
 }

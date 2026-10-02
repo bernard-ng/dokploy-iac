@@ -163,20 +163,20 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 MariaDB executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 MariaDB integration check
-    mariadb:
-      main:
-        database: $database
-        username: $username
-        password:
-          env: PHASE8_MARIADB_PASSWORD
+  environments:
+    production:
+      description: Managed by the Phase 8 MariaDB integration check
+      mariadb:
+        main:
+          database: $database
+          username: $username
+          password:
+            env: PHASE8_MARIADB_PASSWORD
 EOF
     if [[ "$root_password" == "present" ]]; then
         cat >>"$config_file" <<EOF
-        root_password:
-          env: PHASE8_MARIADB_ROOT_PASSWORD
+          root_password:
+            env: PHASE8_MARIADB_ROOT_PASSWORD
 EOF
     fi
     chmod 600 "$config_file"
@@ -279,10 +279,10 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 MariaDB executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 MariaDB integration check
-    mariadb: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 MariaDB integration check
+      mariadb: {}
 removed:
   - from: mariadb.main
     destroy: true

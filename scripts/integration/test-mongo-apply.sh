@@ -161,15 +161,15 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 MongoDB executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 MongoDB integration check
-    mongo:
-      main:
-        username: $username
-        password:
-          env: PHASE8_MONGO_PASSWORD
-        replica_sets: $replica_sets
+  environments:
+    production:
+      description: Managed by the Phase 8 MongoDB integration check
+      mongo:
+        main:
+          username: $username
+          password:
+            env: PHASE8_MONGO_PASSWORD
+          replica_sets: $replica_sets
 EOF
     chmod 600 "$config_file"
 }
@@ -264,10 +264,10 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 MongoDB executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 MongoDB integration check
-    mongo: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 MongoDB integration check
+      mongo: {}
 removed:
   - from: mongo.main
     destroy: true

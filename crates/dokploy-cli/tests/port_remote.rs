@@ -157,17 +157,18 @@ fn desired(target_port: u16) -> dokploy_cli::desired::CompiledDesired {
         &DokployConfig::parse(&format!(
             r#"
 version: 1
-project: {{ name: platform }}
-environments:
-  production:
-    applications:
-      api:
-        ports:
-          http:
-            published_port: 8080
-            target_port: {target_port}
-            publish_mode: ingress
-            protocol: tcp
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api:
+          ports:
+            http:
+              published_port: 8080
+              target_port: {target_port}
+              publish_mode: ingress
+              protocol: tcp
 "#
         ))
         .unwrap(),

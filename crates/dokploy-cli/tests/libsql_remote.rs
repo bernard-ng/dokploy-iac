@@ -168,14 +168,15 @@ async fn authoritative_absence_allows_libsql_create_with_required_inputs() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql:
-      main:
-        username: app
-        password: { file: password }
-        node: { type: primary }
+project:
+  name: platform
+  environments:
+    production:
+      libsql:
+        main:
+          username: app
+          password: { file: password }
+          node: { type: primary }
 "#,
     )
     .unwrap();
@@ -232,14 +233,15 @@ async fn managed_libsql_requires_direct_agreement_and_projects_atomic_node() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql:
-      main:
-        description: old
-        username: app
-        node: { type: primary }
+project:
+  name: platform
+  environments:
+    production:
+      libsql:
+        main:
+          description: old
+          username: app
+          node: { type: primary }
 "#,
     );
 
@@ -286,16 +288,17 @@ async fn node_change_is_delete_before_create_replacement() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql:
-      main:
-        description: old
-        username: app
-        node:
-          type: replica
-          primary_url: http://primary.internal
+project:
+  name: platform
+  environments:
+    production:
+      libsql:
+        main:
+          description: old
+          username: app
+          node:
+            type: replica
+            primary_url: http://primary.internal
 "#,
     );
     let remote = discover_remote(
@@ -344,15 +347,16 @@ async fn password_rotation_and_metadata_are_one_applyable_update_plan() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql:
-      main:
-        description: next
-        username: next
-        password: { file: password }
-        node: { type: primary }
+project:
+  name: platform
+  environments:
+    production:
+      libsql:
+        main:
+          description: next
+          username: next
+          password: { file: password }
+          node: { type: primary }
 "#,
     )
     .unwrap();
@@ -407,12 +411,13 @@ async fn failed_required_collection_blocks_a_successful_direct_read() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql:
-      main:
-        description: next
+project:
+  name: platform
+  environments:
+    production:
+      libsql:
+        main:
+          description: next
 "#,
     );
     let remote = discover_remote(
@@ -461,10 +466,11 @@ async fn partial_project_topology_cannot_prove_libsql_absence() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql: { main: {} }
+project:
+  name: platform
+  environments:
+    production:
+      libsql: { main: {} }
 "#,
     );
     let remote = discover_remote(
@@ -500,10 +506,11 @@ async fn duplicate_names_and_direct_disagreement_fail_closed() {
     let desired = compile(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    libsql: { main: {} }
+project:
+  name: platform
+  environments:
+    production:
+      libsql: { main: {} }
 "#,
     );
     let error = discover_remote(

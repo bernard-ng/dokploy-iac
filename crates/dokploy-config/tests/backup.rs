@@ -10,33 +10,41 @@ const BASE: &str = r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api: {}
-    compose:
-      stack:
-        document:
-          env: STACK_DOCUMENT
-    postgres:
-      main: {}
-    mysql:
-      sql: {}
-    mariadb:
-      maria: {}
-    mongo:
-      docs: {}
-    libsql:
-      edge: {}
-    redis:
-      cache: {}
-  staging:
-    postgres:
-      preview: {}
+  environments:
+    production:
+      applications:
+        api: {}
+      compose:
+        stack:
+          document:
+            env: STACK_DOCUMENT
+      postgres:
+        main: {}
+      mysql:
+        sql: {}
+      mariadb:
+        maria: {}
+      mongo:
+        docs: {}
+      libsql:
+        edge: {}
+      redis:
+        cache: {}
+    staging:
+      postgres:
+        preview: {}
 "#;
 
+/// Indents a YAML fragment two spaces so it nests under `project.environments`.
+fn nest(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
+}
+
 fn with_backups(backups: &str) -> String {
-    BASE.replace("  staging:", &format!("    backups:\n{backups}  staging:"))
+    BASE.replace(
+        "    staging:",
+        &format!("      backups:\n{}    staging:", nest(backups)),
+    )
 }
 
 fn one_backup(body: &str) -> String {
@@ -444,11 +452,11 @@ fn canonical_writer_round_trips_every_backup_field() {
     let rendered = render(&config).expect("Backup configuration renders");
 
     assert_eq!(DokployConfig::parse(&rendered).unwrap(), config);
-    assert!(rendered.contains("    backups:\n      cleared:\n"));
-    assert!(rendered.contains("        destination:\n          name: \"offsite\"\n"));
-    assert!(rendered.contains("        keep_latest: null\n"));
-    assert!(rendered.contains("        enabled: false\n"));
-    assert!(rendered.contains("        include_encryption_key: true\n"));
+    assert!(rendered.contains("      backups:\n        cleared:\n"));
+    assert!(rendered.contains("          destination:\n            name: \"offsite\"\n"));
+    assert!(rendered.contains("          keep_latest: null\n"));
+    assert!(rendered.contains("          enabled: false\n"));
+    assert!(rendered.contains("          include_encryption_key: true\n"));
     assert_eq!(
         ConfigDocument::from_config(&config)
             .unwrap()
@@ -505,9 +513,9 @@ fn typed_document_writes_imported_backup_with_a_name_selector() {
 
     let rendered = document.render().expect("imported Backup renders");
 
-    assert!(rendered.contains("        destination:\n          name: \"offsite\"\n"));
-    assert!(rendered.contains("        keep_latest: 3\n"));
-    assert!(rendered.contains("        lifecycle:\n          protect: true\n"));
+    assert!(rendered.contains("          destination:\n            name: \"offsite\"\n"));
+    assert!(rendered.contains("          keep_latest: 3\n"));
+    assert!(rendered.contains("          lifecycle:\n            protect: true\n"));
     DokployConfig::parse(&rendered).expect("rendered import document parses strictly");
 }
 

@@ -176,15 +176,19 @@ fn base_state(server: &TestServer) -> StateFile {
 }
 
 fn config(postgres: &str) -> String {
+    let postgres = postgres
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main:
+  environments:
+    production:
+      postgres:
+        main:
 {postgres}
 "#
     )
@@ -648,14 +652,14 @@ async fn direct_404_conflicting_with_identity_in_another_environment_blocks_plan
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main:
-        database: app
-  staging:
-    postgres:
-      analytics: {}
+  environments:
+    production:
+      postgres:
+        main:
+          database: app
+    staging:
+      postgres:
+        analytics: {}
 "#,
     );
 
@@ -730,13 +734,13 @@ async fn direct_read_conflicting_with_identity_in_another_partial_collection_is_
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
-  staging:
-    postgres:
-      analytics: {}
+  environments:
+    production:
+      postgres:
+        main: {}
+    staging:
+      postgres:
+        analytics: {}
 "#,
     );
     let authority = DiscoveryAuthority {
@@ -830,11 +834,11 @@ async fn postgres_parent_change_to_another_physical_environment_is_rejected() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
-  staging:
-    postgres:
-      main: {}
+  environments:
+    production: {}
+    staging:
+      postgres:
+        main: {}
 "#,
     );
 
@@ -889,13 +893,13 @@ async fn duplicate_postgres_identity_across_environments_is_rejected() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
-  staging:
-    postgres:
-      analytics: {}
+  environments:
+    production:
+      postgres:
+        main: {}
+    staging:
+      postgres:
+        analytics: {}
 "#,
     );
 
@@ -937,10 +941,10 @@ async fn postgres_move_within_one_environment_preserves_remote_identity() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
+  environments:
+    production:
+      postgres:
+        main: {}
 moves:
   - from: postgres.legacy
     to: postgres.main
@@ -1012,10 +1016,10 @@ async fn environment_move_keeps_postgres_on_the_same_physical_parent() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
+  environments:
+    production:
+      postgres:
+        main: {}
 moves:
   - from: environment.legacy
     to: environment.production
@@ -1066,10 +1070,10 @@ async fn persisted_environment_move_keeps_postgres_discovery_idempotent() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
+  environments:
+    production:
+      postgres:
+        main: {}
 moves:
   - from: environment.legacy
     to: environment.production
@@ -1117,8 +1121,8 @@ async fn state_backed_postgres_removal_is_observed_by_remote_id() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 removed:
   - from: postgres.legacy
     destroy: true
@@ -1152,8 +1156,8 @@ async fn persisted_postgres_removal_needs_no_parent_or_remote_probe() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 removed:
   - from: postgres.legacy
     destroy: true

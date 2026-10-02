@@ -162,17 +162,17 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 MySQL executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 MySQL integration check
-    mysql:
-      main:
-        database: $database
-        username: $username
-        password:
-          env: PHASE8_MYSQL_PASSWORD
-        root_password:
-          env: PHASE8_MYSQL_ROOT_PASSWORD
+  environments:
+    production:
+      description: Managed by the Phase 8 MySQL integration check
+      mysql:
+        main:
+          database: $database
+          username: $username
+          password:
+            env: PHASE8_MYSQL_PASSWORD
+          root_password:
+            env: PHASE8_MYSQL_ROOT_PASSWORD
 EOF
     chmod 600 "$config_file"
 }
@@ -271,10 +271,10 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 MySQL executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 MySQL integration check
-    mysql: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 MySQL integration check
+      mysql: {}
 removed:
   - from: mysql.main
     destroy: true

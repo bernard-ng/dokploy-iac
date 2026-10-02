@@ -117,7 +117,7 @@ fn state(router: &Router, with_schedule: bool) -> StateFile {
 fn desired(target: &str, name: &str, cron: &str) -> dokploy_cli::desired::CompiledDesired {
     compile_desired(
         &DokployConfig::parse(&format!(
-            "version: 1\nproject: {{ name: platform }}\nenvironments:\n  production:\n    applications:\n      api: {{}}\n      worker: {{}}\n    schedules:\n      nightly:\n        name: {name}\n        target: {target}\n        cron_expression: \"{cron}\"\n        shell_type: bash\n        enabled: false\n        lifecycle: {{ protect: true }}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {{}}\n        worker: {{}}\n      schedules:\n        nightly:\n          name: {name}\n          target: {target}\n          cron_expression: \"{cron}\"\n          shell_type: bash\n          enabled: false\n          lifecycle: {{ protect: true }}\n"
         ))
         .unwrap(),
         ConfigDigest::parse("a".repeat(64)).unwrap(),
@@ -653,7 +653,7 @@ async fn a_target_change_to_a_free_name_plans_replacement() {
     // Without protection the replacement is permitted; the desired config must match.
     let desired = compile_desired(
         &DokployConfig::parse(
-            "version: 1\nproject: { name: platform }\nenvironments:\n  production:\n    applications:\n      api: {}\n      worker: {}\n    schedules:\n      nightly:\n        name: nightly\n        target: application.worker\n        cron_expression: \"0 3 * * *\"\n        shell_type: bash\n        enabled: false\n        lifecycle: { protect: true }\n",
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {}\n        worker: {}\n      schedules:\n        nightly:\n          name: nightly\n          target: application.worker\n          cron_expression: \"0 3 * * *\"\n          shell_type: bash\n          enabled: false\n          lifecycle: { protect: true }\n",
         )
         .unwrap(),
         ConfigDigest::parse("a".repeat(64)).unwrap(),

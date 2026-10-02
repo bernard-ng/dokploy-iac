@@ -7,23 +7,23 @@ fn unsupported_reference_fails_preflight_before_keyring_or_any_source_access() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          A_LITERAL:
-            value: literal-that-must-not-resolve
-          B_ENV:
-            secret:
-              env: MUST_NOT_READ
-          C_FILE:
-            secret:
-              file: secrets/must-not-read
-          D_REFERENCE:
-            from: postgres.main.connection_url
-    postgres:
-      main: {}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            A_LITERAL:
+              value: literal-that-must-not-resolve
+            B_ENV:
+              secret:
+                env: MUST_NOT_READ
+            C_FILE:
+              secret:
+                file: secrets/must-not-read
+            D_REFERENCE:
+              from: postgres.main.connection_url
+      postgres:
+        main: {}
 "#,
     )
     .unwrap();
@@ -49,17 +49,17 @@ fn clear_and_unmanaged_sensitive_fields_remain_offline() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          CLEARED: null
-    postgres:
-      main:
-        password: null
-    redis:
-      cache: {}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            CLEARED: null
+      postgres:
+        main:
+          password: null
+      redis:
+        cache: {}
 "#,
     )
     .unwrap();
@@ -85,26 +85,26 @@ fn remaining_database_and_compose_secrets_are_fingerprinted_and_bound_once() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    compose:
-      web:
-        document:
-          file: deploy/compose.yaml
-    mariadb:
-      main:
-        password:
-          env: MARIADB_PASSWORD
-        root_password:
-          env: MARIADB_ROOT_PASSWORD
-    mongo:
-      documents:
-        password:
-          env: MONGO_PASSWORD
-    libsql:
-      edge:
-        password:
-          env: LIBSQL_PASSWORD
+  environments:
+    production:
+      compose:
+        web:
+          document:
+            file: deploy/compose.yaml
+      mariadb:
+        main:
+          password:
+            env: MARIADB_PASSWORD
+          root_password:
+            env: MARIADB_ROOT_PASSWORD
+      mongo:
+        documents:
+          password:
+            env: MONGO_PASSWORD
+      libsql:
+        edge:
+          password:
+            env: LIBSQL_PASSWORD
 "#,
     )
     .unwrap();
@@ -199,22 +199,22 @@ fn security_passwords_are_fingerprinted_and_bound_once_while_redirects_need_no_s
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        redirects:
-          www:
-            regex: "^/old"
-            replacement: "/new"
-            permanent: true
-        security:
-          admin:
-            username: admin
-            password:
-              env: ADMIN_PASSWORD
-          viewer:
-            username: viewer
+  environments:
+    production:
+      applications:
+        api:
+          redirects:
+            www:
+              regex: "^/old"
+              replacement: "/new"
+              permanent: true
+          security:
+            admin:
+              username: admin
+              password:
+                env: ADMIN_PASSWORD
+            viewer:
+              username: viewer
 "#,
     )
     .unwrap();
@@ -278,19 +278,19 @@ fn literal_environment_and_file_sources_resolve_once_with_exact_untrimmed_bytes(
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          A_ENV:
-            secret:
-              env: TEST_SECRET
-          B_FILE:
-            secret:
-              file: secrets/token
-          C_LITERAL:
-            value: " literal\n"
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            A_ENV:
+              secret:
+                env: TEST_SECRET
+            B_FILE:
+              secret:
+                file: secrets/token
+            C_LITERAL:
+              value: " literal\n"
 "#,
     )
     .unwrap();
@@ -345,12 +345,12 @@ fn source_failures_have_stable_redacted_diagnostics() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    redis:
-      cache:
-        password:
-          env: SECRET_NAME_CANARY
+  environments:
+    production:
+      redis:
+        cache:
+          password:
+            env: SECRET_NAME_CANARY
 "#,
     )
     .unwrap();
@@ -359,12 +359,12 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main:
-        password:
-          file: secrets/path-canary
+  environments:
+    production:
+      postgres:
+        main:
+          password:
+            file: secrets/path-canary
 "#,
     )
     .unwrap();
@@ -448,13 +448,13 @@ fn concrete_sensitive_input_never_bypasses_key_storage() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          TOKEN:
-            value: secret-value-canary
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            TOKEN:
+              value: secret-value-canary
 "#,
     )
     .unwrap();

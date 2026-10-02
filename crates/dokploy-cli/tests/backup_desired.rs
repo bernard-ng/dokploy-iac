@@ -9,18 +9,22 @@ fn digest() -> ConfigDigest {
 }
 
 fn config(backups: &str) -> DokployConfig {
+    let backups = backups
+        .lines()
+        .map(|line| format!("  {line}\n"))
+        .collect::<String>();
     DokployConfig::parse(&format!(
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {{}}
-    mysql:
-      sql: {{}}
-    backups:
+  environments:
+    production:
+      postgres:
+        main: {{}}
+      mysql:
+        sql: {{}}
+      backups:
 {backups}
 "#
     ))

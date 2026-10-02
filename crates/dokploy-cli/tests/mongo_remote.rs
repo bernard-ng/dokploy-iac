@@ -154,14 +154,14 @@ async fn authoritative_absence_allows_mongo_create_with_required_credentials() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mongo:
-      main:
-        username: app
-        password:
-          file: mongo-password
-        replica_sets: false
+  environments:
+    production:
+      mongo:
+        main:
+          username: app
+          password:
+            file: mongo-password
+          replica_sets: false
 "#,
     )
     .expect("configuration is valid");
@@ -236,14 +236,15 @@ async fn managed_mongo_requires_direct_and_collection_agreement_and_redacts_cred
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main:
-        username: contract
-        password: null
-        replica_sets: false
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main:
+          username: contract
+          password: null
+          replica_sets: false
 "#,
     )
     .unwrap();
@@ -317,13 +318,14 @@ async fn unavailable_mongo_collection_blocks_a_successful_direct_read_and_any_mu
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main:
-        username: next
-        replica_sets: true
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main:
+          username: next
+          replica_sets: true
 "#,
     )
     .unwrap();
@@ -393,13 +395,14 @@ async fn mongo_username_and_replica_sets_changes_update_in_place() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main:
-        username: next
-        replica_sets: true
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main:
+          username: next
+          replica_sets: true
 "#,
     )
     .unwrap();
@@ -480,14 +483,15 @@ async fn mongo_password_changes_after_create_are_unsupported() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main:
-        username: app
-        password: null
-        replica_sets: false
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main:
+          username: app
+          password: null
+          replica_sets: false
 "#,
     )
     .unwrap();
@@ -534,11 +538,12 @@ async fn partial_mongo_search_cannot_prove_absence() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main: {}
 "#,
     )
     .unwrap();
@@ -596,11 +601,12 @@ async fn mongo_direct_and_collection_disagreement_fails_closed() {
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main: {}
 "#,
     )
     .unwrap();
@@ -660,11 +666,12 @@ async fn exercise_mongo_collection_collision(
     let config = DokployConfig::parse(
         r#"
 version: 1
-project: { name: platform }
-environments:
-  production:
-    mongo:
-      main: {}
+project:
+  name: platform
+  environments:
+    production:
+      mongo:
+        main: {}
 "#,
     )
     .unwrap();

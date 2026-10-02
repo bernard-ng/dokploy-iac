@@ -305,12 +305,12 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Port executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Port integration check
-    applications:
-      api: $api_ports
-      worker: $worker_ports
+  environments:
+    production:
+      description: Managed by the Phase 8 Port integration check
+      applications:
+        api: $api_ports
+        worker: $worker_ports
 EOF
     chmod 600 "$config_file"
 }
@@ -321,12 +321,12 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Port executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Port integration check
-    applications:
-      api: {}
-      worker: {}
+  environments:
+    production:
+      description: Managed by the Phase 8 Port integration check
+      applications:
+        api: {}
+        worker: {}
 removed:
   - from: port.http
     destroy: true

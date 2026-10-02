@@ -156,14 +156,15 @@ fn desired(username: &str) -> dokploy_cli::desired::CompiledDesired {
         &DokployConfig::parse(&format!(
             r#"
 version: 1
-project: {{ name: platform }}
-environments:
-  production:
-    applications:
-      api:
-        security:
-          admin:
-            username: "{username}"
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api:
+          security:
+            admin:
+              username: "{username}"
 "#
         ))
         .unwrap(),

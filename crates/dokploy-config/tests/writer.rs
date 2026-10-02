@@ -15,86 +15,86 @@ project:
   description: "LegalterLaw platform"
   lifecycle:
     protect: true
-environments:
-  production:
-    description: Production
-    compose:
-      web:
-        description: "Web: production"
-        document:
-          file: deploy/compose.yaml
-    postgres:
-      main:
-        database: app
-        username: app
-        password:
-          env: DATABASE_PASSWORD
-    mysql:
-      analytics:
-        database: analytics
-        username: analytics
-        password:
-          env: MYSQL_PASSWORD
-        root_password:
-          file: .secrets/mysql-root-password
-    mariadb:
-      reporting:
-        database: reports
-        username: reporter
-        password:
-          env: MARIADB_PASSWORD
-    mongo:
-      documents:
-        username: app
-        password:
-          file: .secrets/mongo-password
-        replica_sets: true
-    libsql:
-      edge:
-        description: "Edge: primary"
-        username: app
-        password:
-          env: LIBSQL_PASSWORD
-        node:
-          type: primary
-    redis:
-      cache:
-        password:
-          file: .secrets/redis-password
-    applications:
-      api:
-        description: "API: production"
-        replicas: 2
-        source:
-          type: github
-          repository: legalterlaw/platform
-          branch: main
-        environment:
-          DATABASE_URL:
-            from: postgres.main.connection_url
-          FEATURE_FLAG:
-            value: "on"
-          OPTIONAL: null
-          TOKEN:
-            secret:
-              file: .secrets/api-token
-        depends_on: [redis.cache, postgres.main]
-        lifecycle:
-          ignore_changes: [replicas, deployment.status]
-        redirects:
-          www:
-            regex: "^https?://example.test/(.*)"
-            replacement: "https://www.example.test/${1}"
-            permanent: true
-        security:
-          admin:
-            username: admin
-            password:
-              env: ADMIN_PASSWORD
-    domains:
-      public:
-        host: api.example.test
-        application: application.api
+  environments:
+    production:
+      description: Production
+      compose:
+        web:
+          description: "Web: production"
+          document:
+            file: deploy/compose.yaml
+      postgres:
+        main:
+          database: app
+          username: app
+          password:
+            env: DATABASE_PASSWORD
+      mysql:
+        analytics:
+          database: analytics
+          username: analytics
+          password:
+            env: MYSQL_PASSWORD
+          root_password:
+            file: .secrets/mysql-root-password
+      mariadb:
+        reporting:
+          database: reports
+          username: reporter
+          password:
+            env: MARIADB_PASSWORD
+      mongo:
+        documents:
+          username: app
+          password:
+            file: .secrets/mongo-password
+          replica_sets: true
+      libsql:
+        edge:
+          description: "Edge: primary"
+          username: app
+          password:
+            env: LIBSQL_PASSWORD
+          node:
+            type: primary
+      redis:
+        cache:
+          password:
+            file: .secrets/redis-password
+      applications:
+        api:
+          description: "API: production"
+          replicas: 2
+          source:
+            type: github
+            repository: legalterlaw/platform
+            branch: main
+          environment:
+            DATABASE_URL:
+              from: postgres.main.connection_url
+            FEATURE_FLAG:
+              value: "on"
+            OPTIONAL: null
+            TOKEN:
+              secret:
+                file: .secrets/api-token
+          depends_on: [redis.cache, postgres.main]
+          lifecycle:
+            ignore_changes: [replicas, deployment.status]
+          redirects:
+            www:
+              regex: "^https?://example.test/(.*)"
+              replacement: "https://www.example.test/${1}"
+              permanent: true
+          security:
+            admin:
+              username: admin
+              password:
+                env: ADMIN_PASSWORD
+      domains:
+        public:
+          host: api.example.test
+          application: application.api
 moves:
   - from: application.backend
     to: application.api
@@ -114,21 +114,21 @@ fn renders_the_complete_mvp_model_as_deterministic_nested_yaml() {
     assert_eq!(first, second);
     assert_eq!(reparsed, config);
     assert!(first.starts_with("version: 1\nproject:\n"));
-    assert!(first.contains("\nenvironments:\n  production:\n"));
-    assert!(first.contains("\n    applications:\n      api:\n"));
-    assert!(first.contains("\n    compose:\n      web:\n"));
-    assert!(first.contains("        document:\n          file: \"deploy/compose.yaml\"\n"));
-    assert!(first.contains("\n    mysql:\n      analytics:\n"));
-    assert!(first.contains("        root_password:\n"));
-    assert!(first.contains("\n    mariadb:\n      reporting:\n"));
-    assert!(first.contains("\n    mongo:\n      documents:\n"));
-    assert!(first.contains("        replica_sets: true\n"));
-    assert!(first.contains("\n    libsql:\n      edge:\n"));
-    assert!(first.contains("        node:\n          type: \"primary\"\n"));
-    assert!(first.contains("\n        redirects:\n          www:\n"));
-    assert!(first.contains("            permanent: true\n"));
-    assert!(first.contains("\n        security:\n          admin:\n"));
-    assert!(first.contains("            password:\n              env: \"ADMIN_PASSWORD\"\n"));
+    assert!(first.contains("\n  environments:\n    production:\n"));
+    assert!(first.contains("\n      applications:\n        api:\n"));
+    assert!(first.contains("\n      compose:\n        web:\n"));
+    assert!(first.contains("          document:\n            file: \"deploy/compose.yaml\"\n"));
+    assert!(first.contains("\n      mysql:\n        analytics:\n"));
+    assert!(first.contains("          root_password:\n"));
+    assert!(first.contains("\n      mariadb:\n        reporting:\n"));
+    assert!(first.contains("\n      mongo:\n        documents:\n"));
+    assert!(first.contains("          replica_sets: true\n"));
+    assert!(first.contains("\n      libsql:\n        edge:\n"));
+    assert!(first.contains("          node:\n            type: \"primary\"\n"));
+    assert!(first.contains("\n          redirects:\n            www:\n"));
+    assert!(first.contains("              permanent: true\n"));
+    assert!(first.contains("\n          security:\n            admin:\n"));
+    assert!(first.contains("              password:\n                env: \"ADMIN_PASSWORD\"\n"));
     assert!(!first.contains("resources:"));
 }
 
@@ -156,9 +156,9 @@ fn typed_import_document_writes_protected_compose_with_unmanaged_document() {
 
     let rendered = document.render().expect("import document renders");
 
-    assert!(rendered.contains("\n    compose:\n      web:\n"));
-    assert!(rendered.contains("        description: \"Imported stack\"\n"));
-    assert!(rendered.contains("          protect: true\n"));
+    assert!(rendered.contains("\n      compose:\n        web:\n"));
+    assert!(rendered.contains("          description: \"Imported stack\"\n"));
+    assert!(rendered.contains("            protect: true\n"));
     assert!(!rendered.contains("document:"));
 }
 
@@ -181,13 +181,13 @@ fn rendering_secret_descriptors_never_reads_plaintext_secret_files() {
 #[test]
 fn renders_an_empty_environment_as_an_empty_mapping() {
     let config = DokployConfig::parse(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production: {}\n",
     )
     .expect("fixture is valid");
 
     let rendered = render(&config).expect("empty environment renders");
 
-    assert!(rendered.contains("environments:\n  production: {}\n"));
+    assert!(rendered.contains("  environments:\n    production: {}\n"));
     assert_eq!(
         DokployConfig::parse(&rendered).expect("rendered YAML passes the strict parser"),
         config
@@ -202,41 +202,41 @@ version: 1
 project:
   name: platform
   description: null
-environments:
-  production:
-    description: null
-    lifecycle:
-      protect: null
-    applications:
-      unmanaged: {}
-      cleared:
-        description: null
-        replicas: null
-        source: null
-        environment: null
-      empty:
-        environment: {}
-    postgres:
-      main:
-        database: null
-        username: ""
-        password: null
-    redis:
-      cache:
-        password: null
-    domains:
-      public:
-        host: null
-        application: null
+  environments:
+    production:
+      description: null
+      lifecycle:
+        protect: null
+      applications:
+        unmanaged: {}
+        cleared:
+          description: null
+          replicas: null
+          source: null
+          environment: null
+        empty:
+          environment: {}
+      postgres:
+        main:
+          database: null
+          username: ""
+          password: null
+      redis:
+        cache:
+          password: null
+      domains:
+        public:
+          host: null
+          application: null
 "#,
     )
     .expect("fixture is valid");
 
     let rendered = render(&config).expect("ownership-aware fields render");
 
-    assert!(rendered.contains("      unmanaged: {}\n"));
-    assert!(rendered.contains("        environment: {}\n"));
-    assert!(rendered.contains("        source: null\n"));
+    assert!(rendered.contains("        unmanaged: {}\n"));
+    assert!(rendered.contains("          environment: {}\n"));
+    assert!(rendered.contains("          source: null\n"));
     assert_eq!(
         DokployConfig::parse(&rendered).expect("rendered YAML passes the strict parser"),
         config
@@ -348,11 +348,11 @@ fn typed_import_document_builds_all_mvp_resources_with_secrets_unmanaged_by_defa
         .expect("typed document builds a config");
 
     assert_eq!(DokployConfig::parse(&rendered).unwrap(), config);
-    assert!(rendered.contains("    applications:\n      api:\n"));
-    assert!(rendered.contains("    postgres:\n      main:\n"));
-    assert!(rendered.contains("    mysql:\n      analytics:\n"));
-    assert!(rendered.contains("    redis:\n      cache: {}\n"));
-    assert!(rendered.contains("    domains:\n      public:\n"));
+    assert!(rendered.contains("      applications:\n        api:\n"));
+    assert!(rendered.contains("      postgres:\n        main:\n"));
+    assert!(rendered.contains("      mysql:\n        analytics:\n"));
+    assert!(rendered.contains("      redis:\n        cache: {}\n"));
+    assert!(rendered.contains("      domains:\n        public:\n"));
     assert!(!rendered.contains("password:"));
     assert!(!rendered.contains("environment:"));
 }
@@ -434,8 +434,8 @@ fn typed_document_and_canonical_writer_keep_ports_nested_under_applications() {
 
     let rendered = document.render().expect("nested Port document renders");
 
-    assert!(rendered.contains("        ports:\n          http:\n"));
-    assert!(rendered.contains("            published_port: 8080\n"));
+    assert!(rendered.contains("          ports:\n            http:\n"));
+    assert!(rendered.contains("              published_port: 8080\n"));
     assert_eq!(
         ConfigDocument::from_config(&DokployConfig::parse(&rendered).unwrap())
             .unwrap()
@@ -502,10 +502,10 @@ fn typed_document_and_canonical_writer_keep_redirects_and_security_nested() {
 
     let rendered = document.render().expect("nested leaf document renders");
 
-    assert!(rendered.contains("        redirects:\n          www:\n"));
-    assert!(rendered.contains("            permanent: true\n"));
-    assert!(rendered.contains("        security:\n          admin:\n"));
-    assert!(rendered.contains("            username: \"admin\"\n"));
+    assert!(rendered.contains("          redirects:\n            www:\n"));
+    assert!(rendered.contains("              permanent: true\n"));
+    assert!(rendered.contains("          security:\n            admin:\n"));
+    assert!(rendered.contains("              username: \"admin\"\n"));
     assert!(!rendered.contains("password"));
     assert_eq!(
         ConfigDocument::from_config(&DokployConfig::parse(&rendered).unwrap())

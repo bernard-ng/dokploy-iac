@@ -14,13 +14,13 @@ project:
   description: null
   lifecycle:
     protect: false
-environments:
-  production:
-    applications:
-      api:
-        description: ""
-        replicas: 0
-      worker: {}
+  environments:
+    production:
+      applications:
+        api:
+          description: ""
+          replicas: 0
+        worker: {}
 "#,
     )
     .expect("valid configuration");
@@ -58,24 +58,24 @@ fn parses_mysql_with_independent_secret_descriptors_and_strict_fields() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mysql:
-      primary:
-        database: app
-        username: app
-        password:
-          env: MYSQL_PASSWORD
-        root_password:
-          file: .secrets/mysql-root-password
-        depends_on: [application.api]
-        lifecycle:
-          protect: true
-    applications:
-      api:
-        environment:
-          DATABASE_URL:
-            from: mysql.primary.connection_url
+  environments:
+    production:
+      mysql:
+        primary:
+          database: app
+          username: app
+          password:
+            env: MYSQL_PASSWORD
+          root_password:
+            file: .secrets/mysql-root-password
+          depends_on: [application.api]
+          lifecycle:
+            protect: true
+      applications:
+        api:
+          environment:
+            DATABASE_URL:
+              from: mysql.primary.connection_url
 "#,
     )
     .expect("valid MySQL configuration");
@@ -107,13 +107,13 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mysql:
-      primary:
-        root_password:
-          env: MYSQL_ROOT_PASSWORD
-        server_id: raw-server-id
+  environments:
+    production:
+      mysql:
+        primary:
+          root_password:
+            env: MYSQL_ROOT_PASSWORD
+          server_id: raw-server-id
 "#,
     );
     assert!(matches!(
@@ -129,31 +129,31 @@ fn parses_remaining_databases_with_environment_containment_and_atomic_libsql_nod
 version: 1
 project:
   name: platform
-environments:
-  production:
-    mariadb:
-      main:
-        database: app
-        username: app
-        password:
-          env: MARIADB_PASSWORD
-        root_password:
-          file: .secrets/mariadb-root
-    mongo:
-      documents:
-        username: app
-        password:
-          file: .secrets/mongo-password
-        replica_sets: true
-    libsql:
-      edge:
-        description: Edge database
-        username: app
-        password:
-          env: LIBSQL_PASSWORD
-        node:
-          type: replica
-          primary_url: https://primary.example.test
+  environments:
+    production:
+      mariadb:
+        main:
+          database: app
+          username: app
+          password:
+            env: MARIADB_PASSWORD
+          root_password:
+            file: .secrets/mariadb-root
+      mongo:
+        documents:
+          username: app
+          password:
+            file: .secrets/mongo-password
+          replica_sets: true
+      libsql:
+        edge:
+          description: Edge database
+          username: app
+          password:
+            env: LIBSQL_PASSWORD
+          node:
+            type: replica
+            primary_url: https://primary.example.test
 "#,
     )
     .expect("remaining database configuration is valid");
@@ -213,13 +213,13 @@ fn parses_compose_with_an_opaque_document_descriptor_and_strict_owned_surface() 
 version: 1
 project:
   name: platform
-environments:
-  production:
-    compose:
-      web:
-        description: Web stack
-        document:
-          file: deploy/compose.yaml
+  environments:
+    production:
+      compose:
+        web:
+          description: Web stack
+          document:
+            file: deploy/compose.yaml
 "#,
     )
     .expect("Compose configuration is valid");
@@ -252,7 +252,7 @@ environments:
         "server_id: deferred",
     ] {
         let source = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    compose:\n      web:\n        {body}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        web:\n          {body}\n"
         );
         assert!(
             DokployConfig::parse(&source).is_err(),
@@ -265,13 +265,13 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    compose:
-      imported:
-        description: Imported stack
-        lifecycle:
-          protect: true
+  environments:
+    production:
+      compose:
+        imported:
+          description: Imported stack
+          lifecycle:
+            protect: true
 "#,
     )
     .expect("protected imports may leave the opaque document unmanaged");
@@ -286,7 +286,7 @@ fn remaining_database_shapes_reject_explicitly_unsupported_fields() {
         "libsql:\n      main:\n        node:\n          type: primary\n          primary_url: unsupported",
     ] {
         let source = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    {body}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      {body}\n"
         );
         let result = DokployConfig::parse(&source);
         assert!(
@@ -306,13 +306,13 @@ fn rejects_empty_libsql_replica_primary_url() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    libsql:
-      edge:
-        node:
-          type: replica
-          primary_url: ""
+  environments:
+    production:
+      libsql:
+        edge:
+          node:
+            type: replica
+            primary_url: ""
 "#,
     )
     .expect_err("an empty replica primary URL must fail");
@@ -364,7 +364,7 @@ fn parser_errors_never_echo_untrusted_configuration_values() {
     let cases = [
         format!("version: 1\nproject:\n  name: platform\n  secret: {canary}\n"),
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        environment:\n          TOKEN: {canary}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          environment:\n            TOKEN: {canary}\n"
         ),
         format!("version: nope-{canary}\nproject:\n  name: platform\n"),
     ];
@@ -383,7 +383,7 @@ fn rejects_aliases_merge_keys_tags_and_excessive_nesting() {
         "version: 1\nproject:\n  <<: {name: platform}\n".to_owned(),
         "version: 1\nproject:\n  name: !custom platform\n".to_owned(),
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments: {}\n",
+            "version: 1\nproject:\n  name: platform\n  environments: {}\n",
             "[".repeat(40) + &"]".repeat(40)
         ),
     ];
@@ -411,40 +411,40 @@ fn parses_references_secrets_dependencies_lifecycle_moves_and_removals() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main:
-        database: app
-        password:
-          env: DATABASE_PASSWORD
-        lifecycle:
-          protect: true
-    redis:
-      cache: {}
-    applications:
-      api:
-        source:
-          type: github
-          repository: legalterlaw/platform
-          branch: main
-        environment:
-          DATABASE_URL:
-            from: postgres.main.connection_url
-          SECRET_KEY:
-            secret:
-              file: .secrets/api-key
-        depends_on:
-          - redis.cache
-          - postgres.main
-        lifecycle:
-          ignore_changes:
-            - deployment.status
-            - replicas
-    domains:
-      public:
-        host: api.example.test
-        application: application.api
+  environments:
+    production:
+      postgres:
+        main:
+          database: app
+          password:
+            env: DATABASE_PASSWORD
+          lifecycle:
+            protect: true
+      redis:
+        cache: {}
+      applications:
+        api:
+          source:
+            type: github
+            repository: legalterlaw/platform
+            branch: main
+          environment:
+            DATABASE_URL:
+              from: postgres.main.connection_url
+            SECRET_KEY:
+              secret:
+                file: .secrets/api-key
+          depends_on:
+            - redis.cache
+            - postgres.main
+          lifecycle:
+            ignore_changes:
+              - deployment.status
+              - replicas
+      domains:
+        public:
+          host: api.example.test
+          application: application.api
 moves:
   - from: application.backend
     to: application.api
@@ -500,21 +500,21 @@ fn rejects_missing_targets_unsafe_secret_files_and_cross_environment_collisions(
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          DATABASE_URL:
-            from: postgres.missing.connection_url
-          SECRET_KEY:
-            secret:
-              file: ../outside
-        depends_on:
-          - redis.missing
-  staging:
-    applications:
-      api: {}
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            DATABASE_URL:
+              from: postgres.missing.connection_url
+            SECRET_KEY:
+              secret:
+                file: ../outside
+          depends_on:
+            - redis.missing
+    staging:
+      applications:
+        api: {}
 "#,
     )
     .expect_err("semantic validation must fail");
@@ -538,13 +538,13 @@ fn rejects_duplicate_or_conflicting_moves_removals_and_lifecycle_entries() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        depends_on: [project.platform, project.platform]
-        lifecycle:
-          ignore_changes: [replicas, replicas]
+  environments:
+    production:
+      applications:
+        api:
+          depends_on: [project.platform, project.platform]
+          lifecycle:
+            ignore_changes: [replicas, replicas]
 moves:
   - from: application.old
     to: application.api
@@ -643,7 +643,7 @@ fn generated_schema_is_strict_and_models_nullable_owned_fields() {
 fn semantic_errors_and_config_debug_never_echo_source_canaries() {
     let canary = "plaintext-secret-canary";
     let error = DokployConfig::parse(&format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        environment:\n          SECRET:\n            secret:\n              file: ../{canary}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          environment:\n            SECRET:\n              secret:\n                file: ../{canary}\n"
     ))
     .expect_err("unsafe file descriptor");
     assert!(!error.to_string().contains(canary));
@@ -663,19 +663,19 @@ fn environment_collection_and_entries_preserve_ownership_semantics() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      omitted: {}
-      cleared:
-        environment: null
-      empty:
-        environment: {}
-      configured:
-        environment:
-          CLEARED: null
-          EMPTY:
-            value: ""
+  environments:
+    production:
+      applications:
+        omitted: {}
+        cleared:
+          environment: null
+        empty:
+          environment: {}
+        configured:
+          environment:
+            CLEARED: null
+            EMPTY:
+              value: ""
 "#,
     )
     .unwrap();
@@ -710,17 +710,17 @@ fn preserves_parent_relationships_and_rejects_cross_environment_references() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      primary: {}
-    applications:
-      api: {}
-  staging:
-    postgres:
-      preview: {}
-    applications:
-      preview: {}
+  environments:
+    production:
+      postgres:
+        primary: {}
+      applications:
+        api: {}
+    staging:
+      postgres:
+        preview: {}
+      applications:
+        preview: {}
 "#,
     )
     .unwrap();
@@ -745,16 +745,16 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      primary: {}
-  staging:
-    applications:
-      preview:
-        environment:
-          DATABASE_URL:
-            from: postgres.primary.connection_url
+  environments:
+    production:
+      postgres:
+        primary: {}
+    staging:
+      applications:
+        preview:
+          environment:
+            DATABASE_URL:
+              from: postgres.primary.connection_url
 "#,
     )
     .expect_err("cross-environment reference");
@@ -769,7 +769,7 @@ environments:
 fn rejects_inline_secrets_unsafe_cross_platform_paths_and_unsupported_outputs_without_leaks() {
     let canary = "secret-canary-value";
     let inline = DokployConfig::parse(&format!(
-        "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        environment:\n          TOKEN:\n            secret: {canary}\n"
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          environment:\n            TOKEN:\n              secret: {canary}\n"
     ))
     .expect_err("inline secret values are forbidden");
     assert!(!inline.to_string().contains(canary));
@@ -777,7 +777,7 @@ fn rejects_inline_secrets_unsafe_cross_platform_paths_and_unsupported_outputs_wi
 
     for path in [r"C:\\secrets\\token", r"server\\share\\token", "~/.token"] {
         let error = DokployConfig::parse(&format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        environment:\n          TOKEN:\n            secret:\n              file: '{path}'\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          environment:\n            TOKEN:\n              secret:\n                file: '{path}'\n"
         ))
         .expect_err("unsafe path");
         assert!(error.issues().contains(&ValidationIssue::UnsafeSecretFile));
@@ -788,15 +788,15 @@ fn rejects_inline_secrets_unsafe_cross_platform_paths_and_unsupported_outputs_wi
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
-    applications:
-      api:
-        environment:
-          VALUE:
-            from: postgres.main.not_an_output
+  environments:
+    production:
+      postgres:
+        main: {}
+      applications:
+        api:
+          environment:
+            VALUE:
+              from: postgres.main.not_an_output
 "#,
     )
     .expect_err("unsupported output");
@@ -815,7 +815,7 @@ fn parsing_is_bounded_by_bytes_nodes_booleans_and_aliases() {
         Err(ConfigError::InputTooLarge { .. })
     ));
 
-    let mut node_heavy = String::from("version: 1\nproject:\n  name: platform\nenvironments:\n");
+    let mut node_heavy = String::from("version: 1\nproject:\n  name: platform\n  environments:\n");
     for index in 0..11_000 {
         node_heavy.push_str(&format!("  env{index}: {{}}\n"));
     }
@@ -839,15 +839,15 @@ fn semantic_issue_order_is_independent_of_yaml_map_order() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      beta:
-        depends_on: [redis.missing]
-      alpha:
-        environment:
-          VALUE:
-            from: postgres.missing.connection_url
+  environments:
+    production:
+      applications:
+        beta:
+          depends_on: [redis.missing]
+        alpha:
+          environment:
+            VALUE:
+              from: postgres.missing.connection_url
 "#,
     )
     .unwrap_err();
@@ -856,15 +856,15 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      alpha:
-        environment:
-          VALUE:
-            from: postgres.missing.connection_url
-      beta:
-        depends_on: [redis.missing]
+  environments:
+    production:
+      applications:
+        alpha:
+          environment:
+            VALUE:
+              from: postgres.missing.connection_url
+        beta:
+          depends_on: [redis.missing]
 "#,
     )
     .unwrap_err();
@@ -883,14 +883,14 @@ fn rejects_unknown_or_secret_ignore_change_paths() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main:
-        lifecycle:
-          ignore_changes:
-            - password
-            - made_up
+  environments:
+    production:
+      postgres:
+        main:
+          lifecycle:
+            ignore_changes:
+              - password
+              - made_up
 "#,
     )
     .expect_err("secret and unknown paths cannot be ignored");
@@ -909,30 +909,30 @@ fn selector_nulls_cannot_bypass_exactly_one_rules() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          TOKEN:
-            secret:
-              env: null
-              file: ./secrets/token
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            TOKEN:
+              secret:
+                env: null
+                file: ./secrets/token
 "#,
         r#"
 version: 1
 project:
   name: platform
-environments:
-  production:
-    postgres:
-      main: {}
-    applications:
-      api:
-        environment:
-          DATABASE_URL:
-            value: null
-            from: postgres.main.connection_url
+  environments:
+    production:
+      postgres:
+        main: {}
+      applications:
+        api:
+          environment:
+            DATABASE_URL:
+              value: null
+              from: postgres.main.connection_url
 "#,
     ];
 
@@ -951,14 +951,14 @@ fn accepts_a_leading_current_directory_in_secret_file_descriptors() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        environment:
-          TOKEN:
-            secret:
-              file: ./secrets/token
+  environments:
+    production:
+      applications:
+        api:
+          environment:
+            TOKEN:
+              secret:
+                file: ./secrets/token
 "#,
     )
     .expect("safe relative descriptor");
@@ -984,15 +984,15 @@ fn semantic_diagnostics_retain_safe_resource_locations() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        depends_on: [redis.missing]
-      worker:
-        environment:
-          DATABASE_URL:
-            from: postgres.missing.connection_url
+  environments:
+    production:
+      applications:
+        api:
+          depends_on: [redis.missing]
+        worker:
+          environment:
+            DATABASE_URL:
+              from: postgres.missing.connection_url
 "#,
     )
     .expect_err("two semantic issues");
@@ -1023,13 +1023,13 @@ fn normalized_config_equality_ignores_source_order_and_locations() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    redis:
-      cache: {}
-    applications:
-      worker: {}
-      api: {}
+  environments:
+    production:
+      redis:
+        cache: {}
+      applications:
+        worker: {}
+        api: {}
 "#,
     )
     .unwrap();
@@ -1038,14 +1038,15 @@ environments:
 
 version: 1
 
-project: { name: platform }
-environments:
-  production:
-    applications:
-      api: {}
-      worker: {}
-    redis:
-      cache: {}
+project:
+  name: platform
+  environments:
+    production:
+      applications:
+        api: {}
+        worker: {}
+      redis:
+        cache: {}
 "#,
     )
     .unwrap();
@@ -1064,16 +1065,16 @@ fn parses_ports_beneath_their_application_with_required_typed_fields() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        ports:
-          http:
-            published_port: 8080
-            target_port: 80
-            publish_mode: ingress
-            protocol: tcp
+  environments:
+    production:
+      applications:
+        api:
+          ports:
+            http:
+              published_port: 8080
+              target_port: 80
+              publish_mode: ingress
+              protocol: tcp
 "#,
     )
     .expect("valid nested Port configuration");
@@ -1092,7 +1093,7 @@ environments:
         "published_port: 8080\n            target_port: 80\n            publish_mode: ingress",
     ] {
         let yaml = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        ports:\n          http:\n            {invalid}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          ports:\n            http:\n              {invalid}\n"
         );
         assert!(DokployConfig::parse(&yaml).is_err());
     }
@@ -1105,21 +1106,21 @@ fn rejects_duplicate_port_collision_keys_within_one_application() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        ports:
-          http:
-            published_port: 8080
-            target_port: 80
-            publish_mode: ingress
-            protocol: tcp
-          metrics:
-            published_port: 8080
-            target_port: 9090
-            publish_mode: host
-            protocol: tcp
+  environments:
+    production:
+      applications:
+        api:
+          ports:
+            http:
+              published_port: 8080
+              target_port: 80
+              publish_mode: ingress
+              protocol: tcp
+            metrics:
+              published_port: 8080
+              target_port: 9090
+              publish_mode: host
+              protocol: tcp
 "#,
     )
     .expect_err("one application cannot publish the same port and protocol twice");
@@ -1135,28 +1136,28 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        ports:
-          tcp:
-            published_port: 8080
-            target_port: 80
-            publish_mode: ingress
-            protocol: tcp
-          udp:
-            published_port: 8080
-            target_port: 80
-            publish_mode: ingress
-            protocol: udp
-      worker:
-        ports:
-          http:
-            published_port: 8080
-            target_port: 80
-            publish_mode: ingress
-            protocol: tcp
+  environments:
+    production:
+      applications:
+        api:
+          ports:
+            tcp:
+              published_port: 8080
+              target_port: 80
+              publish_mode: ingress
+              protocol: tcp
+            udp:
+              published_port: 8080
+              target_port: 80
+              publish_mode: ingress
+              protocol: udp
+        worker:
+          ports:
+            http:
+              published_port: 8080
+              target_port: 80
+              publish_mode: ingress
+              protocol: tcp
 "#,
     )
     .expect("protocol and application are part of the collision key");
@@ -1169,15 +1170,15 @@ fn parses_redirects_beneath_their_application_with_required_typed_fields() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        redirects:
-          www:
-            regex: "^https?://example.com/(.*)"
-            replacement: "https://www.example.com/${1}"
-            permanent: true
+  environments:
+    production:
+      applications:
+        api:
+          redirects:
+            www:
+              regex: "^https?://example.com/(.*)"
+              replacement: "https://www.example.com/${1}"
+              permanent: true
 "#,
     )
     .expect("valid nested Redirect configuration");
@@ -1204,7 +1205,7 @@ environments:
         "regex: \"^/a\"\n            replacement: \"/x\"\n            permanent: true\n            unknown: 1",
     ] {
         let yaml = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        redirects:\n          www:\n            {invalid}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          redirects:\n            www:\n              {invalid}\n"
         );
         assert!(DokployConfig::parse(&yaml).is_err(), "{invalid}");
     }
@@ -1217,19 +1218,19 @@ fn rejects_duplicate_redirect_collision_keys_within_one_application() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        redirects:
-          first:
-            regex: "^/a"
-            replacement: "/x"
-            permanent: true
-          second:
-            regex: "^/a"
-            replacement: "/y"
-            permanent: false
+  environments:
+    production:
+      applications:
+        api:
+          redirects:
+            first:
+              regex: "^/a"
+              replacement: "/x"
+              permanent: true
+            second:
+              regex: "^/a"
+              replacement: "/y"
+              permanent: false
 "#,
     )
     .expect_err("one application cannot declare one regular expression twice");
@@ -1245,21 +1246,21 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        redirects:
-          first:
-            regex: "^/a"
-            replacement: "/x"
-            permanent: true
-      worker:
-        redirects:
-          first_worker:
-            regex: "^/a"
-            replacement: "/x"
-            permanent: true
+  environments:
+    production:
+      applications:
+        api:
+          redirects:
+            first:
+              regex: "^/a"
+              replacement: "/x"
+              permanent: true
+        worker:
+          redirects:
+            first_worker:
+              regex: "^/a"
+              replacement: "/x"
+              permanent: true
 "#,
     )
     .expect("the application is part of the Redirect collision key");
@@ -1269,7 +1270,7 @@ environments:
 fn redirect_lifecycle_accepts_only_owned_redirect_fields() {
     let yaml = |path: &str| {
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        redirects:\n          www:\n            regex: \"^/a\"\n            replacement: \"/x\"\n            permanent: true\n            lifecycle:\n              ignore_changes:\n                - {path}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          redirects:\n            www:\n              regex: \"^/a\"\n              replacement: \"/x\"\n              permanent: true\n              lifecycle:\n                ignore_changes:\n                  - {path}\n"
         )
     };
 
@@ -1284,19 +1285,19 @@ fn parses_security_entries_with_descriptor_only_passwords() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        security:
-          admin:
-            username: "admin"
-            password:
-              env: ADMIN_PASSWORD
-          legacy:
-            username: "legacy"
-            lifecycle:
-              protect: true
+  environments:
+    production:
+      applications:
+        api:
+          security:
+            admin:
+              username: "admin"
+              password:
+                env: ADMIN_PASSWORD
+            legacy:
+              username: "legacy"
+              lifecycle:
+                protect: true
 "#,
     )
     .expect("valid nested Security configuration");
@@ -1330,7 +1331,7 @@ environments:
         "username: \"a\"\n            password:\n              file: /etc/passwd",
     ] {
         let yaml = format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        security:\n          admin:\n            {invalid}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          security:\n            admin:\n              {invalid}\n"
         );
         let error = DokployConfig::parse(&yaml).expect_err(invalid);
         assert!(!format!("{error:?} {error}").contains("literal-canary-password"));
@@ -1344,14 +1345,14 @@ fn rejects_cleared_security_passwords_and_duplicate_usernames() {
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        security:
-          admin:
-            username: "admin"
-            password: null
+  environments:
+    production:
+      applications:
+        api:
+          security:
+            admin:
+              username: "admin"
+              password: null
 "#,
     )
     .expect_err("Dokploy cannot clear a basic-auth password");
@@ -1366,19 +1367,19 @@ environments:
 version: 1
 project:
   name: platform
-environments:
-  production:
-    applications:
-      api:
-        security:
-          first:
-            username: "admin"
-          second:
-            username: "admin"
-      worker:
-        security:
-          third:
-            username: "admin"
+  environments:
+    production:
+      applications:
+        api:
+          security:
+            first:
+              username: "admin"
+            second:
+              username: "admin"
+        worker:
+          security:
+            third:
+              username: "admin"
 "#,
     )
     .expect_err("one application cannot declare one username twice");
@@ -1396,7 +1397,7 @@ environments:
 fn security_lifecycle_rejects_ignoring_the_password() {
     let yaml = |path: &str| {
         format!(
-            "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    applications:\n      api:\n        security:\n          admin:\n            username: \"admin\"\n            lifecycle:\n              ignore_changes:\n                - {path}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api:\n          security:\n            admin:\n              username: \"admin\"\n              lifecycle:\n                ignore_changes:\n                  - {path}\n"
         )
     };
 
@@ -1448,4 +1449,57 @@ fn generated_schema_models_redirect_and_security_leaves() {
             .unwrap()
             .contains_key("security")
     );
+}
+
+#[test]
+fn schema_nests_environments_under_the_project_only() {
+    let schema = serde_json::to_value(DokployConfig::json_schema()).unwrap();
+
+    assert!(schema["properties"].get("environments").is_none());
+    assert_eq!(
+        schema["$defs"]["RawProject"]["properties"]["environments"]["type"],
+        "object"
+    );
+}
+
+#[test]
+fn top_level_environments_get_a_dedicated_location_only_diagnostic() {
+    let source = "version: 1\nproject:\n  name: platform\nenvironments:\n  production:\n    redis:\n      cache: {}\n";
+
+    let error = DokployConfig::parse(source).expect_err("the legacy layout is rejected");
+
+    assert_eq!(
+        error.issues(),
+        [ValidationIssue::EnvironmentsMustNestUnderProject]
+    );
+    assert_eq!(
+        ValidationIssue::EnvironmentsMustNestUnderProject.code(),
+        "DOKCFG032"
+    );
+    assert_eq!(error.diagnostics().len(), 1);
+    // The span points into the legacy block, which starts on line 4.
+    assert!(error.diagnostics()[0].location().line() >= 4);
+    assert!(!format!("{error:?}").contains("cache"));
+}
+
+#[test]
+fn environments_under_the_project_parse_and_a_missing_block_means_none() {
+    let nested = DokployConfig::parse(
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production: {}\n    staging: {}\n",
+    )
+    .expect("nested environments are valid");
+    let bare = DokployConfig::parse("version: 1\nproject:\n  name: platform\n")
+        .expect("a project without environments is valid");
+
+    assert!(
+        nested
+            .resources()
+            .contains_key(&"environment.production".parse::<ResourceAddress>().unwrap())
+    );
+    assert!(
+        nested
+            .resources()
+            .contains_key(&"environment.staging".parse::<ResourceAddress>().unwrap())
+    );
+    assert_eq!(bare.resources().len(), 1);
 }

@@ -103,7 +103,7 @@ fn state(router: &Router, with_mount: bool) -> StateFile {
 fn desired(target: &str, path: &str, volume: &str) -> dokploy_cli::desired::CompiledDesired {
     compile_desired(
         &DokployConfig::parse(&format!(
-            "version: 1\nproject: {{ name: platform }}\nenvironments:\n  production:\n    applications:\n      api: {{}}\n      worker: {{}}\n    mounts:\n      data:\n        target: {target}\n        mount_path: {path}\n        source: {{ type: volume, volume_name: {volume} }}\n"
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      applications:\n        api: {{}}\n        worker: {{}}\n      mounts:\n        data:\n          target: {target}\n          mount_path: {path}\n          source: {{ type: volume, volume_name: {volume} }}\n"
         ))
         .unwrap(),
         ConfigDigest::parse("a".repeat(64)).unwrap(),
@@ -668,7 +668,7 @@ async fn compose_targets_use_the_typed_service_type_for_the_collection() {
     );
     let desired = compile_desired(
         &DokployConfig::parse(
-            "version: 1\nproject: { name: platform }\nenvironments:\n  production:\n    compose:\n      stack:\n        lifecycle: { protect: true }\n    mounts:\n      data:\n        target: compose.stack\n        mount_path: /data\n        source: { type: volume, volume_name: v }\n",
+            "version: 1\nproject:\n  name: platform\n  environments:\n    production:\n      compose:\n        stack:\n          lifecycle: { protect: true }\n      mounts:\n        data:\n          target: compose.stack\n          mount_path: /data\n          source: { type: volume, volume_name: v }\n",
         )
         .unwrap(),
         ConfigDigest::parse("a".repeat(64)).unwrap(),

@@ -89,16 +89,16 @@ async fn uncertain_port_update_is_recovered_from_authoritative_complete_state() 
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        ports:\n",
-            "          http:\n",
-            "            published_port: 8080\n",
-            "            target_port: 81\n",
-            "            publish_mode: ingress\n",
-            "            protocol: tcp\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          ports:\n",
+            "            http:\n",
+            "              published_port: 8080\n",
+            "              target_port: 81\n",
+            "              publish_mode: ingress\n",
+            "              protocol: tcp\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -216,16 +216,16 @@ async fn uncertain_port_create_adopts_one_exact_collision_key_without_retrying()
         concat!(
             "version: 1\n",
             "project:\n  name: platform\n",
-            "environments:\n",
-            "  production:\n",
-            "    applications:\n",
-            "      api:\n",
-            "        ports:\n",
-            "          http:\n",
-            "            published_port: 8080\n",
-            "            target_port: 80\n",
-            "            publish_mode: ingress\n",
-            "            protocol: tcp\n",
+            "  environments:\n",
+            "    production:\n",
+            "      applications:\n",
+            "        api:\n",
+            "          ports:\n",
+            "            http:\n",
+            "              published_port: 8080\n",
+            "              target_port: 80\n",
+            "              publish_mode: ingress\n",
+            "              protocol: tcp\n",
         ),
     )
     .expect("configuration fixture is writable");
@@ -495,13 +495,14 @@ async fn exercise_uncertain_database_update_recovery(
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    {}:\n",
-                "      main:\n",
+                "  environments:\n",
+                "    production:\n",
+                "      {}:\n",
+                "        main:\n",
                 "{}",
             ),
-            collection_name, configured_fields,
+            collection_name,
+            nest_yaml(&configured_fields),
         ),
     )
     .expect("configuration fixture is writable");
@@ -715,15 +716,15 @@ async fn interrupted_libsql_create_with_authoritative_absence_confirms_no_change
         &config_file,
         concat!(
             "version: 1\n",
-            "project: { name: platform }\n",
-            "environments:\n",
-            "  production:\n",
-            "    libsql:\n",
-            "      main:\n",
-            "        description: edge\n",
-            "        username: app\n",
-            "        password: null\n",
-            "        node: { type: primary }\n",
+            "project:\n  name: platform\n",
+            "  environments:\n",
+            "    production:\n",
+            "      libsql:\n",
+            "        main:\n",
+            "          description: edge\n",
+            "          username: app\n",
+            "          password: null\n",
+            "          node: { type: primary }\n",
         ),
     )
     .unwrap();
@@ -910,13 +911,14 @@ async fn exercise_uncertain_database_create_recovery(
             concat!(
                 "version: 1\n",
                 "project:\n  name: platform\n",
-                "environments:\n",
-                "  production:\n",
-                "    {}:\n",
-                "      main:\n",
+                "  environments:\n",
+                "    production:\n",
+                "      {}:\n",
+                "        main:\n",
                 "{}",
             ),
-            collection_name, configured_fields,
+            collection_name,
+            nest_yaml(&configured_fields),
         ),
     )
     .expect("configuration fixture is writable");
@@ -1162,7 +1164,7 @@ async fn interrupted_move_recovers_atomically_without_remote_requests() {
         concat!(
             "version: 1\n",
             "project:\n  name: renamed\n",
-            "environments: {}\n",
+            "  environments: {}\n",
             "moves:\n",
             "  - from: project.platform\n",
             "    to: project.renamed\n",
@@ -1567,15 +1569,15 @@ fn checkpoint_leaf(
 const REDIRECT_CONFIG: &str = concat!(
     "version: 1\n",
     "project:\n  name: platform\n",
-    "environments:\n",
-    "  production:\n",
-    "    applications:\n",
-    "      api:\n",
-    "        redirects:\n",
-    "          www:\n",
-    "            regex: \"^/old\"\n",
-    "            replacement: \"/newer\"\n",
-    "            permanent: true\n",
+    "  environments:\n",
+    "    production:\n",
+    "      applications:\n",
+    "        api:\n",
+    "          redirects:\n",
+    "            www:\n",
+    "              regex: \"^/old\"\n",
+    "              replacement: \"/newer\"\n",
+    "              permanent: true\n",
 );
 
 #[tokio::test]
@@ -1778,15 +1780,15 @@ async fn uncertain_redirect_create_with_a_different_record_requires_manual_inter
 const SECURITY_CONFIG: &str = concat!(
     "version: 1\n",
     "project:\n  name: platform\n",
-    "environments:\n",
-    "  production:\n",
-    "    applications:\n",
-    "      api:\n",
-    "        security:\n",
-    "          admin:\n",
-    "            username: root\n",
-    "            password:\n",
-    "              file: .secrets/admin-password\n",
+    "  environments:\n",
+    "    production:\n",
+    "      applications:\n",
+    "        api:\n",
+    "          security:\n",
+    "            admin:\n",
+    "              username: root\n",
+    "              password:\n",
+    "                file: .secrets/admin-password\n",
 );
 
 #[tokio::test]
@@ -1948,4 +1950,9 @@ async fn uncertain_security_password_rotation_requires_manual_intervention() {
     ));
     assert!(!format!("{error:?} {error}").contains("remote-password-canary"));
     server.finish();
+}
+
+/// Indents a YAML fragment so it nests one level deeper under `project`.
+fn nest_yaml(fragment: &str) -> String {
+    fragment.lines().map(|line| format!("  {line}\n")).collect()
 }

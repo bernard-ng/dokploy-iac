@@ -1,6 +1,6 @@
 # Design: hierarchical project import and instance settings
 
-Status: proposed (revision 3), not implemented. Baseline: `master` at `30f26b7`
+Status: proposed (revision 3). Slice A1 (nested `project.environments`, `DOKCFG032`) is implemented. Baseline: `master` at `30f26b7`
 (Phase 8 complete, ADRs 0001–0048). New ADRs are numbered in the order they
 land, starting at 0049.
 

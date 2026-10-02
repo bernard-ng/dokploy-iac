@@ -315,29 +315,29 @@ version: 1
 project:
   name: $project_name
   description: Disposable Phase 8 Mount executor validation
-environments:
-  production:
-    description: Managed by the Phase 8 Mount integration check
-    applications:
-      api: {}
-      worker: {}
-    compose:
-      web:
-        document:
-          file: compose.yaml
-    mounts:
-      data:
-        target: application.$data_target
-        mount_path: $data_path
-        source: $data_source$shared
-      settings:
-        target: application.api
-        mount_path: /etc/settings.conf
-        source:
-          type: file
-          file_path: settings.conf
-          content:
-            file: private/mount-content
+  environments:
+    production:
+      description: Managed by the Phase 8 Mount integration check
+      applications:
+        api: {}
+        worker: {}
+      compose:
+        web:
+          document:
+            file: compose.yaml
+      mounts:
+        data:
+          target: application.$data_target
+          mount_path: $data_path
+          source: $data_source$shared
+        settings:
+          target: application.api
+          mount_path: /etc/settings.conf
+          source:
+            type: file
+            file_path: settings.conf
+            content:
+              file: private/mount-content
 $removed_block
 EOF
     chmod 600 "$config_file"

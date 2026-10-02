@@ -751,8 +751,8 @@ async fn project_discovery_filters_non_project_addresses() {
 version: 1
 project:
   name: platform
-environments:
-  production: {}
+  environments:
+    production: {}
 "#,
     );
 

@@ -82,7 +82,7 @@ async fn absent_workspace_plan_is_deterministic_and_read_only() {
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject: { name: platform }\nenvironments:\n  production: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments:\n    production: {}\n",
     )
     .expect("configuration fixture is writable");
 
@@ -115,12 +115,13 @@ async fn declarative_databases_observe_absence_and_require_create_properties() {
     fs::write(
         &config,
         r#"version: 1
-project: { name: platform }
-environments:
-  production:
-    mariadb: { main: {} }
-    mongo: { documents: {} }
-    libsql: { edge: {} }
+project:
+  name: platform
+  environments:
+    production:
+      mariadb: { main: {} }
+      mongo: { documents: {} }
+      libsql: { edge: {} }
 "#,
     )
     .expect("configuration fixture is writable");
@@ -155,7 +156,7 @@ fn public_plan_json_uses_detailed_exit_code_two_for_changes() {
     let directory = tempfile::tempdir().expect("temporary workspace is available");
     fs::write(
         directory.path().join("dokploy.yaml"),
-        "version: 1\nproject: { name: platform }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
 
@@ -207,7 +208,7 @@ fn public_apply_revalidates_and_executes_a_saved_plan() {
     let directory = tempfile::tempdir().expect("temporary workspace is available");
     fs::write(
         directory.path().join("dokploy.yaml"),
-        "version: 1\nproject: { name: platform }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
 
@@ -262,7 +263,7 @@ fn public_apply_without_a_terminal_fails_closed_before_mutation() {
     let directory = tempfile::tempdir().expect("temporary workspace is available");
     fs::write(
         directory.path().join("dokploy.yaml"),
-        "version: 1\nproject: { name: platform }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
 
@@ -291,7 +292,7 @@ fn public_apply_rejects_a_saved_plan_after_configuration_changes() {
     let config = directory.path().join("dokploy.yaml");
     fs::write(
         &config,
-        "version: 1\nproject: { name: platform }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: platform\n  environments: {}\n",
     )
     .expect("configuration fixture is writable");
 
@@ -312,7 +313,7 @@ fn public_apply_rejects_a_saved_plan_after_configuration_changes() {
     assert!(planned.status.success());
     fs::write(
         &config,
-        "version: 1\nproject: { name: renamed }\nenvironments: {}\n",
+        "version: 1\nproject:\n  name: renamed\n  environments: {}\n",
     )
     .expect("configuration fixture can change");
 
