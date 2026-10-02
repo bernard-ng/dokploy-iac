@@ -460,6 +460,10 @@
       "reason": "The v2 document model; not legacy."
     },
     {
+      "path": "crates/dokploy-engine/",
+      "reason": "The v2 engine; not legacy."
+    },
+    {
       "path": "crates/dokploy-sdk/tests/transport.rs",
       "reason": "The v2 Transport seam (ADR 0003); not legacy."
     },

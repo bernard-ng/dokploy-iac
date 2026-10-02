@@ -53,7 +53,10 @@ first-engine code, plans and checkpoints from its spec alone (kernel test).
 The document model (`dokploy-model`: parse, validate with positions, canonical render, JSON
 Schema; [`document-format.md`](design/document-format.md)).
 The `Transport` trait (`dokploy-sdk`): the engine sends through it, over HTTP or in memory.
-Next: the engine skeleton.
+The engine skeleton (`dokploy-engine`, [`engine.md`](design/engine.md)): **a settings document
+containing a registry is planned against a canned remote**, in memory and over HTTP.
+**M1 is complete.** Next is M2: discovery and projection for the remaining shapes, the executor,
+`dokploy-sim`, the conformance generator, and the first three ported kinds, then the cost gate.
 
 ## Cost gate (end of M2)
 

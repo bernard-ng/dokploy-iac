@@ -883,6 +883,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dokploy-engine"
+version = "0.1.0"
+dependencies = [
+ "dokploy-core",
+ "dokploy-model",
+ "dokploy-sdk",
+ "dokploy-spec",
+ "dokploy-state",
+ "hmac",
+ "semver",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "dokploy-model"
 version = "0.1.0"
 dependencies = [

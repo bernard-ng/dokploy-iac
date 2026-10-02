@@ -1,0 +1,26 @@
+[package]
+name = "dokploy-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The spec-driven engine: compile a document, discover the remote, and plan."
+
+[dependencies]
+dokploy-core.workspace = true
+dokploy-model.workspace = true
+dokploy-sdk.workspace = true
+dokploy-spec.workspace = true
+dokploy-state.workspace = true
+hmac.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+semver.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
+url.workspace = true

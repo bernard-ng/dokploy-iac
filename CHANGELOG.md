@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `dokploy-engine`, the skeleton (milestone M1; [`docs/design/engine.md`](docs/design/engine.md)).
+  `Engine::compile` turns a validated document into the planner's desired state (hierarchical
+  addresses, canonical values, secrets read once, fingerprinted and forgotten, `default: key`,
+  `depends_on` by suffix), and `Engine::plan` discovers the remote with the minimum reads and
+  plans. **A settings document containing a registry is planned against a canned remote** with no
+  first-engine code, and over real HTTP: create, converge after an apply, in-place update, drift,
+  secret rotation, unmanaged collision, recreation, and the failure modes (unavailable, invalid or
+  disagreeing responses, rejected credentials) are covered. Nothing is written to Dokploy; apply,
+  nested kinds, selector resolution, and the CLI follow in later milestones.
 - `Transport` in `dokploy-sdk` (milestone M1, ADR 0003 and 0015): the seam the engine sends
   through. A request is an operation id (`registry.all`), a query, and a JSON body; its HTTP
   method comes from the pinned contract and an undeclared operation is refused before any
