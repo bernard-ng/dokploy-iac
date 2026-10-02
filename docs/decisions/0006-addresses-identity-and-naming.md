@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the first engine's invariants 10 to 12 (remote ids give physical
+Accepted (2026-10-02). Keeps the first engine's invariants 10 to 12 (remote ids give physical
 identity; logical addresses give configuration identity; moves preserve identity)
 and its documented plan to move to environment-qualified addresses.
 

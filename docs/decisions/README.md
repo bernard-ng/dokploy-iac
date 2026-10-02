@@ -7,6 +7,8 @@ The 50 records of the first engine remain in git history at commit `96cab73`
 ones are cited where a v2 decision keeps their conclusion.
 
 Status values: **Proposed** (written, awaiting review), **Accepted**, **Superseded**.
+ADRs 0001, 0005, 0006, 0010, 0012, and 0016 are Accepted; the rest follow from them
+and are confirmed by the milestone that first implements them.
 
 | ADR | Decision |
 |-----|----------|

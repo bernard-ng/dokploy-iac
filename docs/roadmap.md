@@ -14,7 +14,7 @@ those kinds is classified.
 
 | # | Milestone | Content | Exit criterion | Days |
 |---|-----------|---------|----------------|------|
-| M0 | Foundations | Tag `engine-v1`. Move the generated commands under `dokploy api` (small, independent). Prototype the spec grammar on three kinds: `registry` (flat), `redirect` (leaf with fresh-read update), application `source` (union). New `dokploy-spec` crate: parse, validate, registry. `cargo xtask specs --check` ledger for the request side against the OpenAPI. Tool to mine legacy tests into golden scenarios. Capture-tool skeleton. | Ledger runs in CI on the three specs; grammar v0 frozen in `docs/design/spec-format.md` | 4–6 |
+| M0 | Foundations | Tag `engine-v1` at `96cab73` (needs a maintainer: tag pushes are refused in cloud sessions). Move the generated commands under `dokploy api` (small, independent). Prototype the spec grammar on three kinds: `registry` (flat), `redirect` (leaf with fresh-read update), application `source` (union). New `dokploy-spec` crate: parse, validate, registry. `cargo xtask specs --check` ledger for the request side against the OpenAPI. Tool to mine legacy tests into golden scenarios. Capture-tool skeleton. | Ledger runs in CI on the three specs; grammar v0 frozen in `docs/design/spec-format.md` | 4–6 |
 | M1 | Kernel and model | `PropertyPath` becomes spec-validated paths; `MutationContract` from specs. State format 5: hierarchical addresses, document id, per-document directories. New `dokploy-model`: parse, validate with spans, canonical render, JSON Schema. `Transport` trait in the SDK. Engine skeleton: compile and plan offline. | `plan` of a settings document containing a registry runs against a canned remote | 8–10 |
 | M2 | Engine core, simulator, conformance | Discovery and projection; executor with write groups, verification, journal, recovery; `dokploy-sim`; conformance generator. Port `tag`, `registry`, `redirect` using extracted goldens; delete the legacy code they replace. | Three kinds pass the full conformance suite; **cost gate** measured (below) | 10–12 |
 | M3 | Project kinds | Leaves first (port, security, mount, schedule, backup, volume backup, patch, domain), then databases (six kinds), Compose (all source types), application (sources, build, resources, Swarm, preview), environment, project. Hooks: Compose multi-service schedules, tag membership. | Every project kind green in conformance against the simulator; request-side ledger green | 16–22 |
@@ -63,10 +63,10 @@ commands cover only the kinds ported so far. For the full first engine, use the
 
 ## Constraints and risks
 
-- **Live captures need Docker.** Cloud sessions cannot run it (see `CLAUDE.md`). Live
-  fixtures and the live suite run as a CI job (manual dispatch for captures, which
-  upload sanitised fixtures for review), or on a machine with Docker. About 40 kinds
-  need captures; this is the largest external dependency of the plan.
+- **Live captures need Docker.** Cloud sessions cannot run it (see `CLAUDE.md`), so
+  captures run in a manually dispatched CI workflow that uploads sanitised fixtures
+  for review, and the live suite runs in CI (ADR 0015). About 40 kinds need captures;
+  this is the largest external dependency of the plan.
 - **Spec grammar too weak.** If more than a fifth of kinds need hooks, the grammar is
   extended by ADR before continuing.
 - **Simulator drift.** Mitigated by running the same scenarios live (ADR 0015); a
@@ -76,13 +76,14 @@ commands cover only the kinds ported so far. For the full first engine, use the
 - **Dokploy churn.** The upstream watch (ADR 0014) turns drift into a CI issue.
 - **Scope creep.** The beta kind list in ADR 0001 is the boundary.
 
-## Decisions awaiting review
+## Decisions recorded (2026-10-02)
 
-1. Nesting every child under its service and hierarchical addresses (ADRs 0005, 0006).
-2. Splitting key, remote name, and `app_name` (ADR 0006).
-3. Secrets default: git-ignored `secrets/` dotenv files plus `env` and `vault` sources
-   (ADR 0010).
-4. The beta kind list, in particular AI providers in and members/roles out (ADR 0001).
-5. Deploy as a separate verb with a per-resource policy (ADR 0012).
-6. Replacing the engine instead of keeping two (ADR 0016).
-7. How live captures will be run (CI dispatch, or your own instance, read only).
+1. Children nest under their service; addresses are hierarchical (ADRs 0005, 0006).
+2. Key, remote name, and `app_name` are separate (ADR 0006).
+3. Secrets: git-ignored `secrets/` dotenv files plus `env` and `vault` sources (ADR 0010).
+4. Beta kinds: members, custom roles, SSO, and the other identity features are out
+   for now; AI providers stay in (ADR 0001).
+5. Deploy is its own verb with a per-resource policy (ADR 0012).
+6. The engine is replaced, not kept alongside; `96cab73` is the reference, to be tagged `engine-v1` (ADR 0016).
+7. Live captures and live suites run in CI, and locally in Docker for debugging
+   (ADR 0015).

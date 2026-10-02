@@ -9,8 +9,8 @@ the dashboard: Docker Compose, but for Dokploy itself.
 > kinds but covers about a quarter of the fields and almost none of the instance
 > settings. It is being replaced by a spec-driven engine that targets the whole
 > dashboard. The design is written and under review; the build has not started.
-> Start at [`docs/roadmap.md`](docs/roadmap.md). The first engine is preserved at the
-> `engine-v1` tag (created at milestone M0) and in git history.
+> Start at [`docs/roadmap.md`](docs/roadmap.md). The first engine is preserved at
+> commit `96cab73` (tag `engine-v1`, to be created there).
 
 ## Where this is going
 

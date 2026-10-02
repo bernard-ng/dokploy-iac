@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Depends on the pre-release compatibility policy in ADR 0001.
+Accepted (2026-10-02). Depends on the pre-release compatibility policy in ADR 0001.
 
 ## Context
 
@@ -16,8 +16,9 @@ no users to migrate and no reason to maintain two engines.
 **Replace, do not coexist.** There is no `--engine` switch, no document-version
 dispatch, and no dual state support.
 
-1. **Freeze.** Tag the current `master` `engine-v1`. It is the reference for
-   behavior that must survive and the source of test scenarios.
+1. **Freeze.** Tag commit `96cab73` as `engine-v1` (a maintainer step: cloud
+   sessions cannot push tags). It is the reference for behavior that must survive
+   and the source of test scenarios; until the tag exists the commit id is the reference.
 2. **Extract goldens.** Before deleting a layer, its tests are mined for scenarios
    (inputs, expected requests, expected plans, expected state). They become
    conformance fixtures that the spec engine must satisfy for the same kind. This is

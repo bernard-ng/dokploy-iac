@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Supersedes the first engine's rule that configuration never contains
+Accepted (2026-10-02). Supersedes the first engine's rule that configuration never contains
 or produces secret-bearing text, and keeps its rule that secrets never enter state,
 plans, logs, diagnostics, or snapshots (invariant 18; first engine ADRs 0010, 0012,
 0013).

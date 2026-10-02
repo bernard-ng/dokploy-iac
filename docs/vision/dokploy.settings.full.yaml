@@ -229,7 +229,7 @@ settings:
     # phase{token[s],app_id,env,path,api_url}
 
   # ===== AI ==================================================================
-  ai_providers:                              # ✘
+  ai_providers:                              # ✘ in the beta
     openai:
       api_url: https://api.openai.com/v1
       api_key: { env: OPENAI_API_KEY }       # [s]
@@ -237,12 +237,12 @@ settings:
       enabled: true                          #   API: isEnabled
 
   # ===== Users, roles, SSO (identity) =======================================
-  custom_roles:                              # ✘ enterprise
+  custom_roles:                              # [x] out of the beta (2026-10-02); enterprise
     deployer:
       permissions: { project: [read, create], service: [read, deploy] }   # ? shape of `permissions` is an open object
-  members:                                   # ✘ [x]? invitations and role assignment
+  members:                                   # [x] out of the beta (2026-10-02)
     - { email: dev@example.com, role: deployer }   # ? declarative membership would delete users on removal
-  sso_providers:                             # ✘ enterprise
+  sso_providers:                             # [x] out of the beta (2026-10-02); enterprise
     okta:
       issuer: https://example.okta.com
       domains: [example.com]

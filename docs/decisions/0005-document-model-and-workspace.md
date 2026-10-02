@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Replaces the first engine's configuration language (its ADRs 0006 and
+Accepted (2026-10-02). Replaces the first engine's configuration language (its ADRs 0006 and
 0007) and its two-document design.
 
 ## Context

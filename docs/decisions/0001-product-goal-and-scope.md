@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted (2026-10-02).
 
 ## Context
 
@@ -41,8 +41,9 @@ AI provider.
 
 **Non-goals.**
 
-- Identity and commercial features: users, invitations, roles, SSO, SCIM,
-  licence, billing, whitelabeling, passkeys, sessions. (Revisit after beta.)
+- Identity and commercial features: users, invitations, members, custom roles, SSO,
+  SCIM, licence, billing, whitelabeling, passkeys, sessions. (Revisit after beta;
+  decided out of scope on 2026-10-02. AI providers stay in.)
 - Operational actions as state: start, stop, restart, rebuild, rollback, run a
   schedule now, clean queues, kill a build, container terminals, log reading.
 - Installing Dokploy itself, creating the first administrator, creating the first

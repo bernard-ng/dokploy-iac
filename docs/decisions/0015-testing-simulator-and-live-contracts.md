@@ -46,6 +46,21 @@ nothing proved the fakes matched Dokploy.
    require the documents to be equal under ADR 0011's normalisation. The same test
    runs against the simulator on every pull request.
 
+### Where live work runs
+
+Cloud development sessions cannot run Docker (`CLAUDE.md`), so live work happens in
+two places only:
+
+- **CI** (GitHub Actions): a manually dispatched *capture* workflow starts the
+  digest-pinned Dokploy for a chosen version, seeds it through the API, records and
+  sanitises the responses, runs the secret scanner, and uploads the fixtures as an
+  artifact for review (it never commits). The *live suite* and the *round-trip gate*
+  run as ordinary CI jobs for every supported version.
+- **A developer machine with Docker**, using the same scripts and the repository's
+  `compose.integration.yaml`, for debugging a failing live scenario.
+
+Fixtures are reviewed in a pull request before they land under `fixtures/api/live/`.
+
 ### Canary secrets
 
 Every scenario sets distinctive canary values for every secret and content field,
