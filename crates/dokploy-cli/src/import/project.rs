@@ -319,7 +319,8 @@ pub(super) fn build(
     names: &Names,
     resolved: &Resolved,
 ) -> Result<Built, ImportError> {
-    let mut context = ImportContext::new(&project.project, &names.project)?;
+    let mut context =
+        ImportContext::new(&project.project, project.tags.as_deref(), &names.project)?;
     let mut census = Vec::new();
 
     let mut environments = project.environments.iter().collect::<Vec<_>>();

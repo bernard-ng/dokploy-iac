@@ -166,7 +166,7 @@ async fn execute_inner(
 
     match command {
         Command::Init { .. }
-        | Command::Schema
+        | Command::Schema { .. }
         | Command::Validate { .. }
         | Command::Completions { .. } => {
             unreachable!("offline commands return before connection dispatch")
@@ -448,7 +448,6 @@ async fn execute_inner(
             }
         }
         Command::Import { command } => {
-            let cli::ImportCommand::Project { project_id, file } = command;
             let configuration = config.load()?;
             let settings = resolve_connection(
                 ConnectionOptions {
@@ -464,27 +463,49 @@ async fn execute_inner(
                 .api_key(settings.api_key().expose())
                 .build()
                 .into_diagnostic()?;
-            let request = match project_id {
-                Some(project_id) => import::ImportRequest {
-                    project_id,
-                    config_file: file,
-                },
-                None if terminal_available => import::select_interactively(&client, file)
+            match command {
+                cli::ImportCommand::Settings { file } => {
+                    let report = import::import_settings(
+                        &client,
+                        import::SettingsImportRequest { config_file: file },
+                    )
                     .await
-                    .into_diagnostic()?,
-                None => return Err(miette::miette!("interactive import requires a terminal")),
-            };
-            let report = import::import_project(&client, request)
-                .await
-                .into_diagnostic()?;
-            writeln!(
-                streams.result(),
-                "Import complete: {} resource(s) tracked.",
-                report.resource_count()
-            )
-            .into_diagnostic()?;
-            write!(streams.result(), "{report}").into_diagnostic()?;
-            Ok(CommandStatus::Success)
+                    .into_diagnostic()?;
+                    writeln!(
+                        streams.result(),
+                        "Import complete: {} resource(s) tracked.",
+                        report.resource_count()
+                    )
+                    .into_diagnostic()?;
+                    write!(streams.result(), "{report}").into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+                cli::ImportCommand::Project { project_id, file } => {
+                    let request = match project_id {
+                        Some(project_id) => import::ImportRequest {
+                            project_id,
+                            config_file: file,
+                        },
+                        None if terminal_available => import::select_interactively(&client, file)
+                            .await
+                            .into_diagnostic()?,
+                        None => {
+                            return Err(miette::miette!("interactive import requires a terminal"));
+                        }
+                    };
+                    let report = import::import_project(&client, request)
+                        .await
+                        .into_diagnostic()?;
+                    writeln!(
+                        streams.result(),
+                        "Import complete: {} resource(s) tracked.",
+                        report.resource_count()
+                    )
+                    .into_diagnostic()?;
+                    write!(streams.result(), "{report}").into_diagnostic()?;
+                    Ok(CommandStatus::Success)
+                }
+            }
         }
         Command::Imperative(command) => {
             let invocation = command.into_invocation()?;

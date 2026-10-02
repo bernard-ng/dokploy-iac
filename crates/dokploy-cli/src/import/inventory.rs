@@ -41,6 +41,11 @@ pub(super) struct RemoteProject {
     pub(super) topology: Topology,
     pub(super) environments: Vec<RemoteEnvironment>,
     pub(super) externals: ExternalDirectory,
+    /// The sorted names of the project's tags, or `None` when it has no tags.
+    ///
+    /// A project without tags leaves the property unmanaged, so an untagged
+    /// import never reads the tag collection or declares an empty list.
+    pub(super) tags: Option<Vec<String>>,
 }
 
 pub(super) struct RemoteEnvironment {
@@ -494,7 +499,10 @@ pub(super) async fn crawl(
     // the project actually uses, so a project without associations adds no reads.
     let externals = ExternalDirectory::load(client, &required_externals(&environments)).await;
 
+    let tags = project_tag_names(client, &reads.project).await?;
+
     Ok(RemoteProject {
+        tags,
         project: reads.project,
         projects_named_alike,
         listed_environments: reads.environments,
@@ -502,6 +510,47 @@ pub(super) async fn crawl(
         environments,
         externals,
     })
+}
+
+/// Resolves the project's tag identities to their names through `tag.all`.
+///
+/// Reconciliation addresses tags by name, so a tag whose name is shared by
+/// another tag, or an identity the collection does not list, fails the import.
+async fn project_tag_names(
+    client: &Dokploy,
+    project: &ProjectDetails,
+) -> Result<Option<Vec<String>>, ImportError> {
+    let ResponseField::Value(associations) = &project.tags else {
+        return Ok(None);
+    };
+    if associations.is_empty() {
+        return Ok(None);
+    }
+    let collection = client.tags().all().await?;
+    let mut names = Vec::new();
+    for association in associations {
+        let matching = collection
+            .tags()
+            .iter()
+            .filter(|tag| tag.tag_id == association.tag_id)
+            .collect::<Vec<_>>();
+        let [tag] = matching.as_slice() else {
+            return Err(ImportError::InvalidRemoteTopology);
+        };
+        let shared = collection
+            .tags()
+            .iter()
+            .filter(|candidate| candidate.name == tag.name)
+            .count();
+        if shared != 1 {
+            return Err(ImportError::DuplicateName { kind: "tag" });
+        }
+        names.push(tag.name.clone());
+    }
+    names.sort();
+    names.dedup();
+
+    Ok(Some(names))
 }
 
 /// Reads the Mounts and Backups every service kind can have.
