@@ -12,18 +12,6 @@ All notable changes to this project will be documented in this file.
   `project`. `cargo xtask specs --check` runs in CI. Nothing in the engine reads the
   specs yet (milestone M0 of `docs/roadmap.md`).
 
-### Direction
-
-- Reset the documentation to the project's original goal (a Dokploy instance
-  described entirely in YAML and rebuilt from it). Removed the first engine's 50
-  ADRs, phase plans, design notes, integration-test guide, generator bake-off, and
-  README (still in git history at `96cab73`). Added `ARCHITECTURE.md`, `CONTEXT.md`,
-  ADRs 0001 to 0017 (all Proposed), the kind spec format, the roadmap, and the
-  vision maps. The product is unreleased, so the document format, state format, CLI,
-  and Rust APIs may break without migration until the beta (ADR 0001).
-
-### Added
-
 - Add a second document type for instance settings. A file with a top-level
   `settings:` key (default `dokploy.settings.yaml`) is planned, applied,
   recovered, and inspected against its own state lineage in `.dokploy/settings/`,
@@ -43,85 +31,6 @@ All notable changes to this project will be documented in this file.
   by SDK tests rather than a live capture; run
   `scripts/integration/capture-tag-contract.sh` against a local instance to
   record them. Anything the adapter does not recognise fails closed.
-
-### Changed
-
-- **Breaking:** the generated API commands moved under one prefix:
-  `dokploy api <resource> <operation> [options]` replaces `dokploy <resource>
-  <operation>`. The top level now holds only the declarative commands (`init`,
-  `plan`, `apply`, `import`, `state`, ...), so a command's place says whether it
-  acts on declared state or makes one direct API call. There is no un-prefixed
-  alias. Integration scripts and examples were updated.
-
-- State format 4 records a `scope` (`project` or `settings`). Version 3 files
-  decode as project scope and are rewritten on their next checkpoint. Older
-  CLIs cannot read format 4.
-- **Breaking:** nest `environments` under `project` in `dokploy.yaml`
-  (`project.environments`), matching the Dokploy hierarchy and preparing
-  whole-project import. A document that still has a top-level `environments`
-  key is rejected with `DOKCFG032`. Move the block two spaces deeper under
-  `project:`; `moves` and `removed` stay at the document root. Resource
-  addresses and state are unchanged, so existing state files stay valid.
-- **Breaking:** `dokploy import` now adopts one whole project. The per-resource
-  forms (`dokploy import <kind> <id> --as <address>`) and the flat interactive
-  resource picker are removed. Use `dokploy import project [PROJECT_ID]`, which
-  reads the project, every environment, and every service with all of its leaves
-  (domains, ports, redirects, security, mounts, schedules, and backups) in one
-  read-only pass, then writes a new configuration and state in a single step.
-  Without an id it lists projects to choose from. Import only creates a new
-  workspace; it still refuses to run when the configuration or state exists.
-  Logical names come from the remote names; a name shared by several resources
-  of one kind is prefixed with its environment (services) or its parent service
-  (leaves), then numbered if it still collides, and the report lists every
-  renamed address. The import now proves offline that the first plan will be
-  empty and refuses if the project changed while it was being read. It fails
-  closed, before writing anything, on a project that could not plan: two
-  same-named resources of one kind in an environment, a project name shared with
-  another project, or a Compose with Schedules on more than one service
-  (`DOKCFG055`). Service server placement is now imported for Compose and every
-  database kind, not only applications.
-- Send an explicit `serverId: null` when a LibSQL create leaves placement
-  unmanaged. `libsql.create` declares the key required and Dokploy `v0.30.6`
-  rejects a body that omits it, so unmanaged LibSQL creation had stopped working
-  when placement became optional; every other create still omits the key.
-- Apply the dependent-resource replacement refusal to LibSQL replacements caused
-  by a node change, which could previously orphan Mounts, Schedules, and Backups.
-- Represent SDK server and registry associations with presence-aware
-  `ResponseField` values, add explicit unmanaged, local, and external server
-  placement for supported creates, and classify unproven post-create placement
-  as outcome unknown. This is an intentional pre-release source break: callers
-  must replace `None` with `ResponseField::NotReturned` or `ResponseField::Null`
-  as appropriate, and `Some(id)` with `ResponseField::Value(id)`.
-- Sanitize SDK failure bodies through a fail-closed endpoint policy, including
-  shared reads, deploys, deletes, and unknown generated operations, while
-  preserving structured errors only for explicitly safe operations and
-  documenting request-buffer limits.
-- Require Schedule update and delete to prove a supported authoritative target
-  before mutation, reject rename collisions, compare exact executable response
-  bytes in zeroizing private proofs, and verify create/delete identity deltas.
-- Bound every buffered SDK JSON response to 16 MiB with incremental zeroizing
-  reads, redaction-safe oversized remote errors, and outcome-unknown
-  classification when an accepted mutation response is malformed or too large.
-- Require managed Postgres, MySQL, MariaDB, and Redis direct reads to agree
-  with a successful parent-scoped collection read before planning mutations,
-  and retain redaction-safe live-test evidence whenever cleanup is unproven.
-- Classify an unusable MySQL create identity as an unknown outcome in the CLI
-  executor so the journal step stays recoverable, matching the SDK contract.
-- Validate atomic LibSQL node values at both desired and stored planner seams,
-  rejecting malformed tagged shapes and empty replica URLs.
-- Separate optional create-only mutation properties from required create
-  properties, preserve every uncertain serial or batched mutation as an
-  in-progress recovery step, and allow write-only update recovery only when
-  sensitive fingerprints prove that no secret rotation was attempted.
-- Record the completed Phase 7, 9, and 10 acceptance work and the remaining
-  adapter-by-adapter Phase 8 scope in the implementation roadmap.
-- Separate command results on standard output from plans, prompts, warnings,
-  and diagnostics on standard error, and reject non-interactive apply,
-  recovery, and destroy approval unless `--auto-approve` is explicit.
-- Reframe the README as a project presentation focused on the product,
-  capabilities, architecture, maturity, and contributor entry points.
-
-### Added
 
 - Add `schedules().by_compose`, a bounded authoritative read of every Schedule
   of one Compose across its services, so whole-project import can enumerate
@@ -419,3 +328,90 @@ All notable changes to this project will be documented in this file.
   authority, bounded stable pagination, managed-ID and containment checks,
   exact parent-scoped collision probes, write-only password observations, and
   fail-closed physical reparenting.
+
+### Direction
+
+- Reset the documentation to the project's original goal (a Dokploy instance
+  described entirely in YAML and rebuilt from it). Removed the first engine's 50
+  ADRs, phase plans, design notes, integration-test guide, generator bake-off, and
+  README (still in git history at `96cab73`). Added `ARCHITECTURE.md`, `CONTEXT.md`,
+  ADRs 0001 to 0017 (all Proposed), the kind spec format, the roadmap, and the
+  vision maps. The product is unreleased, so the document format, state format, CLI,
+  and Rust APIs may break without migration until the beta (ADR 0001).
+
+### Changed
+
+- **Breaking:** the generated API commands moved under one prefix:
+  `dokploy api <resource> <operation> [options]` replaces `dokploy <resource>
+  <operation>`. The top level now holds only the declarative commands (`init`,
+  `plan`, `apply`, `import`, `state`, ...), so a command's place says whether it
+  acts on declared state or makes one direct API call. There is no un-prefixed
+  alias. Integration scripts and examples were updated.
+
+- State format 4 records a `scope` (`project` or `settings`). Version 3 files
+  decode as project scope and are rewritten on their next checkpoint. Older
+  CLIs cannot read format 4.
+- **Breaking:** nest `environments` under `project` in `dokploy.yaml`
+  (`project.environments`), matching the Dokploy hierarchy and preparing
+  whole-project import. A document that still has a top-level `environments`
+  key is rejected with `DOKCFG032`. Move the block two spaces deeper under
+  `project:`; `moves` and `removed` stay at the document root. Resource
+  addresses and state are unchanged, so existing state files stay valid.
+- **Breaking:** `dokploy import` now adopts one whole project. The per-resource
+  forms (`dokploy import <kind> <id> --as <address>`) and the flat interactive
+  resource picker are removed. Use `dokploy import project [PROJECT_ID]`, which
+  reads the project, every environment, and every service with all of its leaves
+  (domains, ports, redirects, security, mounts, schedules, and backups) in one
+  read-only pass, then writes a new configuration and state in a single step.
+  Without an id it lists projects to choose from. Import only creates a new
+  workspace; it still refuses to run when the configuration or state exists.
+  Logical names come from the remote names; a name shared by several resources
+  of one kind is prefixed with its environment (services) or its parent service
+  (leaves), then numbered if it still collides, and the report lists every
+  renamed address. The import now proves offline that the first plan will be
+  empty and refuses if the project changed while it was being read. It fails
+  closed, before writing anything, on a project that could not plan: two
+  same-named resources of one kind in an environment, a project name shared with
+  another project, or a Compose with Schedules on more than one service
+  (`DOKCFG055`). Service server placement is now imported for Compose and every
+  database kind, not only applications.
+- Send an explicit `serverId: null` when a LibSQL create leaves placement
+  unmanaged. `libsql.create` declares the key required and Dokploy `v0.30.6`
+  rejects a body that omits it, so unmanaged LibSQL creation had stopped working
+  when placement became optional; every other create still omits the key.
+- Apply the dependent-resource replacement refusal to LibSQL replacements caused
+  by a node change, which could previously orphan Mounts, Schedules, and Backups.
+- Represent SDK server and registry associations with presence-aware
+  `ResponseField` values, add explicit unmanaged, local, and external server
+  placement for supported creates, and classify unproven post-create placement
+  as outcome unknown. This is an intentional pre-release source break: callers
+  must replace `None` with `ResponseField::NotReturned` or `ResponseField::Null`
+  as appropriate, and `Some(id)` with `ResponseField::Value(id)`.
+- Sanitize SDK failure bodies through a fail-closed endpoint policy, including
+  shared reads, deploys, deletes, and unknown generated operations, while
+  preserving structured errors only for explicitly safe operations and
+  documenting request-buffer limits.
+- Require Schedule update and delete to prove a supported authoritative target
+  before mutation, reject rename collisions, compare exact executable response
+  bytes in zeroizing private proofs, and verify create/delete identity deltas.
+- Bound every buffered SDK JSON response to 16 MiB with incremental zeroizing
+  reads, redaction-safe oversized remote errors, and outcome-unknown
+  classification when an accepted mutation response is malformed or too large.
+- Require managed Postgres, MySQL, MariaDB, and Redis direct reads to agree
+  with a successful parent-scoped collection read before planning mutations,
+  and retain redaction-safe live-test evidence whenever cleanup is unproven.
+- Classify an unusable MySQL create identity as an unknown outcome in the CLI
+  executor so the journal step stays recoverable, matching the SDK contract.
+- Validate atomic LibSQL node values at both desired and stored planner seams,
+  rejecting malformed tagged shapes and empty replica URLs.
+- Separate optional create-only mutation properties from required create
+  properties, preserve every uncertain serial or batched mutation as an
+  in-progress recovery step, and allow write-only update recovery only when
+  sensitive fingerprints prove that no secret rotation was attempted.
+- Record the completed Phase 7, 9, and 10 acceptance work and the remaining
+  adapter-by-adapter Phase 8 scope in the implementation roadmap.
+- Separate command results on standard output from plans, prompts, warnings,
+  and diagnostics on standard error, and reject non-interactive apply,
+  recovery, and destroy approval unless `--auto-approve` is explicit.
+- Reframe the README as a project presentation focused on the product,
+  capabilities, architecture, maturity, and contributor entry points.
