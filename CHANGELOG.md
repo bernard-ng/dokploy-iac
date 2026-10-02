@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `dokploy-model` (milestone M1, ADR 0005; [`docs/design/document-format.md`](docs/design/document-format.md)):
+  the version 2 document model. `Document::parse` validates a `project:` or `settings:` document
+  against the kind specs and reports every problem with a stable code (`DOKDOC001`-`012`), a
+  dotted path, and a line and column; `Document::render` writes the canonical text; `json_schema`
+  describes the format for editors. Unknown fields are rejected everywhere, secrets must be
+  sources (`env`, `file`, `vault`) and never literals, and a rejected literal is never echoed.
+  Randomized tests hold that every document renders, parses back equal, and re-renders to the same
+  text, and that the schema accepts what the parser accepts. Nothing reads these documents yet.
 - State format 5 (milestone M1, ADR 0009; [`docs/design/state-format.md`](docs/design/state-format.md)).
   Resources are keyed by hierarchical address (`project.shop/environment.staging/application.api`),
   the file records its document (`settings`, `project.<slug>`), and each document has its own

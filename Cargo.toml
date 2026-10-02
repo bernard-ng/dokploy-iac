@@ -4,6 +4,7 @@ members = [
     "crates/dokploy-cli",
     "crates/dokploy-config",
     "crates/dokploy-core",
+    "crates/dokploy-model",
     "crates/dokploy-sdk",
     "crates/dokploy-spec",
     "crates/dokploy-state",
@@ -25,6 +26,7 @@ directories = "6.0.0"
 dokploy-api = { path = "crates/dokploy-api", version = "0.1.0" }
 dokploy-config = { path = "crates/dokploy-config", version = "0.1.0" }
 dokploy-core = { path = "crates/dokploy-core", version = "0.1.0" }
+dokploy-model = { path = "crates/dokploy-model", version = "0.1.0" }
 dokploy-sdk = { path = "crates/dokploy-sdk", version = "0.1.0" }
 dokploy-spec = { path = "crates/dokploy-spec", version = "0.1.0" }
 dokploy-state = { path = "crates/dokploy-state", version = "0.1.0" }

@@ -1,0 +1,15 @@
+[package]
+name = "dokploy-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Declarative documents: parse, validate, render, and describe them by kind specs."
+
+[dependencies]
+dokploy-spec.workspace = true
+regex = "1"
+serde.workspace = true
+serde-saphyr.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

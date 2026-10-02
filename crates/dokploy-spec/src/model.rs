@@ -261,7 +261,7 @@ pub enum Granularity {
 }
 
 /// One configurable field.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Field {
     /// The request/response field name or JSON pointer; defaults to the field name.

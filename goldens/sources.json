@@ -456,6 +456,10 @@
       "reason": "Kernel (ADR 0016): state storage and journal carry over; state format 5 is an M1 slice."
     },
     {
+      "path": "crates/dokploy-model/",
+      "reason": "The v2 document model; not legacy."
+    },
+    {
       "path": "crates/dokploy-spec/",
       "reason": "The v2 spec crate; not legacy."
     },

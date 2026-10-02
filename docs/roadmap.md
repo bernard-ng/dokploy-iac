@@ -50,7 +50,9 @@ Done: spec-validated property paths (`dokploy-spec` path catalog, `PropertyPath:
 State format 5 with hierarchical addresses, document ids, per-document directories, open kinds,
 and open sensitive paths ([`state-format.md`](design/state-format.md)); a `registry`, which has no
 first-engine code, plans and checkpoints from its spec alone (kernel test).
-Next: the document model, the `Transport` trait, and the engine skeleton.
+The document model (`dokploy-model`: parse, validate with positions, canonical render, JSON
+Schema; [`document-format.md`](design/document-format.md)).
+Next: the `Transport` trait and the engine skeleton.
 
 ## Cost gate (end of M2)
 
