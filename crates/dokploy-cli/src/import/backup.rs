@@ -1,20 +1,13 @@
-//! Protected import of one existing database Backup with its target ancestry.
+//! Protected import of one existing database Backup.
 //!
-//! The import is read-only. The Backup's typed database target, its
-//! environment, and the project are adopted into the same new workspace so the
-//! Backup's containment and target dependency are written correctly. The
-//! destination is written as an exact name selector and never as a physical
+//! The destination is written as an exact name selector and never as a physical
 //! identity; an unknown, unreadable, shared, or malformed destination name fails
 //! closed. The Backup is imported protected so it can neither be replaced nor
 //! destroyed by the first plan.
 
-use std::collections::BTreeSet;
-
-use dokploy_config::{BackupDocument, ExternalSelector, SelectorKind};
-use dokploy_sdk::{BackupTarget, ServiceTarget};
+use dokploy_config::BackupDocument;
 
 use super::context::{EnvScope, ImportContext};
-use super::mount::import_target;
 use super::*;
 
 impl ImportContext {
@@ -67,58 +60,5 @@ impl ImportContext {
             env.address(),
             vec![service.clone()],
         )
-    }
-}
-
-pub(super) async fn discover_backup(
-    client: &Dokploy,
-    remote_id: &str,
-    target: &ResourceAddress,
-) -> Result<ImportContext, ImportError> {
-    let requested_id = dokploy_sdk::BackupId::new(remote_id);
-    let backup = client.backups().get(requested_id.clone()).await?;
-    if backup.backup_id != requested_id {
-        return Err(ImportError::InvalidRemoteTopology);
-    }
-    let collection = client.backups().by_target(backup.target.clone()).await?;
-    let matching = collection
-        .backups()
-        .iter()
-        .filter(|candidate| candidate.backup_id == backup.backup_id)
-        .collect::<Vec<_>>();
-    if matching.as_slice() != [&backup] {
-        return Err(ImportError::InvalidRemoteTopology);
-    }
-    // A null flag cannot be written as a boolean, so it is never guessed.
-    let enabled = backup.enabled.ok_or(ImportError::InvalidRemoteTopology)?;
-
-    let directory =
-        ExternalDirectory::load(client, &BTreeSet::from([SelectorKind::Destination])).await;
-    let destination = directory
-        .unique_name_of(SelectorKind::Destination, backup.destination_id.as_str())
-        .map(str::to_owned)
-        .ok_or(ImportError::ExternalAssociation)?;
-
-    let (mut imported, scope, target_address) =
-        import_target(client, &service_target(&backup.target)).await?;
-    imported.add_backup(
-        &scope,
-        &target_address,
-        &backup,
-        destination,
-        enabled,
-        target,
-    )?;
-
-    Ok(imported)
-}
-
-fn service_target(target: &BackupTarget) -> ServiceTarget {
-    match target {
-        BackupTarget::Postgres(id) => ServiceTarget::Postgres(id.clone()),
-        BackupTarget::MySql(id) => ServiceTarget::MySql(id.clone()),
-        BackupTarget::MariaDb(id) => ServiceTarget::MariaDb(id.clone()),
-        BackupTarget::Mongo(id) => ServiceTarget::Mongo(id.clone()),
-        BackupTarget::LibSql(id) => ServiceTarget::LibSql(id.clone()),
     }
 }

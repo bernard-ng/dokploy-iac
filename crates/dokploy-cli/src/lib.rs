@@ -446,12 +446,8 @@ async fn execute_inner(
                 Err(error) => Err(error).into_diagnostic(),
             }
         }
-        Command::Import {
-            kind,
-            remote_id,
-            address,
-            file,
-        } => {
+        Command::Import { command } => {
+            let cli::ImportCommand::Project { project_id, file } = command;
             let configuration = config.load()?;
             let settings = resolve_connection(
                 ConnectionOptions {
@@ -467,28 +463,26 @@ async fn execute_inner(
                 .api_key(settings.api_key().expose())
                 .build()
                 .into_diagnostic()?;
-            let request = match (kind, remote_id, address) {
-                (Some(kind), Some(remote_id), Some(address)) => import::ImportRequest {
-                    kind,
-                    remote_id,
-                    address: address
-                        .parse()
-                        .map_err(|_| miette::miette!("the import address is invalid"))?,
+            let request = match project_id {
+                Some(project_id) => import::ImportRequest {
+                    project_id,
                     config_file: file,
                 },
-                _ if terminal_available => import::select_interactively(&client, file)
+                None if terminal_available => import::select_interactively(&client, file)
                     .await
                     .into_diagnostic()?,
-                _ => return Err(miette::miette!("interactive import requires a terminal")),
+                None => return Err(miette::miette!("interactive import requires a terminal")),
             };
-            let count = import::import_resource(&client, request)
+            let report = import::import_project(&client, request)
                 .await
                 .into_diagnostic()?;
             writeln!(
                 streams.result(),
-                "Import complete: {count} resource(s) tracked."
+                "Import complete: {} resource(s) tracked.",
+                report.resource_count()
             )
             .into_diagnostic()?;
+            write!(streams.result(), "{report}").into_diagnostic()?;
             Ok(CommandStatus::Success)
         }
         Command::Imperative(command) => {

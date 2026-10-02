@@ -12,6 +12,24 @@ All notable changes to this project will be documented in this file.
   key is rejected with `DOKCFG032`. Move the block two spaces deeper under
   `project:`; `moves` and `removed` stay at the document root. Resource
   addresses and state are unchanged, so existing state files stay valid.
+- **Breaking:** `dokploy import` now adopts one whole project. The per-resource
+  forms (`dokploy import <kind> <id> --as <address>`) and the flat interactive
+  resource picker are removed. Use `dokploy import project [PROJECT_ID]`, which
+  reads the project, every environment, and every service with all of its leaves
+  (domains, ports, redirects, security, mounts, schedules, and backups) in one
+  read-only pass, then writes a new configuration and state in a single step.
+  Without an id it lists projects to choose from. Import only creates a new
+  workspace; it still refuses to run when the configuration or state exists.
+  Logical names come from the remote names; a name shared by several resources
+  of one kind is prefixed with its environment (services) or its parent service
+  (leaves), then numbered if it still collides, and the report lists every
+  renamed address. The import now proves offline that the first plan will be
+  empty and refuses if the project changed while it was being read. It fails
+  closed, before writing anything, on a project that could not plan: two
+  same-named resources of one kind in an environment, a project name shared with
+  another project, or a Compose with Schedules on more than one service
+  (`DOKCFG055`). Service server placement is now imported for Compose and every
+  database kind, not only applications.
 - Send an explicit `serverId: null` when a LibSQL create leaves placement
   unmanaged. `libsql.create` declares the key required and Dokploy `v0.30.6`
   rejects a body that omits it, so unmanaged LibSQL creation had stopped working
