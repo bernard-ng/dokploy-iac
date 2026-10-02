@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Send an explicit `serverId: null` when a LibSQL create leaves placement
+  unmanaged. `libsql.create` declares the key required and Dokploy `v0.30.6`
+  rejects a body that omits it, so unmanaged LibSQL creation had stopped working
+  when placement became optional; every other create still omits the key.
+- Apply the dependent-resource replacement refusal to LibSQL replacements caused
+  by a node change, which could previously orphan Mounts, Schedules, and Backups.
 - Represent SDK server and registry associations with presence-aware
   `ResponseField` values, add explicit unmanaged, local, and external server
   placement for supported creates, and classify unproven post-create placement
@@ -43,6 +49,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add create-only server placement selectors for Compose, PostgreSQL, MySQL,
+  MariaDB, MongoDB, LibSQL, and Redis, reusing the ADR 0045 selector
+  vocabulary and `DOKCFG029`-`DOKCFG031`: a `server` field (`local: true` or an
+  exact `name`, never `null`), observation of the attached server as a name
+  selector, `DOKPLAN019` blocking of unmatched, ambiguous, or unreadable names,
+  keyed saved-plan receipts that bind the resolved identity, explicit
+  create-time placement, journaled delete-before-create replacement on a
+  changed placement that is refused while durable state holds contained or
+  dependent resources (Mounts, Schedules, Backups, and any other dependent) or
+  the service is protected, manual recovery when a selector stops resolving
+  uniquely, name-selector import that fails closed on unknown, ambiguous, or
+  unreadable servers, and a live acceptance with inert, tripwired server
+  records and zero deployments (ADR 0048).
 - Add external selector resolution for application server, build-server, and
   runtime, build, and rollback registry associations: a typed local-or-named
   selector vocabulary with strict parsing, `DOKCFG029`-`DOKCFG031`, canonical

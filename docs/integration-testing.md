@@ -705,6 +705,45 @@ the project and every record carrying the run prefix and proves their absence.
 Retained evidence is scanned for the API key, the fingerprint key, and every
 secret and identity canary.
 
+## Live server placement test
+
+Verify Compose and database server placement independently against the pinned
+local instance:
+
+```sh
+scripts/integration/test-server-placement-apply.sh
+```
+
+The Dokploy instance is shared, so serialize runs that share it with
+`.integration/live.lock`. Set `DOKPLOY_CARGO_CONFIG` to keep workspace
+artifacts private when several worktrees share one `target` directory.
+
+The check creates disposable server records that have no SSH key and point at a
+connection tripwire, including two records with one name. For Compose,
+PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, and Redis it creates one service on
+a named server, one on the explicit local selector, and one with no placement,
+proves each placement through the direct read, and requires an immediate no-op
+plan. It then proves delete-before-create replacement in every direction
+(named to named, local to named, named to local) with proof that every old
+identity is gone and that unmanaged services keep their identity, blocking of
+an unmatched and an ambiguous name, a saved plan that applies while its
+resolution is unchanged and is refused after the selected record is re-created
+under the same name, protected import into separate workspaces that writes name
+selectors and converges, an unplaced service imported without a selector, and
+fail-closed import when the attached name is shared. It also proves that
+`libsql.create` rejects a body without `serverId`, which is why the SDK sends an
+explicit null for an unmanaged LibSQL placement. Every service must stay idle
+with zero deployments and the tripwire must record no connection. Saved-plan
+envelopes and imported workspaces must contain no external identity or selector
+name. Raw responses stay in a private directory that cleanup discards; cleanup
+removes the project and every server carrying the run prefix and proves their
+absence. Retained evidence is scanned for the API key, the fingerprint key,
+every secret canary, and every server identity.
+
+Every apply in the script is serial (`--parallelism 1`): Dokploy `v0.30.6` loses
+services from its `*.search` views when several are created concurrently in one
+environment, which the CLI correctly reports as conflicting topology.
+
 ## Live Schedule declarative apply test
 
 Verify Schedule reconciliation independently against the pinned local instance:

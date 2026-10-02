@@ -206,6 +206,15 @@ durable state semantics.
   name-selector import. The resolver seam is kind-agnostic; Backup destinations
   are wired onto it (ADR 0047). Schedule server and Dokploy-server scopes stay
   unsupported (ADR 0033).
+- Compose, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, and Redis accept the
+  same create-only `server` selector (ADR 0048): Dokploy takes a server only on
+  each create endpoint and every read exposes it, so a changed placement
+  replaces the service delete-before-create. Replacement is refused while
+  durable state holds contained or dependent resources (Mounts, Schedules,
+  Backups, and others) and for protected services, recovery needs an operator
+  when a selector stops resolving uniquely, and import writes name selectors.
+  The disposable live acceptance uses inert, tripwired server records for every
+  kind and proves zero deployments and zero server contact.
 - Database Backups are declarative end to end as environment-contained
   resources whose typed database target (PostgreSQL, MySQL, MariaDB, MongoDB,
   or LibSQL) is an owned property and inferred dependency and whose destination
@@ -213,19 +222,14 @@ durable state semantics.
   discovery with direct-read agreement, fresh-read complete-replacement updates,
   in-place destination re-selection, delete-before-create replacement on a
   target change, saved-plan binding of the resolved destination identity,
-  explicit recovery, and protected import. The disposable live acceptance keeps
-  every Backup disabled and proves no backup ran, no destination was contacted,
-  and no target was deployed. Compose and web-server Backups remain unsupported.
-- Backups and schedules use the shared typed-target and external-selector
-  model in ADR 0026.
-- Database Backups now have a typed SDK contract for PostgreSQL, MySQL,
-  MariaDB, MongoDB, and LibSQL targets. Reads use bounded authoritative
-  `target.one.backups` collections, mutations prove identity and target
-  agreement, and disabled live evidence covers all mutable fields without
-  deployment, execution, or destination traffic. Compose and web-server
+  explicit recovery, and protected import. Backups and schedules use the shared
+  typed-target and external-selector model in ADR 0026. The SDK contract reads
+  bounded authoritative `target.one.backups` collections and proves identity and
+  target agreement on every mutation. The disposable live acceptance keeps every
+  Backup disabled, covers all mutable fields, and proves no backup ran, no
+  destination was contacted, and no target was deployed. Compose and web-server
   Backups remain unsupported.
-- Completion still requires the remaining server placement selectors for
-  Compose and databases, plus any adapter that is not yet declarative, each with
+- Completion still requires any adapter that is not yet declarative, each with
   unit, sanitized fixture, and live create-update-delete evidence.
 
 ## Phase 9: import and refactoring workflows — complete

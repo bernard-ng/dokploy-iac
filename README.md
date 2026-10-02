@@ -33,10 +33,11 @@ about ownership, drift, secrets, remote identity, and recovery.
   entries, Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL,
   Redis, domains, mounts on applications, Compose services, and
   databases, schedules on applications and Compose services, and database
-  backups. Application server, build-server, and registry associations and
-  backup destinations select external infrastructure by stable local-or-named
-  selectors that are resolved against fresh server, registry, and destination
-  collections and bound into saved plans.
+  backups. Server placement of applications, Compose services, and databases,
+  application build-server and registry associations, and backup destinations
+  select external infrastructure by stable local-or-named selectors that are
+  resolved against fresh server, registry, and destination collections and
+  bound into saved plans.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
 - Dedicated containment separate from general dependency ordering, persisted
