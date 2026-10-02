@@ -482,7 +482,7 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
             value,
             OwnedValue::Value(value) if mount_text_valid(value.as_json())
         ),
-        PropertyPath::ScheduleName | PropertyPath::ServiceName | PropertyPath::Timezone => {
+        PropertyPath::Name | PropertyPath::ServiceName | PropertyPath::Timezone => {
             matches!(
                 value,
                 OwnedValue::Value(value) if schedule_text_valid(value.as_json())
@@ -518,6 +518,16 @@ fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
             OwnedValue::Value(value) => keep_latest_json_valid(value.as_json()),
             OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
         },
+        // A project owns its tag association as one canonical list; an empty list
+        // is the explicit "no tags" intent and `null` is not a valid clear.
+        PropertyPath::Tags => matches!(
+            value,
+            OwnedValue::Value(value) if tag_names_valid(value.as_json())
+        ),
+        PropertyPath::Color => matches!(
+            value,
+            OwnedValue::Value(value) if schedule_text_valid(value.as_json())
+        ),
         _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
     }
 }
@@ -581,6 +591,28 @@ fn schedule_text_valid(value: &serde_json::Value) -> bool {
             && text.trim() == text
             && !text.chars().any(char::is_control)
     })
+}
+
+/// Returns whether a JSON value is a canonical project tag list: unique,
+/// bounded, trimmed names in ascending order.
+fn tag_names_valid(value: &serde_json::Value) -> bool {
+    let Some(names) = value.as_array() else {
+        return false;
+    };
+    let mut previous: Option<&str> = None;
+    for name in names {
+        let Some(name) = name.as_str() else {
+            return false;
+        };
+        if !schedule_text_valid(&serde_json::Value::String(name.to_owned()))
+            || previous.is_some_and(|previous| previous >= name)
+        {
+            return false;
+        }
+        previous = Some(name);
+    }
+
+    true
 }
 
 /// Returns whether a JSON value is one logical address inside the closed Backup target union.
@@ -1650,7 +1682,7 @@ fn validate_remote_resource(
                         PropertyObservation::KnownAbsent => false,
                     }
                 }
-                PropertyPath::ScheduleName | PropertyPath::CronExpression => match observation {
+                PropertyPath::Name | PropertyPath::CronExpression => match observation {
                     PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
                     PropertyObservation::Unknown(reason) => {
                         *reason != PropertyUnknownReason::Sensitive
@@ -1728,6 +1760,21 @@ fn validate_remote_resource(
                 },
                 PropertyPath::KeepLatest => match observation {
                     PropertyObservation::Known(value) => keep_latest_json_valid(value.as_json()),
+                    PropertyObservation::KnownAbsent => true,
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                },
+                PropertyPath::Tags => match observation {
+                    PropertyObservation::Known(value) => tag_names_valid(value.as_json()),
+                    PropertyObservation::KnownAbsent => false,
+                    PropertyObservation::Unknown(reason) => {
+                        *reason != PropertyUnknownReason::Sensitive
+                    }
+                },
+                // A tag without a color is conclusively colorless.
+                PropertyPath::Color => match observation {
+                    PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
                     PropertyObservation::KnownAbsent => true,
                     PropertyObservation::Unknown(reason) => {
                         *reason != PropertyUnknownReason::Sensitive

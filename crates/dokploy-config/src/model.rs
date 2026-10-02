@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt};
 
-use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
+use dokploy_state::{ResourceAddress, ResourceKind, ResourceName, StateScope};
 use schemars::Schema;
 use thiserror::Error;
 
@@ -14,6 +14,7 @@ use crate::{
 #[derive(Clone)]
 pub struct DokployConfig {
     pub(crate) version: u32,
+    pub(crate) scope: StateScope,
     pub(crate) resources: BTreeMap<ResourceAddress, ResourceConfig>,
     pub(crate) parents: BTreeMap<ResourceAddress, ResourceAddress>,
     pub(crate) locations: BTreeMap<ResourceAddress, SourceLocation>,
@@ -24,6 +25,7 @@ pub struct DokployConfig {
 impl PartialEq for DokployConfig {
     fn eq(&self, other: &Self) -> bool {
         self.version == other.version
+            && self.scope == other.scope
             && self.resources == other.resources
             && self.parents == other.parents
             && self.moves == other.moves
@@ -37,6 +39,14 @@ impl DokployConfig {
     #[must_use]
     pub const fn version(&self) -> u32 {
         self.version
+    }
+
+    /// Returns the document scope: a project document or a settings document.
+    ///
+    /// The scope selects the durable state lineage the document is planned against.
+    #[must_use]
+    pub const fn scope(&self) -> StateScope {
+        self.scope
     }
 
     #[must_use]
@@ -77,9 +87,16 @@ impl DokployConfig {
         &self.removed
     }
 
+    /// Returns the JSON Schema of a project document.
     #[must_use]
     pub fn json_schema() -> Schema {
         crate::parser::json_schema()
+    }
+
+    /// Returns the JSON Schema of a settings document.
+    #[must_use]
+    pub fn settings_json_schema() -> Schema {
+        crate::parser::settings_json_schema()
     }
 }
 
@@ -88,6 +105,7 @@ impl fmt::Debug for DokployConfig {
         formatter
             .debug_struct("DokployConfig")
             .field("version", &self.version)
+            .field("scope", &self.scope)
             .field("resource_count", &self.resources.len())
             .field("parent_count", &self.parents.len())
             .field("move_count", &self.moves.len())
@@ -116,6 +134,7 @@ pub enum ResourceConfig {
     Mount(MountConfig),
     Schedule(ScheduleConfig),
     Backup(BackupConfig),
+    Tag(TagConfig),
 }
 
 impl ResourceConfig {
@@ -139,6 +158,7 @@ impl ResourceConfig {
             Self::Mount(_) => ResourceKind::Mount,
             Self::Schedule(_) => ResourceKind::Schedule,
             Self::Backup(_) => ResourceKind::Backup,
+            Self::Tag(_) => ResourceKind::Tag,
         }
     }
 
@@ -279,6 +299,14 @@ impl ResourceConfig {
     }
 
     #[must_use]
+    pub const fn as_tag(&self) -> Option<&TagConfig> {
+        match self {
+            Self::Tag(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    #[must_use]
     pub fn depends_on(&self) -> &[ResourceAddress] {
         match self {
             Self::Project(config) => &config.depends_on,
@@ -298,6 +326,7 @@ impl ResourceConfig {
             Self::Mount(config) => &config.depends_on,
             Self::Schedule(config) => &config.depends_on,
             Self::Backup(config) => &config.depends_on,
+            Self::Tag(config) => &config.depends_on,
         }
     }
 
@@ -321,6 +350,7 @@ impl ResourceConfig {
             Self::Mount(config) => &config.lifecycle,
             Self::Schedule(config) => &config.lifecycle,
             Self::Backup(config) => &config.lifecycle,
+            Self::Tag(config) => &config.lifecycle,
         }
     }
 
@@ -343,6 +373,7 @@ impl ResourceConfig {
             Self::Mount(config) => &mut config.lifecycle,
             Self::Schedule(config) => &mut config.lifecycle,
             Self::Backup(config) => &mut config.lifecycle,
+            Self::Tag(config) => &mut config.lifecycle,
         }
     }
 
@@ -365,6 +396,7 @@ impl ResourceConfig {
             Self::Mount(config) => &mut config.depends_on,
             Self::Schedule(config) => &mut config.depends_on,
             Self::Backup(config) => &mut config.depends_on,
+            Self::Tag(config) => &mut config.depends_on,
         }
     }
 
@@ -467,7 +499,8 @@ impl ResourceConfig {
             | Self::Domain(_)
             | Self::Port(_)
             | Self::Redirect(_)
-            | Self::Backup(_) => {}
+            | Self::Backup(_)
+            | Self::Tag(_) => {}
         }
         secrets
     }
@@ -567,6 +600,7 @@ macro_rules! redacted_debug {
 #[derive(Clone, Eq, PartialEq)]
 pub struct ProjectConfig {
     pub(crate) description: Field<String>,
+    pub(crate) tags: Field<Vec<ExternalSelector>>,
     pub(crate) depends_on: Vec<ResourceAddress>,
     pub(crate) lifecycle: Lifecycle,
 }
@@ -575,6 +609,16 @@ impl ProjectConfig {
     #[must_use]
     pub const fn description(&self) -> &Field<String> {
         &self.description
+    }
+
+    /// Returns the tags associated with the project, selected by exact name.
+    ///
+    /// Omitted tags leave the associations unmanaged and an empty list removes
+    /// every association. A tag is created in the settings document, so a name
+    /// that does not exist yet blocks the plan instead of creating a tag.
+    #[must_use]
+    pub const fn tags(&self) -> &Field<Vec<ExternalSelector>> {
+        &self.tags
     }
 
     #[must_use]
@@ -589,6 +633,43 @@ impl ProjectConfig {
 }
 
 redacted_debug!(ProjectConfig, "ProjectConfig");
+
+/// A Dokploy tag declared in a settings document.
+#[derive(Clone, Eq, PartialEq)]
+pub struct TagConfig {
+    pub(crate) name: Option<String>,
+    pub(crate) color: Field<String>,
+    pub(crate) depends_on: Vec<ResourceAddress>,
+    pub(crate) lifecycle: Lifecycle,
+}
+
+impl TagConfig {
+    /// Returns the remote tag name when it differs from the logical address name.
+    ///
+    /// A tag name is free text, so it need not satisfy the logical name grammar.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Returns the tag color. A color cannot be cleared once set.
+    #[must_use]
+    pub const fn color(&self) -> &Field<String> {
+        &self.color
+    }
+
+    #[must_use]
+    pub fn depends_on(&self) -> &[ResourceAddress] {
+        &self.depends_on
+    }
+
+    #[must_use]
+    pub const fn lifecycle(&self) -> &Lifecycle {
+        &self.lifecycle
+    }
+}
+
+redacted_debug!(TagConfig, "TagConfig");
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct EnvironmentConfig {
@@ -1325,6 +1406,11 @@ pub enum ValidationIssue {
     InvalidBackupField,
     DuplicateBackupCollision,
     EnvironmentsMustNestUnderProject,
+    AmbiguousDocumentScope,
+    InvalidTagField,
+    DuplicateTagCollision,
+    TagFieldCannotBeCleared,
+    DuplicateProjectTag,
 }
 
 impl ValidationIssue {
@@ -1379,6 +1465,11 @@ impl ValidationIssue {
             Self::InvalidBackupField => "DOKCFG061",
             Self::DuplicateBackupCollision => "DOKCFG062",
             Self::EnvironmentsMustNestUnderProject => "DOKCFG032",
+            Self::AmbiguousDocumentScope => "DOKCFG070",
+            Self::InvalidTagField => "DOKCFG071",
+            Self::DuplicateTagCollision => "DOKCFG072",
+            Self::TagFieldCannotBeCleared => "DOKCFG073",
+            Self::DuplicateProjectTag => "DOKCFG074",
         }
     }
 
@@ -1469,6 +1560,15 @@ impl ValidationIssue {
             Self::EnvironmentsMustNestUnderProject => {
                 "`environments` moved under `project`; nest the block as `project.environments`"
             }
+            Self::AmbiguousDocumentScope => {
+                "a document declares either `project` or `settings`, never both"
+            }
+            Self::InvalidTagField => "tag name or color is invalid",
+            Self::DuplicateTagCollision => "tag name is duplicated within the instance",
+            Self::TagFieldCannotBeCleared => {
+                "a tag color or project tag list cannot be null; use `tags: []` to remove every project tag"
+            }
+            Self::DuplicateProjectTag => "a project lists the same tag more than once",
         }
     }
 }

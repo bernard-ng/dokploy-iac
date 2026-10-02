@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{self, Write as _};
 use std::path::Path;
 
-use dokploy_state::{ResourceAddress, ResourceKind, ResourceName};
+use dokploy_state::{ResourceAddress, ResourceKind, ResourceName, StateScope};
 use thiserror::Error;
 
 use crate::{
@@ -98,6 +98,7 @@ impl ConfigDocument {
         let mut document = Self::new(project_address.name().clone());
         document.project = ProjectDocument {
             description: project.description.clone(),
+            tags: project.tags.clone(),
             depends_on: project.depends_on.clone(),
             lifecycle: lifecycle_document(&project.lifecycle),
         };
@@ -358,7 +359,8 @@ impl ConfigDocument {
                 | ResourceConfig::Environment(_)
                 | ResourceConfig::Port(_)
                 | ResourceConfig::Redirect(_)
-                | ResourceConfig::Security(_) => {
+                | ResourceConfig::Security(_)
+                | ResourceConfig::Tag(_) => {
                     return Err(ConfigWriteError::InconsistentModel);
                 }
             }
@@ -424,10 +426,75 @@ impl std::fmt::Debug for ConfigDocument {
     }
 }
 
+/// Tag properties accepted by a [`SettingsDocument`].
+#[derive(Clone, Default)]
+pub struct TagDocument {
+    /// The remote tag name when it is not the logical name.
+    pub name: Option<String>,
+    pub color: Field<String>,
+    pub depends_on: Vec<ResourceAddress>,
+    pub lifecycle: LifecycleDocument,
+}
+
+/// A typed settings document built by an importer and rendered canonically.
+///
+/// It is the settings-scope counterpart of [`ConfigDocument`]: the importer
+/// adds each resource once, and rendering reparses the result through the strict
+/// parser before it is returned.
+#[derive(Clone, Default)]
+pub struct SettingsDocument {
+    tags: BTreeMap<ResourceName, TagDocument>,
+}
+
+impl SettingsDocument {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds one tag, rejecting a repeated logical name.
+    pub fn add_tag(
+        &mut self,
+        name: ResourceName,
+        tag: TagDocument,
+    ) -> Result<(), ConfigDocumentError> {
+        insert_resource(&mut self.tags, name, tag, ResourceKind::Tag)
+    }
+
+    /// Renders this document in canonical form after strict reparsing.
+    pub fn render(&self) -> Result<String, ConfigWriteError> {
+        let mut output = String::from("version: 1\nsettings:");
+        if self.tags.is_empty() {
+            output.push_str(" {}\n");
+        } else {
+            output.push_str("\n  server:\n    tags:\n");
+            for (name, tag) in &self.tags {
+                let item_start = output.len();
+                mapping_header(&mut output, 6, name.as_str());
+                if let Some(remote_name) = &tag.name {
+                    line(&mut output, 8, "name", &quoted(remote_name));
+                }
+                string_field(&mut output, 8, "color", &tag.color);
+                document_common_fields(&mut output, 8, &tag.depends_on, &tag.lifecycle);
+                collapse_empty_mapping(&mut output, item_start, 6, name.as_str());
+            }
+        }
+        DokployConfig::parse(&output).map_err(ConfigWriteError::GeneratedConfig)?;
+
+        Ok(output)
+    }
+
+    /// Atomically writes this document without replacing an existing file.
+    pub fn write(&self, path: impl AsRef<Path>) -> Result<(), ConfigWriteError> {
+        write_source(path.as_ref(), &self.render()?)
+    }
+}
+
 /// Project properties accepted by [`ConfigDocument`].
 #[derive(Clone, Default)]
 pub struct ProjectDocument {
     pub description: Field<String>,
+    pub tags: Field<Vec<ExternalSelector>>,
     pub depends_on: Vec<ResourceAddress>,
     pub lifecycle: LifecycleDocument,
 }
@@ -860,6 +927,7 @@ fn render_document_unchecked(document: &ConfigDocument) -> String {
         &quoted(document.project_name.as_str()),
     );
     string_field(&mut output, 2, "description", &document.project.description);
+    tags_field(&mut output, 2, &document.project.tags);
     document_common_fields(
         &mut output,
         2,
@@ -1327,6 +1395,9 @@ fn document_source_field(output: &mut String, indent: usize, source: &Field<Sour
 }
 
 fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> {
+    if config.scope == StateScope::Settings {
+        return render_settings_unchecked(config);
+    }
     let (project_address, ResourceConfig::Project(project)) = config
         .resources
         .iter()
@@ -1344,6 +1415,7 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
         &quoted(project_address.name().as_str()),
     );
     string_field(&mut output, 2, "description", &project.description);
+    tags_field(&mut output, 2, project.tags());
     common_fields(&mut output, 2, project.depends_on(), project.lifecycle());
 
     let environments = config
@@ -1481,17 +1553,22 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
     }
 
     nest_under_project(&mut output, environments_start);
+    render_moves_and_removed(&mut output, config);
 
+    Ok(output)
+}
+
+fn render_moves_and_removed(output: &mut String, config: &DokployConfig) {
     if !config.moves.is_empty() {
         output.push_str("moves:\n");
         for declaration in &config.moves {
             line(
-                &mut output,
+                output,
                 2,
                 "- from",
                 &quoted(&declaration.from().to_string()),
             );
-            line(&mut output, 4, "to", &quoted(&declaration.to().to_string()));
+            line(output, 4, "to", &quoted(&declaration.to().to_string()));
         }
     }
 
@@ -1499,13 +1576,13 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
         output.push_str("removed:\n");
         for declaration in &config.removed {
             line(
-                &mut output,
+                output,
                 2,
                 "- from",
                 &quoted(&declaration.from().to_string()),
             );
             line(
-                &mut output,
+                output,
                 4,
                 "destroy",
                 if declaration.destroy() {
@@ -1516,6 +1593,35 @@ fn render_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> 
             );
         }
     }
+}
+
+/// Renders a deterministic settings document; tags live under `settings.server`.
+fn render_settings_unchecked(config: &DokployConfig) -> Result<String, ConfigWriteError> {
+    let tags = config
+        .resources
+        .iter()
+        .filter(|(address, _)| address.kind() == ResourceKind::Tag)
+        .collect::<Vec<_>>();
+    let mut output = String::from("version: 1\nsettings:");
+    if tags.is_empty() {
+        output.push_str(" {}\n");
+    } else {
+        output.push_str("\n  server:\n    tags:\n");
+        for (address, resource) in tags {
+            let ResourceConfig::Tag(tag) = resource else {
+                return Err(ConfigWriteError::InconsistentModel);
+            };
+            let item_start = output.len();
+            mapping_header(&mut output, 6, address.name().as_str());
+            if let Some(name) = tag.name() {
+                line(&mut output, 8, "name", &quoted(name));
+            }
+            string_field(&mut output, 8, "color", tag.color());
+            common_fields(&mut output, 8, tag.depends_on(), tag.lifecycle());
+            collapse_empty_mapping(&mut output, item_start, 6, address.name().as_str());
+        }
+    }
+    render_moves_and_removed(&mut output, config);
 
     Ok(output)
 }
@@ -2137,6 +2243,28 @@ fn secret_field(output: &mut String, indent: usize, name: &str, field: &Field<Se
         Field::Set(secret) => {
             mapping_header(output, indent, name);
             render_secret(output, indent + 2, secret);
+        }
+    }
+}
+
+/// Renders a project's tag associations as a list of name selectors.
+fn tags_field(output: &mut String, indent: usize, field: &Field<Vec<ExternalSelector>>) {
+    match field {
+        Field::Unmanaged => {}
+        Field::Clear => line(output, indent, "tags", "null"),
+        Field::Set(tags) if tags.is_empty() => line(output, indent, "tags", "[]"),
+        Field::Set(tags) => {
+            mapping_header(output, indent, "tags");
+            for tag in tags {
+                match tag {
+                    ExternalSelector::Local => sequence_scalar(output, indent + 2, "local: true"),
+                    ExternalSelector::Named(name) => sequence_scalar(
+                        output,
+                        indent + 2,
+                        &format!("name: {}", quoted(name.as_str())),
+                    ),
+                }
+            }
         }
     }
 }

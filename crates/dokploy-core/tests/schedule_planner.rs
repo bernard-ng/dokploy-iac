@@ -58,7 +58,7 @@ fn schedule_contract() -> MutationContract {
     let replace = PropertyMutation::new(MutationMode::Replace, MutationMode::Unsupported);
     MutationContract::deny_all(ReplacementOrder::DeleteBeforeCreate)
         .requiring(PropertyPath::Target)
-        .requiring(PropertyPath::ScheduleName)
+        .requiring(PropertyPath::Name)
         .requiring(PropertyPath::CronExpression)
         .requiring(PropertyPath::ShellType)
         .requiring(PropertyPath::Enabled)
@@ -69,7 +69,7 @@ fn schedule_contract() -> MutationContract {
         .allowing_on_create(PropertyPath::Script)
         .with_property(PropertyPath::Target, replace)
         .with_property(PropertyPath::ServiceName, replace)
-        .with_property(PropertyPath::ScheduleName, in_place)
+        .with_property(PropertyPath::Name, in_place)
         .with_property(PropertyPath::CronExpression, in_place)
         .with_property(PropertyPath::ShellType, in_place)
         .with_property(PropertyPath::Enabled, in_place)
@@ -83,7 +83,7 @@ fn schedule_contract() -> MutationContract {
 fn schedule_properties(target: &str, cron: &str) -> BTreeMap<PropertyPath, OwnedValue> {
     BTreeMap::from([
         (PropertyPath::Target, text(target)),
-        (PropertyPath::ScheduleName, text("nightly")),
+        (PropertyPath::Name, text("nightly")),
         (PropertyPath::CronExpression, text(cron)),
         (PropertyPath::ShellType, text("bash")),
         (PropertyPath::Enabled, boolean(false)),
@@ -98,7 +98,7 @@ fn schedule_observation(target: &str, cron: &str) -> BTreeMap<PropertyPath, Prop
             PropertyObservation::Known(value(json!(target))),
         ),
         (
-            PropertyPath::ScheduleName,
+            PropertyPath::Name,
             PropertyObservation::Known(value(json!("nightly"))),
         ),
         (
@@ -317,7 +317,7 @@ fn schedule_change(plan: &Plan) -> &dokploy_core::PlannedChange {
 fn schedule_property_paths_are_stable_scoped_and_executables_are_sensitive() {
     for (path, text) in [
         (PropertyPath::ServiceName, "service_name"),
-        (PropertyPath::ScheduleName, "name"),
+        (PropertyPath::Name, "name"),
         (PropertyPath::CronExpression, "cron_expression"),
         (PropertyPath::ShellType, "shell_type"),
         (PropertyPath::Enabled, "enabled"),
@@ -408,9 +408,9 @@ fn desired_seam_validates_every_schedule_value_and_executable_shape() {
         (PropertyPath::Target, text("project.platform")),
         (PropertyPath::Target, text("schedule.other")),
         (PropertyPath::Target, text("not-an-address")),
-        (PropertyPath::ScheduleName, text("")),
-        (PropertyPath::ScheduleName, text(" padded")),
-        (PropertyPath::ScheduleName, OwnedValue::Null),
+        (PropertyPath::Name, text("")),
+        (PropertyPath::Name, text(" padded")),
+        (PropertyPath::Name, OwnedValue::Null),
         (PropertyPath::CronExpression, text("")),
         (PropertyPath::CronExpression, text("0 3 *\n* *")),
         (PropertyPath::CronExpression, OwnedValue::Null),
@@ -542,9 +542,9 @@ fn remote_seam_rejects_invalid_schedule_observations() {
             PropertyPath::Target,
             PropertyObservation::Known(value(json!("postgres.main"))),
         ),
-        (PropertyPath::ScheduleName, PropertyObservation::KnownAbsent),
+        (PropertyPath::Name, PropertyObservation::KnownAbsent),
         (
-            PropertyPath::ScheduleName,
+            PropertyPath::Name,
             PropertyObservation::Known(value(json!(""))),
         ),
         (
@@ -737,7 +737,7 @@ fn creation_requires_target_schedule_fields_and_command_and_is_ordered_after_its
 
     for required in [
         PropertyPath::Target,
-        PropertyPath::ScheduleName,
+        PropertyPath::Name,
         PropertyPath::CronExpression,
         PropertyPath::ShellType,
         PropertyPath::Enabled,

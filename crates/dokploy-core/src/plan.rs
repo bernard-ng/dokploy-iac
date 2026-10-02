@@ -510,7 +510,9 @@ impl ResourceCheckpoint {
                 | PropertyPath::VolumeName
                 | PropertyPath::FilePath
                 | PropertyPath::ServiceName
-                | PropertyPath::ScheduleName
+                | PropertyPath::Name
+                | PropertyPath::Color
+                | PropertyPath::Tags
                 | PropertyPath::CronExpression
                 | PropertyPath::ShellType
                 | PropertyPath::Enabled

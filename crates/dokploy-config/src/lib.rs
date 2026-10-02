@@ -24,14 +24,15 @@ mod writer;
 
 pub use field::Field;
 pub use file::{
-    ConfigFileError, DEFAULT_CONFIG_FILE, LoadedConfig, MAX_CONFIG_BYTES, initialize, load,
-    load_with_digest,
+    ConfigFileError, DEFAULT_CONFIG_FILE, DEFAULT_SETTINGS_FILE, LoadedConfig, MAX_CONFIG_BYTES,
+    initialize, initialize_settings, load, load_with_digest, peek_scope,
 };
 pub use model::{
     ApplicationConfig, BackupConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig,
     LibSqlConfig, LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig,
     PortConfig, PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig,
-    ScheduleConfig, SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue,
+    ScheduleConfig, SecurityConfig, SourceLocation, TagConfig, ValidationDiagnostic,
+    ValidationIssue,
 };
 pub use types::{
     ConfigValue, DomainConfig, ExternalName, ExternalSelector, GitHubSource, Lifecycle,
@@ -44,5 +45,5 @@ pub use writer::{
     ConfigWriteError, DomainDocument, EnvironmentDocument, LibSqlDocument, LifecycleDocument,
     MariaDbDocument, MongoDocument, MountDocument, MySqlDocument, PortDocument, PostgresDocument,
     ProjectDocument, RedirectDocument, RedisDocument, ScheduleDocument, SecurityDocument,
-    SourceDocument, render, write,
+    SettingsDocument, SourceDocument, TagDocument, render, write,
 };

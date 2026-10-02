@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
-use dokploy_state::{ResourceAddress, ResourceKind};
+use dokploy_state::{ResourceAddress, ResourceKind, StateScope};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema, schema_for};
 use serde::Deserialize;
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy, Spanned};
@@ -9,7 +9,8 @@ use crate::model::{
     ApplicationConfig, BackupConfig, ComposeConfig, ConfigError, DokployConfig, EnvironmentConfig,
     LibSqlConfig, LibSqlNodeConfig, MariaDbConfig, MongoConfig, MountConfig, MySqlConfig,
     PortConfig, PostgresConfig, ProjectConfig, RedirectConfig, RedisConfig, ResourceConfig,
-    ScheduleConfig, SecurityConfig, SourceLocation, ValidationDiagnostic, ValidationIssue, address,
+    ScheduleConfig, SecurityConfig, SourceLocation, TagConfig, ValidationDiagnostic,
+    ValidationIssue, address,
 };
 use crate::{
     ConfigValue, DomainConfig, ExternalSelector, Field, Lifecycle, MountSourceConfig,
@@ -42,12 +43,71 @@ struct RawDocument {
     removed: Vec<Spanned<RemovedDeclaration>>,
 }
 
+/// A settings document: instance-level resources, tracked in their own state.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawSettingsDocument {
+    #[schemars(schema_with = "version_schema")]
+    version: u32,
+    #[schemars(with = "RawSettings")]
+    settings: Spanned<RawSettings>,
+    #[serde(default)]
+    #[schemars(with = "Vec<MoveDeclaration>")]
+    moves: Vec<Spanned<MoveDeclaration>>,
+    #[serde(default)]
+    #[schemars(with = "Vec<RemovedDeclaration>")]
+    removed: Vec<Spanned<RemovedDeclaration>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawSettings {
+    #[serde(default)]
+    #[schemars(with = "Option<RawServerSettings>")]
+    server: Option<Spanned<RawServerSettings>>,
+}
+
+/// The `settings.server` group: resources owned by the Dokploy instance itself.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawServerSettings {
+    #[serde(default)]
+    #[schemars(with = "BTreeMap<String, RawTag>")]
+    tags: BTreeMap<String, Spanned<RawTag>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RawTag {
+    /// The remote tag name, when it is not the logical name.
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    color: Field<String>,
+    #[serde(default)]
+    #[schemars(with = "Vec<String>")]
+    depends_on: Vec<ResourceAddress>,
+    #[serde(default)]
+    lifecycle: Lifecycle,
+}
+
+/// Detects which top-level document key is present before strict parsing.
+#[derive(Deserialize)]
+struct ScopePeek {
+    #[serde(default)]
+    project: Option<Spanned<serde::de::IgnoredAny>>,
+    #[serde(default)]
+    settings: Option<Spanned<serde::de::IgnoredAny>>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RawProject {
     name: String,
     #[serde(default)]
     description: Field<String>,
+    #[serde(default)]
+    tags: Field<Vec<ExternalSelector>>,
     #[serde(default)]
     #[schemars(with = "Vec<String>")]
     depends_on: Vec<ResourceAddress>,
@@ -478,19 +538,147 @@ impl DokployConfig {
                 max_merge_keys: 0,
             },
         };
-        let raw: Spanned<RawDocument> = serde_saphyr::from_str_with_options(source, options)
-            .map_err(|error| {
-                error
-                    .location()
-                    .map_or(ConfigError::ParseWithoutLocation, |location| {
-                        ConfigError::Parse {
-                            line: location.line(),
-                            column: location.column(),
-                        }
-                    })
-            })?;
+        let parse_error = |error: serde_saphyr::Error| {
+            error
+                .location()
+                .map_or(ConfigError::ParseWithoutLocation, |location| {
+                    ConfigError::Parse {
+                        line: location.line(),
+                        column: location.column(),
+                    }
+                })
+        };
 
-        Self::from_raw(raw.value)
+        // The top-level key selects the document scope. A document with neither key
+        // is parsed as a project so its error is the familiar missing-`project` one.
+        let peek: Spanned<ScopePeek> =
+            serde_saphyr::from_str_with_options(source, options.clone()).map_err(parse_error)?;
+        match (peek.value.project, peek.value.settings) {
+            (Some(_), Some(settings)) => {
+                let diagnostic = ValidationDiagnostic::new(
+                    ValidationIssue::AmbiguousDocumentScope,
+                    source_location(settings.defined),
+                );
+                Err(ConfigError::Invalid {
+                    issues: vec![diagnostic.issue()],
+                    diagnostics: vec![diagnostic],
+                })
+            }
+            (None, Some(_)) => {
+                let raw: Spanned<RawSettingsDocument> =
+                    serde_saphyr::from_str_with_options(source, options).map_err(parse_error)?;
+                Self::from_raw_settings(raw.value)
+            }
+            _ => {
+                let raw: Spanned<RawDocument> =
+                    serde_saphyr::from_str_with_options(source, options).map_err(parse_error)?;
+                Self::from_raw(raw.value)
+            }
+        }
+    }
+
+    /// Classifies a document by its top-level key without validating it.
+    ///
+    /// A document that cannot be parsed, or that declares both keys, is treated as
+    /// a project so the strict parser reports the real error.
+    pub(crate) fn scope_of_source(source: &str) -> StateScope {
+        #[derive(Deserialize)]
+        struct Keys {
+            #[serde(default)]
+            project: Option<serde::de::IgnoredAny>,
+            #[serde(default)]
+            settings: Option<serde::de::IgnoredAny>,
+        }
+
+        if source.len() > crate::MAX_CONFIG_BYTES {
+            return StateScope::Project;
+        }
+        let options = serde_saphyr::options! {
+            duplicate_keys: DuplicateKeyPolicy::Error,
+            merge_keys: MergeKeyPolicy::Error,
+            budget: serde_saphyr::budget! {
+                max_events: 50_000,
+                max_aliases: 0,
+                max_anchors: 0,
+                max_depth: 32,
+                max_documents: 1,
+                max_nodes: 20_000,
+            },
+        };
+        match serde_saphyr::from_str_with_options::<Keys>(source, options) {
+            Ok(Keys {
+                project: None,
+                settings: Some(_),
+            }) => StateScope::Settings,
+            _ => StateScope::Project,
+        }
+    }
+
+    fn from_raw_settings(raw: RawSettingsDocument) -> Result<Self, ConfigError> {
+        if raw.version != 1 {
+            return Err(ConfigError::UnsupportedVersion { found: raw.version });
+        }
+
+        let mut resources = BTreeMap::new();
+        let mut locations = BTreeMap::new();
+        let mut diagnostics = Vec::new();
+
+        if let Some(server) = raw.settings.value.server {
+            for (name, raw_tag) in server.value.tags {
+                let location = source_location(raw_tag.defined);
+                let raw_tag = raw_tag.value;
+                if let Some(tag_address) =
+                    address(ResourceKind::Tag, name, location, &mut diagnostics)
+                {
+                    insert_resource(
+                        &mut resources,
+                        &mut locations,
+                        tag_address,
+                        ResourceConfig::Tag(TagConfig {
+                            name: raw_tag.name,
+                            color: raw_tag.color,
+                            depends_on: raw_tag.depends_on,
+                            lifecycle: raw_tag.lifecycle,
+                        }),
+                        location,
+                        &mut diagnostics,
+                    );
+                }
+            }
+        }
+
+        // Settings resources have no containment, so there are no parent edges.
+        let parents = BTreeMap::new();
+        validate_resources(&mut resources, &parents, &locations, &mut diagnostics);
+        validate_moves(&resources, &raw.moves, &raw.removed, &mut diagnostics);
+        validate_removed(&resources, &raw.removed, &mut diagnostics);
+
+        let mut moves: Vec<_> = raw.moves.into_iter().map(|item| item.value).collect();
+        let mut removed: Vec<_> = raw.removed.into_iter().map(|item| item.value).collect();
+        moves.sort();
+        removed.sort();
+        diagnostics.sort();
+
+        if diagnostics.is_empty() {
+            Ok(Self {
+                version: raw.version,
+                scope: StateScope::Settings,
+                resources,
+                parents,
+                locations,
+                moves,
+                removed,
+            })
+        } else {
+            let issues = diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.issue())
+                .collect();
+            Err(ConfigError::Invalid {
+                issues,
+                diagnostics,
+            })
+        }
     }
 
     fn from_raw(raw: RawDocument) -> Result<Self, ConfigError> {
@@ -529,6 +717,7 @@ impl DokployConfig {
                 address.clone(),
                 ResourceConfig::Project(ProjectConfig {
                     description: project.description,
+                    tags: project.tags,
                     depends_on: project.depends_on,
                     lifecycle: project.lifecycle,
                 }),
@@ -924,6 +1113,7 @@ impl DokployConfig {
         if diagnostics.is_empty() {
             Ok(Self {
                 version: raw.version,
+                scope: StateScope::Project,
                 resources,
                 parents,
                 locations,
@@ -945,6 +1135,10 @@ impl DokployConfig {
 
 pub(crate) fn json_schema() -> Schema {
     schema_for!(RawDocument)
+}
+
+pub(crate) fn settings_json_schema() -> Schema {
+    schema_for!(RawSettingsDocument)
 }
 
 fn insert_resource(
@@ -1013,6 +1207,7 @@ fn validate_resources(
     let mut schedule_collisions = BTreeSet::new();
     let mut backup_collisions = BTreeSet::new();
     let mut schedule_compose_services = BTreeMap::new();
+    let mut tag_names = BTreeSet::new();
 
     for (address, config) in resources.iter_mut() {
         let location = locations
@@ -1162,6 +1357,14 @@ fn validate_resources(
             );
         }
 
+        if let ResourceConfig::Tag(tag) = &*config {
+            validate_tag(address, tag, &mut tag_names, location, diagnostics);
+        }
+
+        if let ResourceConfig::Project(project) = &*config {
+            validate_project_tags(&project.tags, location, diagnostics);
+        }
+
         if let ResourceConfig::Port(port) = config {
             let parent = parents
                 .get(address)
@@ -1248,6 +1451,81 @@ fn validate_resources(
 
         config.depends_on_mut().sort();
         config.lifecycle_mut().normalize();
+    }
+}
+
+/// A tag name is free text and the collision key within the whole instance.
+fn validate_tag(
+    address: &ResourceAddress,
+    tag: &TagConfig,
+    names: &mut BTreeSet<String>,
+    location: SourceLocation,
+    diagnostics: &mut Vec<ValidationDiagnostic>,
+) {
+    let explicit_name_invalid = tag
+        .name
+        .as_deref()
+        .is_some_and(|name| !crate::types::text_is_valid_name(name));
+    let color_invalid = matches!(
+        &tag.color,
+        Field::Set(color) if !crate::types::text_is_valid_name(color)
+    );
+    if explicit_name_invalid || color_invalid {
+        emit(diagnostics, ValidationIssue::InvalidTagField, location);
+    }
+    if matches!(tag.color, Field::Clear) {
+        emit(
+            diagnostics,
+            ValidationIssue::TagFieldCannotBeCleared,
+            location,
+        );
+    }
+
+    let remote_name = tag.name.as_deref().unwrap_or(address.name().as_str());
+    if !names.insert(remote_name.to_owned()) {
+        emit(
+            diagnostics,
+            ValidationIssue::DuplicateTagCollision,
+            location,
+        );
+    }
+}
+
+/// Project tags are exact-name selectors; the explicit `local` form has no meaning.
+fn validate_project_tags(
+    tags: &Field<Vec<ExternalSelector>>,
+    location: SourceLocation,
+    diagnostics: &mut Vec<ValidationDiagnostic>,
+) {
+    match tags {
+        Field::Unmanaged => {}
+        Field::Clear => emit(
+            diagnostics,
+            ValidationIssue::TagFieldCannotBeCleared,
+            location,
+        ),
+        Field::Set(selectors) => {
+            let mut seen = BTreeSet::new();
+            for selector in selectors {
+                if selector.is_local() {
+                    emit(
+                        diagnostics,
+                        ValidationIssue::LocalSelectorUnsupported,
+                        location,
+                    );
+                } else if selector.name_is_invalid() {
+                    emit(
+                        diagnostics,
+                        ValidationIssue::InvalidExternalSelectorName,
+                        location,
+                    );
+                } else if let Some(name) = selector.name()
+                    && !seen.insert(name.to_owned())
+                {
+                    emit(diagnostics, ValidationIssue::DuplicateProjectTag, location);
+                }
+            }
+        }
     }
 }
 
@@ -1547,14 +1825,17 @@ fn output_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bo
         | ResourceKind::Security
         | ResourceKind::Mount
         | ResourceKind::Schedule
-        | ResourceKind::Backup => false,
+        | ResourceKind::Backup
+        | ResourceKind::Tag => false,
     }
 }
 
 fn ignored_change_is_supported(kind: ResourceKind, property: &crate::PropertyPath) -> bool {
     let value = property.to_string();
     match kind {
-        ResourceKind::Project | ResourceKind::Environment => value == "description",
+        ResourceKind::Project => matches!(value.as_str(), "description" | "tags"),
+        ResourceKind::Environment => value == "description",
+        ResourceKind::Tag => matches!(value.as_str(), "name" | "color"),
         ResourceKind::Application => matches!(
             value.as_str(),
             "description"

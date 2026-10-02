@@ -130,6 +130,8 @@ pub struct ExecutionBindings {
     ports: BTreeMap<ResourceAddress, PortBinding>,
     redirect_regexes: BTreeMap<ResourceAddress, String>,
     security_usernames: BTreeMap<ResourceAddress, String>,
+    tag_names: BTreeMap<ResourceAddress, String>,
+    project_tags: BTreeMap<ResourceAddress, Vec<String>>,
     mounts: BTreeMap<ResourceAddress, MountBinding>,
     schedules: BTreeMap<ResourceAddress, ScheduleBinding>,
     backups: BTreeMap<ResourceAddress, BackupBinding>,
@@ -220,6 +222,18 @@ impl ExecutionBindings {
     #[must_use]
     pub fn security_username(&self, address: &ResourceAddress) -> Option<&str> {
         self.security_usernames.get(address).map(String::as_str)
+    }
+
+    /// Returns the configured remote tag name, the instance-wide collision key.
+    #[must_use]
+    pub fn tag_name(&self, address: &ResourceAddress) -> Option<&str> {
+        self.tag_names.get(address).map(String::as_str)
+    }
+
+    /// Returns the sorted tag names a project is configured to carry, if it owns them.
+    #[must_use]
+    pub fn project_tags(&self, address: &ResourceAddress) -> Option<&[String]> {
+        self.project_tags.get(address).map(Vec::as_slice)
     }
 
     /// Returns every configured external selector as `(address, property, kind, selector)`.
@@ -423,11 +437,14 @@ fn compile_desired_with_fingerprints(
         let mut properties = BTreeMap::new();
 
         match resource {
-            ResourceConfig::Project(project) => compile_string_field(
-                &mut properties,
-                PropertyPath::Description,
-                project.description(),
-            ),
+            ResourceConfig::Project(project) => {
+                compile_string_field(
+                    &mut properties,
+                    PropertyPath::Description,
+                    project.description(),
+                );
+                compile_project_tags(&mut properties, project.tags());
+            }
             ResourceConfig::Environment(environment) => compile_string_field(
                 &mut properties,
                 PropertyPath::Description,
@@ -687,7 +704,7 @@ fn compile_desired_with_fingerprints(
                     );
                 }
                 properties.insert(
-                    PropertyPath::ScheduleName,
+                    PropertyPath::Name,
                     comparable(serde_json::json!(schedule.name())),
                 );
                 properties.insert(
@@ -724,6 +741,13 @@ fn compile_desired_with_fingerprints(
                 )?;
             }
             ResourceConfig::Backup(backup) => compile_backup(&mut properties, backup),
+            ResourceConfig::Tag(tag) => {
+                // The remote name defaults to the logical name, which is always a
+                // valid tag name, so a tag always owns its name.
+                let name = tag.name().unwrap_or_else(|| address.name().as_str());
+                properties.insert(PropertyPath::Name, comparable(serde_json::json!(name)));
+                compile_string_field(&mut properties, PropertyPath::Color, tag.color());
+            }
         }
 
         let protection = match resource.lifecycle().protect() {
@@ -882,8 +906,7 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
                     },
                 );
             }
-            ResourceConfig::Project(_)
-            | ResourceConfig::Environment(_)
+            ResourceConfig::Environment(_)
             | ResourceConfig::Application(_)
             | ResourceConfig::Compose(_)
             | ResourceConfig::Postgres(_)
@@ -892,6 +915,26 @@ fn compile_bindings(config: &DokployConfig) -> ExecutionBindings {
             | ResourceConfig::Mongo(_)
             | ResourceConfig::LibSql(_)
             | ResourceConfig::Redis(_) => {}
+            ResourceConfig::Project(project) => {
+                if let Field::Set(selectors) = project.tags() {
+                    let mut names = selectors
+                        .iter()
+                        .filter_map(ExternalSelector::name)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    names.sort();
+                    names.dedup();
+                    bindings.project_tags.insert(address.clone(), names);
+                }
+            }
+            ResourceConfig::Tag(tag) => {
+                bindings.tag_names.insert(
+                    address.clone(),
+                    tag.name()
+                        .unwrap_or_else(|| address.name().as_str())
+                        .to_owned(),
+                );
+            }
         }
     }
 
@@ -930,6 +973,28 @@ fn compile_dependencies(resource: &ResourceConfig) -> Vec<ResourceAddress> {
     }
 
     dependencies.into_iter().collect()
+}
+
+/// A project owns its tag association as one sorted list of exact tag names.
+///
+/// An empty list is the explicit "no tags" intent; omission leaves the
+/// associations unmanaged. Names, not identities, are the stable selector.
+fn compile_project_tags(
+    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+    tags: &Field<Vec<dokploy_config::ExternalSelector>>,
+) {
+    let Field::Set(selectors) = tags else {
+        // A null list is rejected at parse time, so only omission remains.
+        return;
+    };
+    let mut names = selectors
+        .iter()
+        .filter_map(dokploy_config::ExternalSelector::name)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    properties.insert(PropertyPath::Tags, comparable(serde_json::json!(names)));
 }
 
 fn compile_string_field(

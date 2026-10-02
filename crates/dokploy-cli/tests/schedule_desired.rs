@@ -82,7 +82,7 @@ fn compiles_typed_schedule_ownership_dependency_and_environment_containment() {
     let nightly = &resources[&"schedule.nightly".parse().unwrap()];
     let properties = nightly.properties();
     assert_eq!(properties[&PropertyPath::Target], text("application.api"));
-    assert_eq!(properties[&PropertyPath::ScheduleName], text("nightly"));
+    assert_eq!(properties[&PropertyPath::Name], text("nightly"));
     assert_eq!(properties[&PropertyPath::CronExpression], text("0 3 * * *"));
     assert_eq!(properties[&PropertyPath::ShellType], text("bash"));
     assert_eq!(properties[&PropertyPath::Enabled], boolean(false));

@@ -15,7 +15,7 @@ use dokploy_state::{
 use thiserror::Error;
 
 use crate::desired::{CompileDesiredError, compile_desired_for_instance};
-use crate::remote::{DiscoverRemoteError, DiscoveryAuthority, discover_remote};
+use crate::remote::DiscoverRemoteError;
 
 /// Value-free action that recovery can prove safe from durable and fresh evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,7 +106,8 @@ pub async fn recover_workspace_with_approval(
 ) -> Result<RecoveryResult, RecoverWorkspaceError> {
     let workspace = canonical_workspace(config_file)?;
     let instance = dokploy_state::InstanceIdentity::parse(client.base_url().as_str())?;
-    let store = StateStore::new(&workspace, instance.clone())?;
+    let scope = dokploy_config::peek_scope(config_file)?;
+    let store = StateStore::with_scope(&workspace, instance.clone(), scope)?;
     let mut recovery = store.begin_recovery()?;
     let unresolved = recovery
         .evidence()
@@ -199,13 +200,7 @@ async fn decision_for_step(
         .expect("a SHA-256 digest is canonical lowercase hexadecimal");
     let compiled =
         compile_desired_for_instance(&loaded.config, source_digest, instance.clone(), workspace)?;
-    let remote = discover_remote(
-        client,
-        &compiled,
-        recovery.current_state(),
-        DiscoveryAuthority::reconciliation(),
-    )
-    .await?;
+    let remote = crate::scope::discover(client, &compiled, recovery.current_state()).await?;
     // A selector that no longer names exactly one record cannot prove which external
     // record an uncertain step selected, so the operator must decide.
     if compiled

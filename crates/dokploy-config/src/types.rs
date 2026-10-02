@@ -165,11 +165,17 @@ impl ExternalName {
     }
 
     pub(crate) fn is_valid(&self) -> bool {
-        !self.0.is_empty()
-            && self.0.len() <= Self::MAX_BYTES
-            && self.0.trim() == self.0
-            && !self.0.chars().any(char::is_control)
+        text_is_valid_name(&self.0)
     }
+}
+
+/// Returns whether free text can name one external record or tag: non-empty,
+/// bounded, trimmed, and free of control characters.
+pub(crate) fn text_is_valid_name(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= ExternalName::MAX_BYTES
+        && text.trim() == text
+        && !text.chars().any(char::is_control)
 }
 
 impl fmt::Debug for ExternalName {

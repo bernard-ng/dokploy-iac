@@ -296,7 +296,7 @@ async fn matching_direct_and_collection_records_are_present_without_leaking_exec
     assert_eq!(resource.remote_id().as_str(), "schedule-1");
     for path in [
         PropertyPath::Target,
-        PropertyPath::ScheduleName,
+        PropertyPath::Name,
         PropertyPath::CronExpression,
         PropertyPath::ShellType,
         PropertyPath::Enabled,

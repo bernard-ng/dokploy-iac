@@ -61,6 +61,7 @@ pub enum ResourceKind {
     Mount,
     Schedule,
     Backup,
+    Tag,
 }
 
 impl ResourceKind {
@@ -85,6 +86,7 @@ impl ResourceKind {
             Self::Mount => "mount",
             Self::Schedule => "schedule",
             Self::Backup => "backup",
+            Self::Tag => "tag",
         }
     }
 
@@ -109,6 +111,7 @@ impl ResourceKind {
             | Self::Mount
             | Self::Schedule
             | Self::Backup => StateScope::Project,
+            Self::Tag => StateScope::Settings,
         }
     }
 
@@ -116,7 +119,7 @@ impl ResourceKind {
     #[must_use]
     pub const fn containment_parent_kind(self) -> Option<Self> {
         match self {
-            Self::Project => None,
+            Self::Project | Self::Tag => None,
             Self::Environment => Some(Self::Project),
             Self::Application
             | Self::Compose
@@ -215,6 +218,7 @@ impl FromStr for ResourceKind {
             "mount" => Ok(Self::Mount),
             "schedule" => Ok(Self::Schedule),
             "backup" => Ok(Self::Backup),
+            "tag" => Ok(Self::Tag),
             _ => Err(ResourceKindParseError {
                 value: value.to_owned(),
             }),

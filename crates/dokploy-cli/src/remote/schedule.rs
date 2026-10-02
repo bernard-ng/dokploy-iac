@@ -446,7 +446,7 @@ fn schedule_properties(
                 Some(service) => known(serde_json::json!(service)),
                 None => PropertyObservation::KnownAbsent,
             },
-            PropertyPath::ScheduleName => known(serde_json::json!(schedule.name)),
+            PropertyPath::Name => known(serde_json::json!(schedule.name)),
             PropertyPath::CronExpression => known(serde_json::json!(schedule.cron_expression)),
             PropertyPath::ShellType => known(serde_json::json!(shell_label(schedule.shell_type))),
             PropertyPath::Enabled => known(serde_json::json!(schedule.enabled)),

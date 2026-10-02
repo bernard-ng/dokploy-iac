@@ -16,6 +16,7 @@ pub mod recovery;
 mod redaction;
 pub mod remote;
 pub mod saved_plan;
+mod scope;
 mod state_command;
 // This foundation becomes reachable when the desired compiler accepts sensitive inputs.
 #[allow(dead_code)]

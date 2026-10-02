@@ -229,7 +229,7 @@ fn schedule_create_input(
     state: &StateFile,
 ) -> Result<CreateSchedule, ApplyWorkspaceError> {
     let (target, _) = checkpoint_sdk_target(checkpoint, state)?;
-    let name = required_string(checkpoint, &PropertyPath::ScheduleName)?;
+    let name = required_string(checkpoint, &PropertyPath::Name)?;
     let cron_expression = required_string(checkpoint, &PropertyPath::CronExpression)?;
     let shell_type = shell_from_label(&required_string(checkpoint, &PropertyPath::ShellType)?)?;
     let enabled = required_bool(checkpoint, &PropertyPath::Enabled)?;
@@ -305,7 +305,7 @@ fn schedule_update_input(
         }
     };
 
-    let name = text(&PropertyPath::ScheduleName, &current.name)?;
+    let name = text(&PropertyPath::Name, &current.name)?;
     let cron_expression = text(&PropertyPath::CronExpression, &current.cron_expression)?;
     let shell_type = if managed(&PropertyPath::ShellType) {
         shell_from_label(&required_string(checkpoint, &PropertyPath::ShellType)?)?
