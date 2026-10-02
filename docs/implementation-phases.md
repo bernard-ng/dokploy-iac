@@ -133,7 +133,7 @@ durable state semantics.
 - Exercise crash, partial-failure, recovery, and destructive-operation safety
   in the automated test suite.
 
-## Phase 8: resource breadth — in progress
+## Phase 8: resource breadth — complete
 
 - Typed SDK contracts and live create-update-delete evidence cover MySQL,
   MariaDB, MongoDB, LibSQL, and Compose.
@@ -229,8 +229,18 @@ durable state semantics.
   Backup disabled, covers all mutable fields, and proves no backup ran, no
   destination was contacted, and no target was deployed. Compose and web-server
   Backups remain unsupported.
-- Completion still requires any adapter that is not yet declarative, each with
-  unit, sanitized fixture, and live create-update-delete evidence.
+- Every in-scope adapter is declarative end to end with unit, sanitized
+  fixture, and live create-update-delete evidence: Project, Environment,
+  Application, Compose, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, Redis,
+  Domain, Port, Redirect, Security, Mount, Schedule, and database Backup, plus
+  external server, registry, and destination selector resolution with
+  saved-plan receipt binding.
+- Deliberately out of scope, and fail-closed rather than partially supported:
+  Compose and web-server Backups (ADR 0039), Schedule server and Dokploy-server
+  scopes (ADR 0033), cascading replacement of a service that still has
+  dependents (ADR 0045 and 0048), and post-create database credential changes.
+  Selecting a project's organization, importing a whole project recursively,
+  and managing organization-wide infrastructure settings are future work.
 
 ## Phase 9: import and refactoring workflows — complete
 
