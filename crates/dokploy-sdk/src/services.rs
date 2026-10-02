@@ -1,15 +1,16 @@
 use crate::{
     ApplicationCollection, ApplicationDetails, ApplicationEnvironmentDocument, ApplicationId,
     BackupCollection, BackupDetails, BackupId, BackupTarget, ComposeCollection, ComposeDetails,
-    ComposeId, ComposeVolumePolicy, DestinationCollection, Dokploy, DomainCollection,
-    DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails, EnvironmentId, Error,
-    LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection, MariaDbDetails, MariaDbId,
-    MongoCollection, MongoDetails, MongoId, MountCollection, MountDetails, MountId,
-    MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails, PortId,
-    PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId, ProjectTopology,
-    RedirectCollection, RedirectDetails, RedirectId, RedisCollection, RedisDetails, RedisId,
-    RegistryCollection, ScheduleCollection, ScheduleDetails, ScheduleId, ScheduleTarget,
-    SecurityCollection, SecurityDetails, SecurityId, ServerCollection, ServiceTarget,
+    ComposeId, ComposeScheduleCollection, ComposeVolumePolicy, DestinationCollection, Dokploy,
+    DomainCollection, DomainDetails, DomainId, EnvironmentCollection, EnvironmentDetails,
+    EnvironmentId, Error, LibSqlCollection, LibSqlDetails, LibSqlId, MariaDbCollection,
+    MariaDbDetails, MariaDbId, MongoCollection, MongoDetails, MongoId, MountCollection,
+    MountDetails, MountId, MySqlCollection, MySqlDetails, MySqlId, PortCollection, PortDetails,
+    PortId, PostgresCollection, PostgresDetails, PostgresId, ProjectDetails, ProjectId,
+    ProjectTopology, RedirectCollection, RedirectDetails, RedirectId, RedisCollection,
+    RedisDetails, RedisId, RegistryCollection, ScheduleCollection, ScheduleDetails, ScheduleId,
+    ScheduleTarget, SecurityCollection, SecurityDetails, SecurityId, ServerCollection,
+    ServiceTarget,
 };
 
 use crate::{
@@ -453,6 +454,14 @@ impl<'a> Schedules<'a> {
     /// Reads the authoritative bounded Schedule collection for one exact target.
     pub async fn by_target(&self, target: ScheduleTarget) -> Result<ScheduleCollection, Error> {
         self.client.schedules_by_target(&target).await
+    }
+
+    /// Reads the authoritative bounded Schedule collection for every service of one Compose.
+    pub async fn by_compose(
+        &self,
+        compose_id: ComposeId,
+    ) -> Result<ComposeScheduleCollection, Error> {
+        self.client.schedules_by_compose(&compose_id).await
     }
 
     /// Creates a Schedule and validates its returned and collected identity.

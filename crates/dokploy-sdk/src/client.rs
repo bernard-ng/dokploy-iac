@@ -88,18 +88,18 @@ use crate::services::{
 };
 use crate::{
     ApplicationId, BackupId, BackupTarget, ChangeLibSqlPassword, ChangeMariaDbPassword,
-    ChangeMongoPassword, ChangeMySqlPassword, ComposeId, ComposeVolumePolicy, CreateApplication,
-    CreateBackup, CreateCompose, CreateDomain, CreateEnvironment, CreateLibSql, CreateMariaDb,
-    CreateMongo, CreateMount, CreateMySql, CreatePort, CreatePostgres, CreateProject,
-    CreateRedirect, CreateRedis, CreateSchedule, CreateSecurity, CreatedApplication, CreatedBackup,
-    CreatedCompose, CreatedDomain, CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo,
-    CreatedMount, CreatedMySql, CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect,
-    CreatedRedis, CreatedSchedule, CreatedSecurity, DomainId, EnvironmentId, LibSqlId, MariaDbId,
-    MongoId, MountId, MySqlId, PortId, PostgresId, ProjectId, RedirectId, RedisId, ScheduleId,
-    ScheduleTarget, SecurityId, ServiceTarget, UpdateApplication, UpdateBackup, UpdateCompose,
-    UpdateDomain, UpdateEnvironment, UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount,
-    UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect, UpdateRedis,
-    UpdateSchedule, UpdateSecurity,
+    ChangeMongoPassword, ChangeMySqlPassword, ComposeId, ComposeScheduleCollection,
+    ComposeVolumePolicy, CreateApplication, CreateBackup, CreateCompose, CreateDomain,
+    CreateEnvironment, CreateLibSql, CreateMariaDb, CreateMongo, CreateMount, CreateMySql,
+    CreatePort, CreatePostgres, CreateProject, CreateRedirect, CreateRedis, CreateSchedule,
+    CreateSecurity, CreatedApplication, CreatedBackup, CreatedCompose, CreatedDomain,
+    CreatedEnvironment, CreatedLibSql, CreatedMariaDb, CreatedMongo, CreatedMount, CreatedMySql,
+    CreatedPort, CreatedPostgres, CreatedProject, CreatedRedirect, CreatedRedis, CreatedSchedule,
+    CreatedSecurity, DomainId, EnvironmentId, LibSqlId, MariaDbId, MongoId, MountId, MySqlId,
+    PortId, PostgresId, ProjectId, RedirectId, RedisId, ScheduleId, ScheduleTarget, SecurityId,
+    ServiceTarget, UpdateApplication, UpdateBackup, UpdateCompose, UpdateDomain, UpdateEnvironment,
+    UpdateLibSql, UpdateMariaDb, UpdateMongo, UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres,
+    UpdateProject, UpdateRedirect, UpdateRedis, UpdateSchedule, UpdateSecurity,
 };
 
 const API_KEY_HEADER: &str = "x-api-key";
@@ -1361,9 +1361,72 @@ impl Dokploy {
             ScheduleTarget::Application(_) => ScheduleCreateRequestBodyScheduleType::Application,
             ScheduleTarget::Compose { .. } => ScheduleCreateRequestBodyScheduleType::Compose,
         };
+        let schedules = self.schedule_list(target.id(), schedule_type).await?;
+        let mut seen_names = HashSet::new();
+        if schedules
+            .iter()
+            .any(|schedule| schedule.target != *target || !seen_names.insert(schedule.name.clone()))
+        {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_LIST.operation(),
+            });
+        }
+
+        Ok(ScheduleCollection::new(target.clone(), schedules))
+    }
+
+    /// Reads every Schedule of one Compose across all of its services.
+    ///
+    /// `schedule.list` takes only the Compose identity, so the response may span
+    /// several service names. Names must be unique within each service.
+    pub(crate) async fn schedules_by_compose(
+        &self,
+        compose_id: &ComposeId,
+    ) -> Result<ComposeScheduleCollection, Error> {
+        if compose_id.as_str().is_empty() {
+            return Err(invalid_request(
+                SCHEDULE_LIST.operation(),
+                "Schedule target fields are invalid",
+            ));
+        }
+        let schedules = self
+            .schedule_list(
+                compose_id.as_str(),
+                ScheduleCreateRequestBodyScheduleType::Compose,
+            )
+            .await?;
+        let mut seen_names = HashSet::new();
+        let contradictory = schedules.iter().any(|schedule| match &schedule.target {
+            ScheduleTarget::Compose {
+                compose_id: owner,
+                service_name,
+            } => {
+                owner != compose_id
+                    || !seen_names.insert((service_name.clone(), schedule.name.clone()))
+            }
+            ScheduleTarget::Application(_) => true,
+        });
+        if contradictory {
+            return Err(Error::UnexpectedResponse {
+                operation: SCHEDULE_LIST.operation(),
+            });
+        }
+
+        Ok(ComposeScheduleCollection::new(
+            compose_id.clone(),
+            schedules,
+        ))
+    }
+
+    /// Reads one bounded `schedule.list` response with unique, valid identities.
+    async fn schedule_list(
+        &self,
+        id: &str,
+        schedule_type: ScheduleCreateRequestBodyScheduleType,
+    ) -> Result<Vec<ScheduleDetails>, Error> {
         let request = ScheduleListRequest {
             query: ScheduleListRequestQuery {
-                id: target.id().to_owned(),
+                id: id.to_owned(),
                 schedule_type,
             },
         };
@@ -1372,21 +1435,17 @@ impl Dokploy {
             .read_query_json_secret(SCHEDULE_LIST, &request.query)
             .await?;
         let mut seen_ids = HashSet::new();
-        let mut seen_names = HashSet::new();
-        let contradictory = schedules.len() > SCHEDULE_LIST_ITEM_LIMIT
+        if schedules.len() > SCHEDULE_LIST_ITEM_LIMIT
             || schedules.iter().any(|schedule| {
-                !schedule.is_valid()
-                    || schedule.target != *target
-                    || !seen_ids.insert(schedule.schedule_id.as_str().to_owned())
-                    || !seen_names.insert(schedule.name.clone())
-            });
-        if contradictory {
+                !schedule.is_valid() || !seen_ids.insert(schedule.schedule_id.as_str().to_owned())
+            })
+        {
             return Err(Error::UnexpectedResponse {
                 operation: SCHEDULE_LIST.operation(),
             });
         }
 
-        Ok(ScheduleCollection::new(target.clone(), schedules))
+        Ok(schedules)
     }
 
     pub(crate) async fn schedule_create(

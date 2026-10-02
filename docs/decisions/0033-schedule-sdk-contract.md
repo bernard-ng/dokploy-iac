@@ -72,6 +72,16 @@ authoritative absence, zero executions and deployments, and project cleanup.
 Fixtures are published only after a sanitized whole-tree candidate passes API
 key, command, script, and contract checks.
 
+## Compose-wide read
+
+`schedule.list` accepts only the Compose identity, so one response can describe
+Schedules of several services. `schedules().by_compose` returns a bounded
+`ComposeScheduleCollection` with the same limits as the target read: every item
+must be a Compose Schedule owned by the requested Compose, identities are
+unique, and a name is unique within its service. This closes the enumeration
+gap for whole-project import; mutations still require an exact
+`ScheduleTarget` and the per-target collection.
+
 ## Consequences
 
 - Executable command and script text does not enter safe models, debug output,
