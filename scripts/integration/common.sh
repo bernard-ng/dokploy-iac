@@ -3,6 +3,9 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=version.sh
+source "$(dirname "${BASH_SOURCE[0]}")/version.sh"
+
 runtime_directory="$repository_root/.integration"
 secret_directory="$runtime_directory/secrets"
 state_directory="$runtime_directory/state"

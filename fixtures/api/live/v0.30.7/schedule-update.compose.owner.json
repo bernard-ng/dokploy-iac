@@ -1,0 +1,19 @@
+{
+  "appName": "application-contract-test",
+  "applicationId": null,
+  "command": "<redacted>",
+  "composeId": "compose-1",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "cronExpression": "13 5 * * 1",
+  "description": "updated disabled schedule",
+  "enabled": false,
+  "name": "compose-job-updated",
+  "organizationId": null,
+  "scheduleId": "schedule-1",
+  "scheduleType": "compose",
+  "script": "<redacted>",
+  "serverId": null,
+  "serviceName": "worker",
+  "shellType": "sh",
+  "timezone": "Africa/Lubumbashi"
+}

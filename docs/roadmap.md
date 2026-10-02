@@ -37,8 +37,11 @@ Done: `dokploy-spec` (parser, lint, registry, request-side ledger), grammar v0 a
 working specs (`registry`, `redirect` full; `application`, `environment`, `project`
 partial), `cargo xtask specs --check` in CI, the `dokploy api` command prefix, and the
 golden-mining tool (`cargo xtask goldens`, [`docs/design/golden-ledger.md`](design/golden-ledger.md)):
-891 legacy scenarios in `goldens/`, all `pending`. Remaining: the manually dispatched
-capture workflow (ADR 0015).
+891 legacy scenarios in `goldens/`, all `pending`; and the manually dispatched capture
+workflow (`.github/workflows/capture.yaml`, [`docs/ci.md`](ci.md#capturing-fixtures)) with
+`specs/versions.yaml`. A full capture ran against a real v0.30.7 and produced
+`fixtures/api/live/v0.30.7/`; v0.30.7 stays `candidate` until its live suite passes.
+M0 is complete once the capture workflow has run once in GitHub Actions.
 
 ## Cost gate (end of M2)
 

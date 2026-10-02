@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use xtask::{
     CodegenMode, ProcessGenerator, repository_imperative_paths, repository_paths, repository_root,
     run_codegen, run_goldens_check, run_goldens_extract, run_imperative_codegen, run_specs_check,
+    run_versions_check, version_image,
 };
 
 fn main() -> ExitCode {
@@ -19,7 +20,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args().skip(1);
     let Some(command) = arguments.next() else {
         return Err(
-            "usage: cargo xtask codegen [--check] | specs --check | goldens [--check]".into(),
+            "usage: cargo xtask codegen [--check] | specs --check | goldens [--check] | versions [--check | --image VERSION]"
+                .into(),
         );
     };
     if command == "specs" {
@@ -28,9 +30,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if command == "goldens" {
         return run_goldens(arguments);
     }
+    if command == "versions" {
+        return run_versions(arguments);
+    }
     if command != "codegen" {
         return Err(format!(
-            "unknown xtask command `{command}`; expected `codegen`, `specs`, or `goldens`"
+            "unknown xtask command `{command}`; expected `codegen`, `specs`, `goldens`, or `versions`"
         )
         .into());
     }
@@ -124,5 +129,34 @@ fn run_goldens(
             eprintln!("  - {failure}");
         }
         Err(format!("{} golden ledger problem(s)", report.failures.len()).into())
+    }
+}
+
+fn run_versions(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    match arguments.next().as_deref() {
+        Some("--image") => {
+            let Some(requested) = arguments.next() else {
+                return Err("usage: cargo xtask versions --image VERSION".into());
+            };
+            println!("{}", version_image(&root, &requested)?);
+            Ok(())
+        }
+        None | Some("--check") => {
+            let report = run_versions_check(&root)?;
+            print!("{}", report.table);
+            if report.failures.is_empty() {
+                println!("versions ok");
+                Ok(())
+            } else {
+                for failure in &report.failures {
+                    eprintln!("  - {failure}");
+                }
+                Err(format!("{} version problem(s)", report.failures.len()).into())
+            }
+        }
+        Some(argument) => Err(format!("unknown versions argument `{argument}`").into()),
     }
 }

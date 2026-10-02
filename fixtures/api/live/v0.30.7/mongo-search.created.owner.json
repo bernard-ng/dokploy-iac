@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "appName": "mongodb-contract-test",
+      "applicationStatus": "idle",
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "description": "Disposable MongoDB SDK contract",
+      "environmentId": "environment-1",
+      "mongoId": "mongo-1",
+      "name": "MongoDB Contract Test"
+    }
+  ],
+  "total": 1
+}

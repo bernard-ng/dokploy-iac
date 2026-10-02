@@ -1,0 +1,15 @@
+# The Dokploy versions this tool knows (ADR 0014).
+#
+# supported: fixtures are captured from it and the live suite passes; the first
+#            supported entry is what the integration scripts use by default.
+# candidate: captures may be taken against it (the manually dispatched capture
+#            workflow, ADR 0015); it is not yet trusted for mutations. Promote it
+#            to supported once its fixtures are reviewed and the live suite passes.
+versions:
+  - version: "0.30.6"
+    status: supported
+    image: dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8
+    openapi: openapi/dokploy.json
+  - version: "0.30.7"
+    status: candidate
+    image: dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c

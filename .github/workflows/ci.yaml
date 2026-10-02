@@ -39,6 +39,9 @@ jobs:
       - name: Check the legacy-test ledger
         run: cargo xtask goldens --check
 
+      - name: Check the supported Dokploy versions
+        run: cargo xtask versions --check
+
   generated-sdk:
     name: Generated SDK compilation
     runs-on: ubuntu-24.04
@@ -69,6 +72,9 @@ jobs:
 
       - name: Validate integration Compose configuration
         run: docker compose --file compose.integration.yaml config --quiet
+
+      - name: Test the fixture checker modes
+        run: scripts/integration/test-fixture-check-modes.sh
 
   dependencies:
     name: Dependency policy

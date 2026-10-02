@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "appName": "mysql-contract-test",
+      "applicationStatus": "idle",
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "description": "Disposable MySQL SDK contract",
+      "environmentId": "environment-1",
+      "mysqlId": "mysql-1",
+      "name": "MySQL Contract Test"
+    }
+  ],
+  "total": 1
+}

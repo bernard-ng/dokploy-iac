@@ -1,0 +1,34 @@
+{
+  "application": {
+    "appName": "application-contract-test",
+    "environment": {
+      "project": {
+        "organizationId": "organization-1"
+      }
+    },
+    "serverId": null
+  },
+  "applicationId": "application-1",
+  "compose": null,
+  "composeId": null,
+  "content": null,
+  "filePath": null,
+  "hostPath": null,
+  "libsql": null,
+  "libsqlId": null,
+  "mariadb": null,
+  "mariadbId": null,
+  "mongo": null,
+  "mongoId": null,
+  "mountId": "mount-1",
+  "mountPath": "/updated",
+  "mysql": null,
+  "mysqlId": null,
+  "postgres": null,
+  "postgresId": null,
+  "redis": null,
+  "redisId": null,
+  "serviceType": "application",
+  "type": "volume",
+  "volumeName": "volume-1"
+}

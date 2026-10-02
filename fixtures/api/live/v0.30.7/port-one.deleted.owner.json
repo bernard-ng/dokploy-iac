@@ -1,0 +1,10 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "port.one",
+    "zodError": null
+  },
+  "message": "Port not found"
+}

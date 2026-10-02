@@ -14,6 +14,7 @@ mod model;
 mod registry;
 mod types;
 mod validate;
+mod versions;
 
 pub use error::{Issue, LoadError};
 pub use ledger::{KindLedger, LedgerReport, OperationIndex, check_ledger};
@@ -26,3 +27,4 @@ pub use model::{
 pub use registry::SpecRegistry;
 pub use types::{FieldType, TypeError, parse_type};
 pub use validate::validate_spec;
+pub use versions::{DokployVersion, VersionStatus, Versions};

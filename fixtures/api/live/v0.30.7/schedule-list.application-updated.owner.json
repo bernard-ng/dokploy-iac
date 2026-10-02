@@ -1,0 +1,30 @@
+[
+  {
+    "appName": "application-contract-test",
+    "application": {
+      "appName": "application-contract-test",
+      "applicationId": "application-1",
+      "name": "Schedule Contract Application",
+      "serverId": null
+    },
+    "applicationId": "application-1",
+    "command": "<redacted>",
+    "compose": null,
+    "composeId": null,
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "cronExpression": "13 5 * * 1",
+    "deployments": [],
+    "description": "updated disabled schedule",
+    "enabled": false,
+    "name": "application-job-updated",
+    "organizationId": null,
+    "scheduleId": "schedule-1",
+    "scheduleType": "application",
+    "script": "<redacted>",
+    "server": null,
+    "serverId": null,
+    "serviceName": null,
+    "shellType": "sh",
+    "timezone": "Africa/Lubumbashi"
+  }
+]

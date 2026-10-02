@@ -11,12 +11,14 @@ use thiserror::Error;
 mod goldens;
 mod imperative;
 mod specs;
+mod versions;
 
 pub use goldens::{GoldensExtractReport, GoldensReport, run_goldens_check, run_goldens_extract};
 pub use imperative::{
     ImperativeCodegenError, ImperativeCodegenPaths, ImperativeCodegenReport, run_imperative_codegen,
 };
 pub use specs::{SpecsReport, run_specs_check};
+pub use versions::{VersionsReport, load_versions, run_versions_check, version_image};
 
 pub const GENERATOR_VERSION: &str = "oas3-gen 0.28.0";
 

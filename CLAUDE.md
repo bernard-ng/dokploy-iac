@@ -13,6 +13,7 @@ cargo test --workspace --all-targets --all-features --locked
 cargo xtask codegen --check
 cargo xtask specs --check
 cargo xtask goldens --check
+cargo xtask versions --check
 ```
 
 ## Rules

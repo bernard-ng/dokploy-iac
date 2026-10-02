@@ -23,7 +23,7 @@ run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 6)"
 workspace="$state_directory/external-selector-contract-$run_id"
 raw_directory="$workspace/private"
 candidate_fixture_root="$workspace/candidate/api/live"
-candidate_versioned_fixture_directory="$candidate_fixture_root/v0.30.6"
+candidate_versioned_fixture_directory="$candidate_fixture_root/$dokploy_version"
 published_fixture_backup="$workspace/published-fixtures.backup"
 mkdir -p "$raw_directory" "$candidate_versioned_fixture_directory"
 chmod 700 "$workspace" "$raw_directory"
@@ -90,9 +90,9 @@ api_get() {
 
 response_code="$(api_get settings.getDokployVersion "$raw_directory/version.json")"
 if [[ "$response_code" != 200 ]] \
-    || ! jq -e '. == "v0.30.6"' "$raw_directory/version.json" >/dev/null
+    || ! jq -e --arg version "$dokploy_version" '. == $version' "$raw_directory/version.json" >/dev/null
 then
-    echo "External-selector capture requires Dokploy v0.30.6." >&2
+    echo "External-selector capture requires Dokploy $dokploy_version." >&2
     exit 1
 fi
 
@@ -184,9 +184,10 @@ jq '
 jq -n \
     --argjson servers "$(jq 'length' "$raw_directory/server.all.json")" \
     --argjson registries "$(jq 'length' "$raw_directory/registry.all.json")" \
-    --argjson destinations "$(jq 'length' "$raw_directory/destination.all.json")" '
+    --argjson destinations "$(jq 'length' "$raw_directory/destination.all.json")" \
+    --arg version "$dokploy_version" '
     {
-        version:"v0.30.6",sanitized:true,mutations:0,
+        version:$version,sanitized:true,mutations:0,
         endpoints:["server.all","registry.all","destination.all"],
         boundedItemLimit:10000,
         duplicateIdsRejected:true,

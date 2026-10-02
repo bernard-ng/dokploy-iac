@@ -3,8 +3,37 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=version.sh
+source "$(dirname "${BASH_SOURCE[0]}")/version.sh"
+
 fixture_directory="${DOKPLOY_FIXTURE_DIRECTORY:-$repository_root/fixtures/api/live}"
-versioned_fixture_directory="$fixture_directory/v0.30.6"
+versioned_fixture_directory="$fixture_directory/$dokploy_version"
+
+# DOKPLOY_FIXTURE_CHECK=partial (used while capturing, ADR 0015) tolerates kinds that
+# have not been captured yet. Whatever is present is still checked completely, and the
+# leak scans always cover the whole directory.
+fixture_check="${DOKPLOY_FIXTURE_CHECK:-full}"
+if [[ "$fixture_check" != full && "$fixture_check" != partial ]]; then
+    echo "DOKPLOY_FIXTURE_CHECK must be full or partial, got $fixture_check." >&2
+    exit 1
+fi
+
+fixture_missing() {
+    [[ "$fixture_check" == full && ! -s "$versioned_fixture_directory/$1" ]]
+}
+
+if [[ "$fixture_check" == partial ]]; then
+    # Skip a content check whose fixture file was not captured.
+    jq() {
+        local argument
+        for argument in "$@"; do
+            if [[ "$argument" == "$versioned_fixture_directory/"* && ! -e "$argument" ]]; then
+                return 0
+            fi
+        done
+        command jq "$@"
+    }
+fi
 
 if [[ ! -d "$fixture_directory" ]]; then
     echo "No live fixtures found." >&2
@@ -221,98 +250,98 @@ required_external_selector_fixtures=(
 )
 
 for fixture_name in "${required_redis_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_domain_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Domain contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_mysql_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing MySQL contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_mariadb_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing MariaDB contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_mongo_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing MongoDB contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_libsql_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing LibSQL contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_compose_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Compose contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_mount_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Mount contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_port_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Port contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_redirect_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Redirect contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_security_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Security contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_schedule_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Schedule contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_backup_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing Backup contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
 
 for fixture_name in "${required_external_selector_fixtures[@]}"; do
-    if [[ ! -s "$versioned_fixture_directory/$fixture_name" ]]; then
+    if fixture_missing "$fixture_name"; then
         echo "Missing external-selector contract fixture: $fixture_name" >&2
         exit 1
     fi
@@ -384,9 +413,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .cleanupEvidence.oneStatus == 404
@@ -551,9 +580,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .mutations == {create:1, update:1, delete:1}
@@ -652,9 +681,9 @@ then
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .idlePasswordChange == {userStatus:400, rootStatus:400}
@@ -752,9 +781,9 @@ then
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .idlePasswordChange == {userStatus:400, rootStatus:400}
@@ -852,9 +881,9 @@ then
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .idleCredentialChangeStatus == 400
@@ -950,9 +979,9 @@ then
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .discovery.source == "project.one"
@@ -1035,9 +1064,9 @@ then
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .createIdentity.direct == true
@@ -1122,9 +1151,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .mountType == "volume"
@@ -1218,9 +1247,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .createIdentity.direct == true
@@ -1320,9 +1349,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .collisionKey == "application+regex"
@@ -1420,9 +1449,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .collisionKey == "application+username"
@@ -1540,9 +1569,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .executed == false
@@ -1660,9 +1689,9 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
-    and .image == "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
     and .sanitized == true
     and .deployed == false
     and .executed == false
@@ -1730,8 +1759,8 @@ if ! jq --exit-status '
     exit 1
 fi
 
-if ! jq --exit-status '
-    .version == "v0.30.6"
+if ! jq --exit-status --arg version "$dokploy_version" '
+    .version == $version
     and .sanitized == true
     and .mutations == 0
     and .endpoints == ["server.all", "registry.all", "destination.all"]

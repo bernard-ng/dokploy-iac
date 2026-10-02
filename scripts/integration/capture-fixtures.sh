@@ -9,7 +9,7 @@ source "$script_directory/common.sh"
 
 api_key_file="$state_directory/api-key"
 raw_directory="$state_directory/fixtures"
-fixture_directory="$repository_root/fixtures/api/live/v0.30.6"
+fixture_directory="$repository_root/fixtures/api/live/$dokploy_version"
 sanitizer="$script_directory/sanitize-fixture.jq"
 
 if [[ ! -s "$api_key_file" ]]; then
@@ -47,8 +47,8 @@ api_get "settings.getDokployVersion" "$raw_directory/version.json"
 
 runtime_version="$(jq -er '.' "$raw_directory/version.json")"
 
-if [[ "$runtime_version" != "v0.30.6" ]]; then
-    echo "Expected Dokploy v0.30.6, received $runtime_version." >&2
+if [[ "$runtime_version" != "$dokploy_version" ]]; then
+    echo "Expected Dokploy $dokploy_version, received $runtime_version." >&2
     exit 1
 fi
 
@@ -104,13 +104,13 @@ do
 done
 
 jq -n --sort-keys --indent 2 \
-    --arg capturedAt "2026-09-28" \
+    --arg capturedAt "$captured_at" \
     --arg role "owner" \
     --arg version "$runtime_version" \
-    --arg image "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8" \
+    --arg image "$dokploy_image" \
     '{capturedAt:$capturedAt,role:$role,version:$version,image:$image,sanitized:true}' \
     >"$fixture_directory/metadata.json"
 
 "$script_directory/check-fixtures.sh"
 
-echo "Captured sanitized Dokploy v0.30.6 fixtures in $fixture_directory"
+echo "Captured sanitized Dokploy $dokploy_version fixtures in $fixture_directory"

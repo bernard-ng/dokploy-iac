@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `specs/versions.yaml` and `cargo xtask versions [--check | --image VERSION]`: the Dokploy
+  versions the tool knows (0.30.6 `supported`, 0.30.7 `candidate`), each with its digest-pinned
+  image (ADR 0014). `--check` is in CI and keeps the compose file and
+  `scripts/integration/version.sh` equal to the default pin.
+- The manually dispatched **Capture fixtures** workflow (ADR 0015): captures any listed
+  version against its pinned image, scans the result for secrets, and uploads the sanitised
+  fixtures as an artifact; it never commits. `scripts/integration/capture-all.sh` runs the same
+  thing locally. The integration scripts take `DOKPLOY_VERSION` and `DOKPLOY_IMAGE`
+  (default 0.30.6), and `check-fixtures.sh` has a `partial` mode for versions being captured.
+- `fixtures/api/live/v0.30.7/`: a full capture against a real Dokploy v0.30.7. Apart from
+  metadata and generated names, its responses match v0.30.6; `postgres.one` reports a mount's
+  `applicationId` as `null` where v0.30.6 reported an application id.
 - `cargo xtask goldens` and `goldens/`: a ledger of the 891 first-engine tests that
   define "done" for each ported kind (ADR 0016). Each test is mined (operations,
   expected request lines, fixtures, canned data) and classified `pending`, `covered`,
@@ -347,6 +359,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The six capture scripts that published straight into `fixtures/api/live/` (compose, libsql,
+  mariadb, mongo, mount, mysql) wrote mode 0600 files that the fixture check rejects; they now
+  install mode 0644. Capture dates in metadata are the capture day (`DOKPLOY_CAPTURED_AT`
+  overrides) instead of a literal.
 - **Breaking:** the generated API commands moved under one prefix:
   `dokploy api <resource> <operation> [options]` replaces `dokploy <resource>
   <operation>`. The top level now holds only the declarative commands (`init`,

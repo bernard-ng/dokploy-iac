@@ -1,0 +1,10 @@
+{
+  "code": "NOT_FOUND",
+  "data": {
+    "code": "NOT_FOUND",
+    "httpStatus": 404,
+    "path": "mysql.one",
+    "zodError": null
+  },
+  "message": "MySql not found"
+}

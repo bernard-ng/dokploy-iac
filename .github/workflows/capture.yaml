@@ -1,0 +1,110 @@
+name: Capture fixtures
+
+# Records live Dokploy API responses as sanitised fixtures (ADR 0015). Run it by hand
+# from the Actions tab. It never commits: the fixtures are uploaded as an artifact,
+# which is reviewed and then added to `fixtures/api/live/<version>/` in a pull request.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Dokploy version listed in specs/versions.yaml (for example 0.30.7)
+        required: true
+        default: "0.30.7"
+        type: string
+      captures:
+        description: >-
+          Space-separated captures (for example "redirect port"), or "all". Names are the
+          middle of scripts/integration/capture-<name>-contract.sh, plus "fixtures".
+        required: true
+        default: all
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: Capture Dokploy ${{ inputs.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Resolve the digest-pinned image
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CAPTURES: ${{ inputs.captures }}
+        run: |
+          if [[ ! "$INPUT_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must look like 0.30.7" >&2
+            exit 1
+          fi
+          if [[ ! "$INPUT_CAPTURES" =~ ^[a-z0-9\ -]+$ ]]; then
+            echo "captures must be lowercase names separated by spaces, or all" >&2
+            exit 1
+          fi
+          image="$(cargo xtask versions --image "$INPUT_VERSION")"
+          {
+            echo "DOKPLOY_VERSION=v${INPUT_VERSION#v}"
+            echo "DOKPLOY_IMAGE=$image"
+          } >> "$GITHUB_ENV"
+          echo "Capturing against $image"
+
+      - name: Start the pinned Dokploy
+        run: scripts/integration/up.sh
+
+      - name: Capture
+        id: capture
+        continue-on-error: true
+        env:
+          INPUT_CAPTURES: ${{ inputs.captures }}
+        # The word splitting of the validated names is intended.
+        run: scripts/integration/capture-all.sh $INPUT_CAPTURES
+
+      - name: Scan the fixtures for secrets
+        id: scan
+        if: ${{ !cancelled() }}
+        env:
+          DOKPLOY_FIXTURE_CHECK: partial
+        run: scripts/integration/check-fixtures.sh
+
+      - name: Summarise what was captured
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+        run: |
+          {
+            echo "### Dokploy ${DOKPLOY_VERSION}"
+            echo
+            echo "Image: \`${DOKPLOY_IMAGE}\`"
+            echo
+            echo "Files: $(find "fixtures/api/live/${DOKPLOY_VERSION}" -type f | wc -l)"
+            echo
+            echo "Changed against the checked-out fixtures:"
+            echo '```'
+            git status --short -- fixtures
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the sanitised fixtures
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: dokploy-fixtures-${{ env.DOKPLOY_VERSION }}
+          path: fixtures/api/live/${{ env.DOKPLOY_VERSION }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Fail when a capture failed
+        if: ${{ !cancelled() && steps.capture.outcome == 'failure' }}
+        run: |
+          echo "At least one capture failed; the artifact holds the ones that succeeded." >&2
+          exit 1
+
+      - name: Remove the disposable Dokploy
+        if: ${{ always() }}
+        run: scripts/integration/reset.sh

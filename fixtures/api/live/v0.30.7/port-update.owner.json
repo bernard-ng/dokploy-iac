@@ -1,0 +1,8 @@
+{
+  "applicationId": "application-1",
+  "portId": "port-1",
+  "protocol": "udp",
+  "publishMode": "host",
+  "publishedPort": 19090,
+  "targetPort": 9090
+}

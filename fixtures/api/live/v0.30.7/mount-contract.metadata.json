@@ -1,0 +1,25 @@
+{
+  "capturedAt": "2026-10-02",
+  "cleanupEvidence": {
+    "applicationMountsEmpty": true,
+    "listEmpty": true,
+    "oneStatus": 404,
+    "projectOneStatus": 404
+  },
+  "createIdentity": {
+    "createStatus": 200,
+    "direct": true,
+    "targetVerified": true
+  },
+  "deployed": false,
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "mountType": "volume",
+  "removeStatus": 200,
+  "role": "owner",
+  "sanitized": true,
+  "update": {
+    "mountPathPersisted": true,
+    "status": 200
+  },
+  "version": "v0.30.7"
+}
