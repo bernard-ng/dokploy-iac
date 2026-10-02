@@ -1,0 +1,38 @@
+# An application redirect. A leaf kind: collection embedded in the parent's
+# response, and an update that sends the whole object from a fresh read.
+kind: redirect
+scope: project
+parent: application
+section: redirects
+title: Application redirect
+class: managed
+identity:
+  key: null
+  collision: [regex]
+  address: "redirect.{key}"
+api:
+  id: redirectId
+  create:
+    op: redirects.create
+    attach: { applicationId: parent_id }
+  update: { op: redirects.update }
+  remove: { op: redirects.delete }
+  read:
+    list:
+      embedded_in: { parent_op: application.one, pointer: /redirects }
+    one: { op: redirects.one, id_param: redirectId, agree: true }
+  create_identity:
+    from_response: /redirectId
+fields:
+  regex:
+    type: text
+    min_len: 1
+  replacement:
+    type: text
+    min_len: 1
+  permanent:
+    type: bool
+write:
+  - op: redirects.update
+    fields: [regex, replacement, permanent]
+    shape: full

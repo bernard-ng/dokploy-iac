@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- `dokploy-spec` crate and `specs/`: the kind spec format (grammar v0) with a parser,
+  structural lint, cross-spec registry, and an OpenAPI coverage ledger, plus working
+  specs for `registry`, `redirect`, and partial `application`, `environment`, and
+  `project`. `cargo xtask specs --check` runs in CI. Nothing in the engine reads the
+  specs yet (milestone M0 of `docs/roadmap.md`).
+
 ### Direction
 
 - Reset the documentation to the project's original goal (a Dokploy instance

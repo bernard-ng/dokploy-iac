@@ -1,10 +1,14 @@
 # Kind spec format
 
-The grammar of the files in `specs/`, as proposed by
-[ADR 0002](../decisions/0002-kind-specs-are-the-source-of-truth.md). This is a
-**design**: the M0 prototype settles the details, and any change after that goes
-through an ADR. The examples are illustrative but use real Dokploy operation and
-field names from `openapi/dokploy.json`.
+The grammar of the files in `specs/`, decided by
+[ADR 0002](../decisions/0002-kind-specs-are-the-source-of-truth.md). **Grammar v0 is
+implemented** by the `dokploy-spec` crate (`crates/dokploy-spec`), and the specs under
+`specs/` are the working reference: `registry` (flat), `redirect` (leaf),
+`application` (union and `env`, partial), plus the partial `project` and
+`environment` that complete the hierarchy. `cargo xtask specs --check` lints them and
+checks the request side of the coverage ledger against `openapi/dokploy.json`. The
+rest of the engine does not read specs yet (milestone M1 onwards); changes to the
+grammar after M0 go through an ADR.
 
 ## Files
 
@@ -23,13 +27,16 @@ section: registries            # key in the parent's YAML mapping
 since: "0.26.0"                # optional Dokploy range
 title: Container registry      # for docs and diagnostics
 class: managed                 # managed | adopt_only  (ADR 0013)
+coverage: full                 # full (default) | partial: a prototype whose
+                               # unclassified request fields are counted, not failed
 ```
 
 ## Identity
 
 ```yaml
 identity:
-  key: name                    # the field that is the natural key within the parent
+  key: name                    # field that is the natural key; `null` when the key is
+                               # purely logical (a redirect has no name)
   collision: [name]            # fields that must be unique among siblings, remotely
   address: "registry.{key}"
 ```
@@ -49,7 +56,7 @@ api:
     list:   { op: registry.all, authority: authoritative }
     one:    { op: registry.one, id_param: registryId, agree: true }
   create_identity:             # ADR 0008: how the new id is learned
-    diff_collection: { key: [name] }      # or: from_response: "/registryId"   or: none
+    diff_collection: { key: [name] }      # or: from_response: /registryId   or: none
   deploy: null                 # { op: compose.deploy, wait: deployment } for deployable kinds
 ```
 
@@ -150,8 +157,8 @@ Fields of the referenced operations that are deliberately not configuration:
 
 ```yaml
 ledger:
-  readonly: [registryId, createdAt, organizationId]
-  action:   [testRegistry]
+  readonly: [createdAt, organizationId]
+  derived:  [sourceType]       # request fields implied by another field (a union tag)
   ignored:
     - { field: registryType, reason: only value is "cloud"; kept as a constant }
 ```
@@ -169,12 +176,14 @@ capture, and no Rust.
 
 ### A leaf with a fresh-read update: `redirect`
 
+(The working file is `specs/project/redirect.yaml`.)
+
 ```yaml
 kind: redirect
 scope: project
 parent: application
 section: redirects
-identity: { key: name, collision: [regex], address: "redirect.{key}" }
+identity: { key: null, collision: [regex], address: "redirect.{key}" }
 api:
   id: redirectId
   create: { op: redirects.create, attach: { applicationId: parent_id } }

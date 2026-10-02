@@ -31,6 +31,14 @@ conformance generator, deploy, and the live and round-trip suites).
 Critical path: M0 → M1 → M2 → M3 → M6 → M8. M4, M5, and M7 can proceed in parallel
 once M2 is done.
 
+## M0 status
+
+Done: `dokploy-spec` (parser, lint, registry, request-side ledger), grammar v0 and five
+working specs (`registry`, `redirect` full; `application`, `environment`, `project`
+partial), `cargo xtask specs --check` in CI. Remaining: the golden-mining tool for the
+legacy tests, the manually dispatched capture workflow (ADR 0015), the `engine-v1` tag
+(maintainer), and the `dokploy api` prefix PR (`claude/api-command-prefix`).
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured

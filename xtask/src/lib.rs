@@ -9,10 +9,12 @@ use serde_json::Value;
 use thiserror::Error;
 
 mod imperative;
+mod specs;
 
 pub use imperative::{
     ImperativeCodegenError, ImperativeCodegenPaths, ImperativeCodegenReport, run_imperative_codegen,
 };
+pub use specs::{SpecsReport, run_specs_check};
 
 pub const GENERATOR_VERSION: &str = "oas3-gen 0.28.0";
 

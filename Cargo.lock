@@ -898,6 +898,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dokploy-spec"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "dokploy-state"
 version = "0.1.0"
 dependencies = [
@@ -3846,6 +3856,7 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "dokploy-spec",
  "serde_json",
  "tempfile",
  "thiserror",

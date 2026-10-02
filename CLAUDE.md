@@ -11,6 +11,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked
 cargo xtask codegen --check
+cargo xtask specs --check
 ```
 
 ## Rules

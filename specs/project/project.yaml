@@ -1,0 +1,38 @@
+# PROTOTYPE (coverage: partial). The root of a project document; only enough
+# fields to exercise the hierarchy. Completed in milestone M3.
+kind: project
+scope: project
+section: project
+title: Project
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "project.{key}"
+api:
+  id: projectId
+  create: { op: project.create }
+  update: { op: project.update }
+  remove: { op: project.remove }
+  read:
+    list: { op: project.all, authority: authoritative }
+    one: { op: project.one, id_param: projectId, agree: true }
+  create_identity:
+    from_response: /project/projectId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  description:
+    type: text
+    nullable: true
+write:
+  - op: project.update
+    fields: [name, description]
+    shape: partial
+children:
+  - { kind: environment, section: environments }
+ledger:
+  readonly: [createdAt, organizationId]

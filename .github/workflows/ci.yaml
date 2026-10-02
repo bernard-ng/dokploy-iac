@@ -33,6 +33,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets --all-features --locked
 
+      - name: Check kind specs against the OpenAPI contract
+        run: cargo xtask specs --check
+
   generated-sdk:
     name: Generated SDK compilation
     runs-on: ubuntu-24.04
