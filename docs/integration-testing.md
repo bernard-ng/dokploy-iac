@@ -847,3 +847,20 @@ scripts/integration/test-external-selectors-sdk.sh
 
 The wrapper requires Dokploy `v0.30.6` and performs no creates, updates,
 deletes, deployments, or executions.
+
+## Tag contract
+
+The tag endpoints are typed as untyped JSON in the generated contract, so the
+SDK adapter pins their response shapes with tests and rejects anything else.
+Record the live shapes against a local instance with:
+
+```bash
+scripts/integration/capture-tag-contract.sh
+```
+
+The command creates one disposable tag and project, exercises `tag.create`,
+`tag.all`, `tag.one`, `tag.update`, `tag.assignToProject`,
+`tag.removeFromProject`, and a tagged `project.one`, and removes both objects.
+It writes value-free shape evidence (JSON types only) to the integration state
+directory and never publishes fixtures, so a reviewer can compare the shapes
+with the adapter before adding sanitized fixtures.

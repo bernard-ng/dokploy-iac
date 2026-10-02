@@ -4,8 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Add a second document type for instance settings. A file with a top-level
+  `settings:` key (default `dokploy.settings.yaml`) is planned, applied,
+  recovered, and inspected against its own state lineage in `.dokploy/settings/`,
+  so it never blocks or reads project state. A document with both `project:` and
+  `settings:` is rejected with `DOKCFG070`. `dokploy init --settings` writes a
+  starter, `dokploy schema --document settings` prints its schema, and
+  `dokploy import settings` adopts the instance's tags into a new settings
+  workspace after the same offline convergence proof as project import.
+- Add the `tag` kind (`settings.server.tags`), with an optional remote `name`
+  and a set-only `color`, plus `project.tags`, a list of tag names a project
+  carries. Tags are matched by name and the executor resolves names to
+  identities from a fresh `tag.all` immediately before assigning or removing
+  them; a desired name that does not exist blocks the plan. Project import
+  writes the project's tags. New diagnostics: `DOKCFG071` (invalid tag field),
+  `DOKCFG072` (duplicate tag name), `DOKCFG073` (null tag color or project
+  tags), `DOKCFG074` (duplicate project tag). The tag response shapes are pinned
+  by SDK tests rather than a live capture; run
+  `scripts/integration/capture-tag-contract.sh` against a local instance to
+  record them. Anything the adapter does not recognise fails closed.
+
 ### Changed
 
+- State format 4 records a `scope` (`project` or `settings`). Version 3 files
+  decode as project scope and are rewritten on their next checkpoint. Older
+  CLIs cannot read format 4.
 - **Breaking:** nest `environments` under `project` in `dokploy.yaml`
   (`project.environments`), matching the Dokploy hierarchy and preparing
   whole-project import. A document that still has a top-level `environments`

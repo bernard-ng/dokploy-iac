@@ -38,10 +38,14 @@ about ownership, drift, secrets, remote identity, and recovery.
   select external infrastructure by stable local-or-named selectors that are
   resolved against fresh server, registry, and destination collections and
   bound into saved plans.
+- A second document, `dokploy.settings.yaml` (top-level `settings:`), for
+  instance-wide objects. It is planned against its own state lineage, so a
+  project document and a settings document can share a directory. Tags are the
+  first kind; a project attaches tags by name with `project.tags`.
 - Ownership-aware fields, typed references, dependencies, lifecycle rules,
   moves, removals, and `ignore_changes` semantics.
 - Dedicated containment separate from general dependency ordering, persisted
-  in strict state format version 3.
+  in strict state format version 4, which also records the document scope.
 - A three-way planner that compares desired configuration, durable state, and
   fresh remote observations.
 - Deterministic dependency ordering, drift attribution, protected deletion,
@@ -126,6 +130,11 @@ target/release/dokploy init --empty
 target/release/dokploy validate
 target/release/dokploy schema > dokploy.schema.json
 ```
+
+Instance settings use a separate document. Start one with
+`dokploy init --settings`, print its schema with
+`dokploy schema --document settings`, or adopt the tags that already exist with
+`dokploy import settings`.
 
 Connection settings can come from command-line overrides, environment
 variables, or a selected local context. Use `dokploy context --help` to inspect
