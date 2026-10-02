@@ -5,6 +5,7 @@ mod error;
 mod imperative;
 mod models;
 mod services;
+mod transport;
 
 pub use client::{Dokploy, DokployBuilder, MAX_JSON_RESPONSE_BYTES};
 pub use error::{BuildError, DokployError, Error};
@@ -39,3 +40,4 @@ pub use models::{
     UpdateMount, UpdateMySql, UpdatePort, UpdatePostgres, UpdateProject, UpdateRedirect,
     UpdateRedis, UpdateSchedule, UpdateSecurity, UpdateTag,
 };
+pub use transport::{OperationRequest, Transport};

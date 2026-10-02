@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `Transport` in `dokploy-sdk` (milestone M1, ADR 0003 and 0015): the seam the engine sends
+  through. A request is an operation id (`registry.all`), a query, and a JSON body; its HTTP
+  method comes from the pinned contract and an undeclared operation is refused before any
+  request. `Dokploy` implements it over HTTP with everything the client already guaranteed:
+  bounded responses, sanitised errors, a mutation never retried, and `OutcomeUnknown` when
+  completion cannot be proven. Any other implementor, such as the simulator, plugs in the same
+  way, so the engine can run in-process against an in-memory Dokploy.
 - `dokploy-model` (milestone M1, ADR 0005; [`docs/design/document-format.md`](docs/design/document-format.md)):
   the version 2 document model. `Document::parse` validates a `project:` or `settings:` document
   against the kind specs and reports every problem with a stable code (`DOKDOC001`-`012`), a

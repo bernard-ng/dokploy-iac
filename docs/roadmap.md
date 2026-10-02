@@ -52,7 +52,8 @@ and open sensitive paths ([`state-format.md`](design/state-format.md)); a `regis
 first-engine code, plans and checkpoints from its spec alone (kernel test).
 The document model (`dokploy-model`: parse, validate with positions, canonical render, JSON
 Schema; [`document-format.md`](design/document-format.md)).
-Next: the `Transport` trait and the engine skeleton.
+The `Transport` trait (`dokploy-sdk`): the engine sends through it, over HTTP or in memory.
+Next: the engine skeleton.
 
 ## Cost gate (end of M2)
 
