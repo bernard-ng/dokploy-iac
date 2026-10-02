@@ -516,7 +516,7 @@ fn state_mutations_advance_one_lineage_serial() {
     let address: ResourceAddress = "application.api".parse().expect("address must parse");
     let resource = resource_state(ResourceKind::Application, "application-1");
 
-    assert_eq!(state.format_version(), 3);
+    assert_eq!(state.format_version(), 4);
     assert_eq!(state.serial(), 0);
     assert_eq!(state.revision().serial(), 0);
     assert_eq!(state.revision().lineage(), lineage);
@@ -827,7 +827,7 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
     );
 
     let mut unsupported = serde_json::to_value(&state).expect("state must serialize");
-    unsupported["formatVersion"] = json!(4);
+    unsupported["formatVersion"] = json!(5);
     let unsupported = serde_json::to_vec(&unsupported).expect("state JSON must serialize");
     assert!(StateFile::from_json_slice(&unsupported).is_err());
 

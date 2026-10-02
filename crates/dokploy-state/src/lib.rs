@@ -15,7 +15,7 @@ pub use journal::{
 };
 pub use resource::{
     ResourceAddress, ResourceAddressParseError, ResourceKind, ResourceKindParseError, ResourceName,
-    ResourceNameError,
+    ResourceNameError, StateScope,
 };
 pub use sensitive::{
     FingerprintKeyId, FingerprintKeyIdError, SensitiveFingerprint, SensitiveInputs,
