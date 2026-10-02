@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt};
 
+use dokploy_spec::SpecRegistry;
 use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, ResourceKind, StateFile};
 use hmac::{Hmac, Mac};
 use serde::Serialize;
@@ -7,7 +8,7 @@ use sha2::Sha256;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{ComparableValue, OwnedValue, PropertyPath, SensitiveIntent};
+use crate::{ComparableValue, OwnedValue, PropertyPath, SensitiveIntent, spec_property};
 
 /// A lowercase SHA-256 digest of the configuration used to build desired state.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -397,9 +398,11 @@ fn validate_desired_resource(
             });
         }
     }
-    if resource.ignore_changes.iter().any(|path| {
-        path.is_sensitive() || matches!(path, PropertyPath::Source | PropertyPath::Environment)
-    }) {
+    if resource
+        .ignore_changes
+        .iter()
+        .any(|path| path.is_sensitive() || path.is_collection_root())
+    {
         return Err(DesiredStateError::InvalidIgnoredProperty {
             address: address.clone(),
         });
@@ -424,6 +427,23 @@ fn validate_desired_resource(
             address: address.clone(),
         });
     }
+    // The same rule for a spec collection: its entries cannot be ignored while the
+    // collection itself is owned.
+    if resource
+        .properties
+        .keys()
+        .filter(|owned| owned.spec_info().is_some() && owned.is_collection_root())
+        .any(|root| {
+            resource
+                .ignore_changes
+                .iter()
+                .any(|ignored| ignored.is_entry_of(root))
+        })
+    {
+        return Err(DesiredStateError::ConflictingLifecyclePaths {
+            address: address.clone(),
+        });
+    }
 
     validate_root_child_combinations(address, &resource.properties).map_err(|()| {
         DesiredStateError::ConflictingPropertyPaths {
@@ -440,13 +460,14 @@ fn validate_desired_resource(
 
 fn property_paths_overlap(left: &PropertyPath, right: &PropertyPath) -> bool {
     left == right
-        || matches!(left, PropertyPath::Source) && right.is_source_child()
-        || matches!(right, PropertyPath::Source) && left.is_source_child()
-        || matches!(left, PropertyPath::Environment) && right.is_environment_child()
-        || matches!(right, PropertyPath::Environment) && left.is_environment_child()
+        || left.is_collection_root() && right.is_entry_of(left)
+        || right.is_collection_root() && left.is_entry_of(right)
 }
 
 fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
+    if let Some(info) = path.spec_info() {
+        return spec_property::owned_value_valid(path, info, value);
+    }
     if matches!(
         path,
         PropertyPath::FileContent | PropertyPath::Command | PropertyPath::Script
@@ -670,7 +691,7 @@ fn selector_json_valid(path: &PropertyPath, value: &serde_json::Value) -> bool {
         return false;
     }
     match (object.get("local"), object.get("name")) {
-        (Some(local), None) => *path == PropertyPath::Server && local == &serde_json::json!(true),
+        (Some(local), None) => path.accepts_local_selector() && local == &serde_json::json!(true),
         (None, Some(name)) => name.as_str().is_some_and(external_name_valid),
         _ => false,
     }
@@ -687,7 +708,7 @@ fn external_name_valid(name: &str) -> bool {
 fn selector_owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
     match value {
         // Server placement and the backup destination cannot be cleared; local is explicit.
-        OwnedValue::Null => !matches!(path, PropertyPath::Server | PropertyPath::Destination),
+        OwnedValue::Null => path.selector_clearable(),
         OwnedValue::Value(value) => selector_json_valid(path, value.as_json()),
         OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
     }
@@ -696,9 +717,7 @@ fn selector_owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
 fn selector_observation_valid(path: &PropertyPath, observation: &PropertyObservation) -> bool {
     match observation {
         PropertyObservation::Known(value) => selector_json_valid(path, value.as_json()),
-        PropertyObservation::KnownAbsent => {
-            !matches!(path, PropertyPath::Server | PropertyPath::Destination)
-        }
+        PropertyObservation::KnownAbsent => path.selector_clearable(),
         PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
     }
 }
@@ -758,15 +777,10 @@ fn validate_root_child_combinations<V>(
     _address: &ResourceAddress,
     properties: &BTreeMap<PropertyPath, V>,
 ) -> Result<(), ()> {
-    if properties.contains_key(&PropertyPath::Source)
-        && properties.keys().any(PropertyPath::is_source_child)
-    {
-        return Err(());
-    }
-    if properties.contains_key(&PropertyPath::Environment)
-        && properties.keys().any(PropertyPath::is_environment_child)
-    {
-        return Err(());
+    for root in properties.keys().filter(|path| path.is_collection_root()) {
+        if properties.keys().any(|path| path.is_entry_of(root)) {
+            return Err(());
+        }
     }
     Ok(())
 }
@@ -813,6 +827,21 @@ impl StoredState {
 
     /// Projects a durable state file into typed planner properties.
     pub fn try_from_state(state: &StateFile) -> Result<Self, StoredStateError> {
+        Self::project(state, None)
+    }
+
+    /// Projects a durable state file into spec-resolved planner properties.
+    ///
+    /// Every resource kind in the state needs a spec in `specs`; paths come from
+    /// the spec instead of the closed vocabulary.
+    pub fn try_from_state_with_specs(
+        state: &StateFile,
+        specs: &SpecRegistry,
+    ) -> Result<Self, StoredStateError> {
+        Self::project(state, Some(specs))
+    }
+
+    fn project(state: &StateFile, specs: Option<&SpecRegistry>) -> Result<Self, StoredStateError> {
         let mut resources = BTreeMap::new();
         let mut physical_identities = BTreeMap::new();
 
@@ -825,17 +854,46 @@ impl StoredState {
                 });
             }
 
-            let mut properties = project_managed_inputs(
-                address,
-                resource.kind(),
-                resource.last_applied().as_json(),
-            )?;
-            for sensitive_path in resource.sensitive_inputs().paths() {
-                let path: PropertyPath = sensitive_path.to_string().parse().map_err(|_| {
+            let spec = match specs {
+                Some(specs) => Some(specs.get(resource.kind().as_str()).ok_or_else(|| {
                     StoredStateError::UnsupportedProperty {
                         address: address.clone(),
                     }
-                })?;
+                })?),
+                None => None,
+            };
+            let mut properties = match spec {
+                Some(spec) => spec_property::project_stored_inputs(
+                    address,
+                    spec,
+                    resource.last_applied().as_json(),
+                )?,
+                None => project_managed_inputs(
+                    address,
+                    resource.kind(),
+                    resource.last_applied().as_json(),
+                )?,
+            };
+            if spec.is_some() {
+                for (path, value) in &properties {
+                    if !path.valid_for_kind(resource.kind()) || !owned_value_valid(path, value) {
+                        return Err(StoredStateError::InvalidPropertyValue {
+                            address: address.clone(),
+                        });
+                    }
+                }
+            }
+            for sensitive_path in resource.sensitive_inputs().paths() {
+                let path: PropertyPath = match spec {
+                    Some(spec) => {
+                        spec_property::sensitive_path(address, spec, &sensitive_path.to_string())?
+                    }
+                    None => sensitive_path.to_string().parse().map_err(|_| {
+                        StoredStateError::UnsupportedProperty {
+                            address: address.clone(),
+                        }
+                    })?,
+                };
                 if !path.is_sensitive() || !path.valid_for_kind(resource.kind()) {
                     return Err(StoredStateError::InvalidPropertyPath {
                         address: address.clone(),
@@ -1411,7 +1469,7 @@ impl RemoteState {
             let valid = path.is_external_selector()
                 && path.valid_for_kind(address.kind())
                 && self.observations.contains_key(&address)
-                && (path == PropertyPath::Server || resolution != ExternalResolution::Local);
+                && (path.accepts_local_selector() || resolution != ExternalResolution::Local);
             if !valid {
                 return Err(RemoteStateError::InvalidExternalResolution { address });
             }
@@ -1636,6 +1694,9 @@ fn validate_remote_resource(
             )
         } else {
             match path {
+                PropertyPath::Spec(spec) => {
+                    spec_property::observation_valid(path, spec.info(), observation)
+                }
                 PropertyPath::Source => !matches!(
                     observation,
                     PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)

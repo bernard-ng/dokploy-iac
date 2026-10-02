@@ -3439,7 +3439,8 @@ fn application_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }
@@ -3533,7 +3534,8 @@ fn compose_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }
@@ -3869,7 +3871,8 @@ fn postgres_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }
@@ -4165,7 +4168,8 @@ fn mysql_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }
@@ -4483,7 +4487,8 @@ fn mariadb_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }
@@ -4802,7 +4807,8 @@ fn mongo_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }
@@ -5137,7 +5143,8 @@ fn libsql_properties(
             | PropertyPath::IncludeEncryptionKey
             | PropertyPath::Color
             | PropertyPath::Tags
-            | PropertyPath::DeploymentStatus => continue,
+            | PropertyPath::DeploymentStatus
+            | PropertyPath::Spec(_) => continue,
         };
         properties.insert(path.clone(), observed);
     }

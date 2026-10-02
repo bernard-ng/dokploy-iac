@@ -1122,7 +1122,10 @@ fn observed_value(
 ) -> Option<Option<OwnedValue>> {
     match observation {
         PropertyObservation::Known(value) => Some(Some(
-            if path == &PropertyPath::Environment
+            if (path == &PropertyPath::Environment
+                || path
+                    .spec_info()
+                    .is_some_and(|info| info.shape == dokploy_spec::PathShape::CollectionRoot))
                 && value
                     .as_json()
                     .as_object()

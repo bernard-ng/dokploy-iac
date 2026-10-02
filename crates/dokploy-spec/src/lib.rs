@@ -11,6 +11,7 @@ mod error;
 mod ledger;
 mod load;
 mod model;
+mod paths;
 mod registry;
 mod types;
 mod validate;
@@ -24,6 +25,7 @@ pub use model::{
     Identity, Ignored, KindClass, KindSpec, Ledger, ListRead, Mutability, OneRead, Operation, Read,
     Scope, Shape, ValueClass, WriteGroup,
 };
+pub use paths::{PathError, PathShape, PropertyInfo, ValueRules};
 pub use registry::SpecRegistry;
 pub use types::{FieldType, TypeError, parse_type};
 pub use validate::validate_spec;

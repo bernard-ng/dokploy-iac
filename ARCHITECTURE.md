@@ -29,7 +29,8 @@ How the v2 engine is built and the rules it must not break. Decisions are in
 ```
 
 `dokploy-engine` is the only crate that talks to Dokploy. `dokploy-core` has no
-transport, runtime, or CLI dependency. See [ADR 0003](docs/decisions/0003-layered-architecture-and-kept-kernel.md).
+transport, runtime, or CLI dependency; it reads `dokploy-spec` for property paths and
+mutation contracts. See [ADR 0003](docs/decisions/0003-layered-architecture-and-kept-kernel.md).
 
 ## Data flow
 

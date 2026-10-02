@@ -52,6 +52,8 @@ pub struct MutationContract {
     allowed_on_create: BTreeSet<PropertyPath>,
     required_on_create: BTreeSet<PropertyPath>,
     properties: BTreeMap<PropertyPath, PropertyMutation>,
+    /// Spec collection roots, so each entry follows its root's rules.
+    roots: BTreeSet<PropertyPath>,
     default_property: PropertyMutation,
     containment: MutationMode,
     replacement_order: ReplacementOrder,
@@ -65,6 +67,7 @@ impl MutationContract {
             allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
+            roots: BTreeSet::new(),
             default_property: PropertyMutation::new(
                 MutationMode::Unsupported,
                 MutationMode::Unsupported,
@@ -81,6 +84,7 @@ impl MutationContract {
             allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
+            roots: BTreeSet::new(),
             default_property: PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace),
             containment: MutationMode::InPlace,
             replacement_order: ReplacementOrder::DeleteBeforeCreate,
@@ -105,6 +109,9 @@ impl MutationContract {
     /// Defines mutation behavior for one property.
     #[must_use]
     pub fn with_property(mut self, path: PropertyPath, mutation: PropertyMutation) -> Self {
+        if path.spec_info().is_some() && path.is_collection_root() {
+            self.roots.insert(path.clone());
+        }
         self.properties.insert(path, mutation);
         self
     }
@@ -134,14 +141,27 @@ impl MutationContract {
 
     pub(crate) fn accepts_set_on_create(&self, path: &PropertyPath) -> bool {
         self.allowed_on_create.contains(path)
+            || self
+                .root_of(path)
+                .is_some_and(|root| self.allowed_on_create.contains(root))
     }
 
     pub(crate) fn property_mode(&self, path: &PropertyPath, clear: bool) -> MutationMode {
         self.properties
             .get(path)
+            .or_else(|| {
+                self.root_of(path)
+                    .and_then(|root| self.properties.get(root))
+            })
             .copied()
             .unwrap_or(self.default_property)
             .mode(clear)
+    }
+
+    /// The collection root whose rules govern `path`, when it is a spec entry.
+    fn root_of(&self, path: &PropertyPath) -> Option<&PropertyPath> {
+        path.spec_info()?;
+        self.roots.iter().find(|root| path.is_entry_of(root))
     }
 
     pub(crate) const fn containment_mode(&self) -> MutationMode {

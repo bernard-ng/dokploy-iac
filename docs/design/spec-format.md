@@ -106,6 +106,29 @@ Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `ref(kind)`; `selector(kind)`; shared types by name (`type: swarm`). Semantics are in
 [ADR 0004](../decisions/0004-property-model-and-mutability.md).
 
+## Property paths
+
+A *property* is a field at planning granularity; its dotted path is what plans, state, and
+`ignore_changes` name. `KindSpec::property(path)` and `SpecRegistry::property(kind, path)` in
+`dokploy-spec` decide which paths are legal and what each means, from the spec alone
+([ADR 0004](../decisions/0004-property-model-and-mutability.md)):
+
+| Field | Properties |
+|-------|------------|
+| scalar, enum, list, set, file, ref, selector, blob, shared type, union | one: the field name (a union is planned as one value; its arm members are not paths) |
+| `env` or `map` with `granularity: key` | the root (`environment`: owned only to clear it or declare it empty) and one entry per key (`environment.LOG_LEVEL`) |
+| `struct` with `granularity: field` | one per member (`limits.cpu`); the struct itself is not a path |
+| `struct` without it | one: the field name |
+
+A path carries what the planner needs: its type and value rules, `class`, `mutability`,
+`nullable`, the selector kind, and whether it is required on create. Environment entries are
+always sensitive (secret by default, ADR 0010), so a plan names the variables that change and
+never their values. A member inherits a non-default `mutability` from its struct.
+`MutationContract::from_spec` (in `dokploy-core`) follows from the same facts: `in_place` and `write_only` change in place,
+`create_only` forces replacement, `computed` is never configurable, and only a `nullable`
+property can be cleared. The spec does not yet state a replacement order, so replacement
+deletes before it creates.
+
 ## Write groups
 
 Every `in_place`, `reparent`, and `write_only` field belongs to exactly one group.

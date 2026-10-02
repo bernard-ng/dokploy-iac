@@ -1,8 +1,65 @@
-use std::{fmt, str::FromStr};
+use std::{fmt, str::FromStr, sync::Arc};
 
+use dokploy_spec::{KindSpec, PathError, PathShape, PropertyInfo};
 use dokploy_state::{ResourceKind, SensitiveFingerprint};
 use serde::{Serialize, Serializer};
 use thiserror::Error;
+
+/// A property path that a kind spec made legal, with the facts the planner needs.
+///
+/// Equality, ordering, and hashing follow the kind and the dotted path only.
+#[derive(Clone)]
+pub struct SpecPath(Arc<PropertyInfo>);
+
+impl SpecPath {
+    /// The facts the spec attached to this path.
+    #[must_use]
+    pub fn info(&self) -> &PropertyInfo {
+        &self.0
+    }
+
+    /// The canonical dotted path.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0.path
+    }
+
+    fn key(&self) -> (&str, &str) {
+        (&self.0.path, &self.0.kind)
+    }
+}
+
+impl PartialEq for SpecPath {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for SpecPath {}
+
+impl PartialOrd for SpecPath {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SpecPath {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key().cmp(&other.key())
+    }
+}
+
+impl std::hash::Hash for SpecPath {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key().hash(state);
+    }
+}
+
+impl fmt::Debug for SpecPath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "SpecPath({}:{})", self.0.kind, self.0.path)
+    }
+}
 
 /// A validated application environment-variable name.
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -151,6 +208,9 @@ pub enum PropertyPath {
     IncludeEncryptionKey,
     /// Deployment status, valid only in lifecycle metadata.
     DeploymentStatus,
+    /// A path a kind spec made legal (ADR 0004). Every kind not yet ported from the
+    /// closed vocabulary above uses it; the closed variants are deleted as kinds move.
+    Spec(SpecPath),
 }
 
 impl PropertyPath {
@@ -163,25 +223,77 @@ impl PropertyPath {
         )?))
     }
 
+    /// Resolves `path` against a kind spec; the spec decides whether it is legal.
+    pub fn from_spec(spec: &KindSpec, path: &str) -> Result<Self, PathError> {
+        spec.property(path).map(Self::from_property_info)
+    }
+
+    /// Wraps already resolved property facts.
+    #[must_use]
+    pub fn from_property_info(info: PropertyInfo) -> Self {
+        Self::Spec(SpecPath(Arc::new(info)))
+    }
+
+    /// The spec facts of a spec-resolved path.
+    #[must_use]
+    pub fn spec_info(&self) -> Option<&PropertyInfo> {
+        match self {
+            Self::Spec(path) => Some(path.info()),
+            _ => None,
+        }
+    }
+
     /// Returns whether values at this path are sensitive or write-only.
     #[must_use]
-    pub const fn is_sensitive(&self) -> bool {
-        matches!(
-            self,
-            Self::Password
-                | Self::RootPassword
-                | Self::ComposeDocument
-                | Self::FileContent
-                | Self::Command
-                | Self::Script
-                | Self::EnvironmentVariable(_)
-        )
+    pub fn is_sensitive(&self) -> bool {
+        match self {
+            Self::Spec(path) => path.info().is_sensitive(),
+            _ => matches!(
+                self,
+                Self::Password
+                    | Self::RootPassword
+                    | Self::ComposeDocument
+                    | Self::FileContent
+                    | Self::Command
+                    | Self::Script
+                    | Self::EnvironmentVariable(_)
+            ),
+        }
     }
 
     /// Returns whether this path is lifecycle-only.
     #[must_use]
-    pub const fn is_lifecycle_only(&self) -> bool {
-        matches!(self, Self::DeploymentStatus)
+    pub fn is_lifecycle_only(&self) -> bool {
+        match self {
+            Self::Spec(path) => path.info().is_lifecycle_only(),
+            _ => matches!(self, Self::DeploymentStatus),
+        }
+    }
+
+    /// Returns whether this path owns a keyed collection or a composite as a whole.
+    ///
+    /// Such a root is owned only to clear it or declare it empty; its entries are
+    /// separate properties and cannot be owned beside it.
+    #[must_use]
+    pub fn is_collection_root(&self) -> bool {
+        match self {
+            Self::Spec(path) => path.info().shape == PathShape::CollectionRoot,
+            _ => matches!(self, Self::Source | Self::Environment),
+        }
+    }
+
+    /// Returns whether this path is one entry of the collection rooted at `root`.
+    #[must_use]
+    pub fn is_entry_of(&self, root: &Self) -> bool {
+        match (self, root) {
+            (Self::Spec(entry), Self::Spec(root)) => {
+                entry.info().kind == root.info().kind
+                    && entry.info().root.as_deref() == Some(root.as_str())
+            }
+            (Self::SourceRepository | Self::SourceBranch, Self::Source) => true,
+            (Self::EnvironmentVariable(_), Self::Environment) => true,
+            _ => false,
+        }
     }
 
     /// Returns whether values at this path select an external server or registry.
@@ -189,27 +301,45 @@ impl PropertyPath {
     /// Selector values are stable `{"local": true}` or `{"name": "..."}` objects.
     /// Physical external identities never become property values.
     #[must_use]
-    pub const fn is_external_selector(&self) -> bool {
-        matches!(
-            self,
-            Self::Server
-                | Self::BuildServer
-                | Self::Registry
-                | Self::BuildRegistry
-                | Self::RollbackRegistry
-                | Self::Destination
-        )
+    pub fn is_external_selector(&self) -> bool {
+        match self {
+            Self::Spec(path) => path.info().is_selector(),
+            _ => matches!(
+                self,
+                Self::Server
+                    | Self::BuildServer
+                    | Self::Registry
+                    | Self::BuildRegistry
+                    | Self::RollbackRegistry
+                    | Self::Destination
+            ),
+        }
+    }
+
+    /// Returns whether a selector at this path may also be cleared with `null`.
+    pub(crate) fn selector_clearable(&self) -> bool {
+        match self {
+            Self::Spec(path) => path.info().nullable,
+            _ => !matches!(self, Self::Server | Self::Destination),
+        }
+    }
+
+    /// Returns whether a selector at this path accepts `{"local": true}`.
+    pub(crate) fn accepts_local_selector(&self) -> bool {
+        match self {
+            Self::Spec(path) => path.info().selector.as_deref() == Some("server"),
+            _ => *self == Self::Server,
+        }
     }
 
     pub(crate) const fn is_source_child(&self) -> bool {
         matches!(self, Self::SourceRepository | Self::SourceBranch)
     }
 
-    pub(crate) const fn is_environment_child(&self) -> bool {
-        matches!(self, Self::EnvironmentVariable(_))
-    }
-
-    pub(crate) const fn valid_for_kind(&self, kind: ResourceKind) -> bool {
+    pub(crate) fn valid_for_kind(&self, kind: ResourceKind) -> bool {
+        if let Self::Spec(path) = self {
+            return path.info().kind == kind.as_str();
+        }
         match kind {
             ResourceKind::Project => matches!(self, Self::Description | Self::Tags),
             ResourceKind::Environment => matches!(self, Self::Description),
@@ -366,6 +496,7 @@ impl fmt::Display for PropertyPath {
             Self::KeepLatest => formatter.write_str("keep_latest"),
             Self::IncludeEncryptionKey => formatter.write_str("include_encryption_key"),
             Self::DeploymentStatus => formatter.write_str("deployment.status"),
+            Self::Spec(path) => formatter.write_str(path.as_str()),
         }
     }
 }

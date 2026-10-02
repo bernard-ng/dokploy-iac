@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Spec-driven property paths (milestone M1). `dokploy-spec` resolves a dotted path against a
+  kind spec (`KindSpec::property`, `SpecRegistry::property`): which paths are legal, their
+  type, class, mutability, nullability, selector kind, and whether they are required on create;
+  keyed `env`/`map` fields give a collection root plus one entry per key. `dokploy-core` gains
+  `PropertyPath::Spec`, `MutationContract::from_spec`, and
+  `StoredState::try_from_state_with_specs`, and the planner validates values, selectors,
+  collection roots, and checkpoints for spec paths with no per-kind code. The closed
+  `PropertyPath` variants stay until their kinds are ported (ADR 0016). Spec-declared secrets in
+  kinds the closed state grammar does not know plan but cannot yet be checkpointed; state
+  format 5 opens that (a test pins the boundary).
 - `specs/versions.yaml` and `cargo xtask versions [--check | --image VERSION]`: the Dokploy
   versions the tool knows (0.30.6 `supported`, 0.30.7 `candidate`), each with its digest-pinned
   image (ADR 0014). `--check` is in CI and keeps the compose file and

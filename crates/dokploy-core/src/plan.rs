@@ -532,6 +532,12 @@ impl ResourceCheckpoint {
                 PropertyPath::DeploymentStatus => {
                     return Err(CheckpointMaterializationError::InvalidPropertyShape);
                 }
+                PropertyPath::Spec(spec_path) => crate::spec_property::materialize(
+                    spec_path.info(),
+                    value,
+                    &mut managed,
+                    &mut sensitive,
+                )?,
             }
         }
 

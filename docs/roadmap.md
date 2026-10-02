@@ -43,6 +43,14 @@ workflow (`.github/workflows/capture.yaml`, [`docs/ci.md`](ci.md#capturing-fixtu
 `fixtures/api/live/v0.30.7/`; v0.30.7 stays `candidate` until its live suite passes.
 M0 is complete once the capture workflow has run once in GitHub Actions.
 
+## M1 status
+
+Done: spec-validated property paths (`dokploy-spec` path catalog, `PropertyPath::Spec`,
+`MutationContract::from_spec`; [`spec-format.md`](design/spec-format.md#property-paths)).
+Next: state format 5 with hierarchical addresses (this also opens the closed
+`ResourceKind` and `SensitivePropertyPath`, which a spec-declared kind outside the legacy
+list needs), the document model, the `Transport` trait, and the engine skeleton.
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured
