@@ -9,13 +9,54 @@
 use dokploy_config::{MountDocument, MountSourceConfig};
 use dokploy_sdk::{EnvironmentId, MountDetails, MountType, ServiceTarget};
 
+use super::context::{EnvScope, ImportContext};
 use super::*;
+
+impl ImportContext {
+    pub(super) fn add_mount(
+        &mut self,
+        env: &EnvScope,
+        service: &ResourceAddress,
+        mount: &MountDetails,
+        source: MountSourceConfig,
+        mut inputs: serde_json::Map<String, serde_json::Value>,
+        address: &ResourceAddress,
+    ) -> Result<(), ImportError> {
+        inputs.insert("target".to_owned(), serde_json::json!(service.to_string()));
+        inputs.insert(
+            "mount_type".to_owned(),
+            serde_json::json!(source.type_name()),
+        );
+        inputs.insert("mount_path".to_owned(), serde_json::json!(mount.mount_path));
+        self.environment(env)?.add_mount(
+            address.name().clone(),
+            MountDocument {
+                target: service.clone(),
+                mount_path: mount.mount_path.clone(),
+                source,
+                depends_on: Vec::new(),
+                lifecycle: LifecycleDocument {
+                    protect: Field::Set(true),
+                    ..LifecycleDocument::default()
+                },
+            },
+        )?;
+        self.push(
+            address,
+            mount.mount_id.as_str(),
+            true,
+            inputs,
+            env.address(),
+            vec![service.clone()],
+        )
+    }
+}
 
 pub(super) async fn discover_mount(
     client: &Dokploy,
     remote_id: &str,
     target: &ResourceAddress,
-) -> Result<ImportedWorkspace, ImportError> {
+) -> Result<ImportContext, ImportError> {
     let requested_id = dokploy_sdk::MountId::new(remote_id);
     let mount = client.mounts().get(requested_id.clone()).await?;
     if mount.mount_id != requested_id {
@@ -31,52 +72,9 @@ pub(super) async fn discover_mount(
         return Err(ImportError::InvalidRemoteTopology);
     }
 
-    let (mut imported, target_address) = import_target(client, &mount.target).await?;
-    let environment_address = imported
-        .resources
-        .iter()
-        .find(|item| item.address.kind() == ResourceKind::Environment)
-        .map(|item| item.address.clone())
-        .ok_or(ImportError::MissingContainment)?;
-    let (source, mut inputs) = imported_source(&mount)?;
-    inputs.insert(
-        "target".to_owned(),
-        serde_json::json!(target_address.to_string()),
-    );
-    inputs.insert(
-        "mount_type".to_owned(),
-        serde_json::json!(source.type_name()),
-    );
-    inputs.insert("mount_path".to_owned(), serde_json::json!(mount.mount_path));
-
-    imported
-        .document
-        .environment_mut(environment_address.name())
-        .ok_or(ImportError::MissingContainment)?
-        .add_mount(
-            target.name().clone(),
-            MountDocument {
-                target: target_address.clone(),
-                mount_path: mount.mount_path.clone(),
-                source,
-                depends_on: Vec::new(),
-                lifecycle: LifecycleDocument {
-                    protect: Field::Set(true),
-                    ..LifecycleDocument::default()
-                },
-            },
-        )?;
-    imported.resources.push(ImportedResource {
-        address: target.clone(),
-        state: resource_state_with_dependencies(
-            target,
-            mount.mount_id.as_str(),
-            true,
-            inputs,
-            Some(environment_address),
-            vec![target_address],
-        )?,
-    });
+    let (mut imported, scope, target_address) = import_target(client, &mount.target).await?;
+    let (source, inputs) = imported_source(&mount)?;
+    imported.add_mount(&scope, &target_address, &mount, source, inputs, target)?;
 
     Ok(imported)
 }
@@ -137,10 +135,12 @@ async fn environment_and_project(
     Ok((environment, project))
 }
 
+/// Imports the target service and its ancestry, returning the context, its
+/// environment scope, and the service address.
 pub(super) async fn import_target(
     client: &Dokploy,
     target: &ServiceTarget,
-) -> Result<(ImportedWorkspace, ResourceAddress), ImportError> {
+) -> Result<(ImportContext, EnvScope, ResourceAddress), ImportError> {
     match target {
         ServiceTarget::Application(id) => {
             let application = client.applications().get(id.clone()).await?;
@@ -149,12 +149,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &application.environment_id).await?;
-            let address = address(ResourceKind::Application, &application.name)?;
             let associations = imported_associations(client, &application).await?;
-            Ok((
-                build_application(project, environment, application, &associations, &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::Application, &application.name)?;
+            context.add_application(&scope, &application, &associations, &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::Compose(id) => {
             let compose = client.composes().get(id.clone()).await?;
@@ -168,12 +167,11 @@ pub(super) async fn import_target(
                 .by_environment(compose.environment_id.clone())
                 .await?;
             validate_compose_import_authority(&compose, collection.composes())?;
-            let address = address(ResourceKind::Compose, &compose.name)?;
             let server = imported_server(client, &compose.server_id).await?;
-            Ok((
-                build_compose(project, environment, compose, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::Compose, &compose.name)?;
+            context.add_compose(&scope, &compose, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::Postgres(id) => {
             let database = client.postgres().get(id.clone()).await?;
@@ -182,12 +180,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
-            let address = address(ResourceKind::Postgres, &database.name)?;
             let server = imported_server(client, &database.server_id).await?;
-            Ok((
-                build_postgres(project, environment, database, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::Postgres, &database.name)?;
+            context.add_postgres(&scope, &database, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::MySql(id) => {
             let database = client.mysql().get(id.clone()).await?;
@@ -196,12 +193,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
-            let address = address(ResourceKind::MySql, &database.name)?;
             let server = imported_server(client, &database.server_id).await?;
-            Ok((
-                build_mysql(project, environment, database, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::MySql, &database.name)?;
+            context.add_mysql(&scope, &database, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::MariaDb(id) => {
             let database = client.mariadb().get(id.clone()).await?;
@@ -210,12 +206,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
-            let address = address(ResourceKind::MariaDb, &database.name)?;
             let server = imported_server(client, &database.server_id).await?;
-            Ok((
-                build_mariadb(project, environment, database, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::MariaDb, &database.name)?;
+            context.add_mariadb(&scope, &database, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::Mongo(id) => {
             let database = client.mongo().get(id.clone()).await?;
@@ -224,12 +219,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
-            let address = address(ResourceKind::Mongo, &database.name)?;
             let server = imported_server(client, &database.server_id).await?;
-            Ok((
-                build_mongo(project, environment, database, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::Mongo, &database.name)?;
+            context.add_mongo(&scope, &database, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::LibSql(id) => {
             let database = client.libsql().get(id.clone()).await?;
@@ -238,12 +232,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
-            let address = address(ResourceKind::LibSql, &database.name)?;
             let server = imported_server(client, &database.server_id).await?;
-            Ok((
-                build_libsql(project, environment, database, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::LibSql, &database.name)?;
+            context.add_libsql(&scope, &database, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
         ServiceTarget::Redis(id) => {
             let database = client.redis().get(id.clone()).await?;
@@ -252,12 +245,11 @@ pub(super) async fn import_target(
             }
             let (environment, project) =
                 environment_and_project(client, &database.environment_id).await?;
-            let address = address(ResourceKind::Redis, &database.name)?;
             let server = imported_server(client, &database.server_id).await?;
-            Ok((
-                build_redis(project, environment, database, server.as_deref(), &address)?,
-                address,
-            ))
+            let (mut context, scope) = single_environment(&project, &environment)?;
+            let address = address(ResourceKind::Redis, &database.name)?;
+            context.add_redis(&scope, &database, server.as_deref(), &address)?;
+            Ok((context, scope, address))
         }
     }
 }
