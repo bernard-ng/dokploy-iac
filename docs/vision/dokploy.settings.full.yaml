@@ -1,0 +1,279 @@
+# =============================================================================
+# FICTIONAL FULL SETTINGS DOCUMENT  (vision, not valid today)
+#
+# Everything instance-wide that Dokploy v0.30.6 lets you configure, grouped the
+# way the dashboard's Settings menu groups it. A review aid, like its project
+# counterpart: dokploy.full.yaml.
+#
+# LEGEND
+#   ✔  modeled today          ✘  in the API, not modeled
+#   ✎  design proposal        ?  open question, see the note
+#   [c] create-only (change = replace)   [s] secret / write-only
+#   [a] adopt only: exists on every instance, never created or deleted
+#   [x] deliberately NOT configuration (identity, billing, actions)
+#
+# Secrets are descriptors only: { env: NAME } or { file: path } or, once
+# Dokploy Vault is wired, { vault: { provider, secret } }. Never literals.
+# Each kind below is one flat address: tag.prod, server.build-1, ...
+# =============================================================================
+
+version: 1                                   # ✔
+
+settings:
+
+  # ===== Profile / organization ==============================================
+  organization:                              # ✘ [a] the active organization
+    name: Leganews Pro                       #   API: organization.update
+    logo: https://example.com/logo.svg
+    default_role: member                     #   a built-in or custom role name
+
+  whitelabeling:                             # ✘ [a] (enterprise)
+    app_name: Leganews Deploy
+    app_description: Internal deployment console
+    logo_url: https://example.com/logo.svg
+    login_logo_url: https://example.com/login.svg
+    favicon_url: https://example.com/favicon.ico
+    og_image_url: https://example.com/og.png
+    custom_css: { file: branding/custom.css }
+    support_url: https://example.com/support
+    docs_url: https://example.com/docs
+    error_page_title: Something went wrong
+    error_page_description: Please try again later.
+    footer_text: © Leganews
+
+  # ===== Web Server ==========================================================
+  web_server:                                # ✘ [a] singleton (see design S6); changes can restart Traefik
+    domain:                                  #   settings.assignDomainServer
+      host: dokploy.example.com
+      https: true
+      certificate_type: letsencrypt          #   letsencrypt | none | custom
+      letsencrypt_email: ops@example.com
+    server_ip: 203.0.113.10                  #   settings.updateServerIp
+    builds_concurrency: 2                    #   1..100
+    remote_servers_only: false               # ?  readable only if getWebServerSettings returns it
+    enforce_sso: false                       #   settings.updateEnforceSSO
+    request_logging: true                    #   settings.toggleRequests
+    cleanup:
+      docker: true                           #   settings.updateDockerCleanup
+      logs_cron: "0 0 * * *"                 #   settings.updateLogCleanup
+    traefik:
+      dashboard: false                       #   settings.toggleDashboard
+      additional_ports:                      #   settings.updateTraefikPorts
+        - { target_port: 8080, published_port: 8080, protocol: tcp }   # tcp | udp | sctp
+      env: { file: traefik/traefik.env }     # [s] settings.writeTraefikEnv (may carry DNS tokens)
+      static_config: { file: traefik/traefik.yml }        # settings.updateTraefikConfig
+      web_server_config: { file: traefik/dokploy.yml }    # settings.updateWebServerTraefikConfig
+      middlewares_config: { file: traefik/middlewares.yml }  # settings.updateMiddlewareTraefikConfig
+      files:                                 # ✎ the "Traefik File System" page: arbitrary dynamic files
+        redirect-www: { path: dynamic/redirect-www.yml, content: { file: traefik/redirect-www.yml } }
+    ssh_private_key: { file: ssh/dokploy_ed25519 }   # [s] settings.saveSSHPrivateKey
+    gpu: { setup: false }                    # [x] setupGPU is an action
+
+  # ===== Remote Servers ======================================================
+  ssh_keys:                                  # ✘ [s]
+    deploy:
+      name: deploy                           #   remote name; defaults to key
+      description: CI deploy key
+      public_key: "ssh-ed25519 AAAA... ci"   # [c]
+      private_key: { env: DEPLOY_SSH_KEY }   # [c][s] update has no key fields: rotation = replace
+  servers:                                   # ✘
+    leganews-staging:
+      description: Staging Swarm node
+      ip_address: 203.0.113.20
+      port: 22
+      username: root
+      ssh_key: { name: deploy }              # typed reference
+      type: deploy                           #   deploy | build
+      docker_cleanup: true                   #   API: enableDockerCleanup
+      command: ""                            # ? custom setup command (server.update.command)
+      metrics:                               #   server.setupMonitoring: an action that carries a config
+        server:
+          refresh_rate: 30
+          port: 4500
+          token: { env: METRICS_TOKEN }      # [s]
+          callback_url: https://dokploy.example.com/api/metrics
+          retention_days: 7
+          cron: "0 0 * * *"
+          thresholds: { cpu: 80, memory: 80 }
+        containers:
+          refresh_rate: 30
+          services: { include: [], exclude: [] }
+      # `setup` (install Docker/Traefik on the host) and `validate` are actions: [x]
+  networks:                                  # ✘ Docker networks managed by Dokploy
+    backend:
+      driver: overlay                        #   bridge | overlay  [c]
+      internal: false
+      attachable: true
+      enable_ipv4: true
+      enable_ipv6: false
+      mtu: 1450                              #   68..65535
+      ipam: { driver: default, config: [{ subnet: 10.20.0.0/24, gateway: 10.20.0.1, ip_range: 10.20.0.128/25 }] }
+      server: { name: leganews-staging }
+  cluster:                                   # [x] swarm nodes (addWorker, removeWorker) are actions
+
+  # ===== Registry / Git / Certificates / DNS ================================
+  registries:                                # ✘ (referenced by name from applications today)
+    ghcr:
+      type: cloud                            #   registryType
+      url: ghcr.io
+      username: ci
+      password: { env: GHCR_TOKEN }          # [s]
+      image_prefix: acme
+      server: { name: leganews-staging }     # optional: registry local to a server
+  git_providers:                             # ✘
+    leganews-org:
+      type: github                           # [a] a GitHub App is installed through OAuth: adopt, never create
+      app_name: leganews-dokploy             #   API: githubAppName
+      shared_with_organization: true         #   gitProvider.toggleShare
+    company-gitlab:
+      type: gitlab
+      url: https://gitlab.example.com        #   API: gitlabUrl
+      internal_url: http://gitlab.internal   #   API: gitlabInternalUrl
+      application_id: "0123456789"
+      secret: { env: GITLAB_APP_SECRET }     # [s]
+      group_name: acme
+      redirect_uri: https://dokploy.example.com/api/providers/gitlab/callback
+      shared_with_organization: true
+    company-gitea:
+      type: gitea
+      url: https://gitea.example.com
+      internal_url: http://gitea.internal
+      client_id: abc
+      client_secret: { env: GITEA_CLIENT_SECRET }   # [s]
+      access_token: { env: GITEA_TOKEN }     # [s] OAuth tokens: refresh_token, expires_at, scopes ... are session state
+      username: ci
+      organization_name: acme
+    company-bitbucket:
+      type: bitbucket
+      workspace: acme                        #   API: bitbucketWorkspaceName
+      username: ci
+      email: ci@example.com
+      app_password: { env: BITBUCKET_APP_PASSWORD }  # [s] or api_token
+  certificates:                              # ✘
+    wildcard:
+      certificate_data: { file: certs/wildcard.pem }   # [s]? public; compared by content
+      private_key: { env: WILDCARD_KEY }     # [s]
+      certificate_path: /etc/dokploy/certs/wildcard   # [c]
+      auto_renew: true                       # [c]
+      server: { name: leganews-staging }     # [c]
+  dns_providers:                             # ✘
+    cloudflare:
+      type: cloudflare
+      api_token: { env: CF_TOKEN }           # [s]
+    # route53: access_key_id, secret_access_key[s]
+    # porkbun: api_key[s], secret_api_key[s]
+    # infomaniak: api_token[s]
+    # ovh: endpoint (ovh-eu|ovh-ca|ovh-us|kimsufi-eu|kimsufi-ca|soyoustart-eu|soyoustart-ca),
+    #      application_key, application_secret[s], consumer_key[s]
+
+  # ===== S3 Destinations =====================================================
+  destinations:                              # ✘ (referenced by name from backups today)
+    offsite:
+      provider: s3
+      bucket: leganews-backups
+      region: eu-west-1
+      endpoint: https://s3.eu-west-1.amazonaws.com
+      access_key: { env: S3_ACCESS_KEY }     # [s]
+      secret_access_key: { env: S3_SECRET }  # [s]
+      additional_flags: ["--s3-no-check-bucket"]
+      server: { name: leganews-staging }
+
+  # ===== Notifications =======================================================
+  notifications:                             # ✘ twelve provider types, one shape each
+    ops-slack:
+      type: slack
+      webhook_url: { env: SLACK_WEBHOOK }    # [s]
+      channel: "#ops"
+      events:                                #   same eight toggles on every provider
+        - app_deploy
+        - app_build_error
+        - database_backup
+        - volume_backup
+        - dokploy_backup
+        - dokploy_restart
+        - docker_cleanup
+        - server_threshold
+    ops-telegram: { type: telegram, bot_token: { env: TG_TOKEN }, chat_id: "-100123", message_thread_id: "7", events: [app_deploy] }
+    ops-discord:  { type: discord,  webhook_url: { env: DISCORD_WEBHOOK }, decoration: true, events: [app_build_error] }
+    ops-email:    { type: email, smtp_server: smtp.example.com, smtp_port: 587, username: mailer, password: { env: SMTP_PASSWORD }, from_address: dokploy@example.com, to_addresses: [ops@example.com], events: [database_backup] }
+    ops-resend:   { type: resend, api_key: { env: RESEND_KEY }, from_address: dokploy@example.com, to_addresses: [ops@example.com], events: [app_deploy] }
+    ops-gotify:   { type: gotify, server_url: https://gotify.example.com, app_token: { env: GOTIFY_TOKEN }, priority: 5, decoration: true, events: [app_deploy] }
+    ops-ntfy:     { type: ntfy, server_url: https://ntfy.sh, topic: leganews, access_token: { env: NTFY_TOKEN }, priority: 3, events: [app_deploy] }
+    ops-mattermost: { type: mattermost, webhook_url: { env: MM_WEBHOOK }, channel: ops, username: dokploy, events: [app_deploy] }
+    ops-custom:   { type: custom, endpoint: https://hooks.example.com/dokploy, headers: { X-Token: { secret: { env: HOOK_TOKEN } } }, events: [app_deploy] }
+    ops-lark:     { type: lark, webhook_url: { env: LARK_WEBHOOK }, events: [app_deploy] }
+    ops-teams:    { type: teams, webhook_url: { env: TEAMS_WEBHOOK }, events: [app_deploy] }
+    ops-pushover: { type: pushover, user_key: { env: PUSHOVER_USER }, api_token: { env: PUSHOVER_TOKEN }, priority: 0, retry: 60, expire: 3600, events: [server_threshold] }
+  # Server thresholds (cpu/memory alert limits) are configured through server metrics above.
+
+  # ===== Tags ================================================================
+  tags:                                      # ✔ ✔i
+    prod: { color: "#e11d48" }               # ✔ color set-only
+    critical: {}
+
+  # ===== Secrets (Dokploy Vault) =============================================
+  vault_providers:                           # ✘ planned in the earlier design (S9, S10)
+    infisical-staging:
+      type: infisical                        #   hashicorp | infisical | aws | aws-parameter-store | doppler | azure | scaleway | phase
+      site_url: https://app.infisical.com
+      client_id: { env: INFISICAL_CLIENT_ID }          # [s]
+      client_secret: { env: INFISICAL_CLIENT_SECRET }  # [s]
+      project_id: 6f1c0b5e-1111-2222-3333-444455556666
+      environment_slug: staging
+      secret_path: /
+      assignments:                           #   which projects/environments may use it
+        - { project: leganews-platform, environments: [staging] }
+    # other arms: hashicorp{url,namespace,mount,token[s]}, aws{region,access_key_id,secret_access_key[s],endpoint},
+    # aws-parameter-store{... parameter_path}, doppler{service_token[s],project,config},
+    # azure{vault_uri,tenant_id,client_id,client_secret[s]}, scaleway{region,project_id,secret_key[s],api_url},
+    # phase{token[s],app_id,env,path,api_url}
+
+  # ===== AI ==================================================================
+  ai_providers:                              # ✘
+    openai:
+      api_url: https://api.openai.com/v1
+      api_key: { env: OPENAI_API_KEY }       # [s]
+      model: gpt-4.1
+      enabled: true                          #   API: isEnabled
+
+  # ===== Users, roles, SSO (identity) =======================================
+  custom_roles:                              # ✘ enterprise
+    deployer:
+      permissions: { project: [read, create], service: [read, deploy] }   # ? shape of `permissions` is an open object
+  members:                                   # ✘ [x]? invitations and role assignment
+    - { email: dev@example.com, role: deployer }   # ? declarative membership would delete users on removal
+  sso_providers:                             # ✘ enterprise
+    okta:
+      issuer: https://example.okta.com
+      domains: [example.com]
+      oidc:
+        client_id: abc
+        client_secret: { env: OKTA_SECRET }  # [s]
+        authorization_endpoint: https://example.okta.com/oauth2/v1/authorize
+        token_endpoint: https://example.okta.com/oauth2/v1/token
+        user_info_endpoint: https://example.okta.com/oauth2/v1/userinfo
+        jwks_endpoint: https://example.okta.com/oauth2/v1/keys
+        discovery_endpoint: https://example.okta.com/.well-known/openid-configuration
+        token_endpoint_authentication: client_secret_post
+        scopes: [openid, email, profile]
+        pkce: true
+        skip_discovery: false
+        mapping: { id: sub, email: email, email_verified: email_verified, name: name, image: picture }
+      override_user_info: false
+      # saml: entry_point, cert[s], callback_url, audience, idp_metadata{...}, sp_metadata{...}, want_assertions_signed ...
+    trusted_origins: [https://dokploy.example.com]
+  license:                                   # ✘ enterprise
+    key: { env: DOKPLOY_LICENSE }            # [s] activate/deactivate are actions
+    enable_enterprise_features: true
+
+  # ===== Personal profile (current user) ====================================
+  profile:                                   # [x] email, password, 2FA, API keys, passkeys, sessions:
+    # identity and credentials of a person, not infrastructure. The bootstrap admin and API key
+    # remain manual steps.
+
+# =============================================================================
+# [x] Not configuration: Monitoring, Docker (containers, images, volumes, disk
+# usage), Schedules page (read view over the per-service schedules), Requests,
+# Deployments, billing/Stripe, onboarding state, previews, rollbacks, cache and
+# queue cleanup, server reload/restart, version/update checks, health.
+# =============================================================================

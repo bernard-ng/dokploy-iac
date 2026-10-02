@@ -1,0 +1,385 @@
+# =============================================================================
+# FICTIONAL FULL PROJECT DOCUMENT  (vision, not valid today)
+#
+# Every configurable field Dokploy v0.30.6 exposes for a project and the things
+# inside it, written the way this tool could model it. It is a review aid: the
+# markers say what exists today and what does not, so you can decide the shape
+# and the scope before anything is built.
+#
+# LEGEND (trailing comment on each field)
+#   ✔   modeled today (parse, plan, apply)
+#   ✔i  modeled today and written by `dokploy import project`
+#   ✘   in the Dokploy API, not modeled today
+#   ✎   a shape change or new design proposal, see the note beside it
+#   [c] create-only: changing it replaces the resource
+#   [s] secret / write-only: never read back, compared by fingerprint
+#   [r] read-only in Dokploy (status, ids, timestamps): never in config
+#
+# Dokploy API field names are in `API: ...` notes only where they differ.
+# Values are invented. A leading `# ?` marks a field whose purpose I could not
+# confirm from the OpenAPI document alone.
+# =============================================================================
+
+version: 1                                   # ✔
+
+project:
+  slug: leganews-platform                    # ✎ logical address key (today `name` doubles as this)
+  name: Leganews Platform                    # ✎ remote display name; today it is forced to equal the logical name
+  description: Staging and production deployment for the Leganews platform.   # ✔i
+  tags:                                      # ✔i  by name; see settings `tags`
+    - { name: prod }
+    - { name: critical }
+  env:                                       # ✘ project-wide variables, referenced as ${{project.KEY}}
+    SENTRY_ORG: leganews                     #   plain values inline
+    SENTRY_TOKEN: { secret: { env: SENTRY_TOKEN } }   # [s]
+  depends_on: []                             # ✔
+  lifecycle: { protect: true }               # ✔ ; ignore_changes: [..] also ✔
+
+  environments:
+    # -------------------------------------------------------------------------
+    staging:
+      name: staging                          # ✎ remote display name (defaults to the key)
+      description: Staging environment       # ✔i
+      env:                                   # ✘ environment-wide variables, ${{environment.KEY}}
+        APP_ENV: staging
+      lifecycle: { protect: false }          # ✔
+
+      # ===== APPLICATIONS ====================================================
+      applications:
+
+        # --- GitHub source with a Dockerfile build --------------------------
+        api:
+          name: Leganews Staging API         # ✎ remote display name
+          app_name: leganews-staging-api     # ✘ [c] Docker service name; Dokploy appends a random suffix if omitted
+          description: Public API            # ✔i
+          icon: https://example.com/api.svg  # ✘
+          enabled: true                      # ✘ API: enabled
+          server: { name: leganews-staging } # ✔i [c]  { local: true } = Dokploy host
+          replicas: 2                        # ✔i
+          depends_on: [postgres.main]        # ✔
+          lifecycle: { protect: false, ignore_changes: [replicas] }   # ✔
+
+          source:                            # ✔ (github only today)
+            type: github
+            provider: { name: leganews-org } # ✘ settings `git_providers` selector (API: githubId)
+            owner: acme                      # ✘ (today: `repository` holds "owner/repo")
+            repository: api                  # ✔i
+            branch: main                     # ✔i
+            build_path: /                    # ✘
+            trigger_type: push               # ✘ push | tag
+            enable_submodules: false         # ✘
+            watch_paths: ["src/**", "Dockerfile"]   # ✘
+
+          build:                             # ✘ whole block
+            type: dockerfile                 #   dockerfile | heroku_buildpacks | paketo_buildpacks | nixpacks | static | railpack
+            dockerfile: Dockerfile
+            context_path: .                  #   API: dockerContextPath
+            build_stage: runtime             #   API: dockerBuildStage
+            clean_cache: false
+
+          environment:                       # ✔ (map) but NOT written by import
+            LOG_LEVEL: { value: info }
+            DATABASE_URL: { secret: { env: API_DATABASE_URL } }          # [s]
+            MAIL_KEY: { vault: { provider: infisical-staging, secret: MAIL_KEY } }   # ✘ planned (S10)
+          env_file: { file: env/staging/api.env }   # ✎ whole dotenv file as one source (alternative to the map)
+          create_env_file: true              # ✘ write a .env file in the build context
+          build_args:                        # ✘
+            NODE_VERSION: { value: "22" }
+          build_secrets:                     # ✘ [s]
+            NPM_TOKEN: { secret: { env: NPM_TOKEN } }
+          command: node                      # ✘ container entrypoint override
+          args: [dist/server.js, --port, "8080"]   # ✘
+
+          resources:                         # ✘ all four
+            memory_limit: 512m               #   API: memoryLimit
+            memory_reservation: 256m
+            cpu_limit: "1"
+            cpu_reservation: "0.5"
+
+          swarm:                             # ✘ every block below; shapes follow Docker Swarm
+            health_check: { test: ["CMD", "curl", "-f", "http://localhost:8080/health"], interval: 30s, timeout: 5s, start_period: 10s, retries: 3 }
+            restart_policy: { condition: on-failure, delay: 5s, max_attempts: 3, window: 120s }
+            placement: { constraints: ["node.role==worker"], preferences: [{ spread: node.labels.zone }], max_replicas: 2, platforms: [{ architecture: amd64, os: linux }] }
+            update_config: { parallelism: 1, delay: 10s, failure_action: rollback, monitor: 30s, max_failure_ratio: 0.1, order: start-first }
+            rollback_config: { parallelism: 1, delay: 5s, failure_action: pause, monitor: 15s, max_failure_ratio: 0, order: stop-first }
+            mode: { replicated: { replicas: 2 } }     # or global, replicated_job{max_concurrent,total_completions}, global_job
+            labels: { team: backend }
+            networks: [{ target: backend, aliases: [api] }]   # prefer `networks:` below
+            stop_grace_period: 20s
+            endpoint_spec: { mode: vip }
+            ulimits: [{ name: nofile, soft: 65536, hard: 65536 }]
+          networks: [{ name: backend }]      # ✘ settings `networks` selectors (API: networkIds)
+          detach_dokploy_network: false      # ✘
+
+          registry: { name: ghcr }           # ✔i  pull registry
+          build_server: { name: build-1 }    # ✔i
+          build_registry: { name: ghcr }     # ✔i
+          rollback_registry: { name: ghcr }  # ✔i
+
+          deploy:                            # ✘ whole block
+            auto_deploy: true
+            rollback_active: true            #   keep rollback images
+            # trigger_type / watch_paths / enable_submodules live under `source`
+
+          preview:                           # ✘ whole block (PR preview deployments)
+            enabled: true                    #   API: isPreviewDeploymentsActive
+            wildcard: "*.preview.example.com"
+            port: 8080
+            https: true
+            path: /
+            certificate_type: letsencrypt    #   letsencrypt | none | custom
+            custom_cert_resolver: null
+            limit: 3
+            require_collaborator_permissions: true
+            labels: [preview]
+            environment: { APP_ENV: { value: preview } }       # API: previewEnv
+            build_args: { NODE_VERSION: { value: "22" } }
+            build_secrets: { NPM_TOKEN: { secret: { env: NPM_TOKEN } } }   # [s]
+
+          traefik_config: { file: traefik/api.yml }   # ✘ per-app dynamic Traefik file (application.updateTraefikConfig)
+
+          # ----- children (✎ proposal N1: nest every child under its service) ---
+          ports:                             # ✔ ✔i (today nested here already)
+            http:
+              published_port: 8080           # ✔
+              target_port: 80                # ✔
+              publish_mode: ingress          # ✔ ingress | host
+              protocol: tcp                  # ✔ tcp | udp
+          redirects:                         # ✔ ✔i
+            old-docs:
+              regex: "^https://example.com/docs/(.*)"   # ✔
+              replacement: "https://docs.example.com/$1" # ✔
+              permanent: true                # ✔
+          security:                          # ✔ ✔i (password not imported)
+            admin:
+              username: admin                # ✔
+              password: { env: API_BASIC_AUTH_PASSWORD }   # ✔ [s]
+          domains:                           # ✔ today at environment level; ✎ nest here
+            main:
+              host: api.staging.example.com  # ✔i
+              path: /                        # ✘
+              internal_path: /               # ✘ path forwarded to the service
+              strip_path: false              # ✘
+              port: 8080                     # ✘
+              https: true                    # ✘
+              certificate_type: letsencrypt  # ✘ letsencrypt | none | custom
+              custom_cert_resolver: null     # ✘
+              custom_entrypoint: null        # ✘
+              middlewares: [rate-limit@file] # ✘
+              forward_auth_enabled: false    # ✘
+              enabled: true                  # ✘
+          mounts:                            # ✔ today at environment level with `target`
+            data:
+              type: volume                   # ✔ bind | volume | file
+              volume_name: api-data          # ✔
+              mount_path: /data              # ✔
+            config:
+              type: file                     # ✔ (content not written by import)
+              file_path: app.conf            # ✔
+              content: { file: config/app.conf }   # ✔ source file
+              mount_path: /etc/app.conf      # ✔
+            hostdir:
+              type: bind
+              host_path: /srv/shared         # ✔
+              mount_path: /shared
+          schedules:                         # ✔ today at environment level with `target`
+            cleanup:
+              name: cleanup                  # ✔
+              description: Nightly cleanup   # ✔i
+              cron_expression: "0 3 * * *"   # ✔i
+              timezone: Europe/Paris         # ✔i
+              shell_type: bash               # ✔i bash | sh
+              enabled: true                  # ✔i
+              command: { file: scripts/cleanup.sh }   # ✔ not imported
+              script: null                   # ✔ not imported
+          volume_backups:                    # ✘ whole kind (volumeBackups.*)
+            data:
+              name: api-data-nightly
+              volume_name: api-data
+              prefix: api-data
+              cron_expression: "0 2 * * *"
+              destination: { name: offsite }
+              keep_latest: 7
+              turn_off: false                #   stop the service while copying
+              enabled: true
+          patches:                           # ✘ whole kind (patch.*): file edits applied at build
+            env-example:
+              file_path: .env.example
+              type: update                   #   create | update | delete
+              content: { file: patches/env.example }
+              enabled: true
+
+        # --- Docker image source --------------------------------------------
+        worker:
+          name: Leganews Staging Worker      # ✎
+          source:                            # ✘ (docker not supported today)
+            type: docker
+            image: ghcr.io/acme/worker@sha256:b9cb7abd5a0c03b06f33e4a536408270351955e84b08e2256b5a71978c35ef20
+            registry_url: ghcr.io
+            username: ci
+            password: { env: GHCR_TOKEN }    # [s]
+          replicas: 1
+
+        # --- other source types, one field set each --------------------------
+        admin-gitlab:
+          source: { type: gitlab, provider: { name: company-gitlab }, project_id: 42, owner: acme, repository: admin, branch: main, path_namespace: acme/admin, build_path: / }   # ✘
+        admin-bitbucket:
+          source: { type: bitbucket, provider: { name: company-bitbucket }, owner: acme, repository: admin, repository_slug: admin, branch: main, build_path: / }   # ✘
+        admin-gitea:
+          source: { type: gitea, provider: { name: company-gitea }, owner: acme, repository: admin, branch: main, build_path: / }   # ✘
+        admin-git:
+          source: { type: git, url: git@example.com:acme/admin.git, branch: main, build_path: /, ssh_key: { name: deploy } }     # ✘ ssh_key from settings
+        site-static:
+          source: { type: github, owner: acme, repository: site, branch: main }
+          build: { type: static, publish_directory: dist, is_static_spa: true }                                  # ✘
+        # source type `drop` (uploaded zip) is intentionally not representable: the artifact is not text.
+
+      # ===== COMPOSE =========================================================
+      compose:
+        stack:
+          name: Leganews Staging             # ✎
+          app_name: leganews-platform-leganews-staging   # ✘ [c]
+          description: Staging Compose deployment managed by GitHub Actions.   # ✔i
+          icon: null                         # ✘
+          server: { name: leganews-staging } # ✔i [c]
+          compose_type: docker-compose       # ✘ docker-compose | stack
+          source:                            # ✎ today only `document`
+            type: raw                        # raw | github | gitlab | bitbucket | gitea | git
+            document: { file: compose/staging.yaml }   # ✔ not imported
+          # git-backed alternative:
+          #   source: { type: github, provider: {name: leganews-org}, owner: acme, repository: platform, branch: main, trigger_type: push, watch_paths: ["compose/**"], enable_submodules: false }
+          compose_path: ./docker-compose.yml # ✘ file inside the repository
+          command: ""                        # ✘ override of the compose command
+          environment:                       # ✘ (applications only today)
+            MEILI_ENV: { value: production }
+            MEILI_MASTER_KEY: { secret: { env: MEILI_MASTER_KEY } }   # [s]
+          env_file: { file: env/staging/stack.env }   # ✎
+          create_env_file: true              # ✘
+          suffix: ""                         # ✘ appended to resource names
+          randomize: false                   # ✘ randomize service names
+          isolated_deployment: true          # ✘ deploy in its own network
+          isolated_deployments_volume: false # ✘
+          pull_images: true                  # ✘
+          auto_deploy: true                  # ✘
+          service_networks:                  # ✘ per Compose service network attachment
+            - { service: api, networks: [{ name: backend }], detach_dokploy_network: false }
+          domains:                           # ✘ domains on Compose (import skips them)
+            api:
+              service_name: api              # ✘ which Compose service
+              host: api.staging.leganews.pro # ✘ all domain fields as for applications
+              path: /
+              port: 8080
+              https: true
+              certificate_type: letsencrypt
+            mercure: { service_name: mercure, host: sse.staging.leganews.pro, port: 8080, https: true, certificate_type: letsencrypt }
+            admin:   { service_name: admin,   host: admin.staging.leganews.pro, port: 3000, https: true, certificate_type: letsencrypt }
+            main:    { service_name: main,    host: main.staging.leganews.pro,  port: 3000, https: true, certificate_type: letsencrypt }
+          mounts:                            # ✔ (Compose service targets)
+            uploads: { type: volume, volume_name: uploads, mount_path: /uploads }
+          schedules:                         # ✔ (single service per Compose today, DOKCFG055)
+            reindex: { name: reindex, service_name: search, cron_expression: "0 4 * * *", shell_type: sh, enabled: true, command: { file: scripts/reindex.sh } }
+          volume_backups:                    # ✘
+            uploads: { name: uploads, volume_name: uploads, prefix: uploads, cron_expression: "0 1 * * *", destination: { name: offsite }, keep_latest: 5, turn_off: false, enabled: true }
+          backups:                           # ✘ Compose backups (backupType: compose); ADR 0039 defers them
+            db: { service_name: db, database: app, schedule: "0 2 * * *", prefix: compose-db, destination: { name: offsite }, keep_latest: 7, enabled: true }
+          patches:                           # ✘
+            override: { file_path: docker-compose.override.yml, type: create, content: { file: patches/override.yml }, enabled: true }
+        search:
+          name: Leganews Staging Search      # ✎
+          description: Persistent staging Meilisearch service
+          server: { name: leganews-staging }
+          source: { type: raw, document: { file: compose/search.yaml } }
+
+      # ===== DATABASES =======================================================
+      postgres:
+        main:
+          name: Leganews Staging PostgreSQL  # ✎
+          app_name: leganews-staging-postgres   # ✘ [c]
+          description: Primary staging application database   # ✘ (MySQL, MariaDB, MongoDB, Redis too; LibSQL has it)
+          server: { name: leganews-staging } # ✔i [c]
+          image: ghcr.io/leganews-pro/platform-postgres@sha256:b9cb7abd5a0c03b06f33e4a536408270351955e84b08e2256b5a71978c35ef20   # ✘ API: dockerImage
+          command: ""                        # ✘
+          args: []                           # ✘
+          database: app                      # ✔i API: databaseName
+          username: app                      # ✔i API: databaseUser
+          password: { env: PG_PASSWORD }     # ✔ [s]
+          environment: { TZ: { value: UTC } }          # ✘
+          external_port: 5432                # ✘ publish outside the swarm
+          replicas: 1                        # ✘
+          resources: { memory_limit: 2g, memory_reservation: 1g, cpu_limit: "2", cpu_reservation: "1" }   # ✘
+          swarm: {}                          # ✘ same blocks as applications
+          networks: [{ name: backend }]      # ✘
+          detach_dokploy_network: false      # ✘
+          lifecycle: { protect: true }       # ✔
+          mounts:   { data: { type: volume, volume_name: pg-data, mount_path: /var/lib/postgresql/data } }   # ✔
+          schedules: {}                      # ✔
+          volume_backups: {}                 # ✘
+          backups:                           # ✔ today at environment level with `target`
+            nightly:
+              destination: { name: offsite } # ✔i
+              schedule: "0 2 * * *"          # ✔i
+              prefix: nightly                # ✔i
+              database: app                  # ✔i
+              enabled: true                  # ✔i
+              keep_latest: 7                 # ✔i
+              include_encryption_key: false  # ✔i
+              metadata: {}                   # ✘ provider-specific extras
+      mysql:
+        legacy:                              # the same envelope as postgres, plus:
+          database: legacy                   # ✔i
+          username: legacy                   # ✔i
+          password: { env: MYSQL_PASSWORD }          # ✔ [s]
+          root_password: { env: MYSQL_ROOT_PASSWORD }  # ✔ [s]
+          image: mysql:8.4                   # ✘ ; also command/args/environment/external_port/replicas/resources/swarm/networks ✘
+      mariadb:
+        maria:
+          database: maria                    # ✔i
+          username: maria                    # ✔i
+          password: { env: MARIA_PASSWORD }  # ✔ [s]
+          root_password: { env: MARIA_ROOT_PASSWORD }  # ✔ [s]
+          image: mariadb:11                  # ✘ ; same ✘ envelope
+      mongo:
+        docs:
+          username: docs                     # ✔i
+          password: { env: MONGO_PASSWORD }  # ✔ [s]
+          replica_sets: true                 # ✔i [c]
+          image: mongo:8                     # ✘ ; same ✘ envelope
+      redis:
+        cache:
+          password: { env: REDIS_PASSWORD }  # ✔ [s]
+          image: redis:7                     # ✘ ; same ✘ envelope
+      libsql:
+        edge:
+          description: Edge replica          # ✔i
+          username: edge                     # ✔i
+          password: { env: LIBSQL_PASSWORD } # ✔ [s]
+          node: { type: primary }            # ✔i  or { type: replica, primary_url: https://primary.internal }
+          enable_namespaces: false           # ✘ API: enableNamespaces
+          external_port: 8080                # ✘
+          external_grpc_port: 5001           # ✘ API: externalGRPCPort
+          external_admin_port: 5000          # ✘ API: externalAdminPort
+          image: ghcr.io/tursodatabase/libsql-server:latest   # ✘ ; same ✘ envelope (no args on libsql)
+
+    # -------------------------------------------------------------------------
+    production:
+      name: production
+      description: Production environment
+      applications: {}                       # same shapes as staging
+      compose: {}
+
+# =============================================================================
+# State-only directives (✔ today)
+# =============================================================================
+moves:                                       # ✔ rename a tracked address without touching Dokploy
+  - { from: application.web, to: application.api }
+removed:                                     # ✔ stop managing (destroy: false) or delete (destroy: true)
+  - { from: redis.legacy, destroy: false }
+
+# =============================================================================
+# Things in the Dokploy UI that are deliberately NOT configuration
+#   [r] status (idle/running/done/error), createdAt, ids, refresh tokens, appName
+#       suffixes, deployment history, logs, monitoring, container lists
+#   actions: deploy, redeploy, start, stop, reload, rebuild, move between
+#       environments, clean queues, kill build, run schedule/backup now, rollback
+#   Terminal, Docker, Requests, Traefik File System, Monitoring pages
+# =============================================================================
