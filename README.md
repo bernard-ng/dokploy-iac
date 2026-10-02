@@ -110,7 +110,7 @@ Explore the available commands:
 
 ```bash
 target/release/dokploy --help
-target/release/dokploy project --help
+target/release/dokploy api project --help
 ```
 
 Generate a completion script for the current CLI command tree:

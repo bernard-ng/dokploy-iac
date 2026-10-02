@@ -55,7 +55,7 @@ pub fn execute(cli: Cli, output: &mut dyn Write, terminal_available: bool) -> Re
         | Command::Import { .. }
         | Command::State { .. }
         | Command::Context { .. }
-        | Command::Imperative(_) => Err(miette::miette!("command requires connection dispatch")),
+        | Command::Api { .. } => Err(miette::miette!("command requires connection dispatch")),
     }
 }
 

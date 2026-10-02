@@ -178,9 +178,14 @@ pub enum Command {
         command: ContextCommand,
     },
 
-    /// Call an operation from the pinned Dokploy API contract.
-    #[command(flatten)]
-    Imperative(Box<ImperativeCommand>),
+    /// Call one operation from the pinned Dokploy API contract directly.
+    ///
+    /// Usage: `dokploy api <resource> <operation> [options]`. These commands act
+    /// on Dokploy immediately; they never read or change declared state.
+    Api {
+        #[command(subcommand)]
+        command: Box<ImperativeCommand>,
+    },
 }
 
 /// Document kinds that have a JSON Schema.
@@ -603,6 +608,7 @@ mod tests {
     fn parses_generated_query_inputs_for_an_imperative_read() {
         let cli = Cli::try_parse_from([
             "dokploy",
+            "api",
             "application",
             "one",
             "--query-application-id",
@@ -610,7 +616,7 @@ mod tests {
         ])
         .expect("generated command line is valid");
 
-        let Command::Imperative(command) = cli.command else {
+        let Command::Api { command } = cli.command else {
             panic!("expected an imperative command");
         };
         let invocation = command.into_invocation().expect("generated input is valid");
@@ -620,9 +626,25 @@ mod tests {
     }
 
     #[test]
+    fn generated_resource_commands_exist_only_under_api() {
+        assert!(
+            Cli::try_parse_from(["dokploy", "application", "one"]).is_err(),
+            "resource commands are not top-level"
+        );
+        assert!(
+            Cli::try_parse_from(["dokploy", "project", "all"]).is_err(),
+            "resource commands are not top-level"
+        );
+        let cli = Cli::try_parse_from(["dokploy", "api", "project", "all"])
+            .expect("the api prefix reaches every generated resource");
+        assert!(matches!(cli.command, Command::Api { .. }));
+    }
+
+    #[test]
     fn raw_json_body_replaces_generated_required_body_fields() {
         let cli = Cli::try_parse_from([
             "dokploy",
+            "api",
             "application",
             "create",
             "--body-json",
@@ -630,7 +652,7 @@ mod tests {
         ])
         .expect("raw JSON body satisfies the generated input contract");
 
-        let Command::Imperative(command) = cli.command else {
+        let Command::Api { command } = cli.command else {
             panic!("expected an imperative command");
         };
         command
@@ -642,6 +664,7 @@ mod tests {
     fn generated_enum_inputs_reject_unknown_values() {
         let result = Cli::try_parse_from([
             "dokploy",
+            "api",
             "application",
             "create",
             "--body-name",

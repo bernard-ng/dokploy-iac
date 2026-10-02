@@ -70,7 +70,7 @@ cleanup() {
     fi
     if [[ -z "$project_id" ]]; then
         DOKPLOY_URL="$base_url" DOKPLOY_API_KEY="$(<"$api_key_file")" \
-            "$repository_root/target/debug/dokploy" project all \
+            "$repository_root/target/debug/dokploy" api project all \
             >"$workspace/cleanup-projects-before.stdout" \
             2>"$workspace/cleanup-projects-before.stderr"
         lookup_status=$?
@@ -82,7 +82,7 @@ cleanup() {
     fi
     if [[ -n "$project_id" ]]; then
         DOKPLOY_URL="$base_url" DOKPLOY_API_KEY="$(<"$api_key_file")" \
-            "$repository_root/target/debug/dokploy" project remove \
+            "$repository_root/target/debug/dokploy" api project remove \
             --body-project-id "$project_id" \
             >"$workspace/cleanup-project-remove.stdout" \
             2>"$workspace/cleanup-project-remove.stderr"
@@ -92,7 +92,7 @@ cleanup() {
     fi
 
     DOKPLOY_URL="$base_url" DOKPLOY_API_KEY="$(<"$api_key_file")" \
-        "$repository_root/target/debug/dokploy" project all \
+        "$repository_root/target/debug/dokploy" api project all \
         >"$project_output" \
         2>"$workspace/cleanup-projects.stderr"
     if [[ "$?" -ne 0 ]] || ! jq -e --arg name "$project_name" '[.[] | select(.name == $name)] | length == 0' "$project_output" >/dev/null; then

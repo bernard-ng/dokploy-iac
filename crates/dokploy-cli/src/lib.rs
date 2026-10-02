@@ -507,7 +507,7 @@ async fn execute_inner(
                 }
             }
         }
-        Command::Imperative(command) => {
+        Command::Api { command } => {
             let invocation = command.into_invocation()?;
             let configuration = config.load()?;
             let settings = resolve_connection(
@@ -1285,6 +1285,7 @@ url = "https://deploy.example.com"
             &server.url,
             "--api-key",
             secret,
+            "api",
             "project",
             "one",
             "--query-project-id",
@@ -1324,6 +1325,7 @@ url = "https://deploy.example.com"
             &server.url,
             "--api-key",
             "test-api-key",
+            "api",
             "postgres",
             "one",
             "--query-postgres-id",
@@ -1386,6 +1388,7 @@ url = "https://deploy.example.com"
             &server.url,
             "--api-key",
             "test-api-key",
+            "api",
             "project",
             "one",
             "--query-project-id",
@@ -1463,6 +1466,7 @@ url = "https://deploy.example.com"
             &server.url,
             "--api-key",
             "test-api-key",
+            "api",
             "project",
             "create",
             "--body-name",

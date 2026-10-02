@@ -28,6 +28,13 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Breaking:** the generated API commands moved under one prefix:
+  `dokploy api <resource> <operation> [options]` replaces `dokploy <resource>
+  <operation>`. The top level now holds only the declarative commands (`init`,
+  `plan`, `apply`, `import`, `state`, ...), so a command's place says whether it
+  acts on declared state or makes one direct API call. There is no un-prefixed
+  alias. Integration scripts and examples were updated.
+
 - State format 4 records a `scope` (`project` or `settings`). Version 3 files
   decode as project scope and are rewritten on their next checkpoint. Older
   CLIs cannot read format 4.
