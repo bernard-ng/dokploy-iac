@@ -2,7 +2,7 @@ use std::process::ExitCode;
 
 use xtask::{
     CodegenMode, ProcessGenerator, repository_imperative_paths, repository_paths, repository_root,
-    run_codegen, run_imperative_codegen,
+    run_codegen, run_imperative_codegen, run_specs_check,
 };
 
 fn main() -> ExitCode {
@@ -18,10 +18,15 @@ fn main() -> ExitCode {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args().skip(1);
     let Some(command) = arguments.next() else {
-        return Err("usage: cargo xtask codegen [--check]".into());
+        return Err("usage: cargo xtask codegen [--check] | cargo xtask specs --check".into());
     };
+    if command == "specs" {
+        return run_specs(arguments);
+    }
     if command != "codegen" {
-        return Err(format!("unknown xtask command `{command}`; expected `codegen`").into());
+        return Err(
+            format!("unknown xtask command `{command}`; expected `codegen` or `specs`").into(),
+        );
     }
 
     let mode = match arguments.next().as_deref() {
@@ -58,4 +63,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+fn run_specs(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match arguments.next().as_deref() {
+        Some("--check") => {}
+        _ => return Err("usage: cargo xtask specs --check".into()),
+    }
+    if let Some(argument) = arguments.next() {
+        return Err(format!("unexpected argument `{argument}`").into());
+    }
+    let report = run_specs_check(&repository_root())?;
+    print!("{}", report.table);
+    if report.failures.is_empty() {
+        println!("specs ok");
+        Ok(())
+    } else {
+        for failure in &report.failures {
+            eprintln!("  - {failure}");
+        }
+        Err(format!("{} spec problem(s)", report.failures.len()).into())
+    }
 }

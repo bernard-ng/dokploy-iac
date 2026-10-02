@@ -1,0 +1,38 @@
+# PROTOTYPE (coverage: partial). Completed in milestone M3.
+kind: environment
+scope: project
+parent: project
+section: environments
+title: Environment
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "environment.{key}"
+api:
+  id: environmentId
+  create:
+    op: environment.create
+    attach: { projectId: parent_id }
+  update: { op: environment.update }
+  remove: { op: environment.remove }
+  read:
+    list: { op: environment.byProjectId, authority: authoritative }
+    one: { op: environment.one, id_param: environmentId, agree: true }
+  create_identity:
+    from_response: /environmentId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  description:
+    type: text
+    nullable: true
+write:
+  - op: environment.update
+    fields: [name, description]
+    shape: partial
+children:
+  - { kind: application, section: applications }

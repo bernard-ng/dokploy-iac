@@ -1,258 +1,86 @@
-# Dokploy CLI and Infrastructure as Code
+# Dokploy infrastructure as code
 
-A native Rust toolkit for managing an existing [Dokploy](https://dokploy.com/)
-instance from the command line and, progressively, through declarative
-infrastructure configuration.
-
-The project combines broad access to Dokploy's API with a safety-focused IaC
-engine. It is designed for operators who want automation that remains explicit
-about ownership, drift, secrets, remote identity, and recovery.
+Describe a [Dokploy](https://dokploy.com/) instance in YAML, keep it in a
+repository, and rebuild it from that description instead of re-creating it through
+the dashboard: Docker Compose, but for Dokploy itself.
 
 > [!IMPORTANT]
-> This project is pre-release. The imperative CLI and offline configuration
-> commands are usable today. Declarative `plan` and confirmed `apply` cover
-> eleven resource types. Explicit interrupted-operation recovery and
-> workspace-wide tracked-resource destruction are available.
+> **Pre-release, mid re-engineering.** The first engine reconciles eleven resource
+> kinds but covers about a quarter of the fields and almost none of the instance
+> settings. It is being replaced by a spec-driven engine that targets the whole
+> dashboard. The design is written and under review; the build has not started.
+> Start at [`docs/roadmap.md`](docs/roadmap.md). The first engine is preserved at
+> commit `96cab73` (a reference point in history, not a release).
 
-## What it offers
+## Where this is going
 
-### A native Dokploy CLI
-
-- Commands generated for all 604 operations in the pinned Dokploy API contract.
-- Named connection contexts with API keys stored in the operating system's
-  credential store.
-- Structured diagnostics, bounded retries for safe reads, and explicit
-  outcome-unknown errors for interrupted mutations.
-- Recursive redaction of secret-bearing imperative responses before they reach
-  the terminal.
-
-### A declarative engine built for safe reconciliation
-
-- A strict, versioned `dokploy.yaml` format for projects, environments,
-  applications, application ports, redirects, and basic-auth security
-  entries, Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL,
-  Redis, domains, mounts on applications, Compose services, and
-  databases, schedules on applications and Compose services, and database
-  backups. Server placement of applications, Compose services, and databases,
-  application build-server and registry associations, and backup destinations
-  select external infrastructure by stable local-or-named selectors that are
-  resolved against fresh server, registry, and destination collections and
-  bound into saved plans.
-- A second document, `dokploy.settings.yaml` (top-level `settings:`), for
-  instance-wide objects. It is planned against its own state lineage, so a
-  project document and a settings document can share a directory. Tags are the
-  first kind; a project attaches tags by name with `project.tags`.
-- Ownership-aware fields, typed references, dependencies, lifecycle rules,
-  moves, removals, and `ignore_changes` semantics.
-- Dedicated containment separate from general dependency ordering, persisted
-  in strict state format version 4, which also records the document scope.
-- A three-way planner that compares desired configuration, durable state, and
-  fresh remote observations.
-- Deterministic dependency ordering, drift attribution, protected deletion,
-  and fail-closed handling of incomplete or ambiguous remote data.
-- Sensitive intent represented by opaque, instance-bound fingerprints rather
-  than plaintext values in plans or state.
-
-### An owned Rust SDK
-
-- Generated request bindings kept private behind a handwritten SDK.
-- Stable typed identifiers and tolerant runtime response models for critical
-  reconciliation reads.
-- Bounded, secret-safe database Backup reads and single-attempt mutations with
-  authoritative target collections and explicit outcome-unknown recovery.
-- Contract tests backed by sanitized responses captured from a digest-pinned
-  Dokploy `v0.30.6` instance.
-
-## Design principles
-
-**Fresh state over cached assumptions.** Reconciliation reads Dokploy before it
-plans. The project does not maintain a persistent API cache.
-
-**Fail closed when evidence is incomplete.** Partial collections, conflicting
-identities, uncertain containment, unsupported mutations, and unresolved
-recovery records block changes instead of being guessed away.
-
-**Secrets stay out of durable artifacts.** Configuration uses deferred secret
-descriptors. Plans, state, diagnostics, journals, fixtures, and debug output are
-designed not to retain raw secret values.
-
-**Generated breadth, handwritten stability.** OpenAPI generation provides broad
-request coverage. The public SDK owns transport policy, authentication, stable
-types, and runtime contracts where the upstream schema is incomplete.
-
-**Recovery is part of mutation design.** State writes are locked and atomic,
-with previous-state backups and durable operation journals that prevent new
-mutations while an earlier outcome remains unresolved.
-
-## Architecture
-
-| Crate | Responsibility |
-| --- | --- |
-| `dokploy-api` | Generated request bindings and endpoint metadata from the pinned OpenAPI contract |
-| `dokploy-sdk` | Authentication, transport policy, typed resources, and safe runtime models |
-| `dokploy-config` | Strict parsing, schema generation, and semantic validation for `dokploy.yaml` |
-| `dokploy-state` | Durable resource identity, locking, checkpoints, backups, and operation journals |
-| `dokploy-core` | Pure desired/stored/remote snapshots and deterministic planning |
-| `dokploy-cli` | Command-line interface and composition of configuration, SDK, state, and planning |
-
-The CLI manages resources through an existing Dokploy API. Installing or
-provisioning the Dokploy server itself is outside the project boundary.
-
-## Quick look
-
-Build the CLI with the pinned Rust toolchain:
-
-```bash
-cargo build --release -p dokploy-cli
+```
+workspace/
+  dokploy.workspace.yaml     documents and their order
+  settings.yaml              servers, registries, destinations, notifications, web server, ...
+  projects/leganews.yaml     environments, services, domains, env vars, backups, ...
+  files/                     compose files, configs, scripts
+  secrets/                   dotenv files, git-ignored
 ```
 
-Explore the available commands:
-
 ```bash
-target/release/dokploy --help
-target/release/dokploy api project --help
+dokploy import all           # adopt an existing instance into this workspace
+dokploy plan --all           # what would change, secret-free
+dokploy apply --all --deploy # reconcile settings, then projects, then deploy
 ```
 
-Generate a completion script for the current CLI command tree:
+Applying the workspace to a fresh instance, after a few documented manual steps
+(install Dokploy, create the admin and an API key), reproduces the instance;
+importing the result gives an equivalent workspace. That round trip is the beta's
+acceptance test. The field-level target is the pair of annotated maps in
+[`docs/vision/`](docs/vision/): [`dokploy.full.yaml`](docs/vision/dokploy.full.yaml)
+(a project) and [`dokploy.settings.full.yaml`](docs/vision/dokploy.settings.full.yaml)
+(instance settings).
 
-```bash
-target/release/dokploy completions bash
-```
+## How it works
 
-Installation instructions for Bash, Zsh, Fish, PowerShell, and Elvish are in
-[Shell completions](docs/shell-completions.md).
+- **Kind specs** describe every Dokploy resource once, as data: fields, types,
+  secrets, mutability, endpoints, write groups. The engine is generic over them, so
+  parsing, planning, applying, importing, schema, docs, and tests all come from one
+  source. A CI ledger checks that every API field is classified.
+- **A safe kernel** (kept from the first engine): a pure three-way planner, durable
+  state with journals and recovery, fingerprinted secrets, and stale-state and
+  instance-binding protection.
+- **Honest about secrets**: configuration holds references; state holds fingerprints;
+  import writes secrets to git-ignored files and never into YAML.
 
-Create and validate a starter declarative configuration without contacting a
-Dokploy instance:
-
-```bash
-target/release/dokploy init --empty
-target/release/dokploy validate
-target/release/dokploy schema > dokploy.schema.json
-```
-
-Instance settings use a separate document. Start one with
-`dokploy init --settings`, print its schema with
-`dokploy schema --document settings`, or adopt the tags that already exist with
-`dokploy import settings`.
-
-Connection settings can come from command-line overrides, environment
-variables, or a selected local context. Use `dokploy context --help` to inspect
-the context workflow without exposing stored API keys.
-
-## Project status
-
-The foundation, API/SDK, durable state, configuration language, and core
-planner are implemented. Fresh remote projection covers projects,
-environments, applications, application ports, redirects, security entries,
-Compose services, PostgreSQL, MySQL, MariaDB, MongoDB, LibSQL, Redis,
-application domains, mounts, schedules, and database backups.
-Adapter-owned contracts classify in-place changes, reparenting, and ordered
-replacement without admitting mutation code to the planner.
-
-Phase 6 is complete, including the public confirmed `apply` workflow, durable
-per-mutation checkpoints, bounded independent database mutations, multi-step
-application configuration, and apply-then-plan convergence.
-
-Preview a workspace without changing Dokploy or creating local state:
-
-```bash
-dokploy plan
-dokploy plan --json
-dokploy plan --json --detailed-exitcode
-```
-
-Detailed exit status follows the usual infrastructure-planning convention: 0
-for success, 1 for an error or blocked plan, and 2 for an applyable plan with
-changes.
-
-Apply always builds and displays a fresh plan under the workspace writer lock.
-It proceeds only after the operator types exactly `yes`:
-
-```bash
-dokploy apply
-dokploy apply --parallelism 4
-```
-
-Interactive approval requires a terminal. Automation must pass
-`--auto-approve` explicitly; redirected or closed input never counts as a
-decline or an approval. Command results and machine-readable output use
-standard output, while plans, prompts, warnings, and diagnostics use standard
-error.
-
-For reviewed or deferred execution, save a plan and apply that artifact:
-
-```bash
-dokploy plan --out plan.json
-dokploy apply plan.json --auto-approve
-```
-
-Saved plans are owner-only, redaction-safe evidence envelopes rather than
-trusted mutation scripts. Apply rebuilds the plan from the current
-configuration, durable state, and fresh Dokploy reads under the writer lock.
-It rejects the artifact before approval or mutation if its instance, lineage,
-serial, configuration digest, actions, or keyed remote evidence changed.
-
-The execution bound accepts values from 1 through 64. Independent Postgres,
-MySQL, MariaDB, MongoDB, and Redis mutations and LibSQL creates may overlap;
-hierarchy-dependent and multi-step operations stay ordered. Each successful
-remote step is checkpointed before dependent work continues. A failed
-operation is never rolled back automatically, and already running successful
-siblings are still checkpointed before apply returns.
-
-If an apply stops with an unresolved journal, inspect and complete its verified
-recovery plan explicitly:
-
-```bash
-dokploy recover
-dokploy recover --auto-approve
-```
-
-Recovery never retries an uncertain create. It adopts only a uniquely observed
-resource whose readable owned values match the durable checkpoint. Uncertain
-updates involving write-only values or ambiguous observations stop for manual
-review.
-
-Destroy renders a fresh dependent-first plan and honors stored protection
-before issuing any deletion:
-
-```bash
-dokploy destroy
-dokploy destroy --auto-approve
-```
-
-Only resources owned by the workspace state are considered. An uninitialized
-workspace is a no-op and does not create state.
-
-For delivery detail, see the [implementation phases](docs/implementation-phases.md).
+Architecture and rules: [`ARCHITECTURE.md`](ARCHITECTURE.md). Vocabulary:
+[`CONTEXT.md`](CONTEXT.md). Decisions: [`docs/decisions/`](docs/decisions/).
 
 ## Documentation
 
-- [Implementation phases](docs/implementation-phases.md) — current delivery
-  sequence and remaining MVP work.
-- [Architecture decisions](docs/decisions/) — design rationale and accepted
-  constraints.
-- [Integration testing](docs/integration-testing.md) — the disposable,
-  digest-pinned Dokploy environment and live contract checks.
-- [Phase 0 generator bake-off](docs/phase-0-generator-bakeoff.md) — evidence
-  behind the generated/private API boundary.
-- [CI and dependency policy](docs/ci.md) — repository validation and supply-chain
-  checks.
-- [Releasing the CLI](docs/releasing.md) — cargo-dist artifacts and the release
-  procedure.
-- [Shell completions](docs/shell-completions.md) — installation for every
-  supported shell.
+- [Roadmap](docs/roadmap.md): milestones, gates, risks, open decisions.
+- [Architecture decisions](docs/decisions/) and [kind spec format](docs/design/spec-format.md).
+- [Vision maps](docs/vision/): every Dokploy field, annotated.
+- [CI and dependency policy](docs/ci.md), [Releasing](docs/releasing.md),
+  [Shell completions](docs/shell-completions.md).
 
-## Development
+## Building today
 
-Run the primary repository gate before committing implementation changes:
+```bash
+cargo build --release -p dokploy-cli
+target/release/dokploy --help
+```
+
+The imperative commands (`dokploy api <resource> <operation>`, generated from the
+Dokploy OpenAPI document; the `api` prefix is being introduced, ADR 0017) and the current declarative commands work with the
+first engine's `version: 1` documents until the replacement lands.
+
+Before committing:
 
 ```bash
 cargo fmt --all -- --check
-cargo test --workspace --all-targets --all-features --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
+cargo test --workspace --all-targets --all-features --locked
+cargo xtask codegen --check
 ```
 
-Additional code generation, OpenAPI, fixture, Compose, and dependency-policy
-checks are documented in [CI and dependency policy](docs/ci.md).
+## Status of the design
+
+Every ADR is **Proposed**; review them before implementation starts. The product is
+unreleased, so any of this can change without migration (ADR 0001).

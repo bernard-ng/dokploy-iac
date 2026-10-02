@@ -1,0 +1,13 @@
+[package]
+name = "dokploy-spec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Declarative kind specs for the Dokploy IaC engine and their OpenAPI coverage ledger."
+
+[dependencies]
+serde.workspace = true
+serde-saphyr.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

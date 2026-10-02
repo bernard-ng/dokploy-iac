@@ -1,0 +1,62 @@
+# Container registry credentials. A flat settings kind: eight fields, one write
+# group, no hook. This is the cost target for ADR 0002.
+kind: registry
+scope: settings
+section: registries
+title: Container registry
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "registry.{key}"
+api:
+  id: registryId
+  create: { op: registry.create }
+  update: { op: registry.update }
+  remove: { op: registry.remove }
+  read:
+    list: { op: registry.all, authority: authoritative }
+    one: { op: registry.one, id_param: registryId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    api: registryName
+    type: text
+    min_len: 1
+    default: key
+    doc: Display name; defaults to the document key.
+  type:
+    api: registryType
+    type: enum[cloud]
+    doc: Registry flavour. Dokploy v0.30.6 accepts only `cloud`.
+  url:
+    api: registryUrl
+    type: text
+    doc: Registry host, such as ghcr.io.
+  username:
+    type: text
+    min_len: 1
+  password:
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    resend_on_update: true
+    doc: Update replaces the whole object, so the secret source must be declared.
+  image_prefix:
+    api: imagePrefix
+    type: text
+    nullable: true
+    doc: Prefix prepended to image names pushed to this registry.
+  server:
+    api: serverId
+    type: selector(server)
+    nullable: true
+    doc: Restrict the registry to one server.
+write:
+  - op: registry.update
+    fields: [name, type, url, username, password, image_prefix, server]
+    shape: full
+ledger:
+  readonly: [createdAt, organizationId]

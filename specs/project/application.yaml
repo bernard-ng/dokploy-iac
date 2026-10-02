@@ -1,0 +1,101 @@
+# PROTOTYPE (coverage: partial). Exercises the three hard shapes: a tagged union
+# written by a different endpoint per arm, an environment block planned per key,
+# and create-only fields. Completed in milestone M3.
+kind: application
+scope: project
+parent: environment
+section: applications
+title: Application
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "application.{key}"
+api:
+  id: applicationId
+  create:
+    op: application.create
+    attach: { environmentId: parent_id }
+  update: { op: application.update }
+  remove: { op: application.delete }
+  deploy: { op: application.deploy }
+  read:
+    list: { op: application.search, authority: authoritative }
+    one: { op: application.one, id_param: applicationId, agree: true }
+  create_identity:
+    from_response: /applicationId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  app_name:
+    api: appName
+    type: text
+    mutability: create_only
+    nullable: true
+    doc: Dokploy's Docker-level name; generated when omitted.
+  description:
+    type: text
+    nullable: true
+  server:
+    api: serverId
+    type: selector(server)
+    mutability: create_only
+    nullable: true
+  replicas:
+    type: int
+    min: 0
+    needs_deploy: true
+  command:
+    type: text
+    nullable: true
+    needs_deploy: true
+  args:
+    type: list<text>
+    nullable: true
+    needs_deploy: true
+  environment:
+    api: env
+    type: env
+    granularity: key
+    needs_deploy: true
+  source:
+    type: union(type)
+    needs_deploy: true
+    arms:
+      github:
+        provider: { api: githubId, type: selector(git_provider) }
+        owner: { type: text }
+        repository: { type: text }
+        branch: { type: text }
+        build_path: { api: buildPath, type: text }
+        trigger_type: { api: triggerType, type: "enum[push, tag]" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>" }
+      docker:
+        image: { api: dockerImage, type: text }
+        registry_url: { api: registryUrl, type: text, nullable: true }
+        username: { type: text, nullable: true }
+        password:
+          type: text
+          class: secret
+          mutability: write_only
+          nullable: true
+write:
+  - op: application.update
+    fields: [name, description, replicas, command, args]
+    shape: partial
+  - op: application.saveEnvironment
+    fields: [environment]
+    shape: partial
+  - by_variant: source
+    ops:
+      github: application.saveGithubProvider
+      docker: application.saveDockerProvider
+children:
+  - { kind: redirect, section: redirects }
+ledger:
+  derived: [sourceType]
+  readonly: [createdAt]

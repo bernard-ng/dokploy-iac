@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `dokploy-spec` crate and `specs/`: the kind spec format (grammar v0) with a parser,
+  structural lint, cross-spec registry, and an OpenAPI coverage ledger, plus working
+  specs for `registry`, `redirect`, and partial `application`, `environment`, and
+  `project`. `cargo xtask specs --check` runs in CI. Nothing in the engine reads the
+  specs yet (milestone M0 of `docs/roadmap.md`).
+
+### Direction
+
+- Reset the documentation to the project's original goal (a Dokploy instance
+  described entirely in YAML and rebuilt from it). Removed the first engine's 50
+  ADRs, phase plans, design notes, integration-test guide, generator bake-off, and
+  README (still in git history at `96cab73`). Added `ARCHITECTURE.md`, `CONTEXT.md`,
+  ADRs 0001 to 0017 (all Proposed), the kind spec format, the roadmap, and the
+  vision maps. The product is unreleased, so the document format, state format, CLI,
+  and Rust APIs may break without migration until the beta (ADR 0001).
+
+### Added
+
 - Add a second document type for instance settings. A file with a top-level
   `settings:` key (default `dokploy.settings.yaml`) is planned, applied,
   recovered, and inspected against its own state lineage in `.dokploy/settings/`,
