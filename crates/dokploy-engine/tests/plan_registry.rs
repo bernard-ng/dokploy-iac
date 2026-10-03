@@ -317,8 +317,8 @@ async fn a_child_of_a_missing_parent_is_missing_without_reading_for_it() {
     );
     assert_eq!(
         transport.calls(),
-        ["project.all"],
-        "no read for a child of nothing"
+        ["tag.all", "project.all"],
+        "no read for a child of nothing (the tags a project may name are read once)"
     );
 }
 
@@ -369,7 +369,12 @@ async fn a_child_collection_is_read_once_per_parent_scoped_by_it() {
     assert_eq!(created, ["project.shop/environment.staging"]);
     assert_eq!(
         transport.calls(),
-        ["project.all", "project.one", "environment.byProjectId"],
+        [
+            "tag.all",
+            "project.all",
+            "project.one",
+            "environment.byProjectId"
+        ],
         "the child collection is read once, after its parent"
     );
 }

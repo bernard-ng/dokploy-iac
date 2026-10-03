@@ -1,0 +1,69 @@
+# A Docker network Dokploy manages, which services attach to by name (`networks: [{ name: backend }]`).
+# A flat settings kind with no update operation: Dokploy can create, recreate, resync, and remove a
+# network, so every field is create-only and a change replaces it.
+#
+# Live facts: none captured yet. `network.all` lists the organisation's networks (optionally of one
+# server), the create answer is not captured, so the identity is the one new item of `network.all`
+# by name, and whether `network.all` is complete is to be verified in the live suite.
+kind: network
+scope: settings
+section: networks
+title: Network
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "network.{key}"
+api:
+  id: networkId
+  create: { op: network.create }
+  remove: { op: network.remove }
+  read:
+    list: { op: network.all, authority: authoritative }
+    one: { op: network.one, id_param: networkId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+    mutability: create_only
+    doc: The Docker network name; defaults to the document key.
+  driver:
+    type: enum[bridge, overlay]
+    mutability: create_only
+  internal:
+    type: bool
+    mutability: create_only
+    doc: No traffic leaves the network.
+  attachable:
+    type: bool
+    mutability: create_only
+  enable_ipv4:
+    api: enableIPv4
+    type: bool
+    mutability: create_only
+  enable_ipv6:
+    api: enableIPv6
+    type: bool
+    mutability: create_only
+  mtu:
+    type: int
+    min: 68
+    max: 65535
+    nullable: true
+    mutability: create_only
+  ipam:
+    type: "blob(network-ipam)"
+    nullable: true
+    mutability: create_only
+    doc: "IP address management as Docker's own JSON: `{ driver, config: [{ subnet, gateway, ipRange }] }`."
+  server:
+    api: serverId
+    type: selector(server)
+    nullable: true
+    mutability: create_only
+    doc: The server the network lives on; empty is the Dokploy host.
+ledger:
+  readonly: [createdAt, organizationId]

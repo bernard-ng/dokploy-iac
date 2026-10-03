@@ -246,7 +246,8 @@ impl SpecRegistry {
 }
 
 fn is_collection(parsed: &FieldType, granularity: Option<Granularity>) -> bool {
-    matches!(parsed, FieldType::Env | FieldType::Map(_)) && granularity == Some(Granularity::Key)
+    (matches!(parsed, FieldType::Env | FieldType::Map(_)) || parsed.selector_set_kind().is_some())
+        && granularity == Some(Granularity::Key)
 }
 
 fn is_per_member(parsed: &FieldType, granularity: Option<Granularity>) -> bool {
@@ -325,8 +326,13 @@ fn resolve_inside(
 
     if is_collection(parsed, granularity) {
         validate_key(parsed, rest, full)?;
+        // The entry of a map of sets is a member of one of the sets: `service.network`.
         let element = match parsed {
-            FieldType::Map(inner) => (**inner).clone(),
+            FieldType::Map(inner) if parsed.is_map_of_selector_sets() => match &**inner {
+                FieldType::Set(item) => (**item).clone(),
+                other => other.clone(),
+            },
+            FieldType::Map(inner) | FieldType::Set(inner) => (**inner).clone(),
             _ => FieldType::Env,
         };
         let name = prefix.rsplit('.').next().unwrap_or(&prefix).to_owned();
@@ -338,6 +344,23 @@ fn resolve_inside(
         // A collection's own rules describe the collection, not its entries.
         info.rules = ValueRules::default();
         info.has_default = false;
+        // An entry of a map of sets is `key.member`: the key says which element the read and the
+        // write address, so it replaces the placeholder in the pointer.
+        if parsed.is_map_of_selector_sets() {
+            let Some((key, member)) = rest.split_once('.') else {
+                return Err(PathError::InvalidKey {
+                    path: full.to_owned(),
+                    reason: "an entry names a key and a member, as `key.member`",
+                });
+            };
+            if key.is_empty() || member.is_empty() {
+                return Err(PathError::InvalidKey {
+                    path: full.to_owned(),
+                    reason: "an entry names a key and a member, as `key.member`",
+                });
+            }
+            info.api = info.api.replace("$key", key);
+        }
         return Ok(info);
     }
     if is_per_member(parsed, granularity) {

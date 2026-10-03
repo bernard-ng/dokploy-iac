@@ -438,15 +438,16 @@ fn check_type_rules(
             "class content and type file go together",
         );
     }
+    let selector_set = parsed.selector_set_kind().is_some();
     if field.granularity.is_some()
-        && !matches!(
+        && !(matches!(
             parsed,
             FieldType::Map(_) | FieldType::Env | FieldType::Struct
-        )
+        ) || selector_set)
     {
         context.add(
             format!("{path}.granularity"),
-            "applies to map, env, and struct only",
+            "applies to map, env, struct, and a set of selectors only",
         );
     }
 
@@ -556,6 +557,25 @@ fn check_write_groups(context: &mut Context<'_>, spec: &KindSpec) {
     }
 
     for (name, field) in &spec.fields {
+        // A relation is changed one member at a time, by the operations it names.
+        if let Some(membership) = &field.membership {
+            let path = format!("fields.{name}.membership");
+            check_operation(context, &format!("{path}.add.op"), &membership.add.op);
+            check_operation(context, &format!("{path}.remove.op"), &membership.remove.op);
+            let keyed_selector_set = parse_type(&field.ty)
+                .is_ok_and(|ty| ty.selector_set_kind().is_some())
+                && field.granularity == Some(crate::model::Granularity::Key);
+            if !keyed_selector_set {
+                context.add(
+                    path.clone(),
+                    "applies to a set of selectors planned per member (`granularity: key`)",
+                );
+            }
+            if carried.contains_key(name.as_str()) {
+                context.add(path, "a relation is in no write group");
+            }
+            continue;
+        }
         let writable = matches!(
             field.mutability,
             Mutability::InPlace | Mutability::Reparent | Mutability::WriteOnly

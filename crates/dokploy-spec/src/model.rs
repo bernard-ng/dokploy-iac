@@ -426,6 +426,32 @@ pub struct Field {
     /// Arms of a `union`, each a set of fields.
     #[serde(default)]
     pub arms: BTreeMap<String, BTreeMap<String, Field>>,
+    /// For a set of selectors that is a relation Dokploy changes one member at a time
+    /// (`tag.assignToProject`), the operations that add and remove a member. Such a field is in
+    /// no write group, and its `api` is where the held ids are in the direct read.
+    #[serde(default)]
+    pub membership: Option<Membership>,
+}
+
+/// How the members of a relation are added and removed, one request each.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Membership {
+    /// Adds one member.
+    pub add: MembershipOp,
+    /// Removes one member.
+    pub remove: MembershipOp,
+}
+
+/// One request of a relation: the kind's id goes in its own field, and the id of the member in
+/// `member`.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MembershipOp {
+    /// `resource.operation`.
+    pub op: String,
+    /// The body field that carries the member's id.
+    pub member: String,
 }
 
 /// Whether an update sends only changes or the whole object.

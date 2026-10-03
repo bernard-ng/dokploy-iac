@@ -125,6 +125,8 @@ A *property* is a field at planning granularity; its dotted path is what plans, 
 |-------|------------|
 | scalar, enum, list, set, file, ref, selector, blob, shared type | one: the field name |
 | `union(tag)` | the tag (`source.type`) and one per member of each arm (`source.github.owner`, `source.docker.password`); the union itself is not a path |
+| `set<selector(kind)>` with `granularity: key` | the root (`networks`: owned only to declare it empty or clear it) and one entry per member, named by the document (`networks.backend`), each a selector |
+| `map<text, set<selector(kind)>>` with `granularity: key` | the root and one entry per member of each set, `key.member` (`service_networks.api.backend`); the key cannot hold a dot |
 | `env` or `map` with `granularity: key` | the root (`environment`: owned only to clear it or declare it empty) and one entry per key (`environment.LOG_LEVEL`) |
 | `struct` with `granularity: field` | one per member (`limits.cpu`); the struct itself is not a path |
 | `struct` without it | one: the field name |
@@ -163,6 +165,17 @@ operation may be listed for several arms (`build`: one `saveBuildType` for all).
 `shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation by a
 union tag, `ops: { arm: operation }`: one request per apply, to the operation of the arm the
 document names, carrying the members of that arm (see [`engine.md`](engine.md#unions)).
+
+## Relations and keyed arrays
+
+`membership: { add: { op, member }, remove: { op, member } }` on a keyed set of selectors makes it a
+relation Dokploy changes one member at a time (`tag.assignToProject`). The field is in no write group,
+its `api` says where the held ids are in the direct read, and each request carries the kind's id and
+the member's. The pointer forms of `api` are a key or pointer to an array of ids (`networkIds`), the
+id inside each object of an array (`/projectTags/*/tagId`), and the array of ids of the one element
+whose key matches (`/serviceNetworks/*[serviceName=$key]/networkIds`, where `$key` is the key of the
+entry). `fallback` of such a field is the template of a new element. See
+[ADR 0019](../decisions/0019-sets-of-selectors-relations-and-per-parent-operations.md).
 
 ## Operations
 

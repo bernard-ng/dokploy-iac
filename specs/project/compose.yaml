@@ -1,6 +1,4 @@
-# PROTOTYPE (coverage: partial). A Docker Compose stack of an environment. The swarm-free settings
-# are here; `service_networks` is still an unclassified request until the networks exist (M5), and
-# the schedules of its services wait for the schedule kind.
+# A Docker Compose stack of an environment.
 #
 # Live facts (fixtures/api/live/*/compose-*): create answers the whole object, update answers the
 # object, delete takes `deleteVolumes` and answers the removed object, and the collection is the
@@ -15,7 +13,7 @@ parent: environment
 section: compose
 title: Compose stack
 class: managed
-coverage: partial
+coverage: full
 identity:
   key: name
   collision: [name]
@@ -148,9 +146,17 @@ fields:
     api: autoDeploy
     type: bool
     nullable: true
+  service_networks:
+    api: "/serviceNetworks/*[serviceName=$key]/networkIds"
+    type: "map<text, set<selector(network)>>"
+    granularity: key
+    nullable: true
+    needs_deploy: true
+    fallback: { detachDokployNetwork: false }
+    doc: The networks each Compose service attaches to, by service name. Dokploy holds one element per service with a `detachDokployNetwork` flag that is kept as it holds it (`false` for a service the document adds) and is not managed. A service left out is unmanaged.
 write:
   - op: compose.update
-    fields: [name, description, icon, compose_type, source, compose_path, command, suffix, randomize, isolated_deployment, isolated_deployments_volume, auto_deploy]
+    fields: [name, description, icon, compose_type, source, compose_path, command, suffix, randomize, isolated_deployment, isolated_deployments_volume, auto_deploy, service_networks]
     shape: partial
   - op: compose.saveEnvironment
     fields: [environment, create_env_file]
@@ -159,6 +165,8 @@ ledger:
   readonly: [createdAt, composeStatus, refreshToken]
   ignored:
     - { field: pullImages, reason: "accepted by compose.update but never returned by compose.one on 0.30.6 or 0.30.7, so it cannot be read back" }
+    - { field: title, reason: "the title of the deployment record a deploy writes: an action input, not configuration" }
+    - { field: freshVolumes, reason: "a deploy option that recreates the volumes: an action input, not configuration" }
 children:
   - { kind: domain, section: domains }
   - { kind: mount, section: mounts }

@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod project;
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};

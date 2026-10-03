@@ -39,6 +39,19 @@ pub fn run_specs_check(root: &Path) -> Result<SpecsReport, Box<dyn std::error::E
     for ledger in &report.kinds {
         write_row(&mut table, ledger)?;
     }
+    for ledger in report.kinds.iter().filter(|l| !l.unclassified.is_empty()) {
+        writeln!(
+            table,
+            "  {} unclassified: {}",
+            ledger.kind,
+            ledger
+                .unclassified
+                .iter()
+                .map(|(operation, field)| format!("{operation}.{field}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
+    }
     writeln!(
         table,
         "response side: not checked (no recorded live fixtures yet, ADR 0007)"

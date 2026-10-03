@@ -263,8 +263,8 @@ project:
           # pull_images (API: pullImages) is accepted by compose.update but never returned by compose.one on
           # 0.30.6 or 0.30.7, so it cannot be read back and is not modeled.
           auto_deploy: true                  # ✘
-          service_networks:                  # ✘ per Compose service network attachment
-            - { service: api, networks: [{ name: backend }], detach_dokploy_network: false }
+          service_networks:                  # ✎ a map from service to the networks it attaches to (API: serviceNetworks)
+            api: [{ name: backend }]         #   the `detachDokployNetwork` flag of a service is kept as Dokploy holds it
           domains:                           # ✘ domains on Compose (import skips them)
             api:
               service_name: api              # ✘ which Compose service

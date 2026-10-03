@@ -1,14 +1,14 @@
-# PROTOTYPE (coverage: partial). The collection is the one `environment.one` embeds
-# (`application.search` is paged and is not needed). Exercises the three hard shapes: a tagged union
-# written by a different endpoint per arm, an environment block planned per key,
-# and create-only fields. Completed in milestone M3.
+# An application of an environment: the collection is the one `environment.one` embeds
+# (`application.search` is paged and is not needed). Exercises the hard shapes: tagged unions (the
+# source, written by a different endpoint per arm, and the build, written by one for all), an
+# environment block planned per key, a set of selectors, and create-only fields.
 kind: application
 scope: project
 parent: environment
 section: applications
 title: Application
 class: managed
-coverage: partial
+coverage: full
 identity:
   key: name
   collision: [name]
@@ -239,12 +239,27 @@ fields:
       stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
       endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
       ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
+  traefik_config:
+    api: traefikConfig
+    type: file
+    class: content
+    doc: The application's own dynamic Traefik file, read from a file of the workspace. It is written with `application.updateTraefikConfig` and, like any file content, compared by digest and never read back, so a change made at Dokploy is not seen.
+  networks:
+    api: networkIds
+    type: "set<selector(network)>"
+    granularity: key
+    nullable: true
+    needs_deploy: true
+    doc: The networks the service attaches to, each named by a `network` of the settings. Left out, the attachments are unmanaged; `[]` detaches from all of them.
 write:
   - op: application.update
-    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache, swarm]
+    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache, swarm, networks]
     shape: partial
   - op: application.saveEnvironment
     fields: [environment, build_args, build_secrets, create_env_file]
+    shape: full
+  - op: application.updateTraefikConfig
+    fields: [traefik_config]
     shape: full
   - by_variant: source
     shape: full
@@ -274,4 +289,8 @@ children:
   - { kind: patch, section: patches }
   - { kind: volume_backup, section: volume_backups }
 ledger:
-  readonly: [createdAt]
+  readonly: [createdAt, applicationStatus, refreshToken]
+  ignored:
+    - { field: dropBuildPath, reason: "the path of an uploaded archive, for the `drop` source, which is intentionally not representable" }
+    - { field: title, reason: "the title of the deployment record a deploy writes: an action input, not configuration" }
+    - { field: subtitle, reason: "the subtitle of the deployment record a deploy writes: an action input, not configuration" }

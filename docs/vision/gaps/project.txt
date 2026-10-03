@@ -1,7 +1,2 @@
 DOKDOC004 project.environments.staging.applications.api.env_file
-DOKDOC004 project.environments.staging.applications.api.networks
-DOKDOC004 project.environments.staging.applications.api.traefik_config
 DOKDOC004 project.environments.staging.compose.stack.env_file
-DOKDOC004 project.environments.staging.compose.stack.service_networks
-DOKDOC004 project.environments.staging.postgres.main.networks
-DOKDOC004 project.tags

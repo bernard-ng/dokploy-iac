@@ -1,5 +1,4 @@
-# PROTOTYPE (coverage: partial). A LibSQL (sqld) database of an environment. The networks are still
-# an unclassified request.
+# A LibSQL (sqld) database of an environment.
 #
 # Live facts (fixtures/api/live/*/libsql-*): create answers a boolean, so the identity is the one
 # new item of the collection by name; update answers `true`; and the collection is the `libsql`
@@ -13,7 +12,7 @@ parent: environment
 section: libsql
 title: LibSQL database
 class: managed
-coverage: partial
+coverage: full
 identity:
   key: name
   collision: [name]
@@ -142,9 +141,16 @@ fields:
       networks: { api: networkSwarm, type: "blob(swarm-networks)", nullable: true }
       stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
       endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
+  networks:
+    api: networkIds
+    type: "set<selector(network)>"
+    granularity: key
+    nullable: true
+    needs_deploy: true
+    doc: The networks the service attaches to, each named by a `network` of the settings. Left out, the attachments are unmanaged; `[]` detaches from all of them.
 write:
   - op: libsql.update
-    fields: [name, description, image, command, username, password, node, enable_namespaces, resources, detach_dokploy_network, external_port, external_grpc_port, external_admin_port, replicas, swarm]
+    fields: [name, description, image, command, username, password, node, enable_namespaces, resources, detach_dokploy_network, external_port, external_grpc_port, external_admin_port, replicas, swarm, networks]
     shape: partial
   - op: libsql.saveEnvironment
     fields: [environment]

@@ -33,9 +33,9 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the application is read from the environment's direct read; the paged `application.search` the first engine used is not read, and an unauthorized read is a typed failure for every kind (engine discovery_safety)"
     },
     {
       "id": "dokploy-cli/tests/application_remote::combined_discovery_plans_an_absent_domain_under_a_managed_application",
@@ -195,9 +195,9 @@
         "PROJECT"
       ],
       "category": "document",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the paged `application.search` the first engine used is not read; a malformed embedded collection is an invalid response (engine discovery_safety)"
     },
     {
       "id": "dokploy-cli/tests/application_remote::managed_404_and_target_search_with_the_same_stored_id_fail_closed",
@@ -248,8 +248,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance application `foreign_direct_read`, `foreign_collection_item` (a row that names another parent is not this parent's child)",
       "reason": null
     },
     {
@@ -286,8 +286,8 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance application `unmanaged_collision`, `ambiguous_collision` (a same-name resource that state does not track is never adopted)",
       "reason": null
     },
     {
@@ -305,9 +305,9 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "a different arm of the source is a change of arm that is planned and written, not a block (ADR 0018); engine unions `switching_the_arm_writes_the_new_arm_and_the_secret_once`"
     },
     {
       "id": "dokploy-cli/tests/application_remote::null_environment_root_proves_requested_sensitive_children_absent",
