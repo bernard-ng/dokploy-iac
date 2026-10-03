@@ -7,7 +7,7 @@
 # the `mounts` array the service's direct read embeds.
 kind: mount
 scope: project
-parent: [application, postgres, mysql, mariadb, mongo, redis]
+parent: [application, compose, postgres, mysql, mariadb, mongo, redis, libsql]
 section: mounts
 title: Mount
 class: managed
@@ -27,6 +27,8 @@ api:
       mariadb: { serviceType: mariadb }
       mongo: { serviceType: mongo }
       redis: { serviceType: redis }
+      libsql: { serviceType: libsql }
+      compose: { serviceType: compose }
   update: { op: mounts.update }
   remove: { op: mounts.remove }
   parent_field:
@@ -36,6 +38,8 @@ api:
     mariadb: mariadbId
     mongo: mongoId
     redis: redisId
+    libsql: libsqlId
+    compose: composeId
   read:
     list:
       embedded_in: { pointer: /mounts }

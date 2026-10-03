@@ -30,6 +30,13 @@ fn document(source: &str) -> String {
     )
 }
 
+/// A document with one resource of `section` under the environment, with `field` set.
+fn under_environment(section: &str, key: &str, fields: &str) -> String {
+    format!(
+        "version: 2\nproject:\n  slug: shop\n  environments:\n    production:\n      {section}:\n        {key}:\n{fields}"
+    )
+}
+
 struct World {
     sim: Sim,
     directory: tempfile::TempDir,
@@ -301,4 +308,92 @@ fn a_member_of_another_arm_is_refused_before_anything_is_planned() {
 
     let unknown = document("{ type: svn }");
     assert!(engine.parse(&unknown).is_err(), "`svn` is not an arm");
+}
+
+/// A union written by the same operation as the rest of the kind (no operation per arm): the
+/// switch is a plain update that carries the tag and the members of the new arm.
+#[tokio::test]
+async fn a_union_written_by_the_plain_update_switches_arm_with_the_new_members() {
+    let world = World::new();
+    let primary = under_environment(
+        "libsql",
+        "edge",
+        "          username: edge\n          password: { env: DOCKER_TOKEN }\n          image: ghcr.io/tursodatabase/libsql-server:latest\n          enable_namespaces: false\n          node: { type: primary }\n",
+    );
+    let replica = under_environment(
+        "libsql",
+        "edge",
+        "          username: edge\n          password: { env: DOCKER_TOKEN }\n          image: ghcr.io/tursodatabase/libsql-server:latest\n          enable_namespaces: false\n          node: { type: replica, primary_url: \"https://primary.internal\" }\n",
+    );
+    let engine = world.engine();
+    let store = world.store(&engine);
+
+    let compiled = compile(&engine, &primary, &[("DOCKER_TOKEN", PASSWORD)]);
+    engine
+        .apply(&compiled, &store, |_| true)
+        .await
+        .expect("applies");
+    let remote = world.sim.objects("libsql").remove(0);
+    assert_eq!(remote["sqldNode"], "primary");
+    assert!(
+        remote["sqldPrimaryUrl"].is_null(),
+        "a primary has no upstream"
+    );
+
+    let compiled = compile(&engine, &replica, &[("DOCKER_TOKEN", PASSWORD)]);
+    engine
+        .apply(&compiled, &store, |_| true)
+        .await
+        .expect("applies");
+    let remote = world.sim.objects("libsql").remove(0);
+    assert_eq!(remote["sqldNode"], "replica");
+    assert_eq!(remote["sqldPrimaryUrl"], "https://primary.internal");
+    assert_eq!(
+        world.sim.objects("libsql").len(),
+        1,
+        "the switch updated the database, it did not replace it"
+    );
+
+    let plan = engine
+        .plan(&compiled, store.inspect().unwrap().as_ref())
+        .await
+        .unwrap();
+    assert!(plan.changes().is_empty(), "converged: {plan:?}");
+}
+
+#[tokio::test]
+async fn a_compose_source_is_switched_from_the_compose_file_to_a_repository() {
+    let world = World::new();
+    let raw = under_environment(
+        "compose",
+        "stack",
+        "          source: { type: raw, document: { file: stack.yaml } }\n",
+    );
+    let github = under_environment(
+        "compose",
+        "stack",
+        "          source: { type: github, owner: acme, repository: shop, branch: main }\n          compose_path: ./deploy/compose.yml\n",
+    );
+    let engine = world.engine();
+    let store = world.store(&engine);
+    let workspace = std::env::temp_dir();
+    std::fs::write(workspace.join("stack.yaml"), "services: {}\n").unwrap();
+
+    let compiled = compile(&engine, &raw, &[]);
+    engine
+        .apply(&compiled, &store, |_| true)
+        .await
+        .expect("applies");
+    assert_eq!(world.sim.objects("compose")[0]["sourceType"], "raw");
+
+    let compiled = compile(&engine, &github, &[]);
+    engine
+        .apply(&compiled, &store, |_| true)
+        .await
+        .expect("applies");
+    let remote = world.sim.objects("compose").remove(0);
+    assert_eq!(remote["sourceType"], "github");
+    assert_eq!(remote["owner"], "acme");
+    assert_eq!(remote["repository"], "shop");
+    assert_eq!(remote["composePath"], "./deploy/compose.yml");
 }

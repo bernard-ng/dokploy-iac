@@ -87,6 +87,7 @@ impl Case {
         spec: &KindSpec,
         specs: &SpecRegistry,
         parent: Option<&str>,
+        arms: &BTreeMap<String, String>,
     ) -> Result<Self, String> {
         let mut ancestors = Vec::new();
         let mut current = spec;
@@ -126,11 +127,14 @@ impl Case {
             if info.mutability == Mutability::Computed {
                 continue;
             }
-            // A union is exercised through one arm: the first the spec names.
+            // A union is exercised through one arm: the one asked for, or else the first the
+            // spec names.
             let first_arm = |field: &str| {
-                spec.fields
-                    .get(field)
-                    .and_then(|f| f.arms.keys().next().cloned())
+                arms.get(field).cloned().or_else(|| {
+                    spec.fields
+                        .get(field)
+                        .and_then(|f| f.arms.keys().next().cloned())
+                })
             };
             if let Some(arm) = &info.arm
                 && first_arm(info.field_name()).as_ref() != Some(arm)
@@ -213,7 +217,12 @@ impl Case {
             if info.shape != PathShape::Atomic {
                 continue;
             }
-            let (a, b) = if secret {
+            let (a, b) = if info.union_tag {
+                (
+                    first_arm(info.field_name()).map(|arm| Val::Json(json!(arm))),
+                    None,
+                )
+            } else if secret {
                 (
                     Some(Val::Secret(format!("canary-{name}-a"))),
                     Some(Val::Secret(format!("canary-{name}-b"))),

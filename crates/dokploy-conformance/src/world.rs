@@ -412,6 +412,7 @@ mod tests {
             specs.get("registry").expect("a registry spec"),
             &specs,
             None,
+            &BTreeMap::new(),
         )
         .expect("a case");
 

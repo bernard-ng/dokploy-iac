@@ -1,56 +1,104 @@
 //! A project kind passes the same suite as a settings kind: ancestors are seeded, the create
 //! carries what the create operation accepts, and the rest is written by an update right after.
 //!
-//! The `application` is exercised once per arm of its `source` union: the suite writes through
-//! one arm at a time, so each arm's operation and members (and the secret of the Docker arm)
-//! get the whole suite.
+//! A kind with a union is exercised once per arm of it: the suite writes through one arm at a
+//! time, so each arm's members (and the secret of the Docker arm of an application's `source`, and
+//! the operation of each arm) get the whole suite.
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use dokploy_conformance::{Outcome, Suite, report};
-use dokploy_spec::{KindSpec, SpecRegistry, load_dir, parse_spec};
+use dokploy_spec::load_dir;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The repository's application with only one arm of its source.
-fn application_with_arm(arm: &str) -> KindSpec {
-    let text = std::fs::read_to_string(root().join("specs/project/application.yaml"))
-        .expect("the spec exists");
-    let mut spec = parse_spec(&text).expect("the spec parses");
-    spec.coverage = dokploy_spec::Coverage::Full;
-    let source = spec.fields.get_mut("source").expect("a source");
-    source.arms.retain(|name, _| name == arm);
-    assert_eq!(source.arms.len(), 1, "`{arm}` is an arm of the source");
-    spec.write.iter_mut().for_each(|group| {
-        if let dokploy_spec::WriteGroup::ByVariant { ops, .. } = group {
-            ops.retain(|name, _| name == arm);
-        }
-    });
-    spec
-}
-
 #[tokio::test]
 async fn an_application_conforms_through_each_arm_of_its_source() {
     for arm in ["github", "gitlab", "bitbucket", "gitea", "git", "docker"] {
-        conforms_through(arm).await;
+        conforms_through("application", "source", arm, &APPLICATION_SCENARIOS).await;
     }
 }
 
-async fn conforms_through(arm: &str) {
-    let repository = load_dir(&root().join("specs")).expect("repository specs are valid");
-    let mut kinds: Vec<KindSpec> = repository
-        .kinds()
-        .filter(|spec| spec.kind != "application")
-        .cloned()
-        .collect();
-    kinds.push(application_with_arm(arm));
-    let specs = SpecRegistry::from_specs(kinds, &BTreeSet::new()).expect("consistent specs");
-    let suite = Suite::new(specs, root().join("fixtures/api/live/v0.30.6"));
+#[tokio::test]
+async fn an_application_conforms_through_each_arm_of_its_build() {
+    for arm in [
+        "dockerfile",
+        "heroku_buildpacks",
+        "paketo_buildpacks",
+        "nixpacks",
+        "static",
+        "railpack",
+    ] {
+        conforms_through("application", "build", arm, &BUILD_SCENARIOS).await;
+    }
+}
 
-    let results = suite.run("application").await;
+#[tokio::test]
+async fn a_compose_conforms_through_each_arm_of_its_source() {
+    for arm in ["raw", "github", "gitlab", "bitbucket", "gitea", "git"] {
+        conforms_through("compose", "source", arm, &COMPOSE_SCENARIOS).await;
+    }
+}
+
+#[tokio::test]
+async fn a_libsql_conforms_through_each_arm_of_its_node() {
+    conforms_through("libsql", "node", "primary", &LIBSQL_SCENARIOS).await;
+    let replica: Vec<&str> = LIBSQL_SCENARIOS
+        .iter()
+        .chain(&LIBSQL_REPLICA_SCENARIOS)
+        .copied()
+        .collect();
+    conforms_through("libsql", "node", "replica", &replica).await;
+}
+
+const APPLICATION_SCENARIOS: [&str; 8] = [
+    "create",
+    "follow_up_rejected",
+    "follow_up_lost_before",
+    "follow_up_lost_after",
+    "update:registry",
+    "drift:build_registry",
+    "selector_unmatched",
+    "selector_ambiguous",
+];
+
+const BUILD_SCENARIOS: [&str; 5] = [
+    "create",
+    "follow_up_rejected",
+    "follow_up_lost_before",
+    "follow_up_lost_after",
+    "update:registry",
+];
+
+const COMPOSE_SCENARIOS: [&str; 5] = [
+    "create",
+    "follow_up_rejected",
+    "follow_up_lost_before",
+    "follow_up_lost_after",
+    "delete",
+];
+
+const LIBSQL_SCENARIOS: [&str; 5] = [
+    "create",
+    "follow_up_rejected",
+    "follow_up_lost_before",
+    "follow_up_lost_after",
+    "identity_ambiguous",
+];
+
+/// What only the replica arm has: a member to change and to drift.
+const LIBSQL_REPLICA_SCENARIOS: [&str; 2] = [
+    "update:node.replica.primary_url",
+    "drift:node.replica.primary_url",
+];
+
+async fn conforms_through(kind: &str, field: &str, arm: &str, required: &[&str]) {
+    let specs = load_dir(&root().join("specs")).expect("repository specs are valid");
+    let suite = Suite::new(specs, root().join("fixtures/api/live/v0.30.6")).exercising(field, arm);
+
+    let results = suite.run(kind).await;
 
     println!("{}", report(&results));
     let failures: Vec<_> = results
@@ -58,20 +106,11 @@ async fn conforms_through(arm: &str) {
         .filter(|r| matches!(r.outcome, Outcome::Fail(_)))
         .collect();
     assert!(failures.is_empty(), "{}", report(&results));
-    for scenario in [
-        "create",
-        "follow_up_rejected",
-        "follow_up_lost_before",
-        "follow_up_lost_after",
-        "update:registry",
-        "drift:build_registry",
-        "selector_unmatched",
-        "selector_ambiguous",
-    ] {
+    for scenario in required {
         assert!(
             results
                 .iter()
-                .any(|r| r.scenario == scenario && r.outcome == Outcome::Pass),
+                .any(|r| r.scenario == *scenario && r.outcome == Outcome::Pass),
             "`{scenario}` did not run: {}",
             report(&results)
         );
@@ -93,6 +132,8 @@ async fn the_environment_and_the_databases_conform_for_the_fields_they_carry() {
         "mariadb",
         "mongo",
         "redis",
+        "libsql",
+        "compose",
     ] {
         results.extend(suite.run(kind).await);
     }
@@ -110,6 +151,8 @@ async fn the_environment_and_the_databases_conform_for_the_fields_they_carry() {
         "mariadb",
         "mongo",
         "redis",
+        "libsql",
+        "compose",
     ] {
         let ran = results
             .iter()
@@ -144,6 +187,8 @@ async fn a_mount_conforms_under_every_parent() {
         "mariadb",
         "mongo",
         "redis",
+        "libsql",
+        "compose",
     ] {
         let kind = format!("mount@{parent}");
         assert!(

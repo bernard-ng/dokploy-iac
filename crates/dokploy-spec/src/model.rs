@@ -163,6 +163,10 @@ pub struct Operation {
     /// (`applicationId` under an application, `composeId` under a Compose).
     #[serde(default)]
     pub attach_by_parent: BTreeMap<String, BTreeMap<String, String>>,
+    /// Request fields sent as written on every call of a create or a remove, typed
+    /// (`deleteVolumes: false`): a field the operation requires and the document does not own.
+    #[serde(default)]
+    pub send: BTreeMap<String, serde_json::Value>,
 }
 
 impl Operation {

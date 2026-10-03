@@ -1,11 +1,11 @@
-# A domain of an application. One kind for everything that can have a domain (ADR 0018); a Compose
-# service is another parent once Compose has a spec, and then it names its `service_name`.
+# A domain of an application or a Compose stack. One kind for everything that can have a domain (ADR
+# 0018); under a Compose stack it names the `service_name` it routes to.
 #
 # Live facts (fixtures/api/live/*/domain-*): create answers the whole row, the collection is the
 # `domains` array the service's direct read embeds, and an update takes the host every time.
 kind: domain
 scope: project
-parent: [application]
+parent: [application, compose]
 section: domains
 title: Domain
 class: managed
@@ -19,8 +19,12 @@ api:
     op: domain.create
     attach_by_parent:
       application: { applicationId: parent_id, domainType: application }
+      compose: { composeId: parent_id, domainType: compose }
   update: { op: domain.update }
   remove: { op: domain.delete }
+  parent_field:
+    application: applicationId
+    compose: composeId
   read:
     list:
       embedded_in: { pointer: /domains }
@@ -29,6 +33,11 @@ api:
   create_identity:
     from_response: /domainId
 fields:
+  service_name:
+    api: serviceName
+    type: text
+    nullable: true
+    doc: The Compose service the domain routes to; required under a Compose stack, empty under an application.
   host:
     type: text
     min_len: 1
@@ -72,6 +81,7 @@ write:
   - op: domain.update
     fields:
       [
+        service_name,
         host,
         path,
         internal_path,
@@ -90,5 +100,3 @@ ledger:
   readonly: [createdAt, uniqueConfigKey]
   ignored:
     - { field: previewDeploymentId, reason: a domain of a preview deployment is not configuration }
-    - { field: composeId, reason: the id of the Compose it belongs to; a domain never changes service }
-    - { field: serviceName, reason: names the Compose service; written once Compose is a parent }

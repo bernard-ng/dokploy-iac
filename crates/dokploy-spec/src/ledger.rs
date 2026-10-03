@@ -222,6 +222,7 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
             names.insert(param.clone());
         }
         names.extend(operation.attach.keys().cloned());
+        names.extend(operation.send.keys().cloned());
         for overrides in operation.attach_by_parent.values() {
             names.extend(overrides.keys().cloned());
         }

@@ -1,0 +1,164 @@
+# PROTOTYPE (coverage: partial). A Docker Compose stack of an environment. The swarm-free settings
+# are here; `service_networks` is still an unclassified request until the networks exist (M5), and
+# the schedules of its services wait for the schedule kind.
+#
+# Live facts (fixtures/api/live/*/compose-*): create answers the whole object, update answers the
+# object, delete takes `deleteVolumes` and answers the removed object, and the collection is the
+# `compose` array the environment's direct read embeds. Every source field is written by
+# `compose.update`, with no operation per arm: the tag is `sourceType`, and the compose file of the
+# `raw` arm is `composeFile`.
+#
+# Removing a stack keeps its volumes (`deleteVolumes: false`): the data is not configuration.
+kind: compose
+scope: project
+parent: environment
+section: compose
+title: Compose stack
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "compose.{key}"
+api:
+  id: composeId
+  create:
+    op: compose.create
+    attach: { environmentId: parent_id }
+  update: { op: compose.update }
+  remove:
+    op: compose.delete
+    send: { deleteVolumes: false }
+  deploy: { op: compose.deploy }
+  read:
+    list:
+      embedded_in: { parent_op: environment.one, pointer: /compose }
+      authority: authoritative
+    one: { op: compose.one, id_param: composeId }
+  create_identity:
+    from_response: /composeId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  app_name:
+    api: appName
+    type: text
+    mutability: create_only
+    nullable: true
+    doc: Dokploy's Docker-level name; generated when omitted.
+  description:
+    type: text
+    nullable: true
+  icon:
+    type: text
+    nullable: true
+  server:
+    api: serverId
+    type: selector(server)
+    mutability: create_only
+    nullable: true
+  compose_type:
+    api: composeType
+    type: enum[docker-compose, stack]
+    needs_deploy: true
+  source:
+    api: sourceType
+    type: union(type)
+    needs_deploy: true
+    fallback: raw
+    doc: Where the compose file comes from. A member left out keeps what Dokploy holds while the arm stays the same.
+    arms:
+      raw:
+        document: { api: composeFile, type: file, class: content }
+      github:
+        provider: { api: githubId, type: selector(git_provider), nullable: true }
+        owner: { type: text, nullable: true }
+        repository: { type: text, nullable: true }
+        branch: { type: text, nullable: true }
+        trigger_type: { api: triggerType, type: "enum[push, tag]", nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      gitlab:
+        provider: { api: gitlabId, type: selector(git_provider), nullable: true }
+        project_id: { api: gitlabProjectId, type: int, nullable: true }
+        owner: { api: gitlabOwner, type: text, nullable: true }
+        repository: { api: gitlabRepository, type: text, nullable: true }
+        path_namespace: { api: gitlabPathNamespace, type: text, nullable: true }
+        branch: { api: gitlabBranch, type: text, nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      bitbucket:
+        provider: { api: bitbucketId, type: selector(git_provider), nullable: true }
+        owner: { api: bitbucketOwner, type: text, nullable: true }
+        repository: { api: bitbucketRepository, type: text, nullable: true }
+        repository_slug: { api: bitbucketRepositorySlug, type: text, nullable: true }
+        branch: { api: bitbucketBranch, type: text, nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      gitea:
+        provider: { api: giteaId, type: selector(git_provider), nullable: true }
+        owner: { api: giteaOwner, type: text, nullable: true }
+        repository: { api: giteaRepository, type: text, nullable: true }
+        branch: { api: giteaBranch, type: text, nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      git:
+        url: { api: customGitUrl, type: text, nullable: true }
+        branch: { api: customGitBranch, type: text, nullable: true }
+        ssh_key: { api: customGitSSHKeyId, type: selector(ssh_key), nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+  compose_path:
+    api: composePath
+    type: text
+    min_len: 1
+    needs_deploy: true
+    doc: The compose file inside the repository, for a git-backed source.
+  command:
+    type: text
+    needs_deploy: true
+    doc: Override of the compose command; empty keeps Dokploy's.
+  environment:
+    api: env
+    type: env
+    granularity: key
+    nullable: true
+    needs_deploy: true
+  create_env_file:
+    api: createEnvFile
+    type: bool
+    needs_deploy: true
+  suffix:
+    type: text
+    needs_deploy: true
+  randomize:
+    type: bool
+    needs_deploy: true
+  isolated_deployment:
+    api: isolatedDeployment
+    type: bool
+    needs_deploy: true
+  isolated_deployments_volume:
+    api: isolatedDeploymentsVolume
+    type: bool
+    needs_deploy: true
+  auto_deploy:
+    api: autoDeploy
+    type: bool
+    nullable: true
+write:
+  - op: compose.update
+    fields: [name, description, icon, compose_type, source, compose_path, command, suffix, randomize, isolated_deployment, isolated_deployments_volume, auto_deploy]
+    shape: partial
+  - op: compose.saveEnvironment
+    fields: [environment, create_env_file]
+    shape: full
+ledger:
+  readonly: [createdAt, composeStatus, refreshToken]
+  ignored:
+    - { field: pullImages, reason: "accepted by compose.update but never returned by compose.one on 0.30.6 or 0.30.7, so it cannot be read back" }
+children:
+  - { kind: domain, section: domains }
+  - { kind: mount, section: mounts }

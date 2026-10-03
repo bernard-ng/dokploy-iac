@@ -78,12 +78,14 @@ fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
                         _ => None,
                     }
                 });
+                // The tag and the members the create operation does not accept are left to it.
                 let members_deferred = values.keys().any(|name| {
                     name.starts_with(&format!("{by_variant}."))
-                        && w.case
-                            .fields
-                            .iter()
-                            .any(|f| &f.name == name && f.name.matches('.').count() == 2)
+                        && w.case.fields.iter().any(|f| {
+                            &f.name == name
+                                && contract
+                                    .is_some_and(|contract| contract.body_field(&f.wire).is_none())
+                        })
                 });
                 if let (Some(arm), true) = (arm, members_deferred) {
                     operations.push(ops[&arm].clone());
@@ -96,19 +98,30 @@ fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
     operations
 }
 
-/// Whether `operation` writes a scalar secret of the values: a field of its group, or a member
-/// of the arm it writes. A variable of an environment block is not one: it is there or it is
-/// not, so observing it proves the write.
-fn writes_a_secret(w: &World<'_>, values: &Values, operation: &str) -> bool {
-    let is_secret = |name: &str| matches!(values.get(name), Some(crate::case::Val::Secret(_)));
+/// Whether one of the follow-up `operations` writes a scalar secret of the values: a field of its
+/// group, or a member of the arm it writes. Recovery settles the whole follow-up as one step, so a
+/// secret written by an earlier request of it is as unobservable as one written by the last. A
+/// variable of an environment block is not one: it is there or it is not, so observing it proves
+/// the write.
+fn writes_a_secret(w: &World<'_>, values: &Values, operations: &[String]) -> bool {
+    // A secret the create operation accepts travels with it, and is not a follow-up's.
+    let contract = dokploy_api::request_contract(&create_op(w));
+    let is_secret = |name: &str| {
+        matches!(values.get(name), Some(crate::case::Val::Secret(_)))
+            && w.case.fields.iter().any(|field| {
+                field.name == name
+                    && contract.is_some_and(|contract| contract.body_field(&field.wire).is_none())
+            })
+    };
+    let sent = |op: &String| operations.contains(op);
     w.case.spec.write.iter().any(|group| match group {
         dokploy_spec::WriteGroup::Op { op, fields, .. } => {
-            op == operation && fields.iter().any(|name| is_secret(name))
+            sent(op) && fields.iter().any(|name| is_secret(name))
         }
         dokploy_spec::WriteGroup::ByVariant {
             by_variant, ops, ..
         } => {
-            ops.values().any(|op| op == operation)
+            ops.values().any(sent)
                 && values
                     .keys()
                     .any(|name| name.starts_with(&format!("{by_variant}.")) && is_secret(name))
@@ -729,7 +742,7 @@ pub(crate) async fn follow_up(w: &World<'_>, how: FollowUp) -> Check<Verdict> {
     // A secret cannot be read back, so a lost response to a write that carries one proves
     // nothing: everything observable may agree and the secret still be the old one. A person
     // decides, and the engine must not record a success it cannot see.
-    if matches!(how, FollowUp::LostAfter) && writes_a_secret(w, &values, &operation) {
+    if matches!(how, FollowUp::LostAfter) && writes_a_secret(w, &values, &operations[1..]) {
         ensure!(
             matches!(recovered, Err(RecoverError::ManualIntervention)),
             "recovery claimed to prove a secret write it cannot observe: {recovered:?}"

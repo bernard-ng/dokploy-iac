@@ -566,9 +566,12 @@ impl Sim {
             else {
                 continue;
             };
-            let arm = ops
+            // An operation shared by several arms takes the tag in its body instead.
+            let mut arms = ops
                 .iter()
-                .find_map(|(arm, op)| (op == request.operation()).then_some(arm));
+                .filter(|(_, op)| *op == request.operation())
+                .map(|(arm, _)| arm);
+            let arm = arms.next().filter(|_| arms.next().is_none());
             if let (Some(arm), Some(field)) = (arm, spec.fields.get(by_variant)) {
                 object.insert(
                     field.request_name(by_variant).to_owned(),

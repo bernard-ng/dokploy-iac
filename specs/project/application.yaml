@@ -137,6 +137,30 @@ fields:
     api: createEnvFile
     type: bool
     needs_deploy: true
+  build:
+    api: buildType
+    type: union(type)
+    needs_deploy: true
+    doc: How the image is built. A member left out keeps what Dokploy holds while the arm stays the same.
+    arms:
+      dockerfile:
+        dockerfile: { type: text, nullable: true }
+        context_path: { api: dockerContextPath, type: text, nullable: true }
+        build_stage: { api: dockerBuildStage, type: text, nullable: true }
+      heroku_buildpacks:
+        version: { api: herokuVersion, type: text, nullable: true }
+      paketo_buildpacks: {}
+      nixpacks: {}
+      static:
+        publish_directory: { api: publishDirectory, type: text, nullable: true }
+        is_static_spa: { api: isStaticSpa, type: bool, nullable: true }
+      railpack:
+        version: { api: railpackVersion, type: text, nullable: true }
+  clean_cache:
+    api: cleanCache
+    type: bool
+    nullable: true
+    needs_deploy: true
   source:
     api: sourceType
     type: union(type)
@@ -197,7 +221,7 @@ fields:
           nullable: true
 write:
   - op: application.update
-    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args]
+    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache]
     shape: partial
   - op: application.saveEnvironment
     fields: [environment, build_args, build_secrets, create_env_file]
@@ -211,6 +235,15 @@ write:
       gitea: application.saveGiteaProvider
       git: application.saveGitProvider
       docker: application.saveDockerProvider
+  - by_variant: build
+    shape: full
+    ops:
+      dockerfile: application.saveBuildType
+      heroku_buildpacks: application.saveBuildType
+      paketo_buildpacks: application.saveBuildType
+      nixpacks: application.saveBuildType
+      static: application.saveBuildType
+      railpack: application.saveBuildType
 children:
   - { kind: mount, section: mounts }
   - { kind: domain, section: domains }

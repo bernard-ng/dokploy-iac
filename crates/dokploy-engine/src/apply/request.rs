@@ -7,7 +7,9 @@ use std::collections::BTreeMap;
 use dokploy_api::{BodyShape, request_contract};
 use dokploy_core::{CheckpointValueRef, ExternalResolution, PropertyPath, ResourceCheckpoint};
 use dokploy_sdk::OperationRequest;
-use dokploy_spec::{FieldType, KindSpec, Mutability, PathShape, Shape, WriteGroup, parse_type};
+use dokploy_spec::{
+    FieldType, KindSpec, Mutability, PathShape, Shape, ValueClass, WriteGroup, parse_type,
+};
 use dokploy_state::ResourceAddress;
 use serde_json::{Map, Value as Json};
 
@@ -224,6 +226,10 @@ pub(crate) fn create_request(
         }
     }
 
+    for (field, value) in &operation.send {
+        body.insert(field.clone(), value.clone());
+    }
+
     if let Some(contract) = contract
         && let BodyShape::Object(fields) = contract.body()
     {
@@ -236,11 +242,23 @@ pub(crate) fn create_request(
                 .iter()
                 .find(|(name, field)| field.request_name(name) == required.name())
                 .map(|(_, field)| field);
+            // A member of a union's arm: the arm decides whether it is needed, so the create
+            // that the document gives no value for sends it empty.
+            let arm_member = spec_field.is_none().then(|| {
+                spec.fields
+                    .values()
+                    .flat_map(|field| field.arms.values())
+                    .flat_map(|members| members.iter())
+                    .find(|(name, member)| member.request_name(name) == required.name())
+                    .map(|(_, member)| member)
+            });
+            let arm_member = arm_member.flatten();
+            let spec_field = spec_field.or(arm_member);
             if let Some(fallback) = spec_field.and_then(|field| field.fallback.as_ref()) {
                 body.insert(required.name().to_owned(), fallback.clone());
                 continue;
             }
-            let nullable = spec_field.is_some_and(|field| field.nullable);
+            let nullable = arm_member.is_some() || spec_field.is_some_and(|field| field.nullable);
             if !nullable {
                 return Err(ApplyError::MissingRequired {
                     address: address.clone(),
@@ -438,6 +456,10 @@ fn variant_body(
 
     let mut body = Map::new();
     body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
+    // An operation shared by several arms takes the tag; one of its own implies it.
+    if contract.is_some_and(|contract| contract.body_field(held_tag_key).is_some()) {
+        body.insert(held_tag_key.to_owned(), Json::String(tag.clone()));
+    }
     for (member, member_field) in arm {
         let dotted = format!("{field_name}.{tag}.{member}");
         let path = PropertyPath::from_spec(spec, &dotted).map_err(|_| ApplyError::Unsupported {
@@ -478,6 +500,38 @@ fn variant_body(
                 });
             }
             body.insert(wire, Json::Null);
+        }
+    }
+    // The columns of the other arms that the operation takes anyway keep what Dokploy holds.
+    for (other, members) in &field.arms {
+        if *other == tag {
+            continue;
+        }
+        for (member, member_field) in members {
+            let wire = member_field.request_name(member).to_owned();
+            let Some(accepted) = contract.and_then(|contract| contract.body_field(&wire)) else {
+                continue;
+            };
+            if body.contains_key(&wire) || member_field.class != ValueClass::Public {
+                continue;
+            }
+            let held = fresh
+                .and_then(|fresh| fresh.get(&wire))
+                .filter(|held| !held.is_null());
+            if let Some(held) = held {
+                body.insert(wire, held.clone());
+            } else if let Some(fallback) = &member_field.fallback {
+                body.insert(wire, fallback.clone());
+            } else if member_field.nullable || !accepted.required() {
+                if accepted.required() {
+                    body.insert(wire, Json::Null);
+                }
+            } else {
+                return Err(ApplyError::MissingRequired {
+                    address: address.clone(),
+                    field: format!("{field_name}.{other}.{member}"),
+                });
+            }
         }
     }
 
@@ -524,14 +578,22 @@ pub(crate) fn group_body(
             continue;
         }
         // The properties the field plans as: its members, or itself.
-        let paths: Vec<String> = if matches!(ty, Some(FieldType::Struct)) {
-            field
+        let paths: Vec<String> = match &ty {
+            Some(FieldType::Struct) => field
                 .members
                 .keys()
                 .map(|member| format!("{name}.{member}"))
-                .collect()
-        } else {
-            vec![name.clone()]
+                .collect(),
+            // A union written by the same operation as the rest: its tag and the members of
+            // every arm, each under the key of its own.
+            Some(FieldType::Union { tag }) => std::iter::once(format!("{name}.{tag}"))
+                .chain(field.arms.iter().flat_map(|(arm, members)| {
+                    members
+                        .keys()
+                        .map(move |member| format!("{name}.{arm}.{member}"))
+                }))
+                .collect(),
+            _ => vec![name.clone()],
         };
         for dotted in paths {
             let path =
@@ -639,9 +701,11 @@ pub(crate) fn remove_request(
         })?;
     let key = operation.id_param.as_deref().unwrap_or(&spec.api.id);
 
-    Ok(OperationRequest::new(&operation.op).body(Json::Object(
-        BTreeMap::from([(key.to_owned(), Json::String(remote_id.to_owned()))])
-            .into_iter()
-            .collect(),
-    )))
+    let mut body = Map::new();
+    body.insert(key.to_owned(), Json::String(remote_id.to_owned()));
+    for (field, value) in &operation.send {
+        body.insert(field.clone(), value.clone());
+    }
+
+    Ok(OperationRequest::new(&operation.op).body(Json::Object(body)))
 }

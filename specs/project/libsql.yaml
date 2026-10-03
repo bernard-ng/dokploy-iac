@@ -1,0 +1,139 @@
+# PROTOTYPE (coverage: partial). A LibSQL (sqld) database of an environment. The swarm settings and
+# the networks are still unclassified requests.
+#
+# Live facts (fixtures/api/live/*/libsql-*): create answers a boolean, so the identity is the one
+# new item of the collection by name; update answers `true`; and the collection is the `libsql`
+# array the environment's direct read embeds. Create requires `appName`, `description`,
+# `sqldPrimaryUrl`, `enableNamespaces`, and `serverId`, so the Docker-level name defaults to the key.
+# The node is a union written by the same update as the rest: `sqldNode` is the tag and
+# `sqldPrimaryUrl` the member of the replica arm.
+kind: libsql
+scope: project
+parent: environment
+section: libsql
+title: LibSQL database
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "libsql.{key}"
+api:
+  id: libsqlId
+  create:
+    op: libsql.create
+    attach: { environmentId: parent_id }
+  update: { op: libsql.update }
+  remove: { op: libsql.remove }
+  deploy: { op: libsql.deploy }
+  read:
+    list:
+      embedded_in: { parent_op: environment.one, pointer: /libsql }
+      authority: authoritative
+    one: { op: libsql.one, id_param: libsqlId }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  app_name:
+    api: appName
+    type: text
+    min_len: 1
+    mutability: create_only
+    default: key
+    doc: Dokploy's Docker-level name; this API requires it, so it is the key unless given.
+  description:
+    type: text
+    nullable: true
+  server:
+    api: serverId
+    type: selector(server)
+    mutability: create_only
+    nullable: true
+  image:
+    api: dockerImage
+    type: text
+    min_len: 1
+  command:
+    type: text
+    nullable: true
+    needs_deploy: true
+  username:
+    api: databaseUser
+    type: text
+    min_len: 1
+  password:
+    api: databasePassword
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    needs_deploy: true
+  node:
+    api: sqldNode
+    type: union(type)
+    needs_deploy: true
+    fallback: primary
+    doc: A primary, or a replica of another LibSQL server.
+    arms:
+      primary: {}
+      replica:
+        primary_url: { api: sqldPrimaryUrl, type: text, min_len: 1 }
+  enable_namespaces:
+    api: enableNamespaces
+    type: bool
+    needs_deploy: true
+  resources:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      memory_limit: { api: memoryLimit, type: text, nullable: true }
+      memory_reservation: { api: memoryReservation, type: text, nullable: true }
+      cpu_limit: { api: cpuLimit, type: text, nullable: true }
+      cpu_reservation: { api: cpuReservation, type: text, nullable: true }
+  environment:
+    api: env
+    type: env
+    granularity: key
+    nullable: true
+    needs_deploy: true
+  detach_dokploy_network:
+    api: detachDokployNetwork
+    type: bool
+  external_port:
+    api: externalPort
+    type: int
+    min: 1
+    max: 65535
+    nullable: true
+  external_grpc_port:
+    api: externalGRPCPort
+    type: int
+    min: 1
+    max: 65535
+    nullable: true
+  external_admin_port:
+    api: externalAdminPort
+    type: int
+    min: 1
+    max: 65535
+    nullable: true
+  replicas:
+    type: int
+    min: 0
+    needs_deploy: true
+write:
+  - op: libsql.update
+    fields: [name, description, image, command, username, password, node, enable_namespaces, resources, detach_dokploy_network, external_port, external_grpc_port, external_admin_port, replicas]
+    shape: partial
+  - op: libsql.saveEnvironment
+    fields: [environment]
+    shape: partial
+ledger:
+  readonly: [createdAt, applicationStatus]
+children:
+  - { kind: mount, section: mounts }

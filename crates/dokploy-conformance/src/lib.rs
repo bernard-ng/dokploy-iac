@@ -63,6 +63,7 @@ pub struct ScenarioResult {
 pub struct Suite {
     specs: Arc<SpecRegistry>,
     fixtures: PathBuf,
+    arms: std::collections::BTreeMap<String, String>,
 }
 
 impl Suite {
@@ -73,7 +74,16 @@ impl Suite {
         Self {
             specs: Arc::new(specs),
             fixtures,
+            arms: std::collections::BTreeMap::new(),
         }
+    }
+
+    /// Exercises the union `field` through `arm` instead of the first arm the spec names, in
+    /// every kind that has it. The spec is untouched, so the columns of the other arms exist.
+    #[must_use]
+    pub fn exercising(mut self, field: &str, arm: &str) -> Self {
+        self.arms.insert(field.to_owned(), arm.to_owned());
+        self
     }
 
     /// The kinds the suite can exercise: those with full coverage.
@@ -110,7 +120,7 @@ impl Suite {
         let spec = self.specs.get(kind).expect("a kind with a spec");
         let label = parent.map_or_else(|| kind.to_owned(), |parent| format!("{kind}@{parent}"));
         let kind = label.as_str();
-        let case = match Case::new(spec, &self.specs, parent) {
+        let case = match Case::new(spec, &self.specs, parent, &self.arms) {
             Ok(case) => case,
             Err(reason) => {
                 return vec![ScenarioResult {

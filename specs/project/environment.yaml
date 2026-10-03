@@ -45,3 +45,5 @@ children:
   - { kind: mariadb, section: mariadb }
   - { kind: mongo, section: mongo }
   - { kind: redis, section: redis }
+  - { kind: libsql, section: libsql }
+  - { kind: compose, section: compose }
