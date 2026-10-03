@@ -9,5 +9,8 @@ mod endpoint;
 #[doc(hidden)]
 pub mod generated;
 
-pub use endpoint::{Endpoint, EndpointMethod, GeneratedRequest, validate_request};
+pub use endpoint::{
+    BodyShape, Endpoint, EndpointMethod, GeneratedRequest, RequestContract, RequestField,
+    validate_request,
+};
 pub use generated::*;

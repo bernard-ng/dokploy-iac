@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Request contracts in `dokploy-api` (milestone M2, ADR 0008 and 0015). `request_contract("registry.create")`
+  returns the query parameters and JSON body properties an operation accepts, and which are
+  required, generated from the pinned OpenAPI by `cargo xtask codegen` and kept current by
+  `codegen --check`. The engine uses it to decide which fields a `create` carries and which need an
+  update, and the simulator to refuse a request the real Dokploy would reject.
 - `dokploy-engine`, the skeleton (milestone M1; [`docs/design/engine.md`](docs/design/engine.md)).
   `Engine::compile` turns a validated document into the planner's desired state (hierarchical
   addresses, canonical values, secrets read once, fingerprinted and forgotten, `default: key`,
