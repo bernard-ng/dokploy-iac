@@ -52,8 +52,9 @@ pub struct MutationContract {
     allowed_on_create: BTreeSet<PropertyPath>,
     required_on_create: BTreeSet<PropertyPath>,
     properties: BTreeMap<PropertyPath, PropertyMutation>,
+    /// Collection roots, so each entry follows its root's rules.
+    roots: BTreeSet<PropertyPath>,
     default_property: PropertyMutation,
-    containment: MutationMode,
     replacement_order: ReplacementOrder,
 }
 
@@ -65,11 +66,11 @@ impl MutationContract {
             allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
+            roots: BTreeSet::new(),
             default_property: PropertyMutation::new(
                 MutationMode::Unsupported,
                 MutationMode::Unsupported,
             ),
-            containment: MutationMode::Unsupported,
             replacement_order,
         }
     }
@@ -81,8 +82,8 @@ impl MutationContract {
             allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
+            roots: BTreeSet::new(),
             default_property: PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace),
-            containment: MutationMode::InPlace,
             replacement_order: ReplacementOrder::DeleteBeforeCreate,
         }
     }
@@ -92,6 +93,14 @@ impl MutationContract {
     pub fn requiring(mut self, path: PropertyPath) -> Self {
         self.allowed_on_create.insert(path.clone());
         self.required_on_create.insert(path);
+        self
+    }
+
+    /// Stops requiring a property at creation while still allowing it. The spec says a field has
+    /// no default; the create operation may still not need it.
+    #[must_use]
+    pub fn optional_on_create(mut self, path: &PropertyPath) -> Self {
+        self.required_on_create.remove(path);
         self
     }
 
@@ -105,6 +114,9 @@ impl MutationContract {
     /// Defines mutation behavior for one property.
     #[must_use]
     pub fn with_property(mut self, path: PropertyPath, mutation: PropertyMutation) -> Self {
+        if path.is_collection_root() {
+            self.roots.insert(path.clone());
+        }
         self.properties.insert(path, mutation);
         self
     }
@@ -113,13 +125,6 @@ impl MutationContract {
     #[must_use]
     pub fn with_default_property(mut self, mutation: PropertyMutation) -> Self {
         self.default_property = mutation;
-        self
-    }
-
-    /// Defines physical containment-change behavior.
-    #[must_use]
-    pub fn with_containment(mut self, mode: MutationMode) -> Self {
-        self.containment = mode;
         self
     }
 
@@ -134,18 +139,26 @@ impl MutationContract {
 
     pub(crate) fn accepts_set_on_create(&self, path: &PropertyPath) -> bool {
         self.allowed_on_create.contains(path)
+            || self
+                .root_of(path)
+                .is_some_and(|root| self.allowed_on_create.contains(root))
     }
 
     pub(crate) fn property_mode(&self, path: &PropertyPath, clear: bool) -> MutationMode {
         self.properties
             .get(path)
+            .or_else(|| {
+                self.root_of(path)
+                    .and_then(|root| self.properties.get(root))
+            })
             .copied()
             .unwrap_or(self.default_property)
             .mode(clear)
     }
 
-    pub(crate) const fn containment_mode(&self) -> MutationMode {
-        self.containment
+    /// The collection root whose rules govern `path`, when it is a collection entry.
+    fn root_of(&self, path: &PropertyPath) -> Option<&PropertyPath> {
+        self.roots.iter().find(|root| path.is_entry_of(root))
     }
 
     pub(crate) const fn replacement_order(&self) -> ReplacementOrder {

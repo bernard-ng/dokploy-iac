@@ -1,0 +1,26 @@
+{
+  "capturedAt": "2026-10-02",
+  "cleanupEvidence": {
+    "applicationSecurityEmpty": true,
+    "oneStatus": 404,
+    "projectOneStatus": 404
+  },
+  "collisionKey": "application+username",
+  "createIdentity": {
+    "createStatus": 200,
+    "parentVerified": true,
+    "setDifference": true
+  },
+  "credentialsVerifiedPrivately": true,
+  "deleteStatus": 200,
+  "deployed": false,
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "role": "owner",
+  "sanitized": true,
+  "update": {
+    "completeFieldsPersisted": true,
+    "parentVerified": true,
+    "status": 200
+  },
+  "version": "v0.30.7"
+}

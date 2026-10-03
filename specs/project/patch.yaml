@@ -1,0 +1,59 @@
+# A file edit Dokploy applies to the repository of an application or a Compose stack before it
+# builds (ADR 0018).
+#
+# Live facts: none captured yet (`patch.byEntityId` is read per parent with the parent's id and its
+# type), so the identity is the one new item of that list by file path, and whether `patch.create`
+# answers the row is to be verified in the live suite.
+kind: patch
+scope: project
+parent: [application, compose]
+section: patches
+title: Patch
+class: managed
+identity:
+  key: null
+  collision: [file_path]
+  address: "patch.{key}"
+api:
+  id: patchId
+  create:
+    op: patch.create
+    attach_by_parent:
+      application: { applicationId: parent_id }
+      compose: { composeId: parent_id }
+  update: { op: patch.update }
+  remove: { op: patch.delete }
+  read:
+    list:
+      op: patch.byEntityId
+      authority: authoritative
+      scope:
+        param: id
+        query_by_parent:
+          application: { type: application }
+          compose: { type: compose }
+    one: { op: patch.one, id_param: patchId, agree: true }
+  parent_field:
+    application: applicationId
+    compose: composeId
+  create_identity:
+    diff_collection: { key: [file_path] }
+fields:
+  file_path:
+    api: filePath
+    type: text
+    min_len: 1
+  type:
+    type: enum[create, update, delete]
+  content:
+    type: file
+    class: content
+    doc: The new content of the file, written in the document or read from a file.
+  enabled:
+    type: bool
+write:
+  - op: patch.update
+    fields: [file_path, type, content, enabled]
+    shape: partial
+ledger:
+  readonly: [createdAt, updatedAt]

@@ -338,3 +338,43 @@ fn unknown_keys_and_anchors_are_rejected() {
     let anchored = with("title: Widget", "title: &t Widget");
     assert!(parse_spec(&anchored).is_err());
 }
+
+#[test]
+fn a_public_field_cannot_carry_a_secret_looking_name() {
+    for name in [
+        "api_key",
+        "refresh_token",
+        "build_secrets",
+        "script",
+        "compose_file",
+        "content",
+    ] {
+        let broken = with(
+            "  color: { type: text, nullable: true }\n",
+            &format!(
+                "  color: {{ type: text, nullable: true }}\n  {name}: {{ type: text, nullable: true }}\n"
+            ),
+        );
+        let found = issues(&broken);
+        assert!(
+            found
+                .iter()
+                .any(|issue| issue.contains(&format!("fields.{name}.class"))
+                    && issue.contains("class: secret")),
+            "{name}: {found:?}"
+        );
+    }
+
+    // Declaring the class is the fix, and a field with an ordinary name is untouched.
+    let fixed = with(
+        "  color: { type: text, nullable: true }\n",
+        "  color: { type: text, nullable: true }\n  script: { type: text, class: content, nullable: true }\n  command: { type: text, nullable: true }\n",
+    );
+    assert!(
+        !issues(&fixed)
+            .iter()
+            .any(|issue| issue.contains("name suggests")),
+        "{:?}",
+        issues(&fixed)
+    );
+}

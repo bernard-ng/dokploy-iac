@@ -1,0 +1,584 @@
+{
+  "bucket": "postgres",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/postgres_remote::authoritative_search_omitting_a_directly_read_database_is_rejected",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "authoritative_search_omitting_a_directly_read_database_is_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::direct_404_conflicting_with_a_renamed_search_identity_blocks_planning",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "direct_404_conflicting_with_a_renamed_search_identity_blocks_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::direct_404_conflicting_with_identity_in_another_environment_blocks_planning",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "direct_404_conflicting_with_identity_in_another_environment_blocks_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance postgres `foreign_collection_item`, `foreign_direct_read`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::direct_404_conflicting_with_search_identity_blocks_planning",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "direct_404_conflicting_with_search_identity_blocks_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::direct_postgres_identity_must_match_the_requested_stored_id",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "direct_postgres_identity_must_match_the_requested_stored_id",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::direct_read_conflicting_with_identity_in_another_partial_collection_is_rejected",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "direct_read_conflicting_with_identity_in_another_partial_collection_is_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance postgres `foreign_collection_item`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::duplicate_postgres_identity_across_environments_is_rejected",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "duplicate_postgres_identity_across_environments_is_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance postgres `ambiguous_collision`, `foreign_collection_item`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::duplicate_scoped_postgres_names_are_rejected",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "duplicate_scoped_postgres_names_are_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance postgres `ambiguous_collision`, `foreign_collection_item`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::environment_move_keeps_postgres_on_the_same_physical_parent",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "environment_move_keeps_postgres_on_the_same_physical_parent",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::every_combined_discovery_invocation_reads_fresh_postgres_state",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "every_combined_discovery_invocation_reads_fresh_postgres_state",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "postgres.search"
+      ],
+      "requests": [
+        "GET /api/postgres.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "state",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::exhausted_postgres_search_server_failure_is_unavailable",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "exhausted_postgres_search_server_failure_is_unavailable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::invalid_postgres_search_identity_is_rejected",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "invalid_postgres_search_identity_is_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "document",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::malformed_postgres_pagination_is_an_invalid_response",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "malformed_postgres_pagination_is_an_invalid_response",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "document",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::managed_postgres_in_another_environment_fails_closed",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "managed_postgres_in_another_environment_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance postgres `foreign_collection_item`, `foreign_direct_read`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::managed_postgres_projects_requested_fields_without_secret_bytes",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "managed_postgres_projects_requested_fields_without_secret_bytes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance postgres canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::missing_managed_id_exposes_a_same_name_replacement_without_adopting_it",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "missing_managed_id_exposes_a_same_name_replacement_without_adopting_it",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::omitted_owned_postgres_field_blocks_planning",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "omitted_owned_postgres_field_blocks_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "core planner_properties `a_property_the_remote_did_not_return_makes_the_plan_incomplete`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::partial_postgres_search_cannot_prove_absence",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "partial_postgres_search_cannot_prove_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::persisted_environment_move_keeps_postgres_discovery_idempotent",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "persisted_environment_move_keeps_postgres_discovery_idempotent",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::persisted_postgres_removal_needs_no_parent_or_remote_probe",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "persisted_postgres_removal_needs_no_parent_or_remote_probe",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::planner_blocks_an_absent_postgres_database_with_missing_create_inputs",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "planner_blocks_an_absent_postgres_database_with_missing_create_inputs",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "postgres.search"
+      ],
+      "requests": [
+        "GET /api/postgres.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance postgres `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::postgres_move_within_one_environment_preserves_remote_identity",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "postgres_move_within_one_environment_preserves_remote_identity",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::postgres_parent_change_to_another_physical_environment_is_rejected",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "postgres_parent_change_to_another_physical_environment_is_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::postgres_search_authentication_failure_is_closed",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "postgres_search_authentication_failure_is_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::state_backed_postgres_removal_is_observed_by_remote_id",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "state_backed_postgres_removal_is_observed_by_remote_id",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance postgres `delete` (the removal is by the recorded remote id)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/postgres_remote::unavailable_postgres_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "file": "crates/dokploy-cli/tests/postgres_remote.rs",
+      "test": "unavailable_postgres_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance postgres `read_failure`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/postgres::postgres_by_environment_collects_every_bounded_page",
+      "file": "crates/dokploy-sdk/tests/postgres.rs",
+      "test": "postgres_by_environment_collects_every_bounded_page",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "postgres.search"
+      ],
+      "requests": [
+        "GET /api/postgres.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-sdk/tests/postgres::postgres_by_environment_rejects_unstable_or_incomplete_pagination",
+      "file": "crates/dokploy-sdk/tests/postgres.rs",
+      "test": "postgres_by_environment_rejects_unstable_or_incomplete_pagination",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-sdk/tests/postgres::postgres_details_expose_only_safe_reconciliation_fields",
+      "file": "crates/dokploy-sdk/tests/postgres.rs",
+      "test": "postgres_details_expose_only_safe_reconciliation_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/postgres-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance postgres canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/postgres::postgres_get_uses_a_strong_id_and_decodes_safe_details",
+      "file": "crates/dokploy-sdk/tests/postgres.rs",
+      "test": "postgres_get_uses_a_strong_id_and_decodes_safe_details",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "postgres.one"
+      ],
+      "requests": [
+        "GET /api/postgres.one?postgresId=postgres-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/postgres-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance postgres canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/postgres::postgres_search_rejects_an_empty_environment_before_transport",
+      "file": "crates/dokploy-sdk/tests/postgres.rs",
+      "test": "postgres_search_rejects_an_empty_environment_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    }
+  ]
+}

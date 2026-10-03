@@ -1,0 +1,18 @@
+[package]
+name = "dokploy-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "An in-memory Dokploy for tests: it answers the operations the kind specs reference."
+
+[dependencies]
+anyhow.workspace = true
+dokploy-api.workspace = true
+dokploy-sdk.workspace = true
+dokploy-spec.workspace = true
+serde_json.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

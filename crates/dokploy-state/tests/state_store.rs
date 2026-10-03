@@ -1,8 +1,11 @@
+mod support;
+
 use std::{fs, path::Path};
+use support::{kinds, project_document};
 
 use dokploy_state::{
-    ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
-    ResourceState, StateFile, StateStore, StateStoreError, WriteSession,
+    ExpectedState, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceState,
+    StateFile, StateStore, StateStoreError, WriteSession,
 };
 use semver::Version;
 use serde_json::json;
@@ -24,15 +27,25 @@ fn initializes_absent_state_without_a_backup() {
         store.inspect().expect("state must be readable"),
         Some(state)
     );
-    assert!(workspace.path().join(".dokploy/state.json").is_file());
-    assert!(!workspace.path().join(".dokploy/state.backup.json").exists());
+    assert!(
+        workspace
+            .path()
+            .join(".dokploy/projects/shop/state.json")
+            .is_file()
+    );
+    assert!(
+        !workspace
+            .path()
+            .join(".dokploy/projects/shop/state.backup.json")
+            .exists()
+    );
 }
 
 #[test]
 fn initialization_refuses_to_replace_existing_state() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/state.json");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -53,15 +66,22 @@ fn initialization_refuses_to_replace_existing_state() {
         fs::read(state_path).expect("primary bytes must remain"),
         primary_before
     );
-    assert!(!workspace.path().join(".dokploy/state.backup.json").exists());
+    assert!(
+        !workspace
+            .path()
+            .join(".dokploy/projects/shop/state.backup.json")
+            .exists()
+    );
 }
 
 #[test]
 fn checkpoint_backs_up_current_bytes_before_replacing_primary() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/state.json");
-    let backup_path = workspace.path().join(".dokploy/state.backup.json");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let backup_path = workspace
+        .path()
+        .join(".dokploy/projects/shop/state.backup.json");
     let initial = initial_state();
 
     store
@@ -94,8 +114,10 @@ fn checkpoint_backs_up_current_bytes_before_replacing_primary() {
 fn stale_competing_snapshot_leaves_primary_and_backup_unchanged() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/state.json");
-    let backup_path = workspace.path().join(".dokploy/state.backup.json");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let backup_path = workspace
+        .path()
+        .join(".dokploy/projects/shop/state.backup.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -161,7 +183,7 @@ fn writer_lock_is_fail_fast_and_released_by_drop() {
 #[test]
 fn malformed_primary_is_not_treated_as_absent_or_overwritten() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy");
+    let state_directory = workspace.path().join(".dokploy/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     let state_path = state_directory.join("state.json");
     let evidence = b"{ malformed state evidence\n";
@@ -190,7 +212,7 @@ fn malformed_primary_is_not_treated_as_absent_or_overwritten() {
 #[test]
 fn orphan_backup_fails_closed_without_overwriting_evidence() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy");
+    let state_directory = workspace.path().join(".dokploy/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     let backup_path = state_directory.join("state.backup.json");
     let evidence = b"previous durable state\n";
@@ -218,12 +240,13 @@ fn orphan_backup_fails_closed_without_overwriting_evidence() {
 #[test]
 fn oversized_state_is_rejected_before_parsing() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy");
+    let state_directory = workspace.path().join(".dokploy/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     fs::write(state_directory.join("state.json"), b"123456789")
         .expect("oversized state must be written");
-    let store = StateStore::with_max_state_bytes(workspace.path(), instance(), 8)
-        .expect("state store must bind to the workspace");
+    let store =
+        StateStore::with_max_state_bytes(workspace.path(), instance(), project_document(), 8)
+            .expect("state store must bind to the workspace");
 
     assert!(matches!(
         store.inspect(),
@@ -239,9 +262,14 @@ fn oversized_proposed_state_is_rejected_before_backup_or_primary_changes() {
         .expect("initial state must serialize")
         .len() as u64
         + 1;
-    let store = StateStore::with_max_state_bytes(workspace.path(), instance(), initial_size + 128)
-        .expect("state store must bind to the workspace");
-    let state_path = workspace.path().join(".dokploy/state.json");
+    let store = StateStore::with_max_state_bytes(
+        workspace.path(),
+        instance(),
+        project_document(),
+        initial_size + 128,
+    )
+    .expect("state store must bind to the workspace");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
     store
         .begin_write()
         .expect("the write lock must be acquired")
@@ -266,13 +294,18 @@ fn oversized_proposed_state_is_rejected_before_backup_or_primary_changes() {
         fs::read(state_path).expect("primary bytes must remain"),
         primary_before
     );
-    assert!(!workspace.path().join(".dokploy/state.backup.json").exists());
+    assert!(
+        !workspace
+            .path()
+            .join(".dokploy/projects/shop/state.backup.json")
+            .exists()
+    );
 }
 
 #[test]
 fn duplicate_resource_addresses_are_rejected_at_the_json_boundary() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy");
+    let state_directory = workspace.path().join(".dokploy/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     let mut state = initial_state();
     add_application(&mut state, "api");
@@ -313,8 +346,10 @@ fn duplicate_resource_addresses_are_rejected_at_the_json_boundary() {
 fn invalid_proposed_revision_is_rejected_before_backup_or_primary_changes() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/state.json");
-    let backup_path = workspace.path().join(".dokploy/state.backup.json");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let backup_path = workspace
+        .path()
+        .join(".dokploy/projects/shop/state.backup.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -351,7 +386,7 @@ fn invalid_proposed_revision_is_rejected_before_backup_or_primary_changes() {
 fn proposed_lineage_mismatch_is_rejected_before_writes() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/state.json");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -374,14 +409,19 @@ fn proposed_lineage_mismatch_is_rejected_before_writes() {
         fs::read(state_path).expect("primary bytes must remain"),
         primary_before
     );
-    assert!(!workspace.path().join(".dokploy/state.backup.json").exists());
+    assert!(
+        !workspace
+            .path()
+            .join(".dokploy/projects/shop/state.backup.json")
+            .exists()
+    );
 }
 
 #[test]
 fn expected_and_proposed_instance_mismatches_are_rejected_before_writes() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/state.json");
+    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -424,7 +464,12 @@ fn expected_and_proposed_instance_mismatches_are_rejected_before_writes() {
         fs::read(state_path).expect("primary bytes must remain"),
         primary_before
     );
-    assert!(!workspace.path().join(".dokploy/state.backup.json").exists());
+    assert!(
+        !workspace
+            .path()
+            .join(".dokploy/projects/shop/state.backup.json")
+            .exists()
+    );
 }
 
 #[test]
@@ -433,7 +478,11 @@ fn store_instance_binding_applies_to_inspection_and_initialization() {
     let production = state_store(workspace.path());
     let staging_instance = InstanceIdentity::parse("https://staging.example.com")
         .expect("staging instance must be valid");
-    let staging_state = StateFile::new(Version::new(0, 1, 0), staging_instance.clone());
+    let staging_state = StateFile::new(
+        Version::new(0, 1, 0),
+        staging_instance.clone(),
+        project_document(),
+    );
 
     let error = production
         .begin_write()
@@ -442,8 +491,9 @@ fn store_instance_binding_applies_to_inspection_and_initialization() {
         .expect_err("initial state from another instance must fail");
     assert!(matches!(error, StateStoreError::ProposedInstanceMismatch));
 
-    let staging_store = StateStore::new(workspace.path(), staging_instance)
-        .expect("staging store must bind to workspace");
+    let staging_store =
+        StateStore::for_document(workspace.path(), staging_instance, project_document())
+            .expect("staging store must bind to workspace");
     staging_store
         .begin_write()
         .expect("the write lock must be acquired")
@@ -464,8 +514,12 @@ fn symlinked_state_directory_is_rejected_before_locking_or_inspection() {
     let outside = tempdir().expect("outside directory must be created");
     symlink(outside.path(), workspace.path().join(".dokploy"))
         .expect("state-directory symlink must be created");
-    let error = StateStore::new(workspace.path(), instance())
-        .expect_err("symlinked state directory must fail construction");
+    let store = StateStore::for_document(workspace.path(), instance(), project_document())
+        .expect("binding does not touch the disk");
+    let error = store
+        .begin_write()
+        .err()
+        .expect("a symlinked state parent must be refused");
 
     assert!(matches!(error, StateStoreError::UnsafeStateDirectory));
 }
@@ -478,8 +532,8 @@ fn checkpoint_revalidates_state_directory_after_lock_acquisition() {
     let mut session = store
         .begin_write()
         .expect("the write lock must be acquired");
-    let state_directory = workspace.path().join(".dokploy");
-    let displaced = workspace.path().join(".dokploy-displaced");
+    let state_directory = workspace.path().join(".dokploy/projects/shop");
+    let displaced = workspace.path().join(".dokploy/projects/shop-displaced");
     fs::rename(&state_directory, &displaced).expect("state directory must move");
     fs::create_dir(&state_directory).expect("replacement directory must be created");
 
@@ -505,8 +559,11 @@ fn symlinked_state_artifact_is_rejected_during_inspection_and_checkpoint() {
     let mut session = store
         .begin_write()
         .expect("the write lock must be acquired");
-    symlink(&outside_state, workspace.path().join(".dokploy/state.json"))
-        .expect("state artifact symlink must be created");
+    symlink(
+        &outside_state,
+        workspace.path().join(".dokploy/projects/shop/state.json"),
+    )
+    .expect("state artifact symlink must be created");
 
     assert!(matches!(
         store.inspect(),
@@ -545,9 +602,15 @@ fn state_directory_and_artifacts_use_owner_only_permissions() {
         .checkpoint(expected, &next)
         .expect("state must checkpoint");
 
-    assert_eq!(mode(&workspace.path().join(".dokploy")), 0o700);
+    assert_eq!(
+        mode(&workspace.path().join(".dokploy/projects/shop")),
+        0o700
+    );
     for name in ["state.json", "state.backup.json", "state.lock"] {
-        assert_eq!(mode(&workspace.path().join(".dokploy").join(name)), 0o600);
+        assert_eq!(
+            mode(&workspace.path().join(".dokploy/projects/shop").join(name)),
+            0o600
+        );
     }
 
     fn mode(path: &Path) -> u32 {
@@ -560,14 +623,16 @@ fn state_directory_and_artifacts_use_owner_only_permissions() {
 }
 
 fn initial_state() -> StateFile {
-    StateFile::new(Version::new(0, 1, 0), instance())
+    StateFile::new(Version::new(0, 1, 0), instance(), project_document())
 }
 
 fn state_store(workspace: &Path) -> StateStore {
-    StateStore::new(workspace, instance()).expect("state store must bind to the workspace")
+    StateStore::for_document(workspace, instance(), project_document())
+        .expect("state store must bind to the workspace")
 }
 
 fn instance() -> InstanceIdentity {
+    kinds();
     InstanceIdentity::parse("https://deploy.example.com").expect("the instance must be valid")
 }
 
@@ -579,7 +644,7 @@ fn add_application(state: &mut StateFile, name: &str) {
         .upsert_resource(
             address,
             ResourceState::new(
-                ResourceKind::Application,
+                kinds().application,
                 RemoteId::new(format!("application-{name}")).expect("remote ID must be valid"),
                 false,
                 ManagedInputs::try_from_json(json!({ "description": name }))

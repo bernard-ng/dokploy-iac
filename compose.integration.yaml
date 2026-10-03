@@ -1,6 +1,6 @@
 name: dokploy-iac-integration
 
-x-dokploy-image: &dokploy-image dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8
+x-dokploy-image: &dokploy-image ${DOKPLOY_IMAGE:-dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8}
 x-postgres-image: &postgres-image postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
 
 services:

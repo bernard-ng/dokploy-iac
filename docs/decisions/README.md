@@ -29,3 +29,4 @@ and are confirmed by the milestone that first implements them.
 | [0015](0015-testing-simulator-and-live-contracts.md) | Testing: simulator, conformance, live contracts |
 | [0016](0016-replace-the-engine-keep-the-kernel.md) | Replace the engine, keep the kernel |
 | [0017](0017-cli-surface.md) | CLI surface |
+| [0018](0018-several-parents-and-per-member-unions.md) | Kinds with several parents, and unions planned per member |

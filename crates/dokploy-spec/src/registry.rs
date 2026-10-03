@@ -57,7 +57,7 @@ impl SpecRegistry {
     pub fn children_of(&self, kind: &str) -> Vec<&KindSpec> {
         self.kinds
             .values()
-            .filter(|spec| spec.parent.as_deref() == Some(kind))
+            .filter(|spec| spec.parents.iter().any(|parent| parent == kind))
             .collect()
     }
 
@@ -66,7 +66,7 @@ impl SpecRegistry {
     pub fn roots(&self, scope: Scope) -> Vec<&KindSpec> {
         self.kinds
             .values()
-            .filter(|spec| spec.scope == scope && spec.parent.is_none())
+            .filter(|spec| spec.scope == scope && spec.parents.is_empty())
             .collect()
     }
 }
@@ -75,20 +75,29 @@ fn check_relations(kinds: &BTreeMap<String, KindSpec>) -> Vec<Issue> {
     let mut issues = Vec::new();
     let mut root_sections: BTreeSet<(Scope_, &str)> = BTreeSet::new();
     for spec in kinds.values() {
-        match &spec.parent {
-            None => {
-                if !root_sections.insert((Scope_::from(spec.scope), spec.section.as_str())) {
-                    issues.push(Issue::new(
-                        &spec.kind,
-                        "section",
-                        format!(
-                            "`{}` is already a top-level section in this scope",
-                            spec.section
-                        ),
-                    ));
-                }
+        if spec.parents.is_empty()
+            && !root_sections.insert((Scope_::from(spec.scope), spec.section.as_str()))
+        {
+            issues.push(Issue::new(
+                &spec.kind,
+                "section",
+                format!(
+                    "`{}` is already a top-level section in this scope",
+                    spec.section
+                ),
+            ));
+        }
+        let mut seen_parents = BTreeSet::new();
+        for parent in &spec.parents {
+            if !seen_parents.insert(parent.as_str()) {
+                issues.push(Issue::new(
+                    &spec.kind,
+                    "parent",
+                    format!("`{parent}` is named twice"),
+                ));
+                continue;
             }
-            Some(parent) => match kinds.get(parent) {
+            match kinds.get(parent) {
                 None => issues.push(Issue::new(
                     &spec.kind,
                     "parent",
@@ -123,7 +132,7 @@ fn check_relations(kinds: &BTreeMap<String, KindSpec>) -> Vec<Issue> {
                         Some(_) => {}
                     }
                 }
-            },
+            }
         }
         for child in &spec.children {
             match kinds.get(&child.kind) {
@@ -132,7 +141,7 @@ fn check_relations(kinds: &BTreeMap<String, KindSpec>) -> Vec<Issue> {
                     "children",
                     format!("unknown child kind `{}`", child.kind),
                 )),
-                Some(child_spec) if child_spec.parent.as_deref() != Some(spec.kind.as_str()) => {
+                Some(child_spec) if !child_spec.parents.contains(&spec.kind) => {
                     issues.push(Issue::new(
                         &spec.kind,
                         "children",
@@ -142,18 +151,27 @@ fn check_relations(kinds: &BTreeMap<String, KindSpec>) -> Vec<Issue> {
                 Some(_) => {}
             }
         }
-        // Parent chains must end.
-        let mut seen = BTreeSet::new();
-        let mut current = spec.parent.as_deref();
-        while let Some(name) = current {
-            if !seen.insert(name) || name == spec.kind {
-                issues.push(Issue::new(&spec.kind, "parent", "containment cycle"));
-                break;
-            }
-            current = kinds.get(name).and_then(|parent| parent.parent.as_deref());
+        // Containment must end: no kind can be among its own ancestors.
+        if reaches(kinds, &spec.kind, &spec.kind, &mut BTreeSet::new()) {
+            issues.push(Issue::new(&spec.kind, "parent", "containment cycle"));
         }
     }
     issues
+}
+
+/// Whether `target` is among the ancestors of `kind`, through any parent.
+fn reaches<'a>(
+    kinds: &'a BTreeMap<String, KindSpec>,
+    kind: &str,
+    target: &str,
+    seen: &mut BTreeSet<&'a str>,
+) -> bool {
+    let Some(spec) = kinds.get(kind) else {
+        return false;
+    };
+    spec.parents.iter().any(|parent| {
+        parent == target || (seen.insert(parent.as_str()) && reaches(kinds, parent, target, seen))
+    })
 }
 
 /// `Scope` is not `Ord`; this local mirror lets root sections live in a set.

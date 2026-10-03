@@ -1,0 +1,102 @@
+# A domain of an application or a Compose stack. One kind for everything that can have a domain (ADR
+# 0018); under a Compose stack it names the `service_name` it routes to.
+#
+# Live facts (fixtures/api/live/*/domain-*): create answers the whole row, the collection is the
+# `domains` array the service's direct read embeds, and an update takes the host every time.
+kind: domain
+scope: project
+parent: [application, compose]
+section: domains
+title: Domain
+class: managed
+identity:
+  key: null
+  collision: [host]
+  address: "domain.{key}"
+api:
+  id: domainId
+  create:
+    op: domain.create
+    attach_by_parent:
+      application: { applicationId: parent_id, domainType: application }
+      compose: { composeId: parent_id, domainType: compose }
+  update: { op: domain.update }
+  remove: { op: domain.delete }
+  parent_field:
+    application: applicationId
+    compose: composeId
+  read:
+    list:
+      embedded_in: { pointer: /domains }
+      authority: authoritative
+    one: { op: domain.one, id_param: domainId, agree: true }
+  create_identity:
+    from_response: /domainId
+fields:
+  service_name:
+    api: serviceName
+    type: text
+    nullable: true
+    doc: The Compose service the domain routes to; required under a Compose stack, empty under an application.
+  host:
+    type: text
+    min_len: 1
+  path:
+    type: text
+    nullable: true
+  internal_path:
+    api: internalPath
+    type: text
+    nullable: true
+  strip_path:
+    api: stripPath
+    type: bool
+  port:
+    type: int
+    min: 1
+    max: 65535
+    nullable: true
+  https:
+    type: bool
+  certificate_type:
+    api: certificateType
+    type: enum[letsencrypt, none, custom]
+  custom_cert_resolver:
+    api: customCertResolver
+    type: text
+    nullable: true
+  custom_entrypoint:
+    api: customEntrypoint
+    type: text
+    nullable: true
+  middlewares:
+    type: list<text>
+    nullable: true
+  forward_auth_enabled:
+    api: forwardAuthEnabled
+    type: bool
+  enabled:
+    type: bool
+write:
+  - op: domain.update
+    fields:
+      [
+        service_name,
+        host,
+        path,
+        internal_path,
+        strip_path,
+        port,
+        https,
+        certificate_type,
+        custom_cert_resolver,
+        custom_entrypoint,
+        middlewares,
+        forward_auth_enabled,
+        enabled,
+      ]
+    shape: full
+ledger:
+  readonly: [createdAt, uniqueConfigKey]
+  ignored:
+    - { field: previewDeploymentId, reason: a domain of a preview deployment is not configuration }

@@ -1,0 +1,268 @@
+{
+  "bucket": "mysql",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/mysql_remote::absent_mysql_requires_both_credentials_before_create",
+      "file": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "test": "absent_mysql_requires_both_credentials_before_create",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "mysql.search"
+      ],
+      "requests": [
+        "GET /api/mysql.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance mysql `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mysql_remote::managed_mysql_projects_readable_fields_and_two_write_only_credentials",
+      "file": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "test": "managed_mysql_projects_readable_fields_and_two_write_only_credentials",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance mysql canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mysql_remote::mysql_metadata_changes_update_in_place",
+      "file": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "test": "mysql_metadata_changes_update_in_place",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "conformance mysql `update:*` (only the write group's fields are sent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mysql_remote::mysql_password_clear_after_create_is_unsupported",
+      "file": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "test": "mysql_password_clear_after_create_is_unsupported",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mysql_remote::partial_mysql_search_cannot_prove_absence",
+      "file": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "test": "partial_mysql_search_cannot_prove_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mysql_remote::unavailable_mysql_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "file": "crates/dokploy-cli/tests/mysql_remote.rs",
+      "test": "unavailable_mysql_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mysql `read_failure`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_by_environment_collects_every_bounded_page",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_by_environment_collects_every_bounded_page",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mysql.search"
+      ],
+      "requests": [
+        "GET /api/mysql.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_by_environment_rejects_unstable_or_incomplete_pagination",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_by_environment_rejects_unstable_or_incomplete_pagination",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_create_requires_both_passwords_and_returns_its_identity",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_create_requires_both_passwords_and_returns_its_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mysql.create"
+      ],
+      "requests": [
+        "POST /api/mysql.create HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mysql-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance mysql `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_details_expose_only_safe_reconciliation_fields",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_details_expose_only_safe_reconciliation_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mysql-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance mysql canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_get_uses_a_strong_id_authentication_and_safe_details",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_get_uses_a_strong_id_authentication_and_safe_details",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mysql.one"
+      ],
+      "requests": [
+        "GET /api/mysql.one?mysqlId=mysql-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mysql-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance mysql canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_inputs_are_rejected_before_transport_when_invalid",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_inputs_are_rejected_before_transport_when_invalid",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "conformance mysql `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_sanitizes_credential_rejections_and_preserves_unknown_transport_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mysql `rejected_create`, `unknown_{create,update,delete}_{before,after}` and the canary scan",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mysql::mysql_update_and_both_password_targets_use_narrow_typed_requests",
+      "file": "crates/dokploy-sdk/tests/mysql.rs",
+      "test": "mysql_update_and_both_password_targets_use_narrow_typed_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mysql.changePassword"
+      ],
+      "requests": [
+        "POST /api/mysql.changePassword HTTP/1.1",
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "conformance mysql `update:*` (only the write group's fields are sent)",
+      "reason": null
+    }
+  ]
+}

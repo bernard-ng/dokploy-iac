@@ -1,0 +1,89 @@
+# A scheduled database backup to a destination. One kind for every database that can have one (ADR
+# 0018): `databaseType` and `backupType` are the parent's, attached on create and on every update.
+#
+# Live facts (fixtures/api/live/*/backup-*, `backup-contract.metadata.json`): the collection is the
+# `backups` array the database's direct read embeds, a create answers without an identity (the one
+# new id of the collection is it), and the target of a backup never changes. Dokploy 0.30.6
+# supports `postgres`, `mysql`, `mariadb`, `mongo`, and `libsql`; the `compose` and `web-server`
+# targets are not supported (ADR 0039), and Redis has no backups. Dokploy's own collision key is
+# target, destination, prefix, database, and service; the spec uses prefix and database, as the
+# target is the parent.
+kind: backup
+scope: project
+parent: [postgres, mysql, mariadb, mongo, libsql]
+section: backups
+title: Database backup
+class: managed
+identity:
+  key: null
+  collision: [prefix, database]
+  address: "backup.{key}"
+api:
+  id: backupId
+  create:
+    op: backup.create
+    attach_by_parent:
+      postgres: { postgresId: parent_id, databaseType: postgres, backupType: database }
+      mysql: { mysqlId: parent_id, databaseType: mysql, backupType: database }
+      mariadb: { mariadbId: parent_id, databaseType: mariadb, backupType: database }
+      mongo: { mongoId: parent_id, databaseType: mongo, backupType: database }
+      libsql: { libsqlId: parent_id, databaseType: libsql, backupType: database }
+  update:
+    op: backup.update
+    attach_by_parent:
+      postgres: { databaseType: postgres }
+      mysql: { databaseType: mysql }
+      mariadb: { databaseType: mariadb }
+      mongo: { databaseType: mongo }
+      libsql: { databaseType: libsql }
+  remove: { op: backup.remove }
+  read:
+    list:
+      embedded_in: { pointer: /backups }
+      authority: authoritative
+    one: { op: backup.one, id_param: backupId, agree: true }
+  create_identity:
+    diff_collection: { key: [prefix, database] }
+fields:
+  schedule:
+    type: text
+    min_len: 1
+    doc: A cron expression.
+  enabled:
+    type: bool
+    nullable: true
+  prefix:
+    type: text
+    min_len: 1
+    doc: The folder of the destination the files go to.
+  destination:
+    api: destinationId
+    type: selector(destination)
+  keep_latest:
+    api: keepLatestCount
+    type: int
+    min: 1
+    nullable: true
+  database:
+    type: text
+    min_len: 1
+    doc: The name of the database inside the service.
+  service_name:
+    api: serviceName
+    type: text
+    nullable: true
+    doc: Unused by a database; the update requires it.
+  include_encryption_key:
+    api: includeEncryptionKey
+    type: bool
+  metadata:
+    type: "blob(backup-metadata)"
+    nullable: true
+write:
+  - op: backup.update
+    fields: [schedule, enabled, prefix, destination, keep_latest, database, service_name, include_encryption_key, metadata]
+    shape: full
+ledger:
+  ignored:
+    - { field: userId, reason: "the owner of a web-server backup; web-server backups are not supported" }
+    - { field: composeId, reason: "Compose backups are not supported on this version (ADR 0039)" }

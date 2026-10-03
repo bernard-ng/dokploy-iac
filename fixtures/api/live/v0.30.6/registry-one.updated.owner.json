@@ -1,0 +1,10 @@
+{
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "imagePrefix": "team",
+  "organizationId": "organization-1",
+  "registryId": "registry-1",
+  "registryName": "registry-contract",
+  "registryType": "cloud",
+  "registryUrl": "localhost:5000",
+  "username": "owner"
+}

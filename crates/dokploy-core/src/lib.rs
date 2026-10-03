@@ -10,6 +10,7 @@ mod plan;
 mod planner;
 mod property;
 mod snapshot;
+mod spec_property;
 
 pub use mutation::{MutationContract, MutationMode, PropertyMutation, ReplacementOrder};
 pub use plan::{
@@ -20,8 +21,7 @@ pub use plan::{
 };
 pub use planner::plan;
 pub use property::{
-    ComparableValue, ComparableValueError, EnvironmentVariableName, EnvironmentVariableNameError,
-    OwnedValue, PropertyPath, PropertyPathError, SensitiveIntent,
+    ComparableValue, ComparableValueError, OwnedValue, PropertyPath, SensitiveIntent,
 };
 pub use snapshot::{
     ConfigDigest, ConfigDigestError, DesiredResource, DesiredState, DesiredStateError,
@@ -30,3 +30,4 @@ pub use snapshot::{
     RemoteStateError, RemovalDirective, ResourceObservationMatch, StoredState, StoredStateError,
     compare_resource_observation,
 };
+pub use spec_property::register_spec_kinds;

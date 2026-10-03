@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "appName": "mariadb-contract-test",
+      "applicationStatus": "idle",
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "description": "Disposable MariaDB SDK contract",
+      "environmentId": "environment-1",
+      "mariadbId": "mariadb-1",
+      "name": "MariaDB Contract Test"
+    }
+  ],
+  "total": 1
+}

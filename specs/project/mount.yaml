@@ -1,0 +1,88 @@
+# A mount of an application or a database: a volume, a bind mount, or a file. One kind for every
+# service that can have one (ADR 0018): it lives under any of its parents, is created with
+# `serviceId` and `serviceType`, and is answered with the column of its parent (`applicationId`,
+# `postgresId`, ...).
+#
+# Live facts (fixtures/api/live/*/mount-*): create answers the whole row, and the collection is
+# the `mounts` array the service's direct read embeds.
+kind: mount
+scope: project
+parent: [application, compose, postgres, mysql, mariadb, mongo, redis, libsql]
+section: mounts
+title: Mount
+class: managed
+identity:
+  key: null
+  collision: [mount_path]
+  address: "mount.{key}"
+api:
+  id: mountId
+  create:
+    op: mounts.create
+    attach: { serviceId: parent_id }
+    attach_by_parent:
+      application: { serviceType: application }
+      postgres: { serviceType: postgres }
+      mysql: { serviceType: mysql }
+      mariadb: { serviceType: mariadb }
+      mongo: { serviceType: mongo }
+      redis: { serviceType: redis }
+      libsql: { serviceType: libsql }
+      compose: { serviceType: compose }
+  update: { op: mounts.update }
+  remove: { op: mounts.remove }
+  parent_field:
+    application: applicationId
+    postgres: postgresId
+    mysql: mysqlId
+    mariadb: mariadbId
+    mongo: mongoId
+    redis: redisId
+    libsql: libsqlId
+    compose: composeId
+  read:
+    list:
+      embedded_in: { pointer: /mounts }
+      authority: authoritative
+    one: { op: mounts.one, id_param: mountId, agree: true }
+  create_identity:
+    from_response: /mountId
+fields:
+  type:
+    type: enum[bind, volume, file]
+    mutability: create_only
+    doc: Changing the kind of storage replaces the mount.
+  mount_path:
+    api: mountPath
+    type: text
+    min_len: 1
+  host_path:
+    api: hostPath
+    type: text
+    nullable: true
+  volume_name:
+    api: volumeName
+    type: text
+    nullable: true
+  file_path:
+    api: filePath
+    type: text
+    nullable: true
+  content:
+    type: file
+    class: content
+    nullable: true
+write:
+  - op: mounts.update
+    fields: [mount_path, host_path, volume_name, file_path, content]
+    shape: partial
+ledger:
+  ignored:
+    - { field: applicationId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: composeId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: libsqlId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: mariadbId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: mongoId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: mysqlId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: postgresId, reason: the id of the service it belongs to; a mount never changes service }
+    - { field: redisId, reason: the id of the service it belongs to; a mount never changes service }

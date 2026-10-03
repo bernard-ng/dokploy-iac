@@ -17,13 +17,12 @@ Every push and pull request runs six independent jobs:
   `cargo-audit` 0.22.2;
 - cargo-dist workflow drift detection and release-plan validation with
   cargo-dist 0.33.0;
-- a live apply-and-converge check against the digest-pinned local Dokploy
-  environment.
+- the engine against the digest-pinned Dokploy (`engine-live`, below).
 
 The contracts job only renders and validates `compose.integration.yaml`. It
 does not pull images, create secrets, access the Docker socket, or start the
-Dokploy integration environment. The separate integration job starts the
-disposable stack, runs `scripts/integration/test-apply.sh`, and always invokes
+Dokploy integration environment. The separate `engine-live` job starts the
+disposable stack, runs `scripts/integration/test-engine-live.sh`, and always invokes
 `scripts/integration/reset.sh` so containers, volumes, generated credentials,
 and local integration state do not survive the job.
 
@@ -73,6 +72,58 @@ name, runner label, workspace path, secret scope, and repository-specific
 configuration path. Configure required reviewers and deployment restrictions
 on the `production` GitHub Environment before enabling apply.
 
+## Live engine test
+
+`engine-live` runs `scripts/integration/test-engine-live.sh` for every Dokploy version in
+`specs/versions.yaml` that has fixtures (0.30.6 and 0.30.7): the v2 engine applies, converges,
+updates, detects drift, rotates a secret, recovers, and removes a `tag` and a `registry` against the
+digest-pinned image. It is the live half of what the simulator copies
+([ADR 0015](decisions/0015-testing-simulator-and-live-contracts.md)); the registry part starts a
+throwaway `registry:2` because Dokploy runs `docker login` on create. Locally:
+
+```bash
+scripts/integration/reset.sh && scripts/integration/up.sh
+export DOKPLOY_FINGERPRINT_KEY="0199a0c8-2351-7c31-8899-2c8f81983ea5:$(openssl rand -hex 32)"
+scripts/integration/test-engine-live.sh
+```
+
+## Capturing fixtures
+
+Live fixtures are recorded by the manually dispatched **Capture fixtures** workflow
+(`.github/workflows/capture.yaml`, [ADR 0015](decisions/0015-testing-simulator-and-live-contracts.md)),
+which never commits. From the Actions tab, choose a Dokploy `version` listed in
+`specs/versions.yaml` and the `captures` to run (`all`, or names such as `redirect port`).
+It starts that version's digest-pinned image, runs `scripts/integration/capture-all.sh`,
+scans the result with `scripts/integration/check-fixtures.sh`, and uploads
+`fixtures/api/live/<version>/` as an artifact kept for 14 days. The artifact is uploaded only
+when the scan passed. Review it, then add the files in a pull request.
+
+`specs/versions.yaml` is the authority for the supported set (ADR 0014). A version is
+`supported` once its fixtures are reviewed and the live suite passes, and `candidate`
+before that. `cargo xtask versions` lists them, `--image <version>` prints the pinned image,
+and `--check` keeps `compose.integration.yaml` and `scripts/integration/version.sh` equal to the
+default entry.
+
+Run the same thing locally with Docker:
+
+```bash
+export DOKPLOY_VERSION=0.30.7 DOKPLOY_IMAGE="$(cargo xtask versions --image 0.30.7)"
+scripts/integration/up.sh
+scripts/integration/capture-all.sh          # or: capture-all.sh redirect port
+scripts/integration/reset.sh
+```
+
+The `registry` capture starts a throwaway `registry:2` (pinned by digest) on
+`127.0.0.1:5000` (`DOKPLOY_CAPTURE_REGISTRY_PORT`), because Dokploy runs `docker login` when it
+creates a registry. The settings captures (`registry`, `tag`) share `capture-lib.sh` and need an
+instance with no registries or tags.
+
+Without those variables the scripts use the default version. The `fixtures` capture needs an
+empty instance and leaves a project the `domain` and `redis` captures reuse, so reset between
+full runs. While a version is incomplete the checker runs in `DOKPLOY_FIXTURE_CHECK=partial`
+mode: kinds that are not captured yet are skipped, everything present is still checked, and
+the leak scans always cover the whole directory (`test-fixture-check-modes.sh` pins this).
+
 Release automation is documented in [Releasing the CLI](releasing.md). The
 generated cargo-dist workflow is also checked on pull requests in plan-only
 mode and publishes archives, checksums, and installers only for version tags.
@@ -92,7 +143,7 @@ cargo audit
 dist generate --mode=ci --check
 dist plan
 scripts/integration/up.sh
-scripts/integration/test-apply.sh
+scripts/integration/test-engine-live.sh
 scripts/integration/reset.sh
 ```
 

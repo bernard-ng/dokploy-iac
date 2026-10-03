@@ -1,0 +1,39 @@
+{
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "description": "Disposable LibSQL SDK contract",
+  "env": "",
+  "environments": [
+    {
+      "applications": [],
+      "compose": [],
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "description": "Production environment",
+      "env": "",
+      "environmentId": "environment-1",
+      "isDefault": true,
+      "libsql": [
+        {
+          "appName": "libsql-contract-test",
+          "applicationStatus": "idle",
+          "createdAt": "2026-09-28T00:00:00.000Z",
+          "description": "Disposable LibSQL SDK contract",
+          "libsqlId": "libsql-1",
+          "name": "LibSQL Contract Test",
+          "server": null,
+          "serverId": null
+        }
+      ],
+      "mariadb": [],
+      "mongo": [],
+      "mysql": [],
+      "name": "production",
+      "postgres": [],
+      "projectId": "project-1",
+      "redis": []
+    }
+  ],
+  "name": "LibSQL SDK Contract Test",
+  "organizationId": "organization-1",
+  "projectId": "project-1",
+  "projectTags": []
+}

@@ -63,7 +63,7 @@ pub enum Command {
         /// Configuration file to validate.
         #[arg(
             long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
@@ -81,7 +81,7 @@ pub enum Command {
         /// Configuration file to plan.
         #[arg(
             long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
@@ -93,29 +93,17 @@ pub enum Command {
         /// Return status 2 when a complete, applyable plan contains changes.
         #[arg(long)]
         detailed_exitcode: bool,
-
-        /// Save a bound plan envelope for a later verified apply.
-        #[arg(long, value_name = "PATH")]
-        out: Option<PathBuf>,
     },
 
     /// Preview and reconcile configuration against fresh Dokploy state.
     Apply {
-        /// Saved plan to verify against fresh evidence before applying.
-        #[arg(value_name = "PLAN")]
-        plan: Option<PathBuf>,
-
         /// Configuration file to apply.
         #[arg(
             long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
-
-        /// Maximum number of independent remote operations in flight.
-        #[arg(long, default_value_t = 4, value_parser = clap::value_parser!(u8).range(1..=64))]
-        parallelism: u8,
 
         /// Apply a complete plan without interactive confirmation.
         #[arg(long)]
@@ -127,7 +115,7 @@ pub enum Command {
         /// Configuration file whose workspace contains the interrupted operation.
         #[arg(
             long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
@@ -142,7 +130,7 @@ pub enum Command {
         /// Configuration file whose directory owns the state.
         #[arg(
             long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
@@ -152,18 +140,12 @@ pub enum Command {
         auto_approve: bool,
     },
 
-    /// Adopt an existing Dokploy project into canonical configuration and state.
-    Import {
-        #[command(subcommand)]
-        command: ImportCommand,
-    },
-
     /// Inspect resources tracked in the local workspace state.
     State {
         /// Configuration file whose directory owns the state.
         #[arg(
             long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
+            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
             value_name = "PATH"
         )]
         file: PathBuf,
@@ -195,40 +177,6 @@ pub enum SchemaDocument {
     Project,
     /// A `settings:` document.
     Settings,
-}
-
-#[derive(Subcommand)]
-pub enum ImportCommand {
-    /// Adopt one whole project, with every environment and resource below it.
-    ///
-    /// Import only creates a new workspace; it refuses to run when the
-    /// configuration file or durable state already exists.
-    Project {
-        /// Existing Dokploy project identifier. Omit it to choose from a list.
-        project_id: Option<String>,
-
-        /// Configuration file to create.
-        #[arg(
-            long,
-            default_value = dokploy_config::DEFAULT_CONFIG_FILE,
-            value_name = "PATH"
-        )]
-        file: PathBuf,
-    },
-
-    /// Adopt the instance settings (tags) into a settings document.
-    ///
-    /// Like project import, this only creates a new workspace: it refuses to
-    /// run when the settings file or the settings state already exists.
-    Settings {
-        /// Settings file to create.
-        #[arg(
-            long,
-            default_value = dokploy_config::DEFAULT_SETTINGS_FILE,
-            value_name = "PATH"
-        )]
-        file: PathBuf,
-    },
 }
 
 #[derive(Subcommand)]
@@ -294,69 +242,7 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, Command, ContextCommand, ImportCommand, SchemaDocument, StateCommand};
-
-    #[test]
-    fn parses_direct_and_interactive_project_import() {
-        let direct = Cli::try_parse_from([
-            "dokploy",
-            "import",
-            "project",
-            "project-1",
-            "--file",
-            "platform.yaml",
-        ])
-        .expect("direct project import is valid");
-        assert!(matches!(
-            direct.command,
-            Command::Import {
-                command: ImportCommand::Project {
-                    project_id: Some(ref id),
-                    ref file,
-                },
-            } if id == "project-1" && file.as_path() == Path::new("platform.yaml")
-        ));
-
-        let interactive = Cli::try_parse_from(["dokploy", "import", "project"])
-            .expect("interactive project import is valid");
-        assert!(matches!(
-            interactive.command,
-            Command::Import {
-                command: ImportCommand::Project {
-                    project_id: None,
-                    ref file,
-                },
-            } if file.as_path() == Path::new("dokploy.yaml")
-        ));
-    }
-
-    #[test]
-    fn rejects_the_removed_per_resource_import_forms() {
-        for arguments in [
-            vec!["dokploy", "import"],
-            vec![
-                "dokploy",
-                "import",
-                "postgres",
-                "postgres-1",
-                "--as",
-                "postgres.main",
-            ],
-            vec![
-                "dokploy",
-                "import",
-                "project",
-                "project-1",
-                "--as",
-                "project.main",
-            ],
-        ] {
-            assert!(
-                Cli::try_parse_from(&arguments).is_err(),
-                "{arguments:?} must no longer parse"
-            );
-        }
-    }
+    use super::{Cli, Command, ContextCommand, SchemaDocument, StateCommand};
 
     #[test]
     fn parses_context_use() {
@@ -429,17 +315,6 @@ mod tests {
     }
 
     #[test]
-    fn import_settings_defaults_to_the_settings_file() {
-        let cli =
-            Cli::try_parse_from(["dokploy", "import", "settings"]).expect("command line is valid");
-        assert!(matches!(
-            cli.command,
-            Command::Import { command: ImportCommand::Settings { file } }
-                if file.as_path() == Path::new("dokploy.settings.yaml")
-        ));
-    }
-
-    #[test]
     fn validate_accepts_a_configuration_path_override() {
         let cli = Cli::try_parse_from(["dokploy", "validate", "--file", "custom.yaml"])
             .expect("command line is valid");
@@ -483,8 +358,6 @@ mod tests {
             "stack.yaml",
             "--json",
             "--detailed-exitcode",
-            "--out",
-            "plan.json",
         ])
         .expect("plan command line is valid");
 
@@ -494,9 +367,7 @@ mod tests {
                 file,
                 json: true,
                 detailed_exitcode: true,
-                out: Some(out),
             } if file.as_path() == Path::new("stack.yaml")
-                && out.as_path() == Path::new("plan.json")
         ));
     }
 
@@ -541,44 +412,33 @@ mod tests {
     }
 
     #[test]
-    fn apply_uses_safe_defaults_and_accepts_bounded_parallelism() {
+    fn apply_asks_for_approval_unless_told_not_to() {
         let default =
             Cli::try_parse_from(["dokploy", "apply"]).expect("default apply command line is valid");
         assert!(matches!(
             default.command,
-            Command::Apply {
-                plan: None,
-                file,
-                parallelism: 4,
-                auto_approve: false,
-            }
+            Command::Apply { file, auto_approve: false }
                 if file.as_path() == Path::new("dokploy.yaml")
         ));
 
-        let explicit = Cli::try_parse_from([
-            "dokploy",
-            "apply",
-            "plan.json",
-            "--file",
-            "stack.yaml",
-            "--parallelism",
-            "8",
-            "--auto-approve",
-        ])
-        .expect("explicit apply command line is valid");
+        let explicit =
+            Cli::try_parse_from(["dokploy", "apply", "--file", "stack.yaml", "--auto-approve"])
+                .expect("explicit apply command line is valid");
         assert!(matches!(
             explicit.command,
-            Command::Apply {
-                plan: Some(plan),
-                file,
-                parallelism: 8,
-                auto_approve: true,
-            }
-                if plan.as_path() == Path::new("plan.json")
-                    && file.as_path() == Path::new("stack.yaml")
+            Command::Apply { file, auto_approve: true } if file.as_path() == Path::new("stack.yaml")
         ));
-        assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "0"]).is_err());
-        assert!(Cli::try_parse_from(["dokploy", "apply", "--parallelism", "65"]).is_err());
+        assert!(
+            Cli::try_parse_from(["dokploy", "apply", "--parallelism", "4"]).is_err(),
+            "parallelism returns when the executor can run steps concurrently"
+        );
+    }
+
+    #[test]
+    fn the_first_engines_import_and_saved_plans_are_gone() {
+        assert!(Cli::try_parse_from(["dokploy", "import", "settings"]).is_err());
+        assert!(Cli::try_parse_from(["dokploy", "plan", "--out", "plan.json"]).is_err());
+        assert!(Cli::try_parse_from(["dokploy", "apply", "plan.json"]).is_err());
     }
 
     #[test]

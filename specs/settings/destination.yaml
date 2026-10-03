@@ -1,0 +1,74 @@
+# An S3-compatible backup destination. A flat settings kind: the backups and volume backups of the
+# project kinds name one by selector.
+#
+# Live facts: only the empty `destination.all` selector capture exists (fixtures/api/live/*/
+# destination-all.selectors.json). The create answer is not captured, so the identity is the one
+# new item of `destination.all` by name; `destination.update` requires every field of the
+# destination on each call, secrets included, so its write group is `full` and the document must
+# declare both secrets. Whether `destination.all` returns the keys is to be verified in the live
+# suite; both are treated as secrets and are never compared.
+kind: destination
+scope: settings
+section: destinations
+title: Backup destination
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "destination.{key}"
+api:
+  id: destinationId
+  create: { op: destination.create }
+  update: { op: destination.update }
+  remove: { op: destination.remove }
+  read:
+    list: { op: destination.all, authority: authoritative }
+    one: { op: destination.one, id_param: destinationId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+    doc: Display name; defaults to the document key.
+  provider:
+    type: text
+    nullable: true
+    doc: The S3 provider, such as AWS or Cloudflare; empty for a generic S3 endpoint.
+  access_key:
+    api: accessKey
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+  secret_access_key:
+    api: secretAccessKey
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+  bucket:
+    type: text
+    min_len: 1
+  region:
+    type: text
+  endpoint:
+    type: text
+    min_len: 1
+  additional_flags:
+    api: additionalFlags
+    type: "list<text>"
+    nullable: true
+    doc: Extra flags passed to rclone.
+  server:
+    api: serverId
+    type: selector(server)
+    nullable: true
+    doc: Restrict the destination to one server.
+write:
+  - op: destination.update
+    fields: [name, provider, access_key, secret_access_key, bucket, region, endpoint, additional_flags, server]
+    shape: full
+ledger:
+  readonly: [createdAt, organizationId]

@@ -8,7 +8,11 @@ repository = "https://github.com/bernard-ng/dokploy-iac"
 publish = false
 
 [dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
+syn = { version = "2.0", features = ["full"] }
 tempfile = "3.23"
 thiserror = "2.0"
-dokploy-spec = { path = "../crates/dokploy-spec" }
+dokploy-spec.workspace = true

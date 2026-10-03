@@ -8,13 +8,17 @@ use std::{
 use serde_json::Value;
 use thiserror::Error;
 
+mod goldens;
 mod imperative;
 mod specs;
+mod versions;
 
+pub use goldens::{GoldensExtractReport, GoldensReport, run_goldens_check, run_goldens_extract};
 pub use imperative::{
     ImperativeCodegenError, ImperativeCodegenPaths, ImperativeCodegenReport, run_imperative_codegen,
 };
 pub use specs::{SpecsReport, run_specs_check};
+pub use versions::{VersionsReport, load_versions, run_versions_check, version_image};
 
 pub const GENERATOR_VERSION: &str = "oas3-gen 0.28.0";
 
@@ -254,13 +258,14 @@ fn write_endpoint_metadata(output: &Path, contract: &Value) -> Result<(), Codege
                 method: endpoint_method_variant(method),
                 operation_id: operation_id.to_owned(),
                 operation: operation_path.to_owned(),
+                contract: request_contract_source(operation),
             });
         }
     }
 
     endpoints.sort_by(|left, right| left.operation.cmp(&right.operation));
     let mut source = String::from(
-        "//! Endpoint metadata derived from the pinned OpenAPI contract.\n\nuse crate::{Endpoint, EndpointMethod};\n\n",
+        "//! Endpoint metadata derived from the pinned OpenAPI contract.\n\nuse crate::{BodyShape, Endpoint, EndpointMethod, RequestContract, RequestField};\n\n",
     );
     for endpoint in &endpoints {
         source.push_str(&format!(
@@ -277,6 +282,15 @@ fn write_endpoint_metadata(output: &Path, contract: &Value) -> Result<(), Codege
             "        {} => Some({}),\n",
             rust_string(&endpoint.operation),
             endpoint.constant,
+        ));
+    }
+    source.push_str("        _ => None,\n    }\n}\n");
+    source.push_str("\n/// Looks up the request fields of an operation by its Dokploy wire operation.\n#[must_use]\npub fn request_contract(operation: &str) -> Option<&'static RequestContract> {\n    match operation {\n");
+    for endpoint in &endpoints {
+        source.push_str(&format!(
+            "        {} => Some(&{}),\n",
+            rust_string(&endpoint.operation),
+            endpoint.contract,
         ));
     }
     source.push_str("        _ => None,\n    }\n}\n");
@@ -320,6 +334,81 @@ struct EndpointDefinition {
     method: &'static str,
     operation_id: String,
     operation: String,
+    contract: String,
+}
+
+/// Rust source for the query parameters and JSON body fields an operation accepts.
+///
+/// A body that is not a plain object with properties is `Unconstrained`; the contract
+/// then says nothing about its fields.
+fn request_contract_source(operation: &Value) -> String {
+    let mut query = Vec::new();
+    for parameter in operation
+        .get("parameters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if parameter.get("in").and_then(Value::as_str) != Some("query") {
+            continue;
+        }
+        if let Some(name) = parameter.get("name").and_then(Value::as_str) {
+            let required = parameter
+                .get("required")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            query.push((name.to_owned(), required));
+        }
+    }
+    query.sort();
+
+    let body = match operation.get("requestBody") {
+        None => "BodyShape::None".to_owned(),
+        Some(request_body) => {
+            let schema = request_body
+                .pointer("/content/application~1json/schema")
+                .filter(|schema| schema.get("properties").is_some());
+            match schema {
+                None => "BodyShape::Unconstrained".to_owned(),
+                Some(schema) => {
+                    let required: BTreeSet<&str> = schema
+                        .get("required")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .collect();
+                    let mut fields: Vec<(String, bool)> = schema
+                        .get("properties")
+                        .and_then(Value::as_object)
+                        .into_iter()
+                        .flatten()
+                        .map(|(name, _)| (name.clone(), required.contains(name.as_str())))
+                        .collect();
+                    fields.sort();
+                    format!("BodyShape::Object(&[{}])", field_list(&fields))
+                }
+            }
+        }
+    };
+
+    format!(
+        "RequestContract {{ query: &[{}], body: {body} }}",
+        field_list(&query)
+    )
+}
+
+fn field_list(fields: &[(String, bool)]) -> String {
+    fields
+        .iter()
+        .map(|(name, required)| {
+            format!(
+                "RequestField {{ name: {}, required: {required} }}",
+                rust_string(name)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn endpoint_constant_name(operation_id: &str) -> String {

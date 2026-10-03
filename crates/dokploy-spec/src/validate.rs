@@ -163,6 +163,14 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
     if api.read.list.is_none() && api.read.one.is_none() {
         context.add("api.read", "a kind needs at least one read");
     }
+    for parent in api.parent_field.keys() {
+        if !spec.parents.contains(parent) {
+            context.add(
+                "api.parent_field",
+                format!("`{parent}` is not a parent kind of this kind"),
+            );
+        }
+    }
     if let Some(list) = &api.read.list {
         match (&list.op, &list.embedded_in) {
             (None, None) => context.add("api.read.list", "needs `op` or `embedded_in`"),
@@ -171,17 +179,56 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
             }
             (Some(op), None) => check_operation(context, "api.read.list.op", op),
             (None, Some(embedded)) => {
-                check_operation(
-                    context,
-                    "api.read.list.embedded_in.parent_op",
-                    &embedded.parent_op,
-                );
+                if let Some(parent_op) = &embedded.parent_op {
+                    check_operation(context, "api.read.list.embedded_in.parent_op", parent_op);
+                }
+                if spec.parents.is_empty() {
+                    context.add(
+                        "api.read.list.embedded_in",
+                        "needs a parent kind to embed in",
+                    );
+                }
                 if !embedded.pointer.starts_with('/') {
                     context.add(
                         "api.read.list.embedded_in.pointer",
                         "must be a JSON pointer",
                     );
                 }
+            }
+        }
+        if let Some(scope) = &list.scope {
+            if list.op.is_none() {
+                context.add(
+                    "api.read.list.scope",
+                    "applies to a list `op`, not an embedded one",
+                );
+            }
+            if spec.parents.is_empty() {
+                context.add("api.read.list.scope", "needs a parent kind to scope by");
+            }
+            // One parent id parameter serves several parent kinds only when the list is told
+            // which kind the id names.
+            if spec.parents.len() > 1
+                && spec
+                    .parents
+                    .iter()
+                    .any(|parent| !scope.query_by_parent.contains_key(parent))
+            {
+                context.add(
+                    "api.read.list.scope",
+                    "a collection scoped by one parent needs `query_by_parent` for every parent kind it serves",
+                );
+            }
+            for parent in scope.query_by_parent.keys() {
+                if !spec.parents.contains(parent) {
+                    context.add(
+                        "api.read.list.scope.query_by_parent",
+                        format!("`{parent}` is not a parent of the kind"),
+                    );
+                }
+            }
+            if scope.param.trim().is_empty() {
+                context.add("api.read.list.scope.param", "must name a query parameter");
             }
         }
         if list.authority == Authority::Partial && api.read.one.is_none() {
@@ -255,6 +302,16 @@ fn check_field(
         check_type_rules(context, path, field, parsed, shared_types);
     }
 
+    if field.class == ValueClass::Public
+        && !matches!(parsed, Some(FieldType::Env))
+        && looks_secret_bearing(name)
+    {
+        context.add(
+            format!("{path}.class"),
+            "the name suggests a secret or file content; declare `class: secret` or `class: content` (state refuses plain values under such names)",
+        );
+    }
+
     match (field.class, field.mutability) {
         (ValueClass::Secret, mutability) if mutability != Mutability::WriteOnly => {
             context.add(
@@ -303,6 +360,39 @@ fn check_field(
     {
         context.add(format!("{path}.pattern"), "must not be empty");
     }
+}
+
+/// Names whose values are secrets or file bodies. A public field cannot carry one: the
+/// durable state keeps the same list as a backstop and refuses plain values under them
+/// (ADR 0010), so the spec has to say which class the field is.
+const SECRET_BEARING_SUFFIXES: &[&str] = &[
+    "password",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "secret",
+    "buildsecrets",
+    "token",
+    "refreshtoken",
+    "buildargs",
+    "previewenv",
+    "previewbuildargs",
+    "document",
+    "composefile",
+    "content",
+    "script",
+];
+
+fn looks_secret_bearing(name: &str) -> bool {
+    let normalized: String = name
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+
+    SECRET_BEARING_SUFFIXES
+        .iter()
+        .any(|suffix| normalized.ends_with(suffix))
 }
 
 fn check_type_rules(

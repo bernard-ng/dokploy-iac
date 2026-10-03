@@ -1,0 +1,269 @@
+{
+  "sources": [
+    {
+      "path": "crates/dokploy-config/tests/backup.rs",
+      "bucket": "backup",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/config.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/external_selectors.rs",
+      "bucket": "external",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/mount.rs",
+      "bucket": "mount",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/schedule.rs",
+      "bucket": "schedule",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/service_placement.rs",
+      "bucket": "placement",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/settings.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/tests/writer.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-config/src/file.rs",
+      "bucket": "document",
+      "layer": "config"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/backups.rs",
+      "bucket": "backup",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/client.rs",
+      "bucket": "sdk",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/compose.rs",
+      "bucket": "compose",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/domain.rs",
+      "bucket": "domain",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/external_associations.rs",
+      "bucket": "external",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "bucket": "external",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/libsql.rs",
+      "bucket": "libsql",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mariadb.rs",
+      "bucket": "mariadb",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mongo.rs",
+      "bucket": "mongo",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mounts.rs",
+      "bucket": "mount",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mutations.rs",
+      "bucket": "sdk",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/mysql.rs",
+      "bucket": "mysql",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/ports.rs",
+      "bucket": "port",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/postgres.rs",
+      "bucket": "postgres",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/redirects.rs",
+      "bucket": "redirect",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/redis.rs",
+      "bucket": "redis",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/schedules.rs",
+      "bucket": "schedule",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/secret_error_policy.rs",
+      "bucket": "sdk",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/security.rs",
+      "bucket": "security",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/sparse_project_topology.rs",
+      "bucket": "project",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/tags.rs",
+      "bucket": "tag",
+      "layer": "sdk"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live.rs",
+      "bucket": "sdk",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_backup.rs",
+      "bucket": "backup",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_external_selectors.rs",
+      "bucket": "external",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_mount.rs",
+      "bucket": "mount",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_port.rs",
+      "bucket": "port",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_redirect.rs",
+      "bucket": "redirect",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_schedule.rs",
+      "bucket": "schedule",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/live_security.rs",
+      "bucket": "security",
+      "layer": "live"
+    },
+    {
+      "path": "crates/dokploy-sdk/src/models.rs",
+      "bucket": "sdk",
+      "layer": "unit"
+    }
+  ],
+  "excluded": [
+    {
+      "path": "crates/dokploy-core/",
+      "reason": "Kernel (ADR 0016): the planner carries over; its tests are rewritten in the M1 property-path slice, not ported."
+    },
+    {
+      "path": "crates/dokploy-state/",
+      "reason": "Kernel (ADR 0016): state storage and journal carry over; state format 5 is an M1 slice."
+    },
+    {
+      "path": "crates/dokploy-model/",
+      "reason": "The v2 document model; not legacy."
+    },
+    {
+      "path": "crates/dokploy-engine/",
+      "reason": "The v2 engine; not legacy."
+    },
+    {
+      "path": "crates/dokploy-conformance/",
+      "reason": "The v2 conformance suite (ADR 0015); not legacy."
+    },
+    {
+      "path": "crates/dokploy-sim/",
+      "reason": "The v2 simulator (ADR 0015); not legacy."
+    },
+    {
+      "path": "crates/dokploy-sdk/tests/transport.rs",
+      "reason": "The v2 Transport seam (ADR 0003); not legacy."
+    },
+    {
+      "path": "crates/dokploy-spec/",
+      "reason": "The v2 spec crate; not legacy."
+    },
+    {
+      "path": "crates/dokploy-api/",
+      "reason": "Generated API crate."
+    },
+    {
+      "path": "xtask/",
+      "reason": "Build tooling."
+    },
+    {
+      "path": "crates/dokploy-cli/src/lib.rs",
+      "reason": "CLI shell (contexts, init, schema); carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/cli.rs",
+      "reason": "Argument parsing of the CLI shell; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/config.rs",
+      "reason": "Context configuration; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/settings.rs",
+      "reason": "Connection settings precedence; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/src/credentials.rs",
+      "reason": "Credential storage; carries over (ADR 0016)."
+    },
+    {
+      "path": "crates/dokploy-cli/src/imperative.rs",
+      "reason": "Imperative command catalog; carries over."
+    },
+    {
+      "path": "crates/dokploy-cli/tests/",
+      "reason": "The v2 command and workflow tests; not legacy."
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "bucket": "compose",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/compose_remote::authoritative_absence_allows_compose_create_with_an_opaque_document",
+      "file": "crates/dokploy-cli/tests/compose_remote.rs",
+      "test": "authoritative_absence_allows_compose_create_with_an_opaque_document",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "compose.search"
+      ],
+      "requests": [
+        "GET /api/compose.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance compose `create`, `create_minimal`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/compose_remote::duplicate_compose_names_fail_closed",
+      "file": "crates/dokploy-cli/tests/compose_remote.rs",
+      "test": "duplicate_compose_names_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance compose `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/compose_remote::managed_compose_is_unavailable_when_collection_fails_despite_direct_success",
+      "file": "crates/dokploy-cli/tests/compose_remote.rs",
+      "test": "managed_compose_is_unavailable_when_collection_fails_despite_direct_success",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance compose `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/compose_remote::managed_compose_requires_direct_and_collection_agreement",
+      "file": "crates/dokploy-cli/tests/compose_remote.rs",
+      "test": "managed_compose_requires_direct_and_collection_agreement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "compose.one"
+      ],
+      "requests": [
+        "GET /api/compose.one?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance compose `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/compose_remote::opaque_document_ownership_fails_closed_for_a_non_raw_compose_source",
+      "file": "crates/dokploy-cli/tests/compose_remote.rs",
+      "test": "opaque_document_ownership_fails_closed_for_a_non_raw_compose_source",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_by_environment_collects_every_bounded_page",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_by_environment_collects_every_bounded_page",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "compose.search"
+      ],
+      "requests": [
+        "GET /api/compose.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_by_environment_rejects_ambiguous_pagination",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_by_environment_rejects_ambiguous_pagination",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_create_redacts_content_and_validates_the_returned_identity",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_create_redacts_content_and_validates_the_returned_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "COMPOSE_WITH_SERVER_RESPONSE"
+      ],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance compose canary scan (a secret is read once, fingerprinted, never stored or printed)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_delete_preserves_rejections_and_unknown_transport_outcomes",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_delete_preserves_rejections_and_unknown_transport_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance compose `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_details_fixture_exposes_only_safe_reconciliation_fields",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_details_fixture_exposes_only_safe_reconciliation_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/compose-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_get_uses_a_strong_id_and_safe_tolerant_model",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_get_uses_a_strong_id_and_safe_tolerant_model",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "compose.one"
+      ],
+      "requests": [
+        "GET /api/compose.one?composeId=compose-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/compose-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_rejects_invalid_inputs_before_transport",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_rejects_invalid_inputs_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); the simulator validates every request against the contract",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/compose::compose_update_and_delete_use_narrow_explicit_requests",
+      "file": "crates/dokploy-sdk/tests/compose.rs",
+      "test": "compose_update_and_delete_use_narrow_explicit_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance compose `delete`, `protected_delete`, `removal_not_applied`, `unknown_delete_*`",
+      "reason": null
+    }
+  ]
+}

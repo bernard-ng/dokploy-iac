@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "appName": "compose-contract-test",
+      "composeId": "compose-1",
+      "composeStatus": "idle",
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "description": "Disposable Compose SDK contract",
+      "environmentId": "environment-1",
+      "name": "Compose Contract Test",
+      "sourceType": "raw"
+    }
+  ],
+  "total": 1
+}

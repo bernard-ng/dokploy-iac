@@ -1,0 +1,22 @@
+[package]
+name = "dokploy-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The conformance suite: scenarios generated from a kind spec, run against the simulator."
+
+[dependencies]
+dokploy-api.workspace = true
+dokploy-core.workspace = true
+dokploy-engine.workspace = true
+dokploy-sdk.workspace = true
+dokploy-sim.workspace = true
+dokploy-spec.workspace = true
+dokploy-state.workspace = true
+semver.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

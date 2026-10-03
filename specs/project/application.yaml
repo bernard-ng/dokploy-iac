@@ -1,4 +1,5 @@
-# PROTOTYPE (coverage: partial). Exercises the three hard shapes: a tagged union
+# PROTOTYPE (coverage: partial). The collection is the one `environment.one` embeds
+# (`application.search` is paged and is not needed). Exercises the three hard shapes: a tagged union
 # written by a different endpoint per arm, an environment block planned per key,
 # and create-only fields. Completed in milestone M3.
 kind: application
@@ -21,8 +22,10 @@ api:
   remove: { op: application.delete }
   deploy: { op: application.deploy }
   read:
-    list: { op: application.search, authority: authoritative }
-    one: { op: application.one, id_param: applicationId, agree: true }
+    list:
+      embedded_in: { parent_op: environment.one, pointer: /applications }
+      authority: authoritative
+    one: { op: application.one, id_param: applicationId }
   create_identity:
     from_response: /applicationId
 fields:
@@ -44,6 +47,56 @@ fields:
     type: selector(server)
     mutability: create_only
     nullable: true
+  icon:
+    type: text
+    nullable: true
+  enabled:
+    type: bool
+    nullable: true
+  detach_dokploy_network:
+    api: detachDokployNetwork
+    type: bool
+  build_server:
+    api: buildServerId
+    type: selector(server)
+    nullable: true
+  deploy:
+    type: struct
+    granularity: field
+    members:
+      auto_deploy: { api: autoDeploy, type: bool, nullable: true }
+      rollback_active: { api: rollbackActive, type: bool, nullable: true }
+  preview:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      enabled: { api: isPreviewDeploymentsActive, type: bool, nullable: true }
+      wildcard: { api: previewWildcard, type: text, nullable: true }
+      port: { api: previewPort, type: int, min: 1, max: 65535, nullable: true }
+      https: { api: previewHttps, type: bool, nullable: true }
+      path: { api: previewPath, type: text, nullable: true }
+      certificate_type: { api: previewCertificateType, type: "enum[letsencrypt, none, custom]", nullable: true }
+      custom_cert_resolver: { api: previewCustomCertResolver, type: text, nullable: true }
+      limit: { api: previewLimit, type: int, min: 1, nullable: true }
+      require_collaborator_permissions: { api: previewRequireCollaboratorPermissions, type: bool, nullable: true }
+      labels: { api: previewLabels, type: "list<text>", nullable: true }
+      environment: { api: previewEnv, type: env, granularity: key, nullable: true }
+      build_args: { api: previewBuildArgs, type: env, granularity: key, nullable: true }
+      build_secrets: { api: previewBuildSecrets, type: env, granularity: key, nullable: true }
+  registry:
+    api: registryId
+    type: selector(registry)
+    nullable: true
+    doc: The registry the image is pulled from.
+  build_registry:
+    api: buildRegistryId
+    type: selector(registry)
+    nullable: true
+  rollback_registry:
+    api: rollbackRegistryId
+    type: selector(registry)
+    nullable: true
   replicas:
     type: int
     min: 0
@@ -56,26 +109,112 @@ fields:
     type: list<text>
     nullable: true
     needs_deploy: true
+  resources:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      memory_limit: { api: memoryLimit, type: text, nullable: true }
+      memory_reservation: { api: memoryReservation, type: text, nullable: true }
+      cpu_limit: { api: cpuLimit, type: text, nullable: true }
+      cpu_reservation: { api: cpuReservation, type: text, nullable: true }
   environment:
     api: env
     type: env
     granularity: key
+    nullable: true
     needs_deploy: true
-  source:
+  build_args:
+    api: buildArgs
+    type: env
+    granularity: key
+    nullable: true
+    needs_deploy: true
+  build_secrets:
+    api: buildSecrets
+    type: env
+    granularity: key
+    nullable: true
+    needs_deploy: true
+  create_env_file:
+    api: createEnvFile
+    type: bool
+    needs_deploy: true
+  build:
+    api: buildType
     type: union(type)
     needs_deploy: true
+    doc: How the image is built. A member left out keeps what Dokploy holds while the arm stays the same.
+    arms:
+      dockerfile:
+        dockerfile: { type: text, nullable: true }
+        context_path: { api: dockerContextPath, type: text, nullable: true }
+        build_stage: { api: dockerBuildStage, type: text, nullable: true }
+      heroku_buildpacks:
+        version: { api: herokuVersion, type: text, nullable: true }
+      paketo_buildpacks: {}
+      nixpacks: {}
+      static:
+        publish_directory: { api: publishDirectory, type: text, nullable: true }
+        is_static_spa: { api: isStaticSpa, type: bool, nullable: true }
+      railpack:
+        version: { api: railpackVersion, type: text, nullable: true }
+  clean_cache:
+    api: cleanCache
+    type: bool
+    nullable: true
+    needs_deploy: true
+  source:
+    api: sourceType
+    type: union(type)
+    needs_deploy: true
+    doc: Where the code comes from. A member left out keeps what Dokploy holds while the arm stays the same.
     arms:
       github:
-        provider: { api: githubId, type: selector(git_provider) }
-        owner: { type: text }
-        repository: { type: text }
-        branch: { type: text }
-        build_path: { api: buildPath, type: text }
-        trigger_type: { api: triggerType, type: "enum[push, tag]" }
+        provider: { api: githubId, type: selector(git_provider), nullable: true }
+        owner: { type: text, nullable: true }
+        repository: { type: text, nullable: true }
+        branch: { type: text, min_len: 1 }
+        build_path: { api: buildPath, type: text, nullable: true, fallback: "/" }
+        trigger_type: { api: triggerType, type: "enum[push, tag]", fallback: push }
         enable_submodules: { api: enableSubmodules, type: bool }
-        watch_paths: { api: watchPaths, type: "list<text>" }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      gitlab:
+        provider: { api: gitlabId, type: selector(git_provider), nullable: true }
+        project_id: { api: gitlabProjectId, type: int, nullable: true }
+        owner: { api: gitlabOwner, type: text, nullable: true }
+        repository: { api: gitlabRepository, type: text, nullable: true }
+        path_namespace: { api: gitlabPathNamespace, type: text, nullable: true }
+        branch: { api: gitlabBranch, type: text, min_len: 1 }
+        build_path: { api: gitlabBuildPath, type: text, nullable: true, fallback: "/" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      bitbucket:
+        provider: { api: bitbucketId, type: selector(git_provider), nullable: true }
+        owner: { api: bitbucketOwner, type: text, nullable: true }
+        repository: { api: bitbucketRepository, type: text, nullable: true }
+        repository_slug: { api: bitbucketRepositorySlug, type: text, nullable: true }
+        branch: { api: bitbucketBranch, type: text, min_len: 1 }
+        build_path: { api: bitbucketBuildPath, type: text, nullable: true, fallback: "/" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      gitea:
+        provider: { api: giteaId, type: selector(git_provider), nullable: true }
+        owner: { api: giteaOwner, type: text, nullable: true }
+        repository: { api: giteaRepository, type: text, nullable: true }
+        branch: { api: giteaBranch, type: text, min_len: 1 }
+        build_path: { api: giteaBuildPath, type: text, nullable: true, fallback: "/" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      git:
+        url: { api: customGitUrl, type: text, nullable: true }
+        branch: { api: customGitBranch, type: text, min_len: 1 }
+        build_path: { api: customGitBuildPath, type: text, nullable: true, fallback: "/" }
+        ssh_key: { api: customGitSSHKeyId, type: selector(ssh_key), nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
       docker:
-        image: { api: dockerImage, type: text }
+        image: { api: dockerImage, type: text, nullable: true }
         registry_url: { api: registryUrl, type: text, nullable: true }
         username: { type: text, nullable: true }
         password:
@@ -83,19 +222,56 @@ fields:
           class: secret
           mutability: write_only
           nullable: true
+  swarm:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    doc: Docker Swarm service settings, each member as Docker's own JSON. A member left out is unmanaged.
+    members:
+      health_check: { api: healthCheckSwarm, type: "blob(swarm-health-check)", nullable: true }
+      restart_policy: { api: restartPolicySwarm, type: "blob(swarm-restart-policy)", nullable: true }
+      placement: { api: placementSwarm, type: "blob(swarm-placement)", nullable: true }
+      update_config: { api: updateConfigSwarm, type: "blob(swarm-update-config)", nullable: true }
+      rollback_config: { api: rollbackConfigSwarm, type: "blob(swarm-rollback-config)", nullable: true }
+      mode: { api: modeSwarm, type: "blob(swarm-mode)", nullable: true }
+      labels: { api: labelsSwarm, type: "blob(swarm-labels)", nullable: true }
+      networks: { api: networkSwarm, type: "blob(swarm-networks)", nullable: true }
+      stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
+      endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
+      ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
 write:
   - op: application.update
-    fields: [name, description, replicas, command, args]
+    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache, swarm]
     shape: partial
   - op: application.saveEnvironment
-    fields: [environment]
-    shape: partial
+    fields: [environment, build_args, build_secrets, create_env_file]
+    shape: full
   - by_variant: source
+    shape: full
     ops:
       github: application.saveGithubProvider
+      gitlab: application.saveGitlabProvider
+      bitbucket: application.saveBitbucketProvider
+      gitea: application.saveGiteaProvider
+      git: application.saveGitProvider
       docker: application.saveDockerProvider
+  - by_variant: build
+    shape: full
+    ops:
+      dockerfile: application.saveBuildType
+      heroku_buildpacks: application.saveBuildType
+      paketo_buildpacks: application.saveBuildType
+      nixpacks: application.saveBuildType
+      static: application.saveBuildType
+      railpack: application.saveBuildType
 children:
+  - { kind: mount, section: mounts }
+  - { kind: domain, section: domains }
   - { kind: redirect, section: redirects }
+  - { kind: port, section: ports }
+  - { kind: security, section: security }
+  - { kind: schedule, section: schedules }
+  - { kind: patch, section: patches }
+  - { kind: volume_backup, section: volume_backups }
 ledger:
-  derived: [sourceType]
   readonly: [createdAt]

@@ -1,0 +1,1002 @@
+{
+  "bucket": "external",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/src/external::tests::local_resolves_only_for_servers_and_missing_collections_are_unavailable",
+      "file": "crates/dokploy-cli/src/external.rs",
+      "test": "local_resolves_only_for_servers_and_missing_collections_are_unavailable",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/src/external::tests::observed_associations_map_to_truthful_name_selectors",
+      "file": "crates/dokploy-cli/src/external.rs",
+      "test": "observed_associations_map_to_truthful_name_selectors",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/src/external::tests::resolution_requires_exactly_one_exact_name_match",
+      "file": "crates/dokploy-cli/src/external.rs",
+      "test": "resolution_requires_exactly_one_exact_name_match",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/src/external::tests::unique_names_reject_shared_unknown_and_malformed_names",
+      "file": "crates/dokploy-cli/src/external.rs",
+      "test": "unique_names_reject_shared_unknown_and_malformed_names",
+      "layer": "unit",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::a_local_server_selector_is_created_with_an_explicit_null_placement",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "a_local_server_selector_is_created_with_an_explicit_null_placement",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::a_saved_plan_applies_while_its_external_resolution_is_unchanged",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "a_saved_plan_applies_while_its_external_resolution_is_unchanged",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create"
+      ],
+      "requests": [
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "OK",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::a_saved_plan_is_refused_when_the_external_record_is_recreated_before_apply",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "a_saved_plan_is_refused_when_the_external_record_is_recreated_before_apply",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::an_unresolved_selector_blocks_apply_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "an_unresolved_selector_blocks_apply_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::changing_the_create_only_server_replaces_the_application_delete_before_create",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "changing_the_create_only_server_replaces_the_application_delete_before_create",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.delete"
+      ],
+      "requests": [
+        "POST /api/application.delete HTTP/1.1",
+        "POST /api/application.create HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "API_SEARCH",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "OK",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::create_sends_the_resolved_server_at_create_and_associations_by_update_without_deploying",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "create_sends_the_resolved_server_at_create_and_associations_by_update_without_deploying",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.update",
+        "registry.all",
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all HTTP/1.1",
+        "GET /api/registry.all HTTP/1.1",
+        "POST /api/application.create HTTP/1.1",
+        "POST /api/application.update HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "OK",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_apply::replacement_with_durable_dependents_is_refused_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/external_apply.rs",
+      "test": "replacement_with_durable_dependents_is_refused_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_desired::a_local_resolution_binds_as_the_local_server",
+      "file": "crates/dokploy-cli/tests/external_desired.rs",
+      "test": "a_local_resolution_binds_as_the_local_server",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_desired::bindings_list_selectors_with_kinds_and_redact_names_in_debug_output",
+      "file": "crates/dokploy-cli/tests/external_desired.rs",
+      "test": "bindings_list_selectors_with_kinds_and_redact_names_in_debug_output",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_desired::local_and_unmanaged_selectors_compile_without_external_state",
+      "file": "crates/dokploy-cli/tests/external_desired.rs",
+      "test": "local_and_unmanaged_selectors_compile_without_external_state",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_desired::resolved_identities_enter_the_execution_sidecar_only_after_binding",
+      "file": "crates/dokploy-cli/tests/external_desired.rs",
+      "test": "resolved_identities_enter_the_execution_sidecar_only_after_binding",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_desired::selectors_compile_to_stable_name_values_and_explicit_clears",
+      "file": "crates/dokploy-cli/tests/external_desired.rs",
+      "test": "selectors_compile_to_stable_name_values_and_explicit_clears",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_recovery::uncertain_placement_checkpoint_is_confirmed_through_the_name_selector",
+      "file": "crates/dokploy-cli/tests/external_recovery.rs",
+      "test": "uncertain_placement_checkpoint_is_confirmed_through_the_name_selector",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_recovery::uncertain_replacement_create_adopts_the_unique_application_without_retrying",
+      "file": "crates/dokploy-cli/tests/external_recovery.rs",
+      "test": "uncertain_replacement_create_adopts_the_unique_application_without_retrying",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::an_attached_identity_missing_from_the_collection_blocks_planning",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "an_attached_identity_missing_from_the_collection_blocks_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "ONE_APPLICATION",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::an_unreadable_collection_blocks_without_leaking_its_error_body",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "an_unreadable_collection_blocks_without_leaking_its_error_body",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NAME_CANARY",
+        "NO_APPLICATIONS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::cleared_associations_observe_absence_and_need_no_resolution",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "cleared_associations_observe_absence_and_need_no_resolution",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "ONE_APPLICATION",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::duplicate_names_are_ambiguous_and_never_selected_by_response_order",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "duplicate_names_are_ambiguous_and_never_selected_by_response_order",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::duplicate_physical_ids_make_the_collection_unusable",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "duplicate_physical_ids_make_the_collection_unusable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::ignored_selectors_perform_no_external_reads",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "ignored_selectors_perform_no_external_reads",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "ONE_APPLICATION",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::local_selector_resolves_without_an_identity_and_matches_a_null_server",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "local_selector_resolves_without_an_identity_and_matches_a_null_server",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "ONE_APPLICATION",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::matching_is_exact_and_case_sensitive",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "matching_is_exact_and_case_sensitive",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::named_associations_resolve_and_a_stable_plan_has_no_changes",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "named_associations_resolve_and_a_stable_plan_has_no_changes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "registry.all",
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all HTTP/1.1",
+        "GET /api/registry.all HTTP/1.1",
+        "GET /api/application.search?",
+        "GET /api/application.one?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NAME_CANARY",
+        "ONE_APPLICATION",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::removed_renamed_or_duplicated_records_make_a_saved_plan_unusable",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "removed_renamed_or_duplicated_records_make_a_saved_plan_unusable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NO_APPLICATIONS",
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::saved_plans_bind_resolved_identities_and_refuse_a_changed_resolution",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "saved_plans_bind_resolved_identities_and_refuse_a_changed_resolution",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NAME_CANARY",
+        "NO_APPLICATIONS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/external_remote::zero_matches_block_a_create_with_a_value_free_typed_diagnostic",
+      "file": "crates/dokploy-cli/tests/external_remote.rs",
+      "test": "zero_matches_block_a_create_with_a_value_free_typed_diagnostic",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NAME_CANARY",
+        "NO_APPLICATIONS",
+        "PROJECT",
+        "SECRET_CANARY"
+      ],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/live_external_selectors::live_selectors_resolve_exact_unique_names_and_reject_ambiguity",
+      "file": "crates/dokploy-cli/tests/live_external_selectors.rs",
+      "test": "live_selectors_resolve_exact_unique_names_and_reject_ambiguity",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::canonical_writer_round_trips_selectors_deterministically",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "canonical_writer_round_trips_selectors_deterministically",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "FULL"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::debug_output_redacts_selector_names",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "debug_output_redacts_selector_names",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CANARY"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::external_selectors_are_listed_with_their_kinds",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "external_selectors_are_listed_with_their_kinds",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "FULL"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::generated_schema_models_closed_selector_objects",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "generated_schema_models_closed_selector_objects",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::malformed_selector_shapes_fail_with_location_only_parse_errors",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "malformed_selector_shapes_fail_with_location_only_parse_errors",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::parses_typed_local_named_and_cleared_selectors_with_field_ownership",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "parses_typed_local_named_and_cleared_selectors_with_field_ownership",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "FULL"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::selector_properties_can_be_ignored_by_lifecycle_rules",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "selector_properties_can_be_ignored_by_lifecycle_rules",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::selector_vocabulary_distinguishes_local_from_a_record_named_local",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "selector_vocabulary_distinguishes_local_from_a_record_named_local",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::semantic_selector_errors_have_stable_dokcfg_codes_and_never_echo_values",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "semantic_selector_errors_have_stable_dokcfg_codes_and_never_echo_values",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/external_selectors::typed_import_document_emits_selectors_and_rejects_invalid_ones_through_the_parser",
+      "file": "crates/dokploy-config/tests/external_selectors.rs",
+      "test": "typed_import_document_emits_selectors_and_rejects_invalid_ones_through_the_parser",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_associations::application_associations_are_presence_aware_and_nested_secrets_are_discarded",
+      "file": "crates/dokploy-sdk/tests/external_associations.rs",
+      "test": "application_associations_are_presence_aware_and_nested_secrets_are_discarded",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_associations::application_update_serializes_only_explicit_association_intent",
+      "file": "crates/dokploy-sdk/tests/external_associations.rs",
+      "test": "application_update_serializes_only_explicit_association_intent",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_associations::every_supported_create_distinguishes_unmanaged_local_and_external_placement",
+      "file": "crates/dokploy-sdk/tests/external_associations.rs",
+      "test": "every_supported_create_distinguishes_unmanaged_local_and_external_placement",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_associations::libsql_external_server_compatibility_alias_preserves_wire_shape",
+      "file": "crates/dokploy-sdk/tests/external_associations.rs",
+      "test": "libsql_external_server_compatibility_alias_preserves_wire_shape",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_associations::v0306_service_fixtures_support_presence_aware_primary_server_observation",
+      "file": "crates/dokploy-sdk/tests/external_associations.rs",
+      "test": "v0306_service_fixtures_support_presence_aware_primary_server_observation",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/application-one.owner.json",
+        "fixtures/api/live/v0.30.6/compose-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/libsql-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/mariadb-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/mongo-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/mysql-one.created.owner.json",
+        "fixtures/api/live/v0.30.6/postgres-one.owner.json",
+        "fixtures/api/live/v0.30.6/redis-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::captured_v0306_selector_fixtures_decode_through_public_services",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "captured_v0306_selector_fixtures_decode_through_public_services",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/destination-all.selectors.json",
+        "fixtures/api/live/v0.30.6/registry-all.selectors.json",
+        "fixtures/api/live/v0.30.6/server-all.selectors.json"
+      ],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::destination_all_uses_exact_operation_and_exposes_only_safe_fields",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "destination_all_uses_exact_operation_and_exposes_only_safe_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "destination.all"
+      ],
+      "requests": [
+        "GET /api/destination.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::selector_collection_item_count_is_bounded",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "selector_collection_item_count_is_bounded",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::selector_collections_reject_duplicate_or_empty_identities",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "selector_collections_reject_duplicate_or_empty_identities",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::selector_non_success_bodies_never_enter_errors",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "selector_non_success_bodies_never_enter_errors",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/external_selectors::server_all_uses_exact_operation_and_exposes_only_safe_fields",
+      "file": "crates/dokploy-sdk/tests/external_selectors.rs",
+      "test": "server_all_uses_exact_operation_and_exposes_only_safe_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "SECRET_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_external_selectors::live_external_selector_reads_are_bounded_typed_and_unique",
+      "file": "crates/dokploy-sdk/tests/live_external_selectors.rs",
+      "test": "live_external_selector_reads_are_bounded_typed_and_unique",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

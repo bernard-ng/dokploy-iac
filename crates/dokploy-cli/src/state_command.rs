@@ -1,31 +1,24 @@
 //! Redaction-safe inspection and explicit repair of one workspace's durable state.
 
-use std::io::{self, Write};
-use std::path::Path;
-
 use dokploy_state::{
-    ExpectedState, InstanceIdentity, ResourceAddress, StateError, StateFile, StateStore,
-    StateStoreError,
+    DocumentId, ExpectedState, InstanceIdentity, ResourceAddress, StateError, StateFile,
+    StateStore, StateStoreError,
 };
+use std::io::{self, Write};
 use thiserror::Error;
 
 use crate::cli::StateCommand;
+use crate::workspace::Workspace;
 
 /// Executes one local state command without contacting Dokploy.
 pub fn execute(
-    config_file: &Path,
+    workspace: &Workspace,
+    document: DocumentId,
     instance: InstanceIdentity,
     command: StateCommand,
     output: &mut dyn Write,
 ) -> Result<(), StateCommandError> {
-    let workspace = config_file
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let workspace = std::fs::canonicalize(workspace)
-        .map_err(|source| StateCommandError::Workspace { source })?;
-    let scope = dokploy_config::peek_scope(config_file)?;
-    let store = StateStore::with_scope(&workspace, instance, scope)?;
+    let store = StateStore::for_document(&workspace.directory, instance, document)?;
     let state = store.inspect()?.ok_or(StateCommandError::Missing)?;
 
     match command {
@@ -151,13 +144,6 @@ fn set_protection(
 /// A safe state inspection failure.
 #[derive(Debug, Error)]
 pub enum StateCommandError {
-    #[error("failed to resolve the configuration workspace")]
-    Workspace {
-        #[source]
-        source: io::Error,
-    },
-    #[error("failed to read the configuration to choose its durable state")]
-    Scope(#[from] dokploy_config::ConfigFileError),
     #[error("failed to access durable workspace state")]
     Store(#[from] StateStoreError),
     #[error("durable state mutation is invalid")]

@@ -20,7 +20,7 @@
 # confirm from the OpenAPI document alone.
 # =============================================================================
 
-version: 1                                   # ✔
+version: 2                                   # ✔
 
 project:
   slug: leganews-platform                    # ✎ logical address key (today `name` doubles as this)
@@ -75,7 +75,7 @@ project:
             dockerfile: Dockerfile
             context_path: .                  #   API: dockerContextPath
             build_stage: runtime             #   API: dockerBuildStage
-            clean_cache: false
+          clean_cache: false                 # ✎ API: cleanCache; an application setting, not a member of `build` (saveBuildType does not take it)
 
           environment:                       # ✔ (map) but NOT written by import
             LOG_LEVEL: { value: info }
@@ -96,18 +96,19 @@ project:
             cpu_limit: "1"
             cpu_reservation: "0.5"
 
-          swarm:                             # ✘ every block below; shapes follow Docker Swarm
-            health_check: { test: ["CMD", "curl", "-f", "http://localhost:8080/health"], interval: 30s, timeout: 5s, start_period: 10s, retries: 3 }
-            restart_policy: { condition: on-failure, delay: 5s, max_attempts: 3, window: 120s }
-            placement: { constraints: ["node.role==worker"], preferences: [{ spread: node.labels.zone }], max_replicas: 2, platforms: [{ architecture: amd64, os: linux }] }
-            update_config: { parallelism: 1, delay: 10s, failure_action: rollback, monitor: 30s, max_failure_ratio: 0.1, order: start-first }
-            rollback_config: { parallelism: 1, delay: 5s, failure_action: pause, monitor: 15s, max_failure_ratio: 0, order: stop-first }
-            mode: { replicated: { replicas: 2 } }     # or global, replicated_job{max_concurrent,total_completions}, global_job
+          swarm:                             # ✎ every member is Docker's own JSON, sent as written (PascalCase keys,
+                                             #   durations in nanoseconds), and compared whole
+            health_check: { Test: ["CMD", "curl", "-f", "http://localhost:8080/health"], Interval: 30000000000, Timeout: 5000000000, StartPeriod: 10000000000, Retries: 3 }
+            restart_policy: { Condition: on-failure, Delay: 5000000000, MaxAttempts: 3, Window: 120000000000 }
+            placement: { Constraints: ["node.role==worker"], Preferences: [{ Spread: { SpreadDescriptor: node.labels.zone } }], MaxReplicas: 2, Platforms: [{ Architecture: amd64, OS: linux }] }
+            update_config: { Parallelism: 1, Delay: 10000000000, FailureAction: rollback, Monitor: 30000000000, MaxFailureRatio: 0.1, Order: start-first }
+            rollback_config: { Parallelism: 1, Delay: 5000000000, FailureAction: pause, Monitor: 15000000000, MaxFailureRatio: 0, Order: stop-first }
+            mode: { Replicated: { Replicas: 2 } }     # or Global, ReplicatedJob{MaxConcurrent,TotalCompletions}, GlobalJob
             labels: { team: backend }
-            networks: [{ target: backend, aliases: [api] }]   # prefer `networks:` below
-            stop_grace_period: 20s
-            endpoint_spec: { mode: vip }
-            ulimits: [{ name: nofile, soft: 65536, hard: 65536 }]
+            networks: [{ Target: backend, Aliases: [api] }]   # prefer `networks:` below
+            stop_grace_period: 20000000000    # nanoseconds
+            endpoint_spec: { Mode: vip }
+            ulimits: [{ Name: nofile, Soft: 65536, Hard: 65536 }]
           networks: [{ name: backend }]      # ✘ settings `networks` selectors (API: networkIds)
           detach_dokploy_network: false      # ✘
 
@@ -259,7 +260,8 @@ project:
           randomize: false                   # ✘ randomize service names
           isolated_deployment: true          # ✘ deploy in its own network
           isolated_deployments_volume: false # ✘
-          pull_images: true                  # ✘
+          # pull_images (API: pullImages) is accepted by compose.update but never returned by compose.one on
+          # 0.30.6 or 0.30.7, so it cannot be read back and is not modeled.
           auto_deploy: true                  # ✘
           service_networks:                  # ✘ per Compose service network attachment
             - { service: api, networks: [{ name: backend }], detach_dokploy_network: false }
@@ -280,8 +282,7 @@ project:
             reindex: { name: reindex, service_name: search, cron_expression: "0 4 * * *", shell_type: sh, enabled: true, command: { file: scripts/reindex.sh } }
           volume_backups:                    # ✘
             uploads: { name: uploads, volume_name: uploads, prefix: uploads, cron_expression: "0 1 * * *", destination: { name: offsite }, keep_latest: 5, turn_off: false, enabled: true }
-          backups:                           # ✘ Compose backups (backupType: compose); ADR 0039 defers them
-            db: { service_name: db, database: app, schedule: "0 2 * * *", prefix: compose-db, destination: { name: offsite }, keep_latest: 7, enabled: true }
+          # backups: Dokploy 0.30.6 does not support Compose backups (backup-contract.metadata.json; ADR 0039).
           patches:                           # ✘
             override: { file_path: docker-compose.override.yml, type: create, content: { file: patches/override.yml }, enabled: true }
         search:
@@ -312,7 +313,7 @@ project:
           detach_dokploy_network: false      # ✘
           lifecycle: { protect: true }       # ✔
           mounts:   { data: { type: volume, volume_name: pg-data, mount_path: /var/lib/postgresql/data } }   # ✔
-          schedules: {}                      # ✔
+          # schedules: Dokploy schedules run in an application or a Compose stack, not in a database.
           volume_backups: {}                 # ✘
           backups:                           # ✔ today at environment level with `target`
             nightly:

@@ -1,0 +1,19 @@
+{
+  "appName": "application-contract-test",
+  "applicationId": null,
+  "command": "<redacted>",
+  "composeId": "compose-1",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "cronExpression": "7 4 * * 0",
+  "description": "initial disabled schedule",
+  "enabled": false,
+  "name": "compose-job",
+  "organizationId": null,
+  "scheduleId": "schedule-1",
+  "scheduleType": "compose",
+  "script": "<redacted>",
+  "serverId": null,
+  "serviceName": "worker",
+  "shellType": "bash",
+  "timezone": "UTC"
+}

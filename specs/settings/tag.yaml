@@ -1,0 +1,42 @@
+# An organisation-wide tag. A flat settings kind, like `registry`: two fields, one write group,
+# no hook. Project membership (`tag.assignToProject`) is a relation, not a field, and arrives
+# with the project kinds (milestone M3).
+#
+# Live facts (captured on 0.30.6 and 0.30.7, fixtures/api/live/*/tag-*): create and update
+# return the whole object; update is a patch and an explicit `null` clears the color; remove
+# returns `{"success": true}`; a second tag with the same name is refused.
+kind: tag
+scope: settings
+section: tags
+title: Tag
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "tag.{key}"
+api:
+  id: tagId
+  create: { op: tag.create }
+  update: { op: tag.update }
+  remove: { op: tag.remove }
+  read:
+    list: { op: tag.all, authority: authoritative }
+    one: { op: tag.one, id_param: tagId, agree: true }
+  create_identity:
+    from_response: /tagId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+    doc: Display name; defaults to the document key.
+  color:
+    type: text
+    nullable: true
+    doc: A color, such as `#e11d48`. Omit it to leave the color unmanaged; `null` clears it.
+write:
+  - op: tag.update
+    fields: [name, color]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId]

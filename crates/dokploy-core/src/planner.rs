@@ -9,9 +9,8 @@ use crate::{
     MoveAction, MutationContract, MutationMode, OwnedValue, Plan, PlanDiagnostic,
     PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, PropertyUnknownReason,
     ProtectionIntent, RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint,
-    StoredState, UnsupportedDirectiveKind, ValueState,
-    plan::PLAN_FORMAT_VERSION,
-    snapshot::{StoredResource, owned_source_shape_valid},
+    StoredState, UnsupportedDirectiveKind, ValueState, plan::PLAN_FORMAT_VERSION,
+    snapshot::StoredResource,
 };
 
 /// Computes a plan without I/O or mutation.
@@ -391,13 +390,6 @@ fn plan_move(
     }
 
     let property_plan = compare_properties(desired_resource, stored_resource, remote_resource);
-    if let Some(property) = invalid_ignored_checkpoint(desired_resource, &property_plan) {
-        let mut issue =
-            move_diagnostic(PlanDiagnosticCode::InvalidIgnoredCheckpoint, source, target);
-        issue.property = Some(property);
-        diagnostics.push(issue);
-        return;
-    }
     let (metadata, _) = metadata_changes(desired_resource, stored_resource);
     if !property_plan.drifted.is_empty() {
         drift.push(DriftChange {
@@ -552,13 +544,6 @@ fn plan_missing_resource(
 
             let (fields, config_changed, checkpoint_properties) =
                 missing_resource_field_changes(desired, stored);
-            if let Some(property) = invalid_ignored_properties(desired, &checkpoint_properties) {
-                let mut issue =
-                    diagnostic(PlanDiagnosticCode::InvalidIgnoredCheckpoint, Some(address));
-                issue.property = Some(property);
-                diagnostics.push(issue);
-                return;
-            }
             let (metadata, metadata_changed) = metadata_changes(desired, stored);
             drift.push(DriftChange {
                 address: address.clone(),
@@ -642,12 +627,6 @@ fn plan_present_resource(
     }
 
     let property_plan = compare_properties(desired, stored, remote);
-    if let Some(property) = invalid_ignored_checkpoint(desired, &property_plan) {
-        let mut issue = diagnostic(PlanDiagnosticCode::InvalidIgnoredCheckpoint, Some(address));
-        issue.property = Some(property);
-        diagnostics.push(issue);
-        return;
-    }
     let (metadata, metadata_changed) = metadata_changes(desired, stored);
     if !property_plan.drifted.is_empty() {
         drift.push(DriftChange {
@@ -663,13 +642,11 @@ fn plan_present_resource(
         return;
     }
 
-    let containment_changed = desired.containment != stored.containment;
     let Some((kind, replacement_order)) = classify_mutation(
         &address,
         desired,
         stored,
         contract,
-        containment_changed,
         &property_plan.mutations,
         diagnostics,
     ) else {
@@ -677,7 +654,7 @@ fn plan_present_resource(
     };
     let mut change = PlannedChange::resource(
         address,
-        if property_plan.convergence_required || containment_changed {
+        if property_plan.convergence_required {
             kind
         } else {
             ChangeKind::NoOp
@@ -786,27 +763,10 @@ fn classify_mutation(
     desired: &DesiredResource,
     stored: &StoredResource,
     contract: &MutationContract,
-    containment_changed: bool,
     mutations: &[(PropertyPath, bool)],
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) -> Option<(ChangeKind, Option<crate::ReplacementOrder>)> {
     let mut replace = false;
-    let mut reparent = false;
-    if containment_changed {
-        match contract.containment_mode() {
-            MutationMode::StateOnly => {}
-            MutationMode::InPlace => reparent = true,
-            MutationMode::Replace => replace = true,
-            MutationMode::Unsupported => {
-                diagnostics.push(diagnostic(
-                    PlanDiagnosticCode::UnsupportedMutation,
-                    Some(address.clone()),
-                ));
-                return None;
-            }
-        }
-    }
-
     for (property, clear) in mutations {
         let mode = if desired.replace_on_changes.contains(property) {
             MutationMode::Replace
@@ -847,10 +807,6 @@ fn classify_mutation(
         }
         return Some((ChangeKind::Replace, Some(contract.replacement_order())));
     }
-    if reparent {
-        return Some((ChangeKind::Reparent, None));
-    }
-
     Some((ChangeKind::Update, None))
 }
 
@@ -997,27 +953,6 @@ fn compare_properties(
     }
 }
 
-fn invalid_ignored_checkpoint(
-    desired: &DesiredResource,
-    property_plan: &PropertyPlan,
-) -> Option<PropertyPath> {
-    invalid_ignored_properties(desired, &property_plan.checkpoint_properties)
-}
-
-fn invalid_ignored_properties(
-    desired: &DesiredResource,
-    properties: &BTreeMap<PropertyPath, OwnedValue>,
-) -> Option<PropertyPath> {
-    (!owned_source_shape_valid(properties)).then(|| {
-        desired
-            .ignore_changes
-            .iter()
-            .find(|path| path.is_source_child())
-            .cloned()
-            .unwrap_or(PropertyPath::SourceRepository)
-    })
-}
-
 fn create_field_changes(desired: &DesiredResource) -> Vec<FieldChange> {
     desired
         .properties
@@ -1092,9 +1027,6 @@ fn metadata_changes(
     {
         metadata.push(MetadataChangeKind::Protection);
     }
-    if desired.containment != stored.containment {
-        metadata.push(MetadataChangeKind::Containment);
-    }
     if desired.dependencies != stored.dependencies {
         metadata.push(MetadataChangeKind::Dependencies);
     }
@@ -1106,9 +1038,6 @@ fn desired_metadata_for_create(desired: &DesiredResource) -> Vec<MetadataChangeK
     let mut metadata = Vec::new();
     if matches!(desired.protection, ProtectionIntent::Set(_)) {
         metadata.push(MetadataChangeKind::Protection);
-    }
-    if desired.containment.is_some() {
-        metadata.push(MetadataChangeKind::Containment);
     }
     if !desired.dependencies.is_empty() {
         metadata.push(MetadataChangeKind::Dependencies);
@@ -1122,7 +1051,7 @@ fn observed_value(
 ) -> Option<Option<OwnedValue>> {
     match observation {
         PropertyObservation::Known(value) => Some(Some(
-            if path == &PropertyPath::Environment
+            if path.is_collection_root()
                 && value
                     .as_json()
                     .as_object()

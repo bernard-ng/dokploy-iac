@@ -1,13 +1,14 @@
 use std::{collections::BTreeMap, fmt};
 
-use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, ResourceKind, StateFile};
+use dokploy_spec::SpecRegistry;
+use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, StateFile};
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{ComparableValue, OwnedValue, PropertyPath, SensitiveIntent};
+use crate::{ComparableValue, OwnedValue, PropertyPath, SensitiveIntent, spec_property};
 
 /// A lowercase SHA-256 digest of the configuration used to build desired state.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -60,6 +61,7 @@ pub enum ProtectionIntent {
 }
 
 /// Desired properties and lifecycle metadata for one resource.
+#[derive(Clone)]
 pub struct DesiredResource {
     pub(crate) properties: BTreeMap<PropertyPath, OwnedValue>,
     pub(crate) protection: ProtectionIntent,
@@ -224,6 +226,7 @@ impl RemovalDirective {
 }
 
 /// Desired resources and lifecycle directives indexed by logical address.
+#[derive(Clone)]
 pub struct DesiredState {
     pub(crate) digest: ConfigDigest,
     pub(crate) resources: BTreeMap<ResourceAddress, DesiredResource>,
@@ -337,6 +340,11 @@ pub enum DesiredStateError {
     /// A top-level resource cannot have a containment parent.
     #[error("desired resource `{address}` cannot have a containment parent")]
     UnexpectedContainment { address: ResourceAddress },
+    /// A nested address is not contained by the resource its path names.
+    #[error(
+        "desired resource `{address}` is not contained by the resource its address is nested under"
+    )]
+    ContainmentAddressMismatch { address: ResourceAddress },
     /// A containment parent has the wrong resource kind.
     #[error("desired resource `{address}` has an invalid containment parent `{parent}`")]
     InvalidContainmentKind {
@@ -349,24 +357,30 @@ fn validate_desired_containment(
     address: &ResourceAddress,
     resource: &DesiredResource,
 ) -> Result<(), DesiredStateError> {
-    match (
-        address.kind().containment_parent_kind(),
-        resource.containment.as_ref(),
-    ) {
-        (None, None) => Ok(()),
-        (None, Some(_)) => Err(DesiredStateError::UnexpectedContainment {
+    // A nested address is contained by the resource its path names (ADR 0006).
+    if let Some(parent) = address.parent()
+        && resource.containment.as_ref() != Some(&parent)
+    {
+        return Err(DesiredStateError::ContainmentAddressMismatch {
+            address: address.clone(),
+        });
+    }
+    let required = address.kind().containment_parent_kinds();
+    match (required.is_empty(), resource.containment.as_ref()) {
+        (true, None) => Ok(()),
+        (true, Some(_)) => Err(DesiredStateError::UnexpectedContainment {
             address: address.clone(),
         }),
-        (Some(_), None) => Err(DesiredStateError::MissingContainment {
+        (false, None) => Err(DesiredStateError::MissingContainment {
             address: address.clone(),
         }),
-        (Some(required), Some(parent)) if parent.kind() != required => {
+        (false, Some(parent)) if !required.contains(&parent.kind()) => {
             Err(DesiredStateError::InvalidContainmentKind {
                 address: address.clone(),
                 parent: parent.clone(),
             })
         }
-        (Some(_), Some(_)) => Ok(()),
+        (false, Some(_)) => Ok(()),
     }
 }
 
@@ -380,7 +394,7 @@ fn validate_desired_resource(
                 address: address.clone(),
             });
         }
-        if !owned_value_valid(path, value) || !kind_value_valid(address.kind(), path, value) {
+        if !spec_property::owned_value_valid(path, path.info(), value) {
             return Err(DesiredStateError::InvalidPropertyValue {
                 address: address.clone(),
             });
@@ -397,9 +411,11 @@ fn validate_desired_resource(
             });
         }
     }
-    if resource.ignore_changes.iter().any(|path| {
-        path.is_sensitive() || matches!(path, PropertyPath::Source | PropertyPath::Environment)
-    }) {
+    if resource
+        .ignore_changes
+        .iter()
+        .any(|path| path.is_sensitive() || path.is_collection_root())
+    {
         return Err(DesiredStateError::InvalidIgnoredProperty {
             address: address.clone(),
         });
@@ -414,11 +430,17 @@ fn validate_desired_resource(
             address: address.clone(),
         });
     }
-    if resource.properties.contains_key(&PropertyPath::Source)
-        && resource
-            .ignore_changes
-            .iter()
-            .any(PropertyPath::is_source_child)
+    // A collection's entries cannot be ignored while the collection itself is owned.
+    if resource
+        .properties
+        .keys()
+        .filter(|owned| owned.is_collection_root())
+        .any(|root| {
+            resource
+                .ignore_changes
+                .iter()
+                .any(|ignored| ignored.is_entry_of(root))
+        })
     {
         return Err(DesiredStateError::ConflictingLifecyclePaths {
             address: address.clone(),
@@ -430,343 +452,23 @@ fn validate_desired_resource(
             address: address.clone(),
         }
     })?;
-    if !owned_source_shape_valid(&resource.properties) {
-        return Err(DesiredStateError::InvalidPropertyValue {
-            address: address.clone(),
-        });
-    }
     Ok(())
 }
 
 fn property_paths_overlap(left: &PropertyPath, right: &PropertyPath) -> bool {
     left == right
-        || matches!(left, PropertyPath::Source) && right.is_source_child()
-        || matches!(right, PropertyPath::Source) && left.is_source_child()
-        || matches!(left, PropertyPath::Environment) && right.is_environment_child()
-        || matches!(right, PropertyPath::Environment) && left.is_environment_child()
-}
-
-fn owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
-    if matches!(
-        path,
-        PropertyPath::FileContent | PropertyPath::Command | PropertyPath::Script
-    ) {
-        return matches!(value, OwnedValue::Sensitive(_));
-    }
-    if path.is_sensitive() {
-        return matches!(value, OwnedValue::Null | OwnedValue::Sensitive(_));
-    }
-    match path {
-        PropertyPath::Source => matches!(value, OwnedValue::Null),
-        PropertyPath::SourceRepository => matches!(value, OwnedValue::Value(_)),
-        PropertyPath::Environment => {
-            matches!(value, OwnedValue::Null | OwnedValue::EmptyCollection)
-        }
-        PropertyPath::Node => libsql_node_value_valid(value),
-        PropertyPath::PublishedPort | PropertyPath::TargetPort => port_number_value_valid(value),
-        PropertyPath::PublishMode => port_string_value_valid(value, &["ingress", "host"]),
-        PropertyPath::Protocol => port_string_value_valid(value, &["tcp", "udp"]),
-        PropertyPath::Regex | PropertyPath::Replacement => non_empty_string_value_valid(value),
-        PropertyPath::Permanent => {
-            matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
-        }
-        PropertyPath::Target => matches!(
-            value,
-            OwnedValue::Value(value) if mount_target_text_valid(value.as_json())
-        ),
-        PropertyPath::MountType => port_string_value_valid(value, &["bind", "volume", "file"]),
-        PropertyPath::MountPath
-        | PropertyPath::HostPath
-        | PropertyPath::VolumeName
-        | PropertyPath::FilePath => matches!(
-            value,
-            OwnedValue::Value(value) if mount_text_valid(value.as_json())
-        ),
-        PropertyPath::Name | PropertyPath::ServiceName | PropertyPath::Timezone => {
-            matches!(
-                value,
-                OwnedValue::Value(value) if schedule_text_valid(value.as_json())
-            )
-        }
-        PropertyPath::CronExpression => matches!(
-            value,
-            OwnedValue::Value(value) if schedule_text_valid(value.as_json())
-        ),
-        PropertyPath::ShellType => port_string_value_valid(value, &["bash", "sh"]),
-        PropertyPath::Enabled => {
-            matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
-        }
-        PropertyPath::Server
-        | PropertyPath::BuildServer
-        | PropertyPath::Registry
-        | PropertyPath::BuildRegistry
-        | PropertyPath::RollbackRegistry
-        | PropertyPath::Destination => selector_owned_value_valid(path, value),
-        PropertyPath::Schedule => matches!(
-            value,
-            OwnedValue::Value(value) if value.as_json().as_str().is_some_and(backup_schedule_valid)
-        ),
-        PropertyPath::Prefix => matches!(
-            value,
-            OwnedValue::Value(value) if value.as_json().as_str().is_some_and(backup_prefix_valid)
-        ),
-        PropertyPath::IncludeEncryptionKey => {
-            matches!(value, OwnedValue::Value(value) if value.as_json().is_boolean())
-        }
-        PropertyPath::KeepLatest => match value {
-            OwnedValue::Null => true,
-            OwnedValue::Value(value) => keep_latest_json_valid(value.as_json()),
-            OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
-        },
-        // A project owns its tag association as one canonical list; an empty list
-        // is the explicit "no tags" intent and `null` is not a valid clear.
-        PropertyPath::Tags => matches!(
-            value,
-            OwnedValue::Value(value) if tag_names_valid(value.as_json())
-        ),
-        PropertyPath::Color => matches!(
-            value,
-            OwnedValue::Value(value) if schedule_text_valid(value.as_json())
-        ),
-        _ => matches!(value, OwnedValue::Null | OwnedValue::Value(_)),
-    }
-}
-
-/// Rejects values that are valid for a shared path but invalid for one leaf kind.
-fn kind_value_valid(kind: ResourceKind, path: &PropertyPath, value: &OwnedValue) -> bool {
-    match (kind, path) {
-        (ResourceKind::Security, PropertyPath::Username) => non_empty_string_value_valid(value),
-        (ResourceKind::Security, PropertyPath::Password) => {
-            matches!(value, OwnedValue::Sensitive(_))
-        }
-        (ResourceKind::Schedule, PropertyPath::Target) => matches!(
-            value,
-            OwnedValue::Value(value) if schedule_target_text_valid(value.as_json())
-        ),
-        (ResourceKind::Schedule, PropertyPath::Description) => matches!(
-            value,
-            OwnedValue::Value(value) if schedule_text_valid(value.as_json())
-        ),
-        (ResourceKind::Backup, PropertyPath::Target) => matches!(
-            value,
-            OwnedValue::Value(value) if backup_target_text_valid(value.as_json())
-        ),
-        (ResourceKind::Backup, PropertyPath::Database) => matches!(
-            value,
-            OwnedValue::Value(value) if value.as_json().as_str().is_some_and(backup_database_valid)
-        ),
-        _ => true,
-    }
-}
-
-fn non_empty_string_value_valid(value: &OwnedValue) -> bool {
-    matches!(
-        value,
-        OwnedValue::Value(value)
-            if value.as_json().as_str().is_some_and(|text| !text.is_empty())
-    )
-}
-
-/// Returns whether a JSON value is one logical address inside the closed Mount target union.
-fn mount_target_text_valid(value: &serde_json::Value) -> bool {
-    value
-        .as_str()
-        .and_then(|text| text.parse::<ResourceAddress>().ok())
-        .is_some_and(|address| address.kind().is_mount_target())
-}
-
-/// Returns whether a JSON value is one logical address inside the closed Schedule target union.
-fn schedule_target_text_valid(value: &serde_json::Value) -> bool {
-    value
-        .as_str()
-        .and_then(|text| text.parse::<ResourceAddress>().ok())
-        .is_some_and(|address| address.kind().is_schedule_target())
-}
-
-/// Returns whether a JSON value is a bounded, control-free, trimmed, nonempty Schedule string.
-fn schedule_text_valid(value: &serde_json::Value) -> bool {
-    value.as_str().is_some_and(|text| {
-        !text.is_empty()
-            && text.len() <= 4096
-            && text.trim() == text
-            && !text.chars().any(char::is_control)
-    })
-}
-
-/// Returns whether a JSON value is a canonical project tag list: unique,
-/// bounded, trimmed names in ascending order.
-fn tag_names_valid(value: &serde_json::Value) -> bool {
-    let Some(names) = value.as_array() else {
-        return false;
-    };
-    let mut previous: Option<&str> = None;
-    for name in names {
-        let Some(name) = name.as_str() else {
-            return false;
-        };
-        if !schedule_text_valid(&serde_json::Value::String(name.to_owned()))
-            || previous.is_some_and(|previous| previous >= name)
-        {
-            return false;
-        }
-        previous = Some(name);
-    }
-
-    true
-}
-
-/// Returns whether a JSON value is one logical address inside the closed Backup target union.
-fn backup_target_text_valid(value: &serde_json::Value) -> bool {
-    value
-        .as_str()
-        .and_then(|text| text.parse::<ResourceAddress>().ok())
-        .is_some_and(|address| address.kind().is_backup_target())
-}
-
-/// Mirrors the configuration grammar for a five- or six-field Backup cron schedule.
-fn backup_schedule_valid(text: &str) -> bool {
-    let fields = text.split(' ').collect::<Vec<_>>();
-    text.len() <= 128
-        && (5..=6).contains(&fields.len())
-        && fields.iter().all(|field| {
-            !field.is_empty()
-                && field.chars().all(|character| {
-                    character.is_ascii_alphanumeric()
-                        || matches!(character, '*' | '/' | ',' | '?' | '#' | '-')
-                })
-        })
-}
-
-fn backup_prefix_valid(text: &str) -> bool {
-    !text.is_empty() && text.len() <= 512 && !text.chars().any(char::is_control)
-}
-
-fn backup_database_valid(text: &str) -> bool {
-    !text.is_empty() && text.len() <= 255 && !text.chars().any(char::is_control)
-}
-
-fn keep_latest_json_valid(value: &serde_json::Value) -> bool {
-    value
-        .as_u64()
-        .is_some_and(|count| (1..=u64::from(u32::MAX)).contains(&count))
-}
-
-/// Returns whether a JSON value is a bounded, control-free, nonempty Mount string.
-fn mount_text_valid(value: &serde_json::Value) -> bool {
-    value.as_str().is_some_and(|text| {
-        !text.is_empty() && text.len() <= 4096 && !text.chars().any(char::is_control)
-    })
-}
-
-/// Returns whether a JSON value is a stable external selector accepted at `path`.
-///
-/// Only server placement accepts the `local` form; every selector otherwise uses
-/// one exact `name`. Physical external identities are never valid selectors.
-fn selector_json_valid(path: &PropertyPath, value: &serde_json::Value) -> bool {
-    let Some(object) = value.as_object() else {
-        return false;
-    };
-    if object.len() != 1 {
-        return false;
-    }
-    match (object.get("local"), object.get("name")) {
-        (Some(local), None) => *path == PropertyPath::Server && local == &serde_json::json!(true),
-        (None, Some(name)) => name.as_str().is_some_and(external_name_valid),
-        _ => false,
-    }
-}
-
-/// Mirrors the configuration grammar for exact external record names.
-fn external_name_valid(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 256
-        && name.trim() == name
-        && !name.chars().any(char::is_control)
-}
-
-fn selector_owned_value_valid(path: &PropertyPath, value: &OwnedValue) -> bool {
-    match value {
-        // Server placement and the backup destination cannot be cleared; local is explicit.
-        OwnedValue::Null => !matches!(path, PropertyPath::Server | PropertyPath::Destination),
-        OwnedValue::Value(value) => selector_json_valid(path, value.as_json()),
-        OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => false,
-    }
-}
-
-fn selector_observation_valid(path: &PropertyPath, observation: &PropertyObservation) -> bool {
-    match observation {
-        PropertyObservation::Known(value) => selector_json_valid(path, value.as_json()),
-        PropertyObservation::KnownAbsent => {
-            !matches!(path, PropertyPath::Server | PropertyPath::Destination)
-        }
-        PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
-    }
-}
-
-fn port_number_value_valid(value: &OwnedValue) -> bool {
-    matches!(
-        value,
-        OwnedValue::Value(value)
-            if value
-                .as_json()
-                .as_u64()
-                .is_some_and(|number| (1..=u64::from(u16::MAX)).contains(&number))
-    )
-}
-
-fn port_string_value_valid(value: &OwnedValue, allowed: &[&str]) -> bool {
-    matches!(
-        value,
-        OwnedValue::Value(value)
-            if value
-                .as_json()
-                .as_str()
-                .is_some_and(|candidate| allowed.contains(&candidate))
-    )
-}
-
-fn libsql_node_value_valid(value: &OwnedValue) -> bool {
-    let OwnedValue::Value(value) = value else {
-        return matches!(value, OwnedValue::Null);
-    };
-    let Some(node) = value.as_json().as_object() else {
-        return false;
-    };
-
-    match node.get("type").and_then(serde_json::Value::as_str) {
-        Some("primary") => node.len() == 1,
-        Some("replica") => {
-            node.len() == 2
-                && node
-                    .get("primary_url")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|primary_url| !primary_url.is_empty())
-        }
-        _ => false,
-    }
-}
-
-pub(crate) fn owned_source_shape_valid(properties: &BTreeMap<PropertyPath, OwnedValue>) -> bool {
-    !properties.contains_key(&PropertyPath::SourceBranch)
-        || matches!(
-            properties.get(&PropertyPath::SourceRepository),
-            Some(OwnedValue::Value(_))
-        )
+        || left.is_collection_root() && right.is_entry_of(left)
+        || right.is_collection_root() && left.is_entry_of(right)
 }
 
 fn validate_root_child_combinations<V>(
     _address: &ResourceAddress,
     properties: &BTreeMap<PropertyPath, V>,
 ) -> Result<(), ()> {
-    if properties.contains_key(&PropertyPath::Source)
-        && properties.keys().any(PropertyPath::is_source_child)
-    {
-        return Err(());
-    }
-    if properties.contains_key(&PropertyPath::Environment)
-        && properties.keys().any(PropertyPath::is_environment_child)
-    {
-        return Err(());
+    for root in properties.keys().filter(|path| path.is_collection_root()) {
+        if properties.keys().any(|path| path.is_entry_of(root)) {
+            return Err(());
+        }
     }
     Ok(())
 }
@@ -811,8 +513,14 @@ impl StoredState {
         }
     }
 
-    /// Projects a durable state file into typed planner properties.
-    pub fn try_from_state(state: &StateFile) -> Result<Self, StoredStateError> {
+    /// Projects a durable state file into planner properties.
+    ///
+    /// Every resource kind in the state needs a spec in `specs`, and every stored path must be
+    /// one that spec makes legal.
+    pub fn try_from_state(
+        state: &StateFile,
+        specs: &SpecRegistry,
+    ) -> Result<Self, StoredStateError> {
         let mut resources = BTreeMap::new();
         let mut physical_identities = BTreeMap::new();
 
@@ -825,17 +533,28 @@ impl StoredState {
                 });
             }
 
-            let mut properties = project_managed_inputs(
+            let spec = specs.get(resource.kind().as_str()).ok_or_else(|| {
+                StoredStateError::UnsupportedProperty {
+                    address: address.clone(),
+                }
+            })?;
+            let mut properties = spec_property::project_stored_inputs(
                 address,
-                resource.kind(),
+                spec,
                 resource.last_applied().as_json(),
             )?;
-            for sensitive_path in resource.sensitive_inputs().paths() {
-                let path: PropertyPath = sensitive_path.to_string().parse().map_err(|_| {
-                    StoredStateError::UnsupportedProperty {
+            for (path, value) in &properties {
+                if !path.valid_for_kind(resource.kind())
+                    || !spec_property::owned_value_valid(path, path.info(), value)
+                {
+                    return Err(StoredStateError::InvalidPropertyValue {
                         address: address.clone(),
-                    }
-                })?;
+                    });
+                }
+            }
+            for sensitive_path in resource.sensitive_inputs().paths() {
+                let path =
+                    spec_property::sensitive_path(address, spec, &sensitive_path.to_string())?;
                 if !path.is_sensitive() || !path.valid_for_kind(resource.kind()) {
                     return Err(StoredStateError::InvalidPropertyPath {
                         address: address.clone(),
@@ -943,7 +662,7 @@ pub enum StoredStateError {
         /// The second logical address assigned to the physical resource.
         second: ResourceAddress,
     },
-    /// Durable managed inputs contain a property outside the typed MVP vocabulary.
+    /// Durable managed inputs contain a property no spec of the kind makes legal.
     #[error("stored resource `{address}` contains an unsupported managed property")]
     UnsupportedProperty {
         /// The resource whose durable inputs cannot be projected.
@@ -958,155 +677,6 @@ pub enum StoredStateError {
     /// A stored collection root conflicts with one of its child paths.
     #[error("stored resource `{address}` contains conflicting property paths")]
     ConflictingPropertyPaths { address: ResourceAddress },
-}
-
-fn project_managed_inputs(
-    address: &ResourceAddress,
-    kind: ResourceKind,
-    inputs: &serde_json::Value,
-) -> Result<BTreeMap<PropertyPath, OwnedValue>, StoredStateError> {
-    let object = inputs
-        .as_object()
-        .expect("ManagedInputs guarantees an object root");
-    let mut properties = BTreeMap::new();
-    for (raw_path, raw_value) in object {
-        match raw_path.as_str() {
-            "source" => project_source(address, raw_value, &mut properties)?,
-            "environment" => project_environment(address, raw_value, &mut properties)?,
-            _ => {
-                let path: PropertyPath =
-                    raw_path
-                        .parse()
-                        .map_err(|_| StoredStateError::UnsupportedProperty {
-                            address: address.clone(),
-                        })?;
-                if path.is_lifecycle_only() || !path.valid_for_kind(kind) {
-                    return Err(StoredStateError::InvalidPropertyPath {
-                        address: address.clone(),
-                    });
-                }
-                let value = project_owned_value(&path, raw_value);
-                insert_projected(address, &mut properties, path, value)?;
-            }
-        }
-    }
-
-    for (path, value) in &properties {
-        if !path.valid_for_kind(kind) {
-            return Err(StoredStateError::InvalidPropertyPath {
-                address: address.clone(),
-            });
-        }
-        if !owned_value_valid(path, value) || !kind_value_valid(kind, path, value) {
-            return Err(StoredStateError::InvalidPropertyValue {
-                address: address.clone(),
-            });
-        }
-    }
-    validate_root_child_combinations(address, &properties).map_err(|()| {
-        StoredStateError::ConflictingPropertyPaths {
-            address: address.clone(),
-        }
-    })?;
-    if !owned_source_shape_valid(&properties) {
-        return Err(StoredStateError::InvalidPropertyValue {
-            address: address.clone(),
-        });
-    }
-    Ok(properties)
-}
-
-fn project_source(
-    address: &ResourceAddress,
-    value: &serde_json::Value,
-    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
-) -> Result<(), StoredStateError> {
-    if value.is_null() {
-        return insert_projected(address, properties, PropertyPath::Source, OwnedValue::Null);
-    }
-    let Some(source) = value.as_object() else {
-        return Err(StoredStateError::InvalidPropertyValue {
-            address: address.clone(),
-        });
-    };
-    if source.is_empty() {
-        return Err(StoredStateError::InvalidPropertyValue {
-            address: address.clone(),
-        });
-    }
-    for (name, value) in source {
-        let path = match name.as_str() {
-            "repository" => PropertyPath::SourceRepository,
-            "branch" => PropertyPath::SourceBranch,
-            _ => {
-                return Err(StoredStateError::UnsupportedProperty {
-                    address: address.clone(),
-                });
-            }
-        };
-        insert_projected(
-            address,
-            properties,
-            path.clone(),
-            project_owned_value(&path, value),
-        )?;
-    }
-    Ok(())
-}
-
-fn project_environment(
-    address: &ResourceAddress,
-    value: &serde_json::Value,
-    properties: &mut BTreeMap<PropertyPath, OwnedValue>,
-) -> Result<(), StoredStateError> {
-    if value.is_null() {
-        return insert_projected(
-            address,
-            properties,
-            PropertyPath::Environment,
-            OwnedValue::Null,
-        );
-    }
-    let Some(environment) = value.as_object() else {
-        return Err(StoredStateError::InvalidPropertyValue {
-            address: address.clone(),
-        });
-    };
-    if environment.is_empty() {
-        return insert_projected(
-            address,
-            properties,
-            PropertyPath::Environment,
-            OwnedValue::EmptyCollection,
-        );
-    }
-    for (name, value) in environment {
-        let path = PropertyPath::environment_variable(name.clone()).map_err(|_| {
-            StoredStateError::InvalidPropertyPath {
-                address: address.clone(),
-            }
-        })?;
-        insert_projected(
-            address,
-            properties,
-            path.clone(),
-            project_owned_value(&path, value),
-        )?;
-    }
-    Ok(())
-}
-
-fn project_owned_value(path: &PropertyPath, value: &serde_json::Value) -> OwnedValue {
-    if value.is_null() {
-        OwnedValue::Null
-    } else if path.is_sensitive() {
-        unreachable!("ManagedInputs rejects non-null sensitive values")
-    } else {
-        OwnedValue::Value(
-            ComparableValue::try_from_json(value.clone())
-                .expect("non-null state values are comparable"),
-        )
-    }
 }
 
 fn insert_projected(
@@ -1284,20 +854,30 @@ pub fn compare_resource_observation(
     state: &StateFile,
     address: &ResourceAddress,
     observation: &RemoteObservation,
+    specs: &SpecRegistry,
 ) -> Result<ResourceObservationMatch, StoredStateError> {
-    let stored = StoredState::try_from_state(state)?;
+    let stored = StoredState::try_from_state(state, specs)?;
+
+    Ok(compare_stored_observation(&stored, address, observation))
+}
+
+fn compare_stored_observation(
+    stored: &StoredState,
+    address: &ResourceAddress,
+    observation: &RemoteObservation,
+) -> ResourceObservationMatch {
     let Some(expected) = stored.resources.get(address) else {
-        return Ok(ResourceObservationMatch::Different);
+        return ResourceObservationMatch::Different;
     };
     let RemoteObservation::Present(remote) = observation else {
-        return Ok(match observation {
+        return match observation {
             RemoteObservation::Missing => ResourceObservationMatch::Different,
             RemoteObservation::Unavailable(_) => ResourceObservationMatch::Unavailable,
             RemoteObservation::Present(_) => unreachable!("present observation was matched"),
-        });
+        };
     };
     if expected.remote_id != *remote.remote_id() {
-        return Ok(ResourceObservationMatch::Different);
+        return ResourceObservationMatch::Different;
     }
 
     let mut sensitive_unverifiable = false;
@@ -1319,20 +899,20 @@ pub fn compare_resource_observation(
                 expected == actual
             }
             (_, Some(PropertyObservation::Unknown(_)) | None) => {
-                return Ok(ResourceObservationMatch::Unavailable);
+                return ResourceObservationMatch::Unavailable;
             }
             _ => false,
         };
         if !matches {
-            return Ok(ResourceObservationMatch::Different);
+            return ResourceObservationMatch::Different;
         }
     }
 
-    Ok(if sensitive_unverifiable {
+    if sensitive_unverifiable {
         ResourceObservationMatch::ExactExceptSensitive
     } else {
         ResourceObservationMatch::Exact
-    })
+    }
 }
 
 /// A complete set of fresh observations for the requested reconciliation.
@@ -1411,7 +991,7 @@ impl RemoteState {
             let valid = path.is_external_selector()
                 && path.valid_for_kind(address.kind())
                 && self.observations.contains_key(&address)
-                && (path == PropertyPath::Server || resolution != ExternalResolution::Local);
+                && (path.accepts_local_selector() || resolution != ExternalResolution::Local);
             if !valid {
                 return Err(RemoteStateError::InvalidExternalResolution { address });
             }
@@ -1629,164 +1209,7 @@ fn validate_remote_resource(
                 address: address.clone(),
             });
         }
-        let valid = if path.is_sensitive() {
-            matches!(
-                observation,
-                PropertyObservation::KnownAbsent | PropertyObservation::Unknown(_)
-            )
-        } else {
-            match path {
-                PropertyPath::Source => !matches!(
-                    observation,
-                    PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
-                ),
-                PropertyPath::Environment => match observation {
-                    PropertyObservation::Known(_) => true,
-                    PropertyObservation::KnownAbsent => true,
-                    PropertyObservation::Unknown(_) => true,
-                },
-                PropertyPath::PublishedPort | PropertyPath::TargetPort => match observation {
-                    PropertyObservation::Known(value) => value
-                        .as_json()
-                        .as_u64()
-                        .is_some_and(|number| (1..=u64::from(u16::MAX)).contains(&number)),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => false,
-                },
-                PropertyPath::PublishMode => {
-                    port_observation_string_valid(observation, &["ingress", "host"])
-                }
-                PropertyPath::Protocol => {
-                    port_observation_string_valid(observation, &["tcp", "udp"])
-                }
-                PropertyPath::Regex | PropertyPath::Replacement => {
-                    non_empty_observation_valid(observation)
-                }
-                PropertyPath::Permanent => match observation {
-                    PropertyObservation::Known(value) => value.as_json().is_boolean(),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => false,
-                },
-                PropertyPath::Target if address.kind() == ResourceKind::Schedule => {
-                    match observation {
-                        PropertyObservation::Known(value) => {
-                            schedule_target_text_valid(value.as_json())
-                        }
-                        PropertyObservation::Unknown(reason) => {
-                            *reason != PropertyUnknownReason::Sensitive
-                        }
-                        PropertyObservation::KnownAbsent => false,
-                    }
-                }
-                PropertyPath::Name | PropertyPath::CronExpression => match observation {
-                    PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => false,
-                },
-                PropertyPath::ServiceName | PropertyPath::Timezone => match observation {
-                    PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => true,
-                },
-                PropertyPath::ShellType => {
-                    port_observation_string_valid(observation, &["bash", "sh"])
-                }
-                // A Backup's flag is nullable remotely; a Schedule's never is.
-                PropertyPath::Enabled => match observation {
-                    PropertyObservation::Known(value) => value.as_json().is_boolean(),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => address.kind() == ResourceKind::Backup,
-                },
-                PropertyPath::Target => match observation {
-                    PropertyObservation::Known(value) if address.kind() == ResourceKind::Backup => {
-                        backup_target_text_valid(value.as_json())
-                    }
-                    PropertyObservation::Known(value) => mount_target_text_valid(value.as_json()),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => false,
-                },
-                PropertyPath::Username if address.kind() == ResourceKind::Security => {
-                    non_empty_observation_valid(observation)
-                }
-                PropertyPath::MountType => {
-                    port_observation_string_valid(observation, &["bind", "volume", "file"])
-                }
-                PropertyPath::MountPath => match observation {
-                    PropertyObservation::Known(value) => mount_text_valid(value.as_json()),
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                    PropertyObservation::KnownAbsent => false,
-                },
-                PropertyPath::HostPath | PropertyPath::VolumeName | PropertyPath::FilePath => {
-                    match observation {
-                        PropertyObservation::Known(value) => mount_text_valid(value.as_json()),
-                        PropertyObservation::Unknown(reason) => {
-                            *reason != PropertyUnknownReason::Sensitive
-                        }
-                        PropertyObservation::KnownAbsent => true,
-                    }
-                }
-                PropertyPath::Server
-                | PropertyPath::BuildServer
-                | PropertyPath::Registry
-                | PropertyPath::BuildRegistry
-                | PropertyPath::RollbackRegistry
-                | PropertyPath::Destination => selector_observation_valid(path, observation),
-                PropertyPath::Schedule | PropertyPath::Prefix => {
-                    non_empty_observation_valid(observation)
-                }
-                PropertyPath::Database if address.kind() == ResourceKind::Backup => {
-                    non_empty_observation_valid(observation)
-                }
-                PropertyPath::IncludeEncryptionKey => match observation {
-                    PropertyObservation::Known(value) => value.as_json().is_boolean(),
-                    PropertyObservation::KnownAbsent => false,
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                },
-                PropertyPath::KeepLatest => match observation {
-                    PropertyObservation::Known(value) => keep_latest_json_valid(value.as_json()),
-                    PropertyObservation::KnownAbsent => true,
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                },
-                PropertyPath::Tags => match observation {
-                    PropertyObservation::Known(value) => tag_names_valid(value.as_json()),
-                    PropertyObservation::KnownAbsent => false,
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                },
-                // A tag without a color is conclusively colorless.
-                PropertyPath::Color => match observation {
-                    PropertyObservation::Known(value) => schedule_text_valid(value.as_json()),
-                    PropertyObservation::KnownAbsent => true,
-                    PropertyObservation::Unknown(reason) => {
-                        *reason != PropertyUnknownReason::Sensitive
-                    }
-                },
-                _ => !matches!(
-                    observation,
-                    PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
-                ),
-            }
-        };
-        if !valid {
+        if !spec_property::observation_valid(path, path.info(), observation) {
             return Err(RemoteStateError::InvalidPropertyObservation {
                 address: address.clone(),
             });
@@ -1797,47 +1220,5 @@ fn validate_remote_resource(
             address: address.clone(),
         }
     })?;
-    if !remote_source_shape_valid(&resource.properties) {
-        return Err(RemoteStateError::InvalidPropertyObservation {
-            address: address.clone(),
-        });
-    }
     Ok(())
-}
-
-fn non_empty_observation_valid(observation: &PropertyObservation) -> bool {
-    match observation {
-        PropertyObservation::Known(value) => value
-            .as_json()
-            .as_str()
-            .is_some_and(|candidate| !candidate.is_empty()),
-        PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
-        PropertyObservation::KnownAbsent => false,
-    }
-}
-
-fn port_observation_string_valid(observation: &PropertyObservation, allowed: &[&str]) -> bool {
-    match observation {
-        PropertyObservation::Known(value) => value
-            .as_json()
-            .as_str()
-            .is_some_and(|candidate| allowed.contains(&candidate)),
-        PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
-        PropertyObservation::KnownAbsent => false,
-    }
-}
-
-fn remote_source_shape_valid(properties: &BTreeMap<PropertyPath, PropertyObservation>) -> bool {
-    let repository = properties.get(&PropertyPath::SourceRepository);
-    let branch = properties.get(&PropertyPath::SourceBranch);
-    if branch.is_some() && repository.is_none() {
-        return false;
-    }
-    !matches!(
-        (repository, branch),
-        (
-            Some(PropertyObservation::KnownAbsent),
-            Some(PropertyObservation::Known(_))
-        )
-    )
 }

@@ -10,7 +10,7 @@ script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_directory/common.sh"
 
 api_key_file="$state_directory/api-key"
-fixture_directory="$repository_root/fixtures/api/live/v0.30.6"
+fixture_directory="$repository_root/fixtures/api/live/$dokploy_version"
 sanitizer="$script_directory/sanitize-fixture.jq"
 if [[ ! -s "$api_key_file" ]]; then
     echo "Run scripts/integration/up.sh before capturing the Schedule contract." >&2
@@ -23,7 +23,7 @@ workspace="$state_directory/schedule-contract-$run_id"
 publish_directory="$workspace/publish"
 secret_canary_file="$workspace/schedule-canaries"
 candidate_fixture_root="$workspace/candidate/api/live"
-candidate_versioned_fixture_directory="$candidate_fixture_root/v0.30.6"
+candidate_versioned_fixture_directory="$candidate_fixture_root/$dokploy_version"
 published_fixture_backup="$workspace/published-fixtures.backup"
 mkdir -p "$publish_directory"
 chmod 700 "$workspace" "$publish_directory"
@@ -293,8 +293,8 @@ capture_target() {
 response_status="$(api_request GET settings.getDokployVersion "$workspace/version.json")"
 require_status "$response_status" 200 settings.getDokployVersion
 runtime_version="$(jq -er '.' "$workspace/version.json")"
-if [[ "$runtime_version" != v0.30.6 ]]; then
-    echo "Expected Dokploy v0.30.6, received $runtime_version." >&2
+if [[ "$runtime_version" != "$dokploy_version" ]]; then
+    echo "Expected Dokploy $dokploy_version, received $runtime_version." >&2
     exit 1
 fi
 
@@ -374,8 +374,8 @@ for name in "${fixtures[@]}"; do
 done
 
 jq -n --sort-keys --indent 2 \
-    --arg capturedAt "2026-09-30" --arg role owner --arg version "$runtime_version" \
-    --arg image "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8" '
+    --arg capturedAt "$captured_at" --arg role owner --arg version "$runtime_version" \
+    --arg image "$dokploy_image" '
     {
         capturedAt:$capturedAt,role:$role,version:$version,image:$image,sanitized:true,
         deployed:false,executed:false,collisionKey:"target+name",

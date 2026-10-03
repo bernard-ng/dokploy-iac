@@ -21,6 +21,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Install system libraries
+        # The CLI keeps credentials in the system keyring, which links libdbus on Linux.
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libdbus-1-dev pkg-config
+
       - name: Show pinned Rust toolchain
         run: rustc --version --verbose
 
@@ -35,6 +39,12 @@ jobs:
 
       - name: Check kind specs against the OpenAPI contract
         run: cargo xtask specs --check
+
+      - name: Check the legacy-test ledger
+        run: cargo xtask goldens --check
+
+      - name: Check the supported Dokploy versions
+        run: cargo xtask versions --check
 
   generated-sdk:
     name: Generated SDK compilation
@@ -66,6 +76,9 @@ jobs:
 
       - name: Validate integration Compose configuration
         run: docker compose --file compose.integration.yaml config --quiet
+
+      - name: Test the fixture checker modes
+        run: scripts/integration/test-fixture-check-modes.sh
 
   dependencies:
     name: Dependency policy
@@ -109,15 +122,29 @@ jobs:
       - name: Validate release plan
         run: dist plan
 
-  integration:
-    name: Dokploy apply and convergence
+  engine-live:
+    name: Engine against Dokploy ${{ matrix.version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["0.30.6", "0.30.7"]
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Start digest-pinned Dokploy
+      - name: Resolve the digest-pinned image
+        env:
+          VERSION: ${{ matrix.version }}
+        run: |
+          image="$(cargo xtask versions --image "$VERSION")"
+          {
+            echo "DOKPLOY_VERSION=v$VERSION"
+            echo "DOKPLOY_IMAGE=$image"
+          } >> "$GITHUB_ENV"
+
+      - name: Start the pinned Dokploy
         run: scripts/integration/up.sh
 
       - name: Create an ephemeral fingerprint key
@@ -126,8 +153,8 @@ jobs:
           printf 'DOKPLOY_FINGERPRINT_KEY=0199a0c8-2351-7c31-8899-2c8f81983ea5:%s\n' \
             "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
 
-      - name: Apply and verify convergence
-        run: scripts/integration/test-apply.sh
+      - name: Run the engine against it
+        run: scripts/integration/test-engine-live.sh
 
       - name: Reset disposable Dokploy stack
         if: ${{ always() }}

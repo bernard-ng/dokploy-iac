@@ -11,18 +11,22 @@ mod error;
 mod ledger;
 mod load;
 mod model;
+mod paths;
 mod registry;
 mod types;
 mod validate;
+mod versions;
 
 pub use error::{Issue, LoadError};
 pub use ledger::{KindLedger, LedgerReport, OperationIndex, check_ledger};
-pub use load::{load_dir, parse_spec};
+pub use load::{embedded, load_dir, parse_spec};
 pub use model::{
     Api, Authority, Child, Coverage, CreateIdentity, Deploy, Embedded, Field, Granularity, Hook,
-    Identity, Ignored, KindClass, KindSpec, Ledger, ListRead, Mutability, OneRead, Operation, Read,
-    Scope, Shape, ValueClass, WriteGroup,
+    Identity, Ignored, KindClass, KindSpec, Ledger, ListRead, ListScope, Mutability, OneRead,
+    Operation, Read, Scope, Shape, ValueClass, WriteGroup,
 };
+pub use paths::{PathError, PathShape, PropertyInfo, ValueRules};
 pub use registry::SpecRegistry;
 pub use types::{FieldType, TypeError, parse_type};
 pub use validate::validate_spec;
+pub use versions::{DokployVersion, VersionStatus, Versions};

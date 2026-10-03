@@ -35,9 +35,71 @@ once M2 is done.
 
 Done: `dokploy-spec` (parser, lint, registry, request-side ledger), grammar v0 and five
 working specs (`registry`, `redirect` full; `application`, `environment`, `project`
-partial), `cargo xtask specs --check` in CI. Remaining: the golden-mining tool for the
-legacy tests, the manually dispatched capture workflow (ADR 0015), and merging the
-`dokploy api` prefix branch (`claude/api-command-prefix`).
+partial), `cargo xtask specs --check` in CI, the `dokploy api` command prefix, and the
+golden-mining tool (`cargo xtask goldens`, [`docs/design/golden-ledger.md`](design/golden-ledger.md)):
+891 legacy scenarios in `goldens/`, all `pending`; and the manually dispatched capture
+workflow (`.github/workflows/capture.yaml`, [`docs/ci.md`](ci.md#capturing-fixtures)) with
+`specs/versions.yaml`. A full capture ran against a real v0.30.7 and produced
+`fixtures/api/live/v0.30.7/`; v0.30.7 stays `candidate` until its live suite passes.
+M0 is complete once the capture workflow has run once in GitHub Actions.
+
+## M1 status
+
+Done: spec-validated property paths (`dokploy-spec` path catalog, `PropertyPath`,
+`MutationContract::from_spec`; [`spec-format.md`](design/spec-format.md#property-paths)).
+State format 5 with hierarchical addresses, document ids, per-document directories, open kinds,
+and open sensitive paths ([`state-format.md`](design/state-format.md)); a `registry`, which has no
+per-kind code, plans and checkpoints from its spec alone (kernel test).
+The document model (`dokploy-model`: parse, validate with positions, canonical render, JSON
+Schema; [`document-format.md`](design/document-format.md)).
+The `Transport` trait (`dokploy-sdk`): the engine sends through it, over HTTP or in memory.
+The engine skeleton (`dokploy-engine`, [`engine.md`](design/engine.md)): **a settings document
+containing a registry is planned against a canned remote**, in memory and over HTTP.
+**M1 is complete.**
+
+## M2 status
+
+Done: the generated request contracts; live captures of `registry` and `tag` on 0.30.6 and 0.30.7;
+`dokploy-sim` ([`simulator.md`](design/simulator.md)); apply and recovery in `dokploy-engine`
+([`engine.md`](design/engine.md)); nested kinds (scoped and embedded collections); the conformance
+suite ([`conformance.md`](design/conformance.md)); a live engine test in CI for both versions; the
+golden ledger classification (37 of the 55 scenarios of the three kinds covered); and the CLI cut over
+to the v2 engine with the whole first engine deleted (no support for version 1 documents). `tag`,
+`registry`, and `redirect` pass the full suite with no per-kind Rust. The **cost gate** is measured
+([`cost-gate.md`](design/cost-gate.md)): met for the flat and leaf shapes, the union shape is the
+first thing to try in M3.
+
+Left from the plan's M2 row: nothing. `import`, saved plans, and `--parallelism` are removed until M6
+and later.
+
+**Kernel vocabulary (after M2).** `dokploy-core` and `dokploy-state` no longer carry a closed list of
+properties or resource kinds: a `PropertyPath` is a handle on the spec's `PropertyInfo`, a
+`ResourceKind` is a registered name, and containment is the address path. The planner tests run on
+three synthetic kinds (`widget`, a nested `gadget`, `cache`) in `crates/dokploy-core/tests/support`,
+so they do not move when a spec does.
+
+## M3 status
+
+Nearly done. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `port`, `security`,
+`mount`, `domain`, `schedule`, `patch`, `backup`, and `volume_backup` (full conformance, under every
+parent they have); the databases `postgres`, `mysql`, `mariadb`, `mongo`, `redis`, and `libsql`, `compose`,
+and the `environment` (conformance for the fields they carry); the `application` with its six-arm
+`source` and six-arm `build` unions, `swarm`, and the preview settings; and the settings kind
+`destination`, which the backups needed. Engine and grammar work the kinds needed: follow-up writes
+after a create, selectors, struct members and environment blocks (also inside a struct), unions planned
+per member, several parents, typed fixed fields on an operation, and a list read per parent with a
+type. The vision ratchet (`docs/vision/gaps/`) counts what the parser still rejects of the two vision
+documents: 7 lines for the project document, 18 for the settings one.
+
+What stays open before M3 exits:
+
+1. **A set of selectors**: project `tags` (membership through `tag.bulkAssign`) and `networks`
+   (`networkIds` of the application and the databases, `serviceNetworks` of Compose). Each member is an
+   id Dokploy holds; the planner resolves one selector per property, so a set needs its own planning
+   (and a `network` spec, which is a settings kind).
+2. **A field read by a side operation**: `traefik_config` (`application.updateTraefikConfig`, read
+   through `application.readTraefikConfig`, which no `one` embeds).
+3. **`env_file`** is M4 (it belongs to the environment sources).
 
 ## Cost gate (end of M2)
 
@@ -62,7 +124,7 @@ commit `96cab73`.
 | After | Declarative commands cover |
 |-------|----------------------------|
 | M1 | `validate`, `schema`, `plan` for ported settings kinds against canned data |
-| M2 | plan, apply, recover, destroy for `tag`, `registry`, and `redirect` |
+| M2 | validate, schema, plan, apply, recover, destroy, state for `tag`, `registry`, and `redirect` (**done**) |
 | M3 | every project kind (no deploy, no import) |
 | M5 | every settings kind |
 | M6 | `import` for everything |

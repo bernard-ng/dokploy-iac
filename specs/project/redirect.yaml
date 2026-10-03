@@ -1,5 +1,8 @@
 # An application redirect. A leaf kind: collection embedded in the parent's
 # response, and an update that sends the whole object from a fresh read.
+#
+# Live facts (fixtures/api/live/*/redirect-*): create answers `true`, so the new identity is
+# learned by listing the parent before and after; the regex is unique per application.
 kind: redirect
 scope: project
 parent: application
@@ -22,7 +25,7 @@ api:
       embedded_in: { parent_op: application.one, pointer: /redirects }
     one: { op: redirects.one, id_param: redirectId, agree: true }
   create_identity:
-    from_response: /redirectId
+    diff_collection: { key: [regex] }
 fields:
   regex:
     type: text

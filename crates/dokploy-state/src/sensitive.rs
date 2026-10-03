@@ -170,105 +170,63 @@ fn decode_nibble(value: u8) -> Option<u8> {
     }
 }
 
-/// A canonical durable path for one sensitive MVP property.
+/// The durable path of one sensitive property: a dotted path such as `password` or
+/// `environment.LOG_LEVEL`.
+///
+/// State checks only the syntax. Which paths are legal for a kind, and which are
+/// sensitive, is decided by the kind's spec (ADR 0004) in the layers that read specs.
 #[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SensitivePropertyPath(SensitivePropertyPathKind);
+pub struct SensitivePropertyPath(String);
 
-#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum SensitivePropertyPathKind {
-    Password,
-    RootPassword,
-    ComposeDocument,
-    FileContent,
-    ScheduleCommand,
-    ScheduleScript,
-    EnvironmentVariable(String),
-}
+const MAX_SENSITIVE_PATH_LEN: usize = 256;
+const MAX_SENSITIVE_PATH_SEGMENTS: usize = 4;
 
 impl SensitivePropertyPath {
-    /// Parses a canonical database password or uppercase `environment.NAME` path.
+    /// Parses a dotted property path.
+    ///
+    /// The first segment is a lower snake case field name. Later segments are
+    /// collection keys or struct members: letters, digits, and underscores, not
+    /// starting with a digit.
     pub fn parse(value: &str) -> Result<Self, SensitivePropertyPathError> {
-        if value == "password" {
-            return Ok(Self(SensitivePropertyPathKind::Password));
-        }
-        if value == "root_password" {
-            return Ok(Self(SensitivePropertyPathKind::RootPassword));
-        }
-        if value == "document" {
-            return Ok(Self(SensitivePropertyPathKind::ComposeDocument));
-        }
-        if value == "content" {
-            return Ok(Self(SensitivePropertyPathKind::FileContent));
-        }
-        if value == "command" {
-            return Ok(Self(SensitivePropertyPathKind::ScheduleCommand));
-        }
-        if value == "script" {
-            return Ok(Self(SensitivePropertyPathKind::ScheduleScript));
-        }
-
-        let name = value
-            .strip_prefix("environment.")
-            .ok_or(SensitivePropertyPathError)?;
-        if !valid_environment_name(name) {
+        if value.len() > MAX_SENSITIVE_PATH_LEN {
             return Err(SensitivePropertyPathError);
         }
-
-        Ok(Self(SensitivePropertyPathKind::EnvironmentVariable(
-            name.to_owned(),
-        )))
-    }
-
-    pub(crate) const fn is_password(&self) -> bool {
-        matches!(self.0, SensitivePropertyPathKind::Password)
-    }
-
-    pub(crate) const fn is_root_password(&self) -> bool {
-        matches!(self.0, SensitivePropertyPathKind::RootPassword)
-    }
-
-    pub(crate) const fn is_compose_document(&self) -> bool {
-        matches!(self.0, SensitivePropertyPathKind::ComposeDocument)
-    }
-
-    pub(crate) const fn is_file_content(&self) -> bool {
-        matches!(self.0, SensitivePropertyPathKind::FileContent)
-    }
-
-    pub(crate) const fn is_schedule_command(&self) -> bool {
-        matches!(self.0, SensitivePropertyPathKind::ScheduleCommand)
-    }
-
-    pub(crate) const fn is_schedule_script(&self) -> bool {
-        matches!(self.0, SensitivePropertyPathKind::ScheduleScript)
-    }
-
-    pub(crate) fn environment_name(&self) -> Option<&str> {
-        match &self.0 {
-            SensitivePropertyPathKind::Password => None,
-            SensitivePropertyPathKind::RootPassword => None,
-            SensitivePropertyPathKind::ComposeDocument => None,
-            SensitivePropertyPathKind::FileContent => None,
-            SensitivePropertyPathKind::ScheduleCommand => None,
-            SensitivePropertyPathKind::ScheduleScript => None,
-            SensitivePropertyPathKind::EnvironmentVariable(name) => Some(name),
+        let mut segments = value.split('.');
+        let first = segments.next().ok_or(SensitivePropertyPathError)?;
+        let mut count = 1;
+        let first_ok = {
+            let mut characters = first.chars();
+            characters.next().is_some_and(|c| c.is_ascii_lowercase())
+                && characters.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        };
+        if !first_ok {
+            return Err(SensitivePropertyPathError);
         }
+        for segment in segments {
+            count += 1;
+            if count > MAX_SENSITIVE_PATH_SEGMENTS || !valid_environment_name(segment) {
+                return Err(SensitivePropertyPathError);
+            }
+        }
+
+        Ok(Self(value.to_owned()))
+    }
+
+    /// Returns the dotted path.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Returns the path's segments, outermost first.
+    pub fn segments(&self) -> impl Iterator<Item = &str> {
+        self.0.split('.')
     }
 }
 
 impl fmt::Display for SensitivePropertyPath {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            SensitivePropertyPathKind::Password => formatter.write_str("password"),
-            SensitivePropertyPathKind::RootPassword => formatter.write_str("root_password"),
-            SensitivePropertyPathKind::ComposeDocument => formatter.write_str("document"),
-            SensitivePropertyPathKind::FileContent => formatter.write_str("content"),
-            SensitivePropertyPathKind::ScheduleCommand => formatter.write_str("command"),
-            SensitivePropertyPathKind::ScheduleScript => formatter.write_str("script"),
-            SensitivePropertyPathKind::EnvironmentVariable(name) => {
-                write!(formatter, "environment.{name}")
-            }
-        }
+        formatter.write_str(&self.0)
     }
 }
 
@@ -297,10 +255,10 @@ impl<'de> Deserialize<'de> for SensitivePropertyPath {
     }
 }
 
-/// A path outside the durable sensitive-input vocabulary.
+/// A path that is not a valid dotted property path.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 #[error(
-    "sensitive input path must be `password`, `root_password`, or a canonical uppercase `environment.NAME`"
+    "sensitive input path must be a lower snake case field optionally followed by up to three keys, such as `password` or `environment.NAME`"
 )]
 pub struct SensitivePropertyPathError;
 
@@ -370,14 +328,14 @@ pub enum SensitiveInputsError {
     DuplicatePath { path: SensitivePropertyPath },
 }
 
+/// A collection key or struct member: letters, digits, and underscores, not starting with
+/// a digit. Environment variable names use the same rule.
 pub(crate) fn valid_environment_name(value: &str) -> bool {
     if value.len() > 256 {
         return false;
     }
 
     let mut characters = value.chars();
-    matches!(characters.next(), Some(first) if first.is_ascii_uppercase() || first == '_')
-        && characters.all(|character| {
-            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
-        })
+    matches!(characters.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
+        && characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
 }

@@ -1,0 +1,1515 @@
+{
+  "bucket": "mount",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/mount_desired::compiles_typed_mount_ownership_dependency_and_environment_containment",
+      "file": "crates/dokploy-cli/tests/mount_desired.rs",
+      "test": "compiles_typed_mount_ownership_dependency_and_environment_containment",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "ordering",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_desired::concrete_file_content_fails_closed_offline_and_never_enters_debug_output",
+      "file": "crates/dokploy-cli/tests/mount_desired.rs",
+      "test": "concrete_file_content_fails_closed_offline_and_never_enters_debug_output",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_desired::instance_compilation_resolves_file_content_once_as_a_fingerprinted_receipt",
+      "file": "crates/dokploy-cli/tests/mount_desired.rs",
+      "test": "instance_compilation_resolves_file_content_once_as_a_fingerprinted_receipt",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CONTENT_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_desired::missing_content_file_is_a_redacted_compile_failure",
+      "file": "crates/dokploy-cli/tests/mount_desired.rs",
+      "test": "missing_content_file_is_a_redacted_compile_failure",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::compose_target_uses_the_typed_compose_service_identity",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "compose_target_uses_the_typed_compose_service_identity",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "compose.create",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/compose.create",
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::create_checkpoints_the_target_dependency_and_the_next_apply_is_a_no_op",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "create_checkpoints_the_target_dependency_and_the_next_apply_is_a_no_op",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "ordering",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::definitive_create_rejection_fails_the_step_without_retry_or_state",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "definitive_create_rejection_fails_the_step_without_retry_or_state",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::destroy_removes_mounts_before_their_targets",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "destroy_removes_mounts_before_their_targets",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.delete",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "environment.remove",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "mounts.remove",
+        "project.all",
+        "project.create",
+        "project.remove"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "POST /api/mounts.remove",
+        "POST /api/application.delete",
+        "POST /api/project.remove",
+        "POST /api/environment.remove",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `delete`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::file_content_is_sent_once_and_never_persisted_then_rotates_with_an_update",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "file_content_is_sent_once_and_never_persisted_then_rotates_with_an_update",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "mounts.update",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "POST /api/mounts.update",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "CONTENT_CANARY",
+        "ROTATED_CANARY"
+      ],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::outcome_unknown_create_stays_in_progress_and_is_never_retried",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "outcome_unknown_create_stays_in_progress_and_is_never_retried",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::path_edit_updates_in_place_after_a_fresh_identity_checked_read",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "path_edit_updates_in_place_after_a_fresh_identity_checked_read",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "mounts.remove",
+        "mounts.update",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "POST /api/mounts.update",
+        "POST /api/mounts.remove",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:*`, `delete`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::removing_a_mount_and_its_target_deletes_the_mount_first",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "removing_a_mount_and_its_target_deletes_the_mount_first",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.delete",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "mounts.remove",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "POST /api/mounts.remove",
+        "POST /api/application.delete",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `delete`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::storage_type_change_is_a_replacement_not_an_in_place_update",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "storage_type_change_is_a_replacement_not_an_in_place_update",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "mounts.remove",
+        "mounts.update",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "POST /api/mounts.remove",
+        "POST /api/mounts.update",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `replace:type`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::target_change_deletes_before_creating_under_the_new_target",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "target_change_deletes_before_creating_under_the_new_target",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "mounts.remove",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "POST /api/mounts.create",
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "POST /api/mounts.remove",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_lifecycle::unmanaged_file_content_is_never_created_as_an_empty_file",
+      "file": "crates/dokploy-cli/tests/mount_lifecycle.rs",
+      "test": "unmanaged_file_content_is_never_created_as_an_empty_file",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "application.create",
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.create",
+        "mounts.listByServiceId",
+        "project.all",
+        "project.create"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "POST /api/mounts.create",
+        "GET /api/project.all",
+        "POST /api/project.create",
+        "POST /api/application.create",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_content_rotation_requires_manual_intervention",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_content_rotation_requires_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "CONTENT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_create_adopts_one_exact_collision_key_without_retrying",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_create_adopts_one_exact_collision_key_without_retrying",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_create_with_a_different_mount_at_the_key_needs_manual_intervention",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_create_with_a_different_mount_at_the_key_needs_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_create_with_authoritative_absence_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_create_with_authoritative_absence_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_delete_is_confirmed_by_authoritative_absence",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_delete_is_confirmed_by_authoritative_absence",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_file_create_adopts_without_resending_or_exposing_content",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_file_create_adopts_without_resending_or_exposing_content",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [
+        "CONTENT_CANARY"
+      ],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_update_is_confirmed_only_from_authoritative_complete_state",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_update_is_confirmed_only_from_authoritative_complete_state",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_recovery::uncertain_update_that_did_not_apply_confirms_no_change",
+      "file": "crates/dokploy-cli/tests/mount_recovery.rs",
+      "test": "uncertain_update_that_did_not_apply_confirms_no_change",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::a_direct_read_on_another_target_fails_closed",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "a_direct_read_on_another_target_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::a_missing_target_makes_the_mount_missing_without_a_collection_read",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "a_missing_target_makes_the_mount_missing_without_a_collection_read",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "mounts.",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/project.all",
+        "GET /api/mounts."
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "engine discover (a child of a missing parent is missing)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::a_path_edit_that_collides_with_a_sibling_fails_closed",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "a_path_edit_that_collides_with_a_sibling_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::an_unmanaged_mount_at_the_collision_key_blocks_instead_of_being_adopted",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "an_unmanaged_mount_at_the_collision_key_blocks_instead_of_being_adopted",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::authoritative_target_collection_absence_plans_a_create",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "authoritative_target_collection_absence_plans_a_create",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::compose_targets_use_the_typed_service_type_for_the_collection",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "compose_targets_use_the_typed_service_type_for_the_collection",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "compose.one",
+        "compose.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/compose.search",
+        "GET /api/compose.one",
+        "GET /api/mounts.listByServiceId|serviceType=compose",
+        "GET /api/mounts.listByServiceId",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::direct_404_proves_absence_only_from_an_authoritative_collection",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "direct_404_proves_absence_only_from_an_authoritative_collection",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::direct_and_collection_disagreement_fails_closed",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "direct_and_collection_disagreement_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::duplicate_target_scoped_paths_fail_closed",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "duplicate_target_scoped_paths_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::failing_collection_makes_the_observation_unavailable",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "failing_collection_makes_the_observation_unavailable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `read_failure`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::managed_mount_requires_direct_and_collection_agreement",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "managed_mount_requires_direct_and_collection_agreement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::partial_authority_downgrades_absence_to_an_unavailable_observation",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "partial_authority_downgrades_absence_to_an_unavailable_observation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/mount_remote::retargeting_plans_a_replacement_and_blocks_on_a_collision_at_the_new_target",
+      "file": "crates/dokploy-cli/tests/mount_remote.rs",
+      "test": "retargeting_plans_a_replacement_and_blocks_on_a_collision_at_the_new_target",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.one",
+        "application.search",
+        "environment.byProjectId",
+        "environment.one",
+        "mounts.listByServiceId",
+        "mounts.one",
+        "project.all"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId|application-1",
+        "GET /api/mounts.listByServiceId|application-2",
+        "GET /api/mounts.one",
+        "GET /api/project.all",
+        "GET /api/environment.byProjectId",
+        "GET /api/environment.one",
+        "GET /api/application.search",
+        "GET /api/application.one|application-1",
+        "GET /api/application.one|application-2"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::canonical_writer_round_trips_every_mount_source_without_content_bytes",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "canonical_writer_round_trips_every_mount_source_without_content_bytes",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::file_mount_content_is_descriptor_only_and_clear_or_unmanaged_is_restricted",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "file_mount_content_is_descriptor_only_and_clear_or_unmanaged_is_restricted",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::generated_schema_models_the_typed_mount_union",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "generated_schema_models_the_typed_mount_union",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::mount_ignored_changes_are_limited_to_in_place_properties",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "mount_ignored_changes_are_limited_to_in_place_properties",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "dokploy-core planner_mutation `unsafe_ignore_metadata_is_refused_when_the_desired_state_is_built`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::mount_issue_codes_are_stable_and_message_safe",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "mount_issue_codes_are_stable_and_message_safe",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::parses_typed_mount_targets_and_sources_with_descriptor_only_content",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "parses_typed_mount_targets_and_sources_with_descriptor_only_content",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::rejects_duplicate_mount_path_per_target_but_allows_other_targets",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "rejects_duplicate_mount_path_per_target_but_allows_other_targets",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::rejects_mount_targets_outside_the_closed_same_environment_union",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "rejects_mount_targets_outside_the_closed_same_environment_union",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::rejects_unsafe_mount_paths_names_and_unknown_sources",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "rejects_unsafe_mount_paths_names_and_unknown_sources",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "MOUNT_BASE"
+      ],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/mount::typed_document_writes_imported_mount_with_unmanaged_content",
+      "file": "crates/dokploy-config/tests/mount.rs",
+      "test": "typed_document_writes_imported_mount_with_unmanaged_content",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "import",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_mount::live_mount_adapter_converges_without_deploying_its_target",
+      "file": "crates/dokploy-sdk/tests/live_mount.rs",
+      "test": "live_mount_adapter_converges_without_deploying_its_target",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::every_service_target_uses_its_exact_wire_kind_and_identity",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "every_service_target_uses_its_exact_wire_kind_and_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "wire",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::file_mount_content_is_redacted_but_sent_exactly_once",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "file_mount_content_is_redacted_but_sent_exactly_once",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME_RESPONSE"
+      ],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_create_uses_the_exact_typed_volume_contract",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_create_uses_the_exact_typed_volume_contract",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME_RESPONSE"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_fixture_exposes_only_safe_typed_fields",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_fixture_exposes_only_safe_typed_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/mount-one.created.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_get_uses_a_strong_id_and_safe_tolerant_model",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_get_uses_a_strong_id_and_safe_tolerant_model",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mounts.one"
+      ],
+      "requests": [
+        "GET /api/mounts.one?mountId=mount-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME_RESPONSE"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_list_is_bounded_and_authoritative_for_one_typed_target",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_list_is_bounded_and_authoritative_for_one_typed_target",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "mounts.listByServiceId"
+      ],
+      "requests": [
+        "GET /api/mounts.listByServiceId?"
+      ],
+      "fixtures": [],
+      "data": [
+        "VOLUME_RESPONSE"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_mutations_are_single_attempt_and_report_unknown_outcomes",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_mutations_are_single_attempt_and_report_unknown_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_rejects_invalid_inputs_before_transport_without_exposing_content",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_rejects_invalid_inputs_before_transport_without_exposing_content",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/mounts::mount_update_and_remove_use_narrow_explicit_requests",
+      "file": "crates/dokploy-sdk/tests/mounts.rs",
+      "test": "mount_update_and_remove_use_narrow_explicit_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:*`, `delete`",
+      "reason": null
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# PROTOTYPE (coverage: partial). Completed in milestone M3.
+# PROTOTYPE (coverage: partial). The environment's `isDefault` and duplication are not configuration.
 kind: environment
 scope: project
 parent: project
@@ -18,7 +18,7 @@ api:
   update: { op: environment.update }
   remove: { op: environment.remove }
   read:
-    list: { op: environment.byProjectId, authority: authoritative }
+    list: { op: environment.byProjectId, authority: authoritative, scope: { param: projectId } }
     one: { op: environment.one, id_param: environmentId, agree: true }
   create_identity:
     from_response: /environmentId
@@ -29,10 +29,21 @@ fields:
     default: key
   description:
     type: text
-    nullable: true
+    doc: Dokploy takes a text here, not null.
+  env:
+    type: env
+    granularity: key
+    doc: Variables shared by everything below.
 write:
   - op: environment.update
-    fields: [name, description]
+    fields: [name, description, env]
     shape: partial
 children:
   - { kind: application, section: applications }
+  - { kind: postgres, section: postgres }
+  - { kind: mysql, section: mysql }
+  - { kind: mariadb, section: mariadb }
+  - { kind: mongo, section: mongo }
+  - { kind: redis, section: redis }
+  - { kind: libsql, section: libsql }
+  - { kind: compose, section: compose }

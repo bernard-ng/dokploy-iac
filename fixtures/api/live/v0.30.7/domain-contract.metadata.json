@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-10-02",
+  "cleanupEvidence": {
+    "applicationDomainAbsent": true,
+    "applicationIdle": true,
+    "collectionEmpty": true,
+    "oneStatus": 404,
+    "traefikRestored": true
+  },
+  "deployed": false,
+  "endpoints": [
+    "domain.create",
+    "domain.one",
+    "domain.byApplicationId",
+    "domain.update",
+    "domain.delete",
+    "application.one"
+  ],
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "mutations": {
+    "create": 1,
+    "delete": 1,
+    "update": 1
+  },
+  "role": "owner",
+  "sanitized": true,
+  "traefikChangedDuringCapture": true,
+  "version": "v0.30.7"
+}

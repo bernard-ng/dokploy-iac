@@ -1,0 +1,497 @@
+{
+  "bucket": "redirect",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/redirect_remote::authoritative_parent_absence_plans_redirect_creation",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "authoritative_parent_absence_plans_redirect_creation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_REDIRECTS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance redirect `create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::collection_naming_another_application_is_unavailable_not_authoritative",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "collection_naming_another_application_is_unavailable_not_authoritative",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance redirect `foreign_collection_item`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::complete_field_change_plans_one_in_place_update",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "complete_field_change_plans_one_in_place_update",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS",
+        "REDIRECT",
+        "REDIRECTS"
+      ],
+      "category": "update",
+      "status": "covered",
+      "covered_by": "conformance redirect `update:regex`, `update:replacement`, `update:permanent`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::direct_and_collection_records_that_disagree_are_unavailable",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "direct_and_collection_records_that_disagree_are_unavailable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS",
+        "REDIRECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::direct_identity_under_another_application_fails_closed",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "direct_identity_under_another_application_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS",
+        "REDIRECTS"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance redirect `foreign_direct_read`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::duplicate_parent_regular_expressions_fail_closed",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "duplicate_parent_regular_expressions_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS",
+        "REDIRECT"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance redirect `ambiguous_collision`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::managed_redirect_requires_direct_and_parent_collection_agreement",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "managed_redirect_requires_direct_and_parent_collection_agreement",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS",
+        "REDIRECT",
+        "REDIRECTS"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance redirect `foreign_direct_read`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::partial_authority_downgrades_absence_to_an_incomplete_plan",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "partial_authority_downgrades_absence_to_an_incomplete_plan",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_REDIRECTS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::redirect_one_404_proves_absence_only_with_authoritative_parent_absence",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "redirect_one_404_proves_absence_only_with_authoritative_parent_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "EMPTY_REDIRECTS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NOT_FOUND",
+        "PROJECTS"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::redirect_one_404_while_the_collection_lists_the_identity_is_not_absence",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "redirect_one_404_while_the_collection_lists_the_identity_is_not_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "NOT_FOUND",
+        "PROJECTS",
+        "REDIRECTS"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "engine discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redirect_remote::unmanaged_redirect_with_the_same_regex_is_matched_by_collision_key",
+      "file": "crates/dokploy-cli/tests/redirect_remote.rs",
+      "test": "unmanaged_redirect_with_the_same_regex_is_matched_by_collision_key",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "APPLICATION",
+        "APPLICATIONS",
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECTS",
+        "REDIRECTS"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance redirect `unmanaged_collision`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/live_redirect::live_redirect_adapter_converges_without_deploying_its_application",
+      "file": "crates/dokploy-sdk/tests/live_redirect.rs",
+      "test": "live_redirect_adapter_converges_without_deploying_its_application",
+      "layer": "live",
+      "live": true,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "live",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::application_one_is_the_authoritative_bounded_redirect_collection",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "application_one_is_the_authoritative_bounded_redirect_collection",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one"
+      ],
+      "requests": [
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance redirect `create` (embedded collection); engine discovery_safety bound",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_create_discovers_exactly_one_new_matching_identity",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_create_discovers_exactly_one_new_matching_identity",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one"
+      ],
+      "requests": [
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1",
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance redirect `create`, `identity_ambiguous`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_create_postflight_failures_are_always_outcome_unknown",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_create_postflight_failures_are_always_outcome_unknown",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT"
+      ],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance redirect `unknown_create_before`, `unknown_create_after`, `identity_ambiguous`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_create_rejects_collisions_and_ambiguous_identity_evidence",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_create_rejects_collisions_and_ambiguous_identity_evidence",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance redirect `unmanaged_collision`, `identity_ambiguous`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_get_requires_direct_and_parent_agreement",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_get_requires_direct_and_parent_agreement",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "application.one",
+        "redirects.one"
+      ],
+      "requests": [
+        "GET /api/redirects.one?redirectId=redirect-1 HTTP/1.1",
+        "GET /api/application.one?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "engine plan_registry agreement test; conformance redirect `foreign_direct_read`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_mutations_are_single_attempt_and_report_unknown_outcomes",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_mutations_are_single_attempt_and_report_unknown_outcomes",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "outcome-unknown",
+      "status": "covered",
+      "covered_by": "conformance redirect `unknown_{create,update,delete}_{before,after}` (the mutation is sent once)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_rejects_empty_inputs_before_transport",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_rejects_empty_inputs_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "covered",
+      "covered_by": "dokploy-model parse `empty_text_breaks_a_length_rule_so_nothing_is_ever_sent`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_response_is_safe_tolerant_and_requires_owned_fields",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_response_is_safe_tolerant_and_requires_owned_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/redirect-one.created.owner.json"
+      ],
+      "data": [
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "engine discovery_safety `fields_the_spec_does_not_know_are_ignored`; plan_registry `a_remote_value_outside_the_spec_blocks_that_registry_only`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_update_and_delete_require_authoritative_preflight",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_update_and_delete_require_authoritative_preflight",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance redirect `read_failure`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_update_and_delete_require_postflight_proof",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_update_and_delete_require_postflight_proof",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "redirects.delete",
+        "redirects.update"
+      ],
+      "requests": [
+        "POST /api/redirects.update",
+        "POST /api/redirects.delete"
+      ],
+      "fixtures": [],
+      "data": [
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance redirect `removal_not_applied`; engine apply read-back test",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_update_and_delete_use_exact_complete_requests",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_update_and_delete_use_exact_complete_requests",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "POST /api/{operation} HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "EMPTY_PARENT",
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance redirect `update:*` (a full group re-sends every field of the group), `delete`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redirects::redirect_update_rejects_application_scoped_regex_collisions",
+      "file": "crates/dokploy-sdk/tests/redirects.rs",
+      "test": "redirect_update_rejects_application_scoped_regex_collisions",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "REDIRECT_RESPONSE"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance redirect `unmanaged_collision`, `ambiguous_collision`",
+      "reason": null
+    }
+  ]
+}

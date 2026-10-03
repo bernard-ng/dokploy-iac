@@ -1,0 +1,478 @@
+{
+  "bucket": "application",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/application_remote::application_move_resolves_a_simultaneously_moved_environment_by_stored_identity",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "application_move_resolves_a_simultaneously_moved_environment_by_stored_identity",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::application_search_authentication_failure_is_closed",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "application_search_authentication_failure_is_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::combined_discovery_plans_an_absent_domain_under_a_managed_application",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "combined_discovery_plans_an_absent_domain_under_a_managed_application",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "domain.byApplicationId"
+      ],
+      "requests": [
+        "GET /api/domain.byApplicationId?applicationId=application-1 HTTP/1.1"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::compiler_discovery_and_planner_create_an_absent_application",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "compiler_discovery_and_planner_create_an_absent_application",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.search"
+      ],
+      "requests": [
+        "GET /api/application.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance application `create`, `create_minimal`, `rejected_create`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::duplicate_application_ids_across_environments_are_rejected",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "duplicate_application_ids_across_environments_are_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::duplicate_scoped_application_names_are_rejected",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "duplicate_scoped_application_names_are_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance application `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::environment_root_shape_is_projected_without_retaining_its_bytes",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "environment_root_shape_is_projected_without_retaining_its_bytes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::every_combined_discovery_invocation_reads_fresh_application_state",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "every_combined_discovery_invocation_reads_fresh_application_state",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "application.search"
+      ],
+      "requests": [
+        "GET /api/application.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "state",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::ignored_application_field_is_not_projected_or_planned",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "ignored_application_field_is_not_projected_or_planned",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "plan",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::malformed_application_pagination_is_an_invalid_response",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "malformed_application_pagination_is_an_invalid_response",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::managed_404_and_target_search_with_the_same_stored_id_fail_closed",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "managed_404_and_target_search_with_the_same_stored_id_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::managed_404_and_unavailable_reparent_target_fail_closed",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "managed_404_and_unavailable_reparent_target_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::managed_application_in_another_environment_fails_closed",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "managed_application_in_another_environment_fails_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::managed_application_projects_only_requested_fields_without_secret_bytes",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "managed_application_projects_only_requested_fields_without_secret_bytes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance application canary scan (a secret is read once, fingerprinted, never stored or printed)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::missing_managed_id_exposes_a_same_name_replacement_without_adopting_it",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "missing_managed_id_exposes_a_same_name_replacement_without_adopting_it",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::non_github_source_type_blocks_owned_github_child_comparison",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "non_github_source_type_blocks_owned_github_child_comparison",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::null_environment_root_proves_requested_sensitive_children_absent",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "null_environment_root_proves_requested_sensitive_children_absent",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::omitted_environment_root_blocks_requested_sensitive_children",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "omitted_environment_root_blocks_requested_sensitive_children",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::omitted_source_shape_blocks_an_owned_source_clear",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "omitted_source_shape_blocks_an_owned_source_clear",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::partial_application_search_cannot_prove_absence",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "partial_application_search_cannot_prove_absence",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the application is read from the environment's direct read, which is complete; the paged `application.search` the first engine used is not read (docs/design/engine.md, paged collections)"
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::persisted_application_move_observes_source_and_managed_target_idempotently",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "persisted_application_move_observes_source_and_managed_target_idempotently",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::persisted_application_removal_needs_no_parent_or_remote_probe",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "persisted_application_removal_needs_no_parent_or_remote_probe",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::same_address_reparenting_reports_a_conclusive_target_name_collision",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "same_address_reparenting_reports_a_conclusive_target_name_collision",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::same_address_reparenting_validates_the_stored_physical_environment",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "same_address_reparenting_validates_the_stored_physical_environment",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/application_remote::state_backed_application_removal_is_observed_by_remote_id",
+      "file": "crates/dokploy-cli/tests/application_remote.rs",
+      "test": "state_backed_application_removal_is_observed_by_remote_id",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance application `delete`, `protected_delete`, `removal_not_applied`, `unknown_delete_*`",
+      "reason": null
+    }
+  ]
+}

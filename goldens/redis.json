@@ -1,0 +1,398 @@
+{
+  "bucket": "redis",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/redis_remote::duplicate_redis_identity_across_environments_is_rejected",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "duplicate_redis_identity_across_environments_is_rejected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance redis `ambiguous_collision`, `foreign_collection_item`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::environment_move_keeps_redis_on_the_same_physical_parent",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "environment_move_keeps_redis_on_the_same_physical_parent",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "PROJECT"
+      ],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::every_combined_discovery_invocation_reads_fresh_redis_state",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "every_combined_discovery_invocation_reads_fresh_redis_state",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "redis.search"
+      ],
+      "requests": [
+        "GET /api/redis.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "state",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::managed_redis_projects_only_write_only_password_without_secret_bytes",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "managed_redis_projects_only_write_only_password_without_secret_bytes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance redis canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::missing_managed_redis_exposes_replacement_without_adopting_it",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "missing_managed_redis_exposes_replacement_without_adopting_it",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::persisted_redis_removal_needs_no_parent_or_remote_probe",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "persisted_redis_removal_needs_no_parent_or_remote_probe",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "delete",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::planner_blocks_an_absent_redis_database_with_missing_create_inputs",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "planner_blocks_an_absent_redis_database_with_missing_create_inputs",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "redis.search"
+      ],
+      "requests": [
+        "GET /api/redis.search?"
+      ],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "create",
+      "status": "covered",
+      "covered_by": "conformance redis `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_authority_and_malformed_search_fail_closed",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_authority_and_malformed_search_fail_closed",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_collection_rejects_invalid_identity_containment_and_duplicate_names",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_collection_rejects_invalid_identity_containment_and_duplicate_names",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "selector",
+      "status": "covered",
+      "covered_by": "conformance redis `ambiguous_collision`, `foreign_collection_item`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_direct_404_cannot_override_positive_collection_identity",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_direct_404_cannot_override_positive_collection_identity",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_direct_and_collection_endpoints_must_agree",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_direct_and_collection_endpoints_must_agree",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_move_and_state_backed_removal_preserve_managed_identity",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_move_and_state_backed_removal_preserve_managed_identity",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "delete",
+      "status": "covered",
+      "covered_by": "conformance redis `delete` (the removal is by the recorded remote id)",
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_physical_reparent_is_rejected_before_any_redis_request",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_physical_reparent_is_rejected_before_any_redis_request",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "PROJECT"
+      ],
+      "category": "wire",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::redis_search_authentication_failure_is_unavailable",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "redis_search_authentication_failure_is_unavailable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-cli/tests/redis_remote::unavailable_redis_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "file": "crates/dokploy-cli/tests/redis_remote.rs",
+      "test": "unavailable_redis_collection_blocks_a_successful_direct_read_and_any_mutation",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "ENVIRONMENT",
+        "ENVIRONMENTS",
+        "PROJECT"
+      ],
+      "category": "read-model",
+      "status": "covered",
+      "covered_by": "conformance redis `read_failure`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redis::project_details_decode_the_sanitized_redis_summary_without_secret_fields",
+      "file": "crates/dokploy-sdk/tests/redis.rs",
+      "test": "project_details_decode_the_sanitized_redis_summary_without_secret_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/project-one.redis-populated.owner.json"
+      ],
+      "data": [],
+      "category": "canary",
+      "status": "covered",
+      "covered_by": "conformance redis canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redis::redis_by_environment_collects_every_bounded_page",
+      "file": "crates/dokploy-sdk/tests/redis.rs",
+      "test": "redis_by_environment_collects_every_bounded_page",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "redis.search"
+      ],
+      "requests": [
+        "GET /api/redis.search?"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-sdk/tests/redis::redis_by_environment_rejects_malformed_pagination",
+      "file": "crates/dokploy-sdk/tests/redis.rs",
+      "test": "redis_by_environment_rejects_malformed_pagination",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    },
+    {
+      "id": "dokploy-sdk/tests/redis::redis_details_expose_only_safe_reconciliation_fields",
+      "file": "crates/dokploy-sdk/tests/redis.rs",
+      "test": "redis_details_expose_only_safe_reconciliation_fields",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/redis-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance redis canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redis::redis_get_uses_a_strong_id_and_decodes_safe_details",
+      "file": "crates/dokploy-sdk/tests/redis.rs",
+      "test": "redis_get_uses_a_strong_id_and_decodes_safe_details",
+      "layer": "sdk",
+      "live": false,
+      "operations": [
+        "redis.one"
+      ],
+      "requests": [
+        "GET /api/redis.one?redisId=redis-1 HTTP/1.1"
+      ],
+      "fixtures": [
+        "fixtures/api/live/v0.30.6/redis-one.owner.json"
+      ],
+      "data": [],
+      "category": "uncategorized",
+      "status": "covered",
+      "covered_by": "conformance redis canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
+      "reason": null
+    },
+    {
+      "id": "dokploy-sdk/tests/redis::redis_search_rejects_an_empty_environment_before_transport",
+      "file": "crates/dokploy-sdk/tests/redis.rs",
+      "test": "redis_search_rejects_an_empty_environment_before_transport",
+      "layer": "sdk",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "dropped",
+      "covered_by": null,
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
+    }
+  ]
+}

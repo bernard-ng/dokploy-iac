@@ -1,0 +1,145 @@
+# PROTOTYPE (coverage: partial). A database of an environment. The networks are still an
+# unclassified request.
+#
+# Live facts (fixtures/api/live/*/mariadb-*): create answers the whole object, update answers
+# `true`, remove answers the removed object, and the collection is the `mariadb` array that
+# the environment's direct read embeds (assumed from `project.one`: to verify in the live suite).
+# Password changes after create go through `update` here; whether Dokploy applies them to a
+# running database (it also has `changePassword`) is to be verified in the live suite.
+kind: mariadb
+scope: project
+parent: environment
+section: mariadb
+title: Mariadb database
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "mariadb.{key}"
+api:
+  id: mariadbId
+  create:
+    op: mariadb.create
+    attach: { environmentId: parent_id }
+  update: { op: mariadb.update }
+  remove: { op: mariadb.remove }
+  deploy: { op: mariadb.deploy }
+  read:
+    list:
+      embedded_in: { parent_op: environment.one, pointer: /mariadb }
+      authority: authoritative
+    one: { op: mariadb.one, id_param: mariadbId }
+  create_identity:
+    from_response: /mariadbId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  app_name:
+    api: appName
+    type: text
+    mutability: create_only
+    nullable: true
+    doc: Dokploy's Docker-level name; generated when omitted.
+  description:
+    type: text
+    nullable: true
+  server:
+    api: serverId
+    type: selector(server)
+    mutability: create_only
+    nullable: true
+  image:
+    api: dockerImage
+    type: text
+    min_len: 1
+  command:
+    type: text
+    nullable: true
+    needs_deploy: true
+  args:
+    type: list<text>
+    nullable: true
+    needs_deploy: true
+  database:
+    api: databaseName
+    type: text
+    min_len: 1
+  username:
+    api: databaseUser
+    type: text
+    min_len: 1
+  password:
+    api: databasePassword
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    needs_deploy: true
+  root_password:
+    api: databaseRootPassword
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    needs_deploy: true
+  resources:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      memory_limit: { api: memoryLimit, type: text, nullable: true }
+      memory_reservation: { api: memoryReservation, type: text, nullable: true }
+      cpu_limit: { api: cpuLimit, type: text, nullable: true }
+      cpu_reservation: { api: cpuReservation, type: text, nullable: true }
+  environment:
+    api: env
+    type: env
+    granularity: key
+    nullable: true
+    needs_deploy: true
+  detach_dokploy_network:
+    api: detachDokployNetwork
+    type: bool
+  external_port:
+    api: externalPort
+    type: int
+    min: 1
+    max: 65535
+    nullable: true
+  replicas:
+    type: int
+    min: 0
+    needs_deploy: true
+  swarm:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    doc: Docker Swarm service settings, each member as Docker's own JSON. A member left out is unmanaged.
+    members:
+      health_check: { api: healthCheckSwarm, type: "blob(swarm-health-check)", nullable: true }
+      restart_policy: { api: restartPolicySwarm, type: "blob(swarm-restart-policy)", nullable: true }
+      placement: { api: placementSwarm, type: "blob(swarm-placement)", nullable: true }
+      update_config: { api: updateConfigSwarm, type: "blob(swarm-update-config)", nullable: true }
+      rollback_config: { api: rollbackConfigSwarm, type: "blob(swarm-rollback-config)", nullable: true }
+      mode: { api: modeSwarm, type: "blob(swarm-mode)", nullable: true }
+      labels: { api: labelsSwarm, type: "blob(swarm-labels)", nullable: true }
+      networks: { api: networkSwarm, type: "blob(swarm-networks)", nullable: true }
+      stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
+      endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
+      ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
+write:
+  - op: mariadb.update
+    fields: [name, description, image, command, args, database, username, password, root_password, resources, detach_dokploy_network, external_port, replicas, swarm]
+    shape: partial
+  - op: mariadb.saveEnvironment
+    fields: [environment]
+    shape: partial
+ledger:
+  readonly: [createdAt, applicationStatus]
+children:
+  - { kind: mount, section: mounts }
+  - { kind: backup, section: backups }
+  - { kind: volume_backup, section: volume_backups }

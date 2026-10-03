@@ -67,7 +67,10 @@ A collection embedded in a parent's response is declared on the child:
     list: { embedded_in: { parent_op: application.one, pointer: "/redirects" } }
 ```
 
-A collection scoped to a parent says so: `scope: { param: environmentId }`.
+A collection read once per parent says so: `list: { op: environment.byProjectId, scope: { param: projectId } }`
+(the parent's id is sent as that query parameter). A kind can instead be found in a collection
+embedded in its parent's direct read (`embedded_in`), and a kind with neither is found by its
+recorded identity only.
 
 ## Fields
 
@@ -96,8 +99,13 @@ fields:
 ```
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
-`needs_deploy`, `disruptive`, `granularity` (`field` or `key`), `trim`, `since`,
+`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `since`,
 `until`, `doc` (one line for the generated reference), `example`.
+
+`fallback` is the value sent when a write needs a field and the document gives none and Dokploy
+holds none for it: `build_path: { fallback: "/" }`, `trigger_type: { fallback: push }`. It never
+overrides a value the document or Dokploy has, and it is what a create and a change of arm of a
+union use for a required request field.
 
 ### Types
 
@@ -105,6 +113,30 @@ Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `struct{...}`; `union(tag){arm: {...}}`; `blob(<json-schema file>)`; `env`; `file`;
 `ref(kind)`; `selector(kind)`; shared types by name (`type: swarm`). Semantics are in
 [ADR 0004](../decisions/0004-property-model-and-mutability.md).
+
+## Property paths
+
+A *property* is a field at planning granularity; its dotted path is what plans, state, and
+`ignore_changes` name. `KindSpec::property(path)` and `SpecRegistry::property(kind, path)` in
+`dokploy-spec` decide which paths are legal and what each means, from the spec alone
+([ADR 0004](../decisions/0004-property-model-and-mutability.md)):
+
+| Field | Properties |
+|-------|------------|
+| scalar, enum, list, set, file, ref, selector, blob, shared type | one: the field name |
+| `union(tag)` | the tag (`source.type`) and one per member of each arm (`source.github.owner`, `source.docker.password`); the union itself is not a path |
+| `env` or `map` with `granularity: key` | the root (`environment`: owned only to clear it or declare it empty) and one entry per key (`environment.LOG_LEVEL`) |
+| `struct` with `granularity: field` | one per member (`limits.cpu`); the struct itself is not a path |
+| `struct` without it | one: the field name |
+
+A path carries what the planner needs: its type and value rules, `class`, `mutability`,
+`nullable`, the selector kind, and whether it is required on create. Environment entries are
+always sensitive (secret by default, ADR 0010), so a plan names the variables that change and
+never their values. A member inherits a non-default `mutability` from its struct.
+`MutationContract::from_spec` (in `dokploy-core`) follows from the same facts: `in_place` and `write_only` change in place,
+`create_only` forces replacement, `computed` is never configurable, and only a `nullable`
+property can be cleared. The spec does not yet state a replacement order, so replacement
+deletes before it creates.
 
 ## Write groups
 
@@ -124,8 +156,26 @@ write:
   - { op: compose.saveEnvironment, fields: [environment, create_env_file], shape: partial }
 ```
 
-`shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation
-by a union tag.
+A write group may name a union field (`source`, `node`) and then writes its tag and the members of
+every arm; `by_variant` is for a union whose arms are written by different operations, and an
+operation may be listed for several arms (`build`: one `saveBuildType` for all).
+
+`shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation by a
+union tag, `ops: { arm: operation }`: one request per apply, to the operation of the arm the
+document names, carrying the members of that arm (see [`engine.md`](engine.md#unions)).
+
+## Operations
+
+An operation (`api.create`, `update`, `remove`) is `op` plus, as needed: `id_param` (the parameter
+that carries the identity), `attach` and `attach_by_parent` (request fields filled from context;
+`parent_id` is the id of the parent, any other value is sent as written, and each applies to the
+create and, other than `parent_id`, to the update), and `send` (typed fields sent as written on every
+call of a create, an update, or a remove: `send: { deleteVolumes: false }`).
+
+A collection read per parent is `read.list: { op, scope: { param, query_by_parent } }`: `param`
+carries the parent's id, and `query_by_parent` adds the parameters that tell the list which kind of
+parent the id names, so one list serves several parents (`scheduleType: application`,
+`volumeBackupType: postgres`, `type: compose`).
 
 ## Children
 
@@ -136,8 +186,27 @@ children:
   - { kind: schedule, section: schedules }
 ```
 
-A child spec names `parent:` and how it attaches (`attach: { field: composeId, from: parent_id }`
-plus any fixed values such as `domainType: compose`).
+A child spec names `parent:` and how it attaches. A kind that lives under several parents lists
+them (`parent: [application, compose, postgres]`, [ADR 0018](../decisions/0018-several-parents-and-per-member-unions.md))
+and each parent lists it under `children`. What differs by parent is in the spec:
+
+```yaml
+api:
+  create:
+    op: mounts.create
+    attach: { serviceId: parent_id }          # for every parent
+    attach_by_parent:                         # laid over `attach` for one parent kind
+      application: { serviceType: application }
+      postgres: { serviceType: postgres }
+  parent_field:                               # the response column that names the parent
+    application: applicationId
+    postgres: postgresId
+  read:
+    list: { embedded_in: { pointer: /mounts } }   # `parent_op` defaults to the parent's direct read
+```
+
+`parent_id` is the id of the containing resource; any other value is sent as written
+(`domainType: compose`). The conformance suite exercises the kind under each parent.
 
 ## Hooks
 
@@ -214,8 +283,8 @@ fields:
         owner:      { api: owner,      type: text }
         repository: { api: repository, type: text }
         branch:     { api: branch,     type: text }
-        build_path: { api: buildPath,  type: text }
-        trigger_type: { api: triggerType, type: "enum[push, tag]" }
+        build_path: { api: buildPath,  type: text, fallback: "/" }
+        trigger_type: { api: triggerType, type: "enum[push, tag]", fallback: push }
       docker:
         image:        { api: dockerImage, type: text }
         registry_url: { api: registryUrl, type: text }

@@ -17,7 +17,7 @@
 # Each kind below is one flat address: tag.prod, server.build-1, ...
 # =============================================================================
 
-version: 1                                   # ✔
+version: 2                                   # ✔
 
 settings:
 

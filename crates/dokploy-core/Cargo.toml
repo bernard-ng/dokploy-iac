@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+dokploy-spec.workspace = true
 dokploy-state.workspace = true
 hmac.workspace = true
 petgraph.workspace = true

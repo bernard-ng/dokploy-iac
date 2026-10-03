@@ -1,0 +1,645 @@
+{
+  "bucket": "placement",
+  "scenarios": [
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::a_changed_server_replaces_the_service_delete_before_create",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "a_changed_server_replaces_the_service_delete_before_create",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::a_definitive_create_rejection_leaves_no_state_and_no_uncertain_step",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "a_definitive_create_rejection_leaves_no_state_and_no_uncertain_step",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::a_local_selector_creates_with_an_explicit_null_and_converges",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "a_local_selector_creates_with_an_explicit_null_and_converges",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::a_protected_service_is_never_replaced_by_a_placement_change",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "a_protected_service_is_never_replaced_by_a_placement_change",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::adopting_a_placement_that_already_matches_changes_no_service_and_a_mismatch_replaces",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "adopting_a_placement_that_already_matches_changes_no_service_and_a_mismatch_replaces",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::an_ignored_server_neither_resolves_nor_replaces_but_refuses_a_placed_create",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "an_ignored_server_neither_resolves_nor_replaces_but_refuses_a_placed_create",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all",
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::an_unmanaged_placement_omits_the_server_and_reads_no_external_collection",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "an_unmanaged_placement_omits_the_server_and_reads_no_external_collection",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::create_places_every_kind_on_the_resolved_server_and_converges_to_a_no_op",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "create_places_every_kind_on_the_resolved_server_and_converges_to_a_no_op",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "noop",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::replacement_is_refused_while_durable_state_holds_dependents",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "replacement_is_refused_while_durable_state_holds_dependents",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "state",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_apply::unmatched_ambiguous_and_unreadable_selectors_block_apply_before_any_mutation",
+      "file": "crates/dokploy-cli/tests/service_placement_apply.rs",
+      "test": "unmatched_ambiguous_and_unreadable_selectors_block_apply_before_any_mutation",
+      "layer": "cli-apply",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_desired::a_local_resolution_binds_as_the_local_server",
+      "file": "crates/dokploy-cli/tests/service_placement_desired.rs",
+      "test": "a_local_resolution_binds_as_the_local_server",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_desired::an_ignored_server_is_still_listed_but_is_marked_ignored_for_discovery",
+      "file": "crates/dokploy-cli/tests/service_placement_desired.rs",
+      "test": "an_ignored_server_is_still_listed_but_is_marked_ignored_for_discovery",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_desired::bindings_list_the_server_selector_and_redact_names_in_debug_output",
+      "file": "crates/dokploy-cli/tests/service_placement_desired.rs",
+      "test": "bindings_list_the_server_selector_and_redact_names_in_debug_output",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_desired::named_local_and_unmanaged_placements_compile_to_stable_values",
+      "file": "crates/dokploy-cli/tests/service_placement_desired.rs",
+      "test": "named_local_and_unmanaged_placements_compile_to_stable_values",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_desired::resolved_identities_enter_the_execution_sidecar_only_after_binding",
+      "file": "crates/dokploy-cli/tests/service_placement_desired.rs",
+      "test": "resolved_identities_enter_the_execution_sidecar_only_after_binding",
+      "layer": "cli-desired",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_recovery::a_replacement_create_with_an_unknown_outcome_is_adopted_on_the_new_server",
+      "file": "crates/dokploy-cli/tests/service_placement_recovery.rs",
+      "test": "a_replacement_create_with_an_unknown_outcome_is_adopted_on_the_new_server",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_recovery::a_replacement_interrupted_after_the_delete_recovers_and_then_creates_on_the_new_server",
+      "file": "crates/dokploy-cli/tests/service_placement_recovery.rs",
+      "test": "a_replacement_interrupted_after_the_delete_recovers_and_then_creates_on_the_new_server",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_recovery::an_uncertain_create_on_a_different_server_than_selected_needs_manual_intervention",
+      "file": "crates/dokploy-cli/tests/service_placement_recovery.rs",
+      "test": "an_uncertain_create_on_a_different_server_than_selected_needs_manual_intervention",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_recovery::an_uncertain_placed_create_is_adopted_only_when_the_server_matches",
+      "file": "crates/dokploy-cli/tests/service_placement_recovery.rs",
+      "test": "an_uncertain_placed_create_is_adopted_only_when_the_server_matches",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_recovery::recovery_requires_manual_intervention_when_the_selector_no_longer_resolves_uniquely",
+      "file": "crates/dokploy-cli/tests/service_placement_recovery.rs",
+      "test": "recovery_requires_manual_intervention_when_the_selector_no_longer_resolves_uniquely",
+      "layer": "cli-recovery",
+      "live": false,
+      "operations": [],
+      "requests": [
+        "GET /api/"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "recovery",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::a_changed_server_replaces_delete_before_create_unless_protected",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "a_changed_server_replaces_delete_before_create_unless_protected",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "replace",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::a_named_placement_resolves_and_a_stable_plan_has_no_changes",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "a_named_placement_resolves_and_a_stable_plan_has_no_changes",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all"
+      ],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::an_attached_identity_missing_from_the_collection_blocks_planning",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "an_attached_identity_missing_from_the_collection_blocks_planning",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::duplicate_names_stay_visible_and_response_order_never_selects_a_record",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "duplicate_names_stay_visible_and_response_order_never_selects_a_record",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::ignored_and_unmanaged_placements_perform_no_external_reads",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "ignored_and_unmanaged_placements_perform_no_external_reads",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [
+        "server.all"
+      ],
+      "requests": [
+        "GET /api/server.all"
+      ],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::removed_renamed_or_duplicated_servers_make_a_saved_plan_unusable",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "removed_renamed_or_duplicated_servers_make_a_saved_plan_unusable",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "move",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::saved_plans_bind_the_resolved_server_and_refuse_a_changed_resolution",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "saved_plans_bind_the_resolved_server_and_refuse_a_changed_resolution",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "update",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::the_local_selector_matches_a_null_server_and_an_omitted_field_is_unknown",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "the_local_selector_matches_a_null_server_and_an_omitted_field_is_unknown",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "outcome-unknown",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-cli/tests/service_placement_remote::zero_multiple_or_unreadable_matches_block_with_a_value_free_diagnostic",
+      "file": "crates/dokploy-cli/tests/service_placement_remote.rs",
+      "test": "zero_multiple_or_unreadable_matches_block_with_a_value_free_diagnostic",
+      "layer": "cli-remote",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "NAME_CANARY"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::canonical_writer_round_trips_service_selectors_deterministically",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "canonical_writer_round_trips_service_selectors_deterministically",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::debug_output_redacts_service_selector_names",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "debug_output_redacts_service_selector_names",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CANARY",
+        "SECTIONS"
+      ],
+      "category": "canary",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::every_supported_service_kind_parses_local_named_and_unmanaged_server_placement",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "every_supported_service_kind_parses_local_named_and_unmanaged_server_placement",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECTIONS"
+      ],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::external_selectors_list_the_service_server_with_its_kind",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "external_selectors_list_the_service_server_with_its_kind",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECTIONS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::generated_schema_models_the_server_field_on_every_service_kind",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "generated_schema_models_the_server_field_on_every_service_kind",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "document",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::malformed_service_selector_shapes_fail_with_location_only_parse_errors",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "malformed_service_selector_shapes_fail_with_location_only_parse_errors",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECTIONS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::service_server_can_be_ignored_by_lifecycle_rules",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "service_server_can_be_ignored_by_lifecycle_rules",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "SECTIONS"
+      ],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::service_server_diagnostics_reuse_the_selector_codes_and_never_echo_values",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "service_server_diagnostics_reuse_the_selector_codes_and_never_echo_values",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [
+        "CANARY",
+        "SECTIONS"
+      ],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::typed_accessors_expose_the_same_field_for_each_kind",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "typed_accessors_expose_the_same_field_for_each_kind",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "uncategorized",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    },
+    {
+      "id": "dokploy-config/tests/service_placement::typed_import_documents_emit_service_selectors_and_revalidate_through_the_parser",
+      "file": "crates/dokploy-config/tests/service_placement.rs",
+      "test": "typed_import_documents_emit_service_selectors_and_revalidate_through_the_parser",
+      "layer": "config",
+      "live": false,
+      "operations": [],
+      "requests": [],
+      "fixtures": [],
+      "data": [],
+      "category": "selector",
+      "status": "pending",
+      "covered_by": null,
+      "reason": null
+    }
+  ]
+}

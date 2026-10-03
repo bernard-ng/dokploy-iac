@@ -17,8 +17,14 @@ const NON_KIND_FILES: [&str; 2] = ["versions.yaml", "types.yaml"];
 
 /// Parses one spec from YAML, rejecting duplicate keys, merge keys, and anchors.
 pub fn parse_spec(source: &str) -> Result<KindSpec, String> {
+    parse_strict(source)
+}
+
+/// Parses a YAML document with the loader's strict options: no duplicate keys,
+/// merge keys, anchors, or unsupported tags, and bounded size.
+pub(crate) fn parse_strict<T: serde::de::DeserializeOwned>(source: &str) -> Result<T, String> {
     if source.len() > MAX_SPEC_BYTES {
-        return Err(format!("spec is larger than {MAX_SPEC_BYTES} bytes"));
+        return Err(format!("document is larger than {MAX_SPEC_BYTES} bytes"));
     }
     let options = serde_saphyr::options! {
         duplicate_keys: DuplicateKeyPolicy::Error,
@@ -96,6 +102,23 @@ pub fn load_dir(root: &Path) -> Result<SpecRegistry, LoadError> {
         })?;
         let spec = parse_spec(&source).map_err(|message| LoadError::Parse {
             path: path.clone(),
+            message,
+        })?;
+        specs.push(spec);
+    }
+    SpecRegistry::from_specs(specs, &BTreeSet::new()).map_err(LoadError::Invalid)
+}
+
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
+}
+
+/// The kind specs in `specs/`, compiled into this binary.
+pub fn embedded() -> Result<SpecRegistry, LoadError> {
+    let mut specs = Vec::new();
+    for (name, source) in embedded::FILES {
+        let spec = parse_spec(source).map_err(|message| LoadError::Parse {
+            path: PathBuf::from(name),
             message,
         })?;
         specs.push(spec);

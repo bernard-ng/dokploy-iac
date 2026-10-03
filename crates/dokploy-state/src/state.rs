@@ -8,13 +8,13 @@ use uuid::Uuid;
 
 use crate::sensitive::valid_environment_name;
 use crate::strict_json::reject_duplicate_keys;
-use crate::{ResourceAddress, ResourceKind, SensitiveInputs, SensitivePropertyPath, StateScope};
+use crate::{
+    DocumentId, ResourceAddress, ResourceKind, SensitiveInputs, SensitivePropertyPath, StateScope,
+};
 
-/// Format 4 records the document scope. Format 3 has no scope field and always
-/// describes a project workspace, so it decodes as one and is rewritten as
-/// format 4 by the next checkpoint.
-const CURRENT_FORMAT_VERSION: u32 = 4;
-const PROJECT_ONLY_FORMAT_VERSION: u32 = 3;
+/// Format 5 keys resources by hierarchical address and records the document the
+/// state tracks (ADR 0009). Older formats are refused, not migrated: re-import.
+const CURRENT_FORMAT_VERSION: u32 = 5;
 
 const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "password",
@@ -32,7 +32,6 @@ const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "document",
     "composefile",
     "content",
-    "command",
     "script",
 ];
 
@@ -256,74 +255,73 @@ fn validate_managed_input_object(
     fields: &serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), ManagedInputsError> {
     for (key, value) in fields {
-        let path = format!("$.{key}");
-        match key.as_str() {
-            "password" | "root_password" => {
-                if !value.is_null() {
-                    return Err(ManagedInputsError::NonNullSensitiveValue { path });
-                }
-            }
-            "environment" => validate_environment_clears(value, path)?,
-            _ => {
-                if is_sensitive_key(key) {
-                    return Err(ManagedInputsError::SensitiveField { path });
-                }
-                validate_non_sensitive_json(value, path)?;
-            }
-        }
+        validate_managed_node(key, value, format!("$.{key}"))?;
     }
 
     Ok(())
 }
 
-fn validate_environment_clears(
+/// A key that looks secret, or the environment collection, may only be *cleared*:
+/// `null`, or an object whose entries are all `null`. A value under such a key is
+/// rejected wherever it appears, so a secret cannot hide in nested JSON.
+fn validate_managed_node(
+    key: &str,
     value: &serde_json::Value,
     path: String,
 ) -> Result<(), ManagedInputsError> {
-    if value.is_null() {
-        return Ok(());
+    if is_sensitive_key(key) || key == "environment" {
+        return validate_clears_only(key, value, path);
     }
-    let Some(entries) = value.as_object() else {
-        return Err(ManagedInputsError::InvalidEnvironment { path });
-    };
-
-    for (name, value) in entries {
-        let entry_path = format!("{path}.{name}");
-        if !valid_environment_name(name) {
-            return Err(ManagedInputsError::InvalidEnvironment { path: entry_path });
-        }
-        if !value.is_null() {
-            return Err(ManagedInputsError::NonNullSensitiveValue { path: entry_path });
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_non_sensitive_json(
-    value: &serde_json::Value,
-    path: String,
-) -> Result<(), ManagedInputsError> {
     match value {
         serde_json::Value::Object(fields) => {
-            for (key, value) in fields {
-                let child_path = format!("{path}.{key}");
-                if key == "environment" || is_sensitive_key(key) {
-                    return Err(ManagedInputsError::SensitiveField { path: child_path });
-                }
-
-                validate_non_sensitive_json(value, child_path)?;
+            for (child_key, child) in fields {
+                validate_managed_node(child_key, child, format!("{path}.{child_key}"))?;
             }
         }
         serde_json::Value::Array(values) => {
-            for (index, value) in values.iter().enumerate() {
-                validate_non_sensitive_json(value, format!("{path}[{index}]"))?;
+            for (index, item) in values.iter().enumerate() {
+                if let serde_json::Value::Object(fields) = item {
+                    for (child_key, child) in fields {
+                        validate_managed_node(
+                            child_key,
+                            child,
+                            format!("{path}[{index}].{child_key}"),
+                        )?;
+                    }
+                }
             }
         }
         _ => {}
     }
 
     Ok(())
+}
+
+fn validate_clears_only(
+    key: &str,
+    value: &serde_json::Value,
+    path: String,
+) -> Result<(), ManagedInputsError> {
+    match value {
+        serde_json::Value::Null => Ok(()),
+        serde_json::Value::Object(entries) => {
+            for (name, entry) in entries {
+                let entry_path = format!("{path}.{name}");
+                if !valid_environment_name(name) {
+                    return Err(ManagedInputsError::InvalidEnvironment { path: entry_path });
+                }
+                if !entry.is_null() {
+                    return Err(ManagedInputsError::NonNullSensitiveValue { path: entry_path });
+                }
+            }
+            Ok(())
+        }
+        _ if key == "environment" => Err(ManagedInputsError::InvalidEnvironment { path }),
+        _ if matches!(key, "password" | "root_password") => {
+            Err(ManagedInputsError::NonNullSensitiveValue { path })
+        }
+        _ => Err(ManagedInputsError::SensitiveField { path }),
+    }
 }
 
 fn is_sensitive_key(key: &str) -> bool {
@@ -520,31 +518,43 @@ impl<'de> Deserialize<'de> for ResourceState {
 pub enum ResourceStateError {
     #[error("managed and sensitive inputs overlap at `{path}`")]
     OverlappingInput { path: SensitivePropertyPath },
-    #[error("resource kind `{kind}` requires containment by `{required}`")]
+    #[error("resource kind `{kind}` requires containment by {}", kinds(required))]
     MissingContainment {
         kind: ResourceKind,
-        required: ResourceKind,
+        required: &'static [ResourceKind],
     },
     #[error("resource kind `{kind}` cannot have a containment parent")]
     UnexpectedContainment { kind: ResourceKind },
-    #[error("resource kind `{kind}` requires containment by `{required}`, found `{found}`")]
+    #[error(
+        "resource kind `{kind}` requires containment by {}, found `{found}`",
+        kinds(required)
+    )]
     InvalidContainmentKind {
         kind: ResourceKind,
-        required: ResourceKind,
+        required: &'static [ResourceKind],
         found: ResourceKind,
     },
+}
+
+fn kinds(kinds: &[ResourceKind]) -> String {
+    kinds
+        .iter()
+        .map(|kind| format!("`{kind}`"))
+        .collect::<Vec<_>>()
+        .join(" or ")
 }
 
 fn validate_containment(
     kind: ResourceKind,
     containment: Option<&ResourceAddress>,
 ) -> Result<(), ResourceStateError> {
-    match (kind.containment_parent_kind(), containment) {
-        (None, None) => Ok(()),
-        (None, Some(_)) => Err(ResourceStateError::UnexpectedContainment { kind }),
-        (Some(required), None) => Err(ResourceStateError::MissingContainment { kind, required }),
-        (Some(required), Some(parent)) if parent.kind() == required => Ok(()),
-        (Some(required), Some(parent)) => Err(ResourceStateError::InvalidContainmentKind {
+    let required = kind.containment_parent_kinds();
+    match (required.is_empty(), containment) {
+        (true, None) => Ok(()),
+        (true, Some(_)) => Err(ResourceStateError::UnexpectedContainment { kind }),
+        (false, None) => Err(ResourceStateError::MissingContainment { kind, required }),
+        (false, Some(parent)) if required.contains(&parent.kind()) => Ok(()),
+        (false, Some(parent)) => Err(ResourceStateError::InvalidContainmentKind {
             kind,
             required,
             found: parent.kind(),
@@ -556,42 +566,38 @@ fn ensure_disjoint_inputs(
     managed: &ManagedInputs,
     sensitive: &SensitiveInputs,
 ) -> Result<(), ResourceStateError> {
-    let managed = managed
-        .as_json()
-        .as_object()
-        .expect("ManagedInputs guarantees an object root");
-    let environment = managed.get("environment");
-
     for path in sensitive.paths() {
-        let overlaps = if path.is_password() {
-            managed.contains_key("password")
-        } else if path.is_root_password() {
-            managed.contains_key("root_password")
-        } else if path.is_compose_document() {
-            managed.contains_key("document")
-        } else if path.is_file_content() {
-            managed.contains_key("content")
-        } else if path.is_schedule_command() {
-            managed.contains_key("command")
-        } else if path.is_schedule_script() {
-            managed.contains_key("script")
-        } else if let Some(name) = path.environment_name() {
-            match environment {
-                Some(serde_json::Value::Null) => true,
-                Some(serde_json::Value::Object(entries)) if entries.is_empty() => true,
-                Some(serde_json::Value::Object(entries)) => entries.contains_key(name),
-                _ => false,
-            }
-        } else {
-            false
-        };
-
-        if overlaps {
+        if managed_inputs_own(managed.as_json(), path) {
             return Err(ResourceStateError::OverlappingInput { path: path.clone() });
         }
     }
 
     Ok(())
+}
+
+/// Whether the managed inputs already own `path`: the path itself is present, or a
+/// collection above it is owned as a whole (cleared with `null`, or declared empty).
+fn managed_inputs_own(root: &serde_json::Value, path: &SensitivePropertyPath) -> bool {
+    let mut segments = path.segments();
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let Some(mut node) = root.get(first) else {
+        return false;
+    };
+    for segment in segments {
+        match node {
+            serde_json::Value::Null => return true,
+            serde_json::Value::Object(entries) if entries.is_empty() => return true,
+            serde_json::Value::Object(entries) => match entries.get(segment) {
+                Some(next) => node = next,
+                None => return false,
+            },
+            _ => return false,
+        }
+    }
+
+    true
 }
 
 /// One versioned state lineage bound to exactly one Dokploy instance.
@@ -600,7 +606,7 @@ fn ensure_disjoint_inputs(
 pub struct StateFile {
     format_version: u32,
     cli_version: Version,
-    scope: StateScope,
+    document: DocumentId,
     lineage: Uuid,
     serial: u64,
     instance: InstanceIdentity,
@@ -613,7 +619,7 @@ impl fmt::Debug for StateFile {
             .debug_struct("StateFile")
             .field("format_version", &self.format_version)
             .field("cli_version", &self.cli_version)
-            .field("scope", &self.scope)
+            .field("document", &self.document)
             .field("lineage", &self.lineage)
             .field("serial", &self.serial)
             .field("instance", &self.instance)
@@ -628,8 +634,7 @@ impl fmt::Debug for StateFile {
 struct SerializedStateFile {
     format_version: u32,
     cli_version: Version,
-    #[serde(default)]
-    scope: Option<StateScope>,
+    document: DocumentId,
     lineage: Uuid,
     serial: u64,
     instance: InstanceIdentity,
@@ -658,23 +663,13 @@ impl StateRevision {
 }
 
 impl StateFile {
-    /// Starts a new project-scope state lineage at serial zero.
+    /// Starts a new state lineage for one document at serial zero.
     #[must_use]
-    pub fn new(cli_version: Version, instance: InstanceIdentity) -> Self {
-        Self::new_in_scope(cli_version, instance, StateScope::Project)
-    }
-
-    /// Starts a new state lineage for one document scope at serial zero.
-    #[must_use]
-    pub fn new_in_scope(
-        cli_version: Version,
-        instance: InstanceIdentity,
-        scope: StateScope,
-    ) -> Self {
+    pub fn new(cli_version: Version, instance: InstanceIdentity, document: DocumentId) -> Self {
         Self {
             format_version: CURRENT_FORMAT_VERSION,
             cli_version,
-            scope,
+            document,
             lineage: Uuid::new_v4(),
             serial: 0,
             instance,
@@ -682,20 +677,11 @@ impl StateFile {
         }
     }
 
-    /// Starts a new project-scope lineage with an atomically imported resource set.
-    pub fn new_with_resources(
+    /// Starts a new lineage for one document with an atomically imported resource set.
+    pub fn with_resources(
         cli_version: Version,
         instance: InstanceIdentity,
-        resources: BTreeMap<ResourceAddress, ResourceState>,
-    ) -> Result<Self, StateError> {
-        Self::new_with_resources_in_scope(cli_version, instance, StateScope::Project, resources)
-    }
-
-    /// Starts a new lineage for one scope with an atomically imported resource set.
-    pub fn new_with_resources_in_scope(
-        cli_version: Version,
-        instance: InstanceIdentity,
-        scope: StateScope,
+        document: DocumentId,
         resources: BTreeMap<ResourceAddress, ResourceState>,
     ) -> Result<Self, StateError> {
         let mut identities = BTreeMap::new();
@@ -729,7 +715,7 @@ impl StateFile {
         Self::from_serialized(SerializedStateFile {
             format_version: CURRENT_FORMAT_VERSION,
             cli_version,
-            scope: Some(scope),
+            document,
             lineage: Uuid::new_v4(),
             serial: 0,
             instance,
@@ -758,10 +744,16 @@ impl StateFile {
         &self.cli_version
     }
 
+    /// Returns the document this lineage tracks.
+    #[must_use]
+    pub const fn document(&self) -> &DocumentId {
+        &self.document
+    }
+
     /// Returns the document scope whose resources this lineage tracks.
     #[must_use]
     pub const fn scope(&self) -> StateScope {
-        self.scope
+        self.document.scope()
     }
 
     /// Returns the stable state-history identifier.
@@ -828,12 +820,13 @@ impl StateFile {
             });
         }
 
-        if address.kind().scope() != self.scope {
+        if address.kind().scope() != self.scope() {
             return Err(StateError::ResourceOutOfScope {
                 address,
-                scope: self.scope,
+                scope: self.scope(),
             });
         }
+        validate_hierarchy(&address, &resource, &self.resources)?;
 
         let next_serial = self.next_serial()?;
         let previous = self.resources.insert(address, resource);
@@ -859,6 +852,10 @@ impl StateFile {
     }
 
     /// Moves one logical address atomically and rewrites every stored reference.
+    ///
+    /// Everything below the address moves with it (a prefix move, ADR 0006), so a
+    /// renamed environment carries its services and their children. The remote
+    /// identities do not change.
     pub fn move_resource(
         &mut self,
         source: &ResourceAddress,
@@ -882,25 +879,61 @@ impl StateFile {
         if self.resources.contains_key(&target) {
             return Err(StateError::ResourceAlreadyExists { address: target });
         }
+        if source.is_ancestor_of(&target) {
+            return Err(StateError::MoveIntoItself {
+                from: source.clone(),
+                to: target,
+            });
+        }
         debug_assert_eq!(source_resource.kind(), source.kind());
 
         let next_serial = self.next_serial()?;
-        let mut resources = self.resources.clone();
-        let resource = resources
-            .remove(source)
-            .expect("the move source was checked as present");
-        resources.insert(target.clone(), resource);
-        for resource in resources.values_mut() {
-            if resource.containment.as_ref() == Some(source) {
-                resource.containment = Some(target.clone());
+        let renames: BTreeMap<ResourceAddress, ResourceAddress> = self
+            .resources
+            .keys()
+            .filter(|address| address.starts_with(source))
+            .map(|address| {
+                let moved = address
+                    .rebased(source, &target)
+                    .ok_or(StateError::AddressTooLong)?;
+                Ok((address.clone(), moved))
+            })
+            .collect::<Result<_, StateError>>()?;
+        for moved in renames.values() {
+            if self.resources.contains_key(moved) && !renames.contains_key(moved) {
+                return Err(StateError::ResourceAlreadyExists {
+                    address: moved.clone(),
+                });
+            }
+        }
+
+        let rename = |address: &ResourceAddress| {
+            renames
+                .get(address)
+                .cloned()
+                .unwrap_or_else(|| address.clone())
+        };
+        let mut resources = BTreeMap::new();
+        for (address, resource) in &self.resources {
+            let mut resource = resource.clone();
+            if let Some(parent) = resource.containment.as_ref() {
+                resource.containment = Some(rename(parent));
             }
             for dependency in &mut resource.dependencies {
-                if dependency == source {
-                    *dependency = target.clone();
-                }
+                *dependency = rename(dependency);
             }
             resource.dependencies.sort();
             resource.dependencies.dedup();
+            resources.insert(rename(address), resource);
+        }
+        // A moved root may have changed its parent; a nested address always names it.
+        for (address, resource) in &mut resources {
+            if let Some(parent) = address.parent() {
+                resource.containment = Some(parent);
+            }
+        }
+        for (address, resource) in &resources {
+            validate_hierarchy(address, resource, &resources)?;
         }
 
         self.resources = resources;
@@ -949,7 +982,8 @@ impl StateFile {
             .filter_map(|(candidate, resource)| {
                 (candidate != address
                     && (resource.containment.as_ref() == Some(address)
-                        || resource.dependencies.contains(address)))
+                        || resource.dependencies.contains(address)
+                        || candidate.starts_with(address)))
                 .then_some(candidate.clone())
             })
             .collect::<Vec<_>>();
@@ -972,22 +1006,13 @@ impl StateFile {
     }
 
     fn from_serialized(state: SerializedStateFile) -> Result<Self, StateError> {
-        let scope = match (state.format_version, state.scope) {
-            // Format 3 predates scopes and only ever described a project workspace.
-            (PROJECT_ONLY_FORMAT_VERSION, None) => StateScope::Project,
-            (CURRENT_FORMAT_VERSION, Some(scope)) => scope,
-            (PROJECT_ONLY_FORMAT_VERSION | CURRENT_FORMAT_VERSION, _) => {
-                return Err(StateError::InvalidScopeField {
-                    format_version: state.format_version,
-                });
-            }
-            (found, _) => {
-                return Err(StateError::UnsupportedFormatVersion {
-                    found,
-                    supported: CURRENT_FORMAT_VERSION,
-                });
-            }
-        };
+        if state.format_version != CURRENT_FORMAT_VERSION {
+            return Err(StateError::UnsupportedFormatVersion {
+                found: state.format_version,
+                supported: CURRENT_FORMAT_VERSION,
+            });
+        }
+        let scope = state.document.scope();
 
         if state.lineage.is_nil() {
             return Err(StateError::NilLineage);
@@ -1006,19 +1031,43 @@ impl StateFile {
                     scope,
                 });
             }
+            validate_hierarchy(address, resource, &state.resources)?;
         }
 
         Ok(Self {
-            // A legacy file is upgraded in memory; the next checkpoint writes format 4.
             format_version: CURRENT_FORMAT_VERSION,
             cli_version: state.cli_version,
-            scope,
+            document: state.document,
             lineage: state.lineage,
             serial: state.serial,
             instance: state.instance,
             resources: state.resources,
         })
     }
+}
+
+/// A nested address must be contained by the resource its path names, and that
+/// resource must exist. A one-segment address has no path parent.
+fn validate_hierarchy(
+    address: &ResourceAddress,
+    resource: &ResourceState,
+    resources: &BTreeMap<ResourceAddress, ResourceState>,
+) -> Result<(), StateError> {
+    let Some(parent) = address.parent() else {
+        return Ok(());
+    };
+    if resource.containment() != Some(&parent) {
+        return Err(StateError::AddressContainmentMismatch {
+            address: address.clone(),
+        });
+    }
+    if !resources.contains_key(&parent) {
+        return Err(StateError::MissingResourceReference {
+            address: address.clone(),
+            reference: parent,
+        });
+    }
+    Ok(())
 }
 
 /// A deliberately detail-free state decoding failure.
@@ -1065,15 +1114,24 @@ pub enum StateError {
         address: ResourceAddress,
         dependents: Vec<ResourceAddress>,
     },
-    #[error("unsupported state format version {found}; this CLI supports version {supported}")]
+    #[error(
+        "unsupported state format version {found}; this CLI reads only version {supported}, so re-import the instance to create new state"
+    )]
     UnsupportedFormatVersion { found: u32, supported: u32 },
-    #[error("state format version {format_version} has an invalid scope field")]
-    InvalidScopeField { format_version: u32 },
     #[error("resource `{address}` does not belong in {scope} state")]
     ResourceOutOfScope {
         address: ResourceAddress,
         scope: StateScope,
     },
+    #[error("cannot move `{from}` below itself, to `{to}`")]
+    MoveIntoItself {
+        from: ResourceAddress,
+        to: ResourceAddress,
+    },
+    #[error("a moved address would be too long or too deep")]
+    AddressTooLong,
+    #[error("resource `{address}` is not contained by the resource its address is nested under")]
+    AddressContainmentMismatch { address: ResourceAddress },
     #[error("state serial cannot advance beyond its maximum value")]
     SerialOverflow,
     #[error("state lineage cannot be the nil UUID")]

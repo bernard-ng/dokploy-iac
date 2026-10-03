@@ -10,7 +10,7 @@ script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$script_directory/common.sh"
 
 api_key_file="$state_directory/api-key"
-fixture_directory="$repository_root/fixtures/api/live/v0.30.6"
+fixture_directory="$repository_root/fixtures/api/live/$dokploy_version"
 sanitizer="$script_directory/sanitize-fixture.jq"
 if [[ ! -s "$api_key_file" ]]; then
     echo "Run scripts/integration/up.sh before capturing the Backup contract." >&2
@@ -22,7 +22,7 @@ run_id="$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 6)"
 workspace="$state_directory/backup-contract-$run_id"
 publish_directory="$workspace/publish"
 candidate_fixture_root="$workspace/candidate/api/live"
-candidate_versioned_fixture_directory="$candidate_fixture_root/v0.30.6"
+candidate_versioned_fixture_directory="$candidate_fixture_root/$dokploy_version"
 published_fixture_backup="$workspace/published-fixtures.backup"
 secret_canary_file="$workspace/backup-canaries"
 mkdir -p "$publish_directory"
@@ -42,7 +42,7 @@ project_name="backup-sdk-contract-$run_id"
 destination_name="backup-sdk-contract-$run_id"
 updated_destination_name="backup-sdk-contract-updated-$run_id"
 tripwire_name="backup-contract-tripwire-${run_id//[^a-zA-Z0-9]/}"
-tripwire_image="dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8"
+tripwire_image="$dokploy_image"
 project_id=""
 destination_id=""
 updated_destination_id=""
@@ -215,8 +215,8 @@ publish_parent() {
 response_status="$(api_request GET settings.getDokployVersion "$workspace/version.json")"
 require_status "$response_status" 200 settings.getDokployVersion
 runtime_version="$(jq -er '.' "$workspace/version.json")"
-if [[ "$runtime_version" != v0.30.6 ]]; then
-    echo "Expected Dokploy v0.30.6, received $runtime_version." >&2
+if [[ "$runtime_version" != "$dokploy_version" ]]; then
+    echo "Expected Dokploy $dokploy_version, received $runtime_version." >&2
     exit 1
 fi
 
@@ -399,7 +399,7 @@ jq --sort-keys --indent 2 --from-file "$sanitizer" "$workspace/project-one.backu
     >"$publish_directory/project-one.backup-deleted.owner.json"
 
 jq -n --sort-keys --indent 2 \
-    --arg capturedAt "2026-10-01" --arg role owner --arg version "$runtime_version" \
+    --arg capturedAt "$captured_at" --arg role owner --arg version "$runtime_version" \
     --arg image "$tripwire_image" '
     {
         capturedAt:$capturedAt,role:$role,version:$version,image:$image,sanitized:true,

@@ -10,7 +10,10 @@ pub struct DokployError {
 }
 
 impl DokployError {
-    pub(crate) fn new(status: u16, code: String, message: String, issues: Vec<String>) -> Self {
+    /// Builds an error as Dokploy would report it; transports other than HTTP, such as the
+    /// simulator, use this to answer a request with a rejection.
+    #[must_use]
+    pub fn new(status: u16, code: String, message: String, issues: Vec<String>) -> Self {
         Self {
             status,
             code,
