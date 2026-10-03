@@ -68,6 +68,15 @@ pub struct PropertyInfo {
     pub has_default: bool,
     /// The regular expression a text value must match, when the spec gives one.
     pub pattern: Option<String>,
+    /// For a member of a union, the arm it belongs to (`github` for `source.github.owner`).
+    pub arm: Option<String>,
+    /// Whether this is the tag of a union (`source.type`).
+    pub union_tag: bool,
+    /// For a member of a union, the response key that holds the union's tag, which says whether
+    /// the arm of the member is the one Dokploy holds.
+    pub tag_api: Option<String>,
+    /// What to send when a write needs the property and nothing else supplies it.
+    pub fallback: Option<serde_json::Value>,
     /// The response key or JSON pointer the value is read from: the field's `api`, or its own
     /// name. A struct member is a key of its own, not nested in the struct, and an entry of a
     /// keyed collection has its root's.
@@ -117,6 +126,8 @@ impl PropertyInfo {
     #[must_use]
     pub fn is_required_on_create(&self) -> bool {
         self.shape == PathShape::Atomic
+            && self.arm.is_none()
+            && !self.union_tag
             && !self.nullable
             && !self.has_default
             && matches!(
@@ -149,8 +160,8 @@ pub enum PathError {
         /// The path that cannot be descended into.
         prefix: String,
     },
-    /// A union arm member was addressed; the union is planned as one value.
-    #[error("`{prefix}` is a union; plan it as one value, not by arm member")]
+    /// The path names a union without its tag or one of its members.
+    #[error("`{prefix}` is a union; name its tag, or a member as `{prefix}.<arm>.<member>`")]
     UnionMember {
         /// The union's path.
         prefix: String,
@@ -278,6 +289,10 @@ fn base(
         },
         has_default: field.default.is_some(),
         pattern: field.pattern.clone(),
+        arm: None,
+        union_tag: false,
+        tag_api: None,
+        fallback: field.fallback.clone(),
         api: field.api.clone().unwrap_or_else(|| name.to_owned()),
     }
 }
@@ -295,6 +310,9 @@ fn resolve_inside(
     let Some(rest) = rest else {
         if is_per_member(parsed, granularity) {
             return Err(PathError::NeedsMember { prefix });
+        }
+        if matches!(parsed, FieldType::Union { .. }) {
+            return Err(PathError::UnionMember { prefix });
         }
         let name = prefix.rsplit('.').next().unwrap_or(&prefix).to_owned();
         let mut info = base(spec, prefix, &name, field, parsed, inherited);
@@ -350,10 +368,105 @@ fn resolve_inside(
             Some(effective),
         );
     }
-    if matches!(parsed, FieldType::Union { .. }) {
-        return Err(PathError::UnionMember { prefix });
+    if let FieldType::Union { tag } = parsed {
+        return resolve_union(spec, &prefix, field, tag, rest, full, inherited);
     }
     Err(PathError::NotComposite { prefix })
+}
+
+/// A path below a union: its tag (`source.type`) or a member of one arm (`source.github.owner`).
+fn resolve_union(
+    spec: &KindSpec,
+    prefix: &str,
+    field: &crate::model::Field,
+    tag: &str,
+    rest: &str,
+    full: &str,
+    inherited: Option<Mutability>,
+) -> Result<PropertyInfo, PathError> {
+    let name = prefix.rsplit('.').next().unwrap_or(prefix);
+    if rest == tag {
+        return Ok(union_tag_info(spec, prefix, name, field, tag, inherited));
+    }
+    let Some((arm, member)) = rest.split_once('.') else {
+        return Err(PathError::UnknownMember {
+            prefix: prefix.to_owned(),
+            member: rest.to_owned(),
+        });
+    };
+    let members = field
+        .arms
+        .get(arm)
+        .ok_or_else(|| PathError::UnknownMember {
+            prefix: prefix.to_owned(),
+            member: arm.to_owned(),
+        })?;
+    let member_field = members
+        .get(member)
+        .ok_or_else(|| PathError::UnknownMember {
+            prefix: format!("{prefix}.{arm}"),
+            member: member.to_owned(),
+        })?;
+    let member_type =
+        parse_type(&member_field.ty).map_err(|_| PathError::Malformed(full.to_owned()))?;
+    Ok(union_member_info(
+        spec,
+        prefix,
+        (arm, field.api.as_deref().unwrap_or(name)),
+        member,
+        member_field,
+        &member_type,
+        inherited,
+    ))
+}
+
+fn union_tag_info(
+    spec: &KindSpec,
+    prefix: &str,
+    name: &str,
+    field: &crate::model::Field,
+    tag: &str,
+    inherited: Option<Mutability>,
+) -> PropertyInfo {
+    let arms: Vec<String> = field.arms.keys().cloned().collect();
+    let mut info = base(
+        spec,
+        format!("{prefix}.{tag}"),
+        name,
+        field,
+        &FieldType::Enum(arms),
+        inherited,
+    );
+    info.union_tag = true;
+    info.nullable = false;
+    info.has_default = false;
+    info.rules = ValueRules::default();
+    info.fallback = None;
+
+    info
+}
+
+fn union_member_info(
+    spec: &KindSpec,
+    prefix: &str,
+    (arm, tag_api): (&str, &str),
+    member: &str,
+    member_field: &crate::model::Field,
+    member_type: &FieldType,
+    inherited: Option<Mutability>,
+) -> PropertyInfo {
+    let mut info = base(
+        spec,
+        format!("{prefix}.{arm}.{member}"),
+        member,
+        member_field,
+        member_type,
+        inherited,
+    );
+    info.arm = Some(arm.to_owned());
+    info.tag_api = Some(tag_api.to_owned());
+
+    info
 }
 
 fn validate_key(parsed: &FieldType, key: &str, full: &str) -> Result<(), PathError> {
@@ -394,6 +507,30 @@ fn collect(
     inherited: Option<Mutability>,
     found: &mut Vec<PropertyInfo>,
 ) {
+    if let FieldType::Union { tag } = parsed {
+        let effective = match (inherited, field.mutability) {
+            (Some(parent), Mutability::InPlace) => parent,
+            (_, own) => own,
+        };
+        let name = path.rsplit('.').next().unwrap_or(path);
+        found.push(union_tag_info(spec, path, name, field, tag, inherited));
+        for (arm, members) in &field.arms {
+            for (member, member_field) in members {
+                if let Ok(member_type) = parse_type(&member_field.ty) {
+                    found.push(union_member_info(
+                        spec,
+                        path,
+                        (arm, field.api.as_deref().unwrap_or(name)),
+                        member,
+                        member_field,
+                        &member_type,
+                        Some(effective),
+                    ));
+                }
+            }
+        }
+        return;
+    }
     if is_per_member(parsed, field.granularity) {
         let effective = match (inherited, field.mutability) {
             (Some(parent), Mutability::InPlace) => parent,

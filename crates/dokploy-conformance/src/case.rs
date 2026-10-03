@@ -38,6 +38,9 @@ pub(crate) type Values = BTreeMap<String, Val>;
 #[derive(Clone, Debug)]
 pub(crate) struct FieldCase {
     pub(crate) name: String,
+    /// Where the document writes it: the name, without the arm of a union member
+    /// (`source.owner` for `source.github.owner`).
+    pub(crate) doc: String,
     /// The request and response key.
     pub(crate) wire: String,
     pub(crate) mutability: Mutability,
@@ -123,6 +126,21 @@ impl Case {
             if info.mutability == Mutability::Computed {
                 continue;
             }
+            // A union is exercised through one arm: the first the spec names.
+            let first_arm = |field: &str| {
+                spec.fields
+                    .get(field)
+                    .and_then(|f| f.arms.keys().next().cloned())
+            };
+            if let Some(arm) = &info.arm
+                && first_arm(info.field_name()).as_ref() != Some(arm)
+            {
+                continue;
+            }
+            let doc = match &info.arm {
+                Some(arm) => name.replacen(&format!(".{arm}."), ".", 1),
+                None => name.clone(),
+            };
             let secret =
                 info.class != ValueClass::Public || info.mutability == Mutability::WriteOnly;
             let group = spec.write.iter().find_map(|group| match group {
@@ -131,10 +149,18 @@ impl Case {
                 {
                     Some((op.clone(), *shape, fields.clone()))
                 }
+                WriteGroup::ByVariant {
+                    by_variant,
+                    ops,
+                    shape,
+                } if by_variant == info.field_name() => first_arm(by_variant)
+                    .and_then(|arm| ops.get(&arm))
+                    .map(|op| (op.clone(), *shape, vec![by_variant.clone()])),
                 _ => None,
             });
             let field_case = |a: Val, b: Option<Val>, secret: bool, default_key: bool| FieldCase {
                 name: name.clone(),
+                doc: doc.clone(),
                 wire: info.request_key().to_owned(),
                 mutability: info.mutability,
                 secret,
@@ -202,6 +228,8 @@ impl Case {
                 .fields
                 .get(&name)
                 .is_some_and(|field| field.default.as_deref() == Some("key"));
+            // The arm cannot be switched by a second value: its members would have to change too.
+            let b = if info.union_tag { None } else { b };
             let Some(a) = a else {
                 if dokploy_engine::required_at_creation(spec, &info) {
                     return Err(format!(
@@ -221,6 +249,28 @@ impl Case {
             fields,
             ancestors,
         })
+    }
+
+    /// Every key a full write group of these fields may carry: the keys of the fields, of the
+    /// members of a struct, and of the members of every arm of a union.
+    pub(crate) fn group_wires(&self, fields: &[String]) -> Vec<String> {
+        let mut wires = Vec::new();
+        for name in fields {
+            let Some(field) = self.spec.fields.get(name) else {
+                continue;
+            };
+            wires.push(field.request_name(name).to_owned());
+            for (member, member_field) in &field.members {
+                wires.push(member_field.request_name(member).to_owned());
+            }
+            for members in field.arms.values() {
+                for (member, member_field) in members {
+                    wires.push(member_field.request_name(member).to_owned());
+                }
+            }
+        }
+
+        wires
     }
 
     /// The cases of one field of a write group: the field itself, or the members of a struct.
@@ -394,7 +444,12 @@ impl Case {
                         .join(", ")
                 ),
             };
-            match name.split_once('.') {
+            let doc = self
+                .fields
+                .iter()
+                .find(|f| f.name == *name)
+                .map_or(name.as_str(), |f| f.doc.as_str());
+            match doc.split_once('.') {
                 Some((field, member)) => members
                     .entry(field)
                     .or_default()

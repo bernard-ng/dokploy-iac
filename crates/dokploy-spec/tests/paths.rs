@@ -129,15 +129,53 @@ fn an_env_field_is_a_collection_with_entries_named_by_the_document() {
 }
 
 #[test]
-fn a_union_is_one_value_and_its_arms_are_not_properties() {
+fn a_union_is_planned_per_member_by_its_tag_and_the_members_of_each_arm() {
     let registry = registry();
-    let source = registry.property("application", "source").unwrap();
-    assert_eq!(source.shape, PathShape::Atomic);
-    assert!(matches!(source.ty, FieldType::Union { .. }));
+
+    let tag = registry.property("application", "source.type").unwrap();
+    assert!(tag.union_tag && tag.arm.is_none());
+    assert_eq!(tag.shape, PathShape::Atomic);
+    assert!(matches!(&tag.ty, FieldType::Enum(arms) if arms.iter().any(|arm| arm == "github")));
+    assert!(
+        !tag.is_required_on_create(),
+        "the create operation does not need it"
+    );
+
+    let owner = registry
+        .property("application", "source.github.owner")
+        .unwrap();
+    assert_eq!(owner.arm.as_deref(), Some("github"));
+    assert_eq!(owner.api, "owner");
+    assert!(
+        !owner.is_required_on_create(),
+        "a member is needed only by its arm"
+    );
+    let password = registry
+        .property("application", "source.docker.password")
+        .unwrap();
+    assert!(password.is_sensitive());
+
+    // The union itself is not a property, and nothing outside its arms is a member.
     assert!(matches!(
-        registry.property("application", "source.github.repository"),
+        registry.property("application", "source"),
         Err(PathError::UnionMember { .. })
     ));
+    assert!(matches!(
+        registry.property("application", "source.github.nope"),
+        Err(PathError::UnknownMember { .. })
+    ));
+    assert!(matches!(
+        registry.property("application", "source.nope.owner"),
+        Err(PathError::UnknownMember { .. })
+    ));
+
+    // Listing the properties gives the tag and every member of every arm.
+    let spec = registry.get("application").unwrap();
+    let paths: Vec<String> = spec.properties().into_iter().map(|p| p.path).collect();
+    for expected in ["source.type", "source.github.owner", "source.docker.image"] {
+        assert!(paths.iter().any(|path| path == expected), "{paths:?}");
+    }
+    assert!(!paths.iter().any(|path| path == "source"));
 }
 
 #[test]
@@ -218,7 +256,8 @@ fn properties_lists_every_addressable_path_without_keys() {
             "mode",
             "name",
             "owner",
-            "source",
+            "source.one.path",
+            "source.type",
             "tags",
             "token",
             "tuning"

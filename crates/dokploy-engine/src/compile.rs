@@ -326,17 +326,30 @@ impl Compiler<'_> {
                 .lifecycle
                 .protect
                 .map_or(ProtectionIntent::Unmanaged, ProtectionIntent::Set);
-            let selectors = resource
-                .fields
-                .iter()
-                .filter_map(|(name, field)| {
-                    let Value::Selector(selector) = &field.value else {
-                        return None;
-                    };
-                    let path = PropertyPath::from_spec(spec, name).ok()?;
-                    (!ignored.contains(&path)).then(|| (path, selector_json(selector)))
-                })
-                .collect();
+            let mut selectors = Vec::new();
+            for (name, field) in &resource.fields {
+                let found: Vec<(String, &dokploy_model::Selector)> = match &field.value {
+                    Value::Selector(selector) => vec![(name.clone(), selector)],
+                    // A selector can be a member of the union's arm.
+                    Value::Union { tag, fields } => fields
+                        .iter()
+                        .filter_map(|(member, value)| match value {
+                            Value::Selector(selector) => {
+                                Some((format!("{name}.{tag}.{member}"), selector))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                for (dotted, selector) in found {
+                    if let Ok(path) = PropertyPath::from_spec(spec, &dotted)
+                        && !ignored.contains(&path)
+                    {
+                        selectors.push((path, selector_json(selector)));
+                    }
+                }
+            }
             desired.insert(
                 address.clone(),
                 DesiredResource::new(properties)
@@ -537,6 +550,44 @@ impl Compiler<'_> {
                             unsupported("holds a secret inside a collection, which is not supported yet")
                         })?;
                         properties.insert(path(&dotted)?, comparable(json));
+                    }
+                }
+                // A union is planned per member: its tag, and the members of the arm it names.
+                Value::Union { tag, fields } if matches!(ty, FieldType::Union { .. }) => {
+                    let FieldType::Union { tag: tag_name } = &ty else {
+                        unreachable!("matched above");
+                    };
+                    properties.insert(
+                        path(&format!("{name}.{tag_name}"))?,
+                        comparable(serde_json::Value::String(tag.clone())),
+                    );
+                    for (member, value) in fields {
+                        let dotted = format!("{name}.{tag}.{member}");
+                        let member_type = spec_field
+                            .arms
+                            .get(tag)
+                            .and_then(|arm| arm.get(member))
+                            .and_then(|m| parse_type(&m.ty).ok())
+                            .unwrap_or(FieldType::Text);
+                        match value {
+                            Value::Null => {
+                                properties.insert(path(&dotted)?, OwnedValue::Null);
+                            }
+                            Value::Source(source) => {
+                                let bytes = self.read(address, &dotted, source)?;
+                                properties
+                                    .insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
+                                secrets.insert((address.clone(), dotted), bytes);
+                            }
+                            other => {
+                                let json = canonical(other, &member_type).map_err(
+                                    |NotComparable::HoldsSecret| {
+                                        unsupported("holds a secret that is not a source")
+                                    },
+                                )?;
+                                properties.insert(path(&dotted)?, comparable(json));
+                            }
+                        }
                     }
                 }
                 Value::Map(members)

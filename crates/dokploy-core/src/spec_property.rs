@@ -55,7 +55,8 @@ pub(crate) fn observation_valid(
     }
     match observation {
         PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
-        PropertyObservation::KnownAbsent => info.nullable,
+        // A column of an arm Dokploy never saved is null whatever the arm requires of a save.
+        PropertyObservation::KnownAbsent => info.nullable || info.arm.is_some(),
         PropertyObservation::Known(value) => {
             if info.shape == PathShape::CollectionRoot {
                 value.as_json().is_object()
@@ -183,6 +184,29 @@ fn project_value(
                     member_value,
                     properties,
                 )?;
+            }
+            return Ok(());
+        }
+        // A union is stored as its tag and, under the name of the arm, the members it owns.
+        Err(PathError::UnionMember { .. }) => {
+            let Some(members) = value.as_object().filter(|members| !members.is_empty()) else {
+                return Err(invalid_value());
+            };
+            for (key, member_value) in members {
+                match member_value {
+                    Value::Object(arm_members) => {
+                        for (member, value) in arm_members {
+                            project_value(
+                                address,
+                                spec,
+                                &format!("{path}.{key}.{member}"),
+                                value,
+                                properties,
+                            )?;
+                        }
+                    }
+                    tag => project_value(address, spec, &format!("{path}.{key}"), tag, properties)?,
+                }
             }
             return Ok(());
         }

@@ -293,7 +293,8 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 fresh.as_ref(),
                 self.inputs(),
             )?;
-            bodies.push(OperationRequest::new(&group.operation).body(body));
+            let operation = request::group_operation(spec, address, checkpoint, group)?;
+            bodies.push(OperationRequest::new(&operation).body(body));
         }
 
         let resource = checkpoint

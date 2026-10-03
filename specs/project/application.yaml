@@ -138,20 +138,56 @@ fields:
     type: bool
     needs_deploy: true
   source:
+    api: sourceType
     type: union(type)
     needs_deploy: true
+    doc: Where the code comes from. A member left out keeps what Dokploy holds while the arm stays the same.
     arms:
       github:
-        provider: { api: githubId, type: selector(git_provider) }
-        owner: { type: text }
-        repository: { type: text }
-        branch: { type: text }
-        build_path: { api: buildPath, type: text }
-        trigger_type: { api: triggerType, type: "enum[push, tag]" }
+        provider: { api: githubId, type: selector(git_provider), nullable: true }
+        owner: { type: text, nullable: true }
+        repository: { type: text, nullable: true }
+        branch: { type: text, min_len: 1 }
+        build_path: { api: buildPath, type: text, nullable: true, fallback: "/" }
+        trigger_type: { api: triggerType, type: "enum[push, tag]", fallback: push }
         enable_submodules: { api: enableSubmodules, type: bool }
-        watch_paths: { api: watchPaths, type: "list<text>" }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      gitlab:
+        provider: { api: gitlabId, type: selector(git_provider), nullable: true }
+        project_id: { api: gitlabProjectId, type: int, nullable: true }
+        owner: { api: gitlabOwner, type: text, nullable: true }
+        repository: { api: gitlabRepository, type: text, nullable: true }
+        path_namespace: { api: gitlabPathNamespace, type: text, nullable: true }
+        branch: { api: gitlabBranch, type: text, min_len: 1 }
+        build_path: { api: gitlabBuildPath, type: text, nullable: true, fallback: "/" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      bitbucket:
+        provider: { api: bitbucketId, type: selector(git_provider), nullable: true }
+        owner: { api: bitbucketOwner, type: text, nullable: true }
+        repository: { api: bitbucketRepository, type: text, nullable: true }
+        repository_slug: { api: bitbucketRepositorySlug, type: text, nullable: true }
+        branch: { api: bitbucketBranch, type: text, min_len: 1 }
+        build_path: { api: bitbucketBuildPath, type: text, nullable: true, fallback: "/" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      gitea:
+        provider: { api: giteaId, type: selector(git_provider), nullable: true }
+        owner: { api: giteaOwner, type: text, nullable: true }
+        repository: { api: giteaRepository, type: text, nullable: true }
+        branch: { api: giteaBranch, type: text, min_len: 1 }
+        build_path: { api: giteaBuildPath, type: text, nullable: true, fallback: "/" }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
+      git:
+        url: { api: customGitUrl, type: text, nullable: true }
+        branch: { api: customGitBranch, type: text, min_len: 1 }
+        build_path: { api: customGitBuildPath, type: text, nullable: true, fallback: "/" }
+        ssh_key: { api: customGitSSHKeyId, type: selector(ssh_key), nullable: true }
+        enable_submodules: { api: enableSubmodules, type: bool }
+        watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
       docker:
-        image: { api: dockerImage, type: text }
+        image: { api: dockerImage, type: text, nullable: true }
         registry_url: { api: registryUrl, type: text, nullable: true }
         username: { type: text, nullable: true }
         password:
@@ -167,8 +203,13 @@ write:
     fields: [environment, build_args, build_secrets, create_env_file]
     shape: full
   - by_variant: source
+    shape: full
     ops:
       github: application.saveGithubProvider
+      gitlab: application.saveGitlabProvider
+      bitbucket: application.saveBitbucketProvider
+      gitea: application.saveGiteaProvider
+      git: application.saveGitProvider
       docker: application.saveDockerProvider
 children:
   - { kind: mount, section: mounts }
@@ -177,5 +218,4 @@ children:
   - { kind: port, section: ports }
   - { kind: security, section: security }
 ledger:
-  derived: [sourceType]
   readonly: [createdAt]

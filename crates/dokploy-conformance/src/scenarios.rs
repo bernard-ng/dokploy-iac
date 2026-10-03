@@ -55,10 +55,41 @@ fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
     };
     let mut operations = vec![create];
     for group in &spec.write {
-        if let dokploy_spec::WriteGroup::Op { op, fields, .. } = group
-            && fields.iter().any(|name| deferred(name))
-        {
-            operations.push(op.clone());
+        match group {
+            dokploy_spec::WriteGroup::Op { op, fields, .. }
+                if fields.iter().any(|name| deferred(name)) =>
+            {
+                operations.push(op.clone());
+            }
+            // The operation of the arm the values name: the members are what the create left.
+            dokploy_spec::WriteGroup::ByVariant {
+                by_variant, ops, ..
+            } => {
+                let arm = values.iter().find_map(|(name, value)| {
+                    let tag = w.case.fields.iter().find(|f| &f.name == name)?;
+                    (name.starts_with(&format!("{by_variant}.")) && tag.group.is_some())
+                        .then_some(())?;
+                    match value {
+                        crate::case::Val::Json(serde_json::Value::String(arm))
+                            if ops.contains_key(arm) =>
+                        {
+                            Some(arm.clone())
+                        }
+                        _ => None,
+                    }
+                });
+                let members_deferred = values.keys().any(|name| {
+                    name.starts_with(&format!("{by_variant}."))
+                        && w.case
+                            .fields
+                            .iter()
+                            .any(|f| &f.name == name && f.name.matches('.').count() == 2)
+                });
+                if let (Some(arm), true) = (arm, members_deferred) {
+                    operations.push(ops[&arm].clone());
+                }
+            }
+            dokploy_spec::WriteGroup::Op { .. } => {}
         }
     }
 
@@ -192,23 +223,26 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
     );
     let body = w.sim.mutations()[0].body().cloned().unwrap_or(Json::Null);
     let id = &w.case.spec.api.id;
-    let allowed: Vec<&str> = std::iter::once(id.as_str())
-        .chain(match shape {
-            Shape::Partial => vec![field.wire.as_str()],
-            Shape::Full => group_fields
-                .iter()
-                .flat_map(|name| w.case.cases_of(name))
-                .map(|case| case.wire.as_str())
-                .collect(),
-        })
-        .collect();
+    let mut allowed: Vec<String> = vec![id.clone()];
+    match shape {
+        Shape::Partial => allowed.push(field.wire.clone()),
+        Shape::Full => {
+            allowed.extend(
+                group_fields
+                    .iter()
+                    .flat_map(|name| w.case.cases_of(name))
+                    .map(|case| case.wire.clone()),
+            );
+            allowed.extend(w.case.group_wires(&group_fields));
+        }
+    }
     for key in body
         .as_object()
         .map(|o| o.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default()
     {
         ensure!(
-            allowed.contains(&key.as_str()),
+            allowed.contains(&key),
             "the update sent `{key}`, which is outside its write group"
         );
     }

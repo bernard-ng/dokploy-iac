@@ -1,9 +1,9 @@
 //! A project kind passes the same suite as a settings kind: ancestors are seeded, the create
 //! carries what the create operation accepts, and the rest is written by an update right after.
 //!
-//! The repository's `application` spec is partial until the composite values (union, env) are
-//! written by the executor, so this runs a trimmed copy of it: the same operations and fields
-//! minus the union. It goes away when `application` itself conforms.
+//! The `application` is exercised once per arm of its `source` union: the suite writes through
+//! one arm at a time, so each arm's operation and members (and the secret of the Docker arm)
+//! get the whole suite.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -15,29 +15,38 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn trimmed_application() -> KindSpec {
+/// The repository's application with only one arm of its source.
+fn application_with_arm(arm: &str) -> KindSpec {
     let text = std::fs::read_to_string(root().join("specs/project/application.yaml"))
         .expect("the spec exists");
     let mut spec = parse_spec(&text).expect("the spec parses");
     spec.coverage = dokploy_spec::Coverage::Full;
-    spec.fields.remove("source");
-    spec.write.retain(|group| match group {
-        dokploy_spec::WriteGroup::Op { fields, .. } => !fields.iter().any(|f| f == "source"),
-        dokploy_spec::WriteGroup::ByVariant { .. } => false,
+    let source = spec.fields.get_mut("source").expect("a source");
+    source.arms.retain(|name, _| name == arm);
+    assert_eq!(source.arms.len(), 1, "`{arm}` is an arm of the source");
+    spec.write.iter_mut().for_each(|group| {
+        if let dokploy_spec::WriteGroup::ByVariant { ops, .. } = group {
+            ops.retain(|name, _| name == arm);
+        }
     });
-    spec.ledger.derived.clear();
     spec
 }
 
 #[tokio::test]
-async fn an_application_conforms_with_a_follow_up_update_after_its_create() {
+async fn an_application_conforms_through_each_arm_of_its_source() {
+    for arm in ["github", "gitlab", "bitbucket", "gitea", "git", "docker"] {
+        conforms_through(arm).await;
+    }
+}
+
+async fn conforms_through(arm: &str) {
     let repository = load_dir(&root().join("specs")).expect("repository specs are valid");
     let mut kinds: Vec<KindSpec> = repository
         .kinds()
         .filter(|spec| spec.kind != "application")
         .cloned()
         .collect();
-    kinds.push(trimmed_application());
+    kinds.push(application_with_arm(arm));
     let specs = SpecRegistry::from_specs(kinds, &BTreeSet::new()).expect("consistent specs");
     let suite = Suite::new(specs, root().join("fixtures/api/live/v0.30.6"));
 

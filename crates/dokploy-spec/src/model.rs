@@ -354,6 +354,10 @@ pub struct Field {
     /// A default: `key` means the document key.
     #[serde(default)]
     pub default: Option<String>,
+    /// What to send when a write needs this field, the document leaves it out, and Dokploy holds
+    /// nothing to send instead (the trigger of a new Git source is `push`).
+    #[serde(default)]
+    pub fallback: Option<serde_json::Value>,
     /// Minimum text length.
     #[serde(default)]
     pub min_len: Option<u64>,

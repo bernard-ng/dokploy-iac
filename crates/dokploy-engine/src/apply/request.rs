@@ -231,11 +231,16 @@ pub(crate) fn create_request(
             if body.contains_key(required.name()) {
                 continue;
             }
-            let nullable = spec
+            let spec_field = spec
                 .fields
                 .iter()
                 .find(|(name, field)| field.request_name(name) == required.name())
-                .is_some_and(|(_, field)| field.nullable);
+                .map(|(_, field)| field);
+            if let Some(fallback) = spec_field.and_then(|field| field.fallback.as_ref()) {
+                body.insert(required.name().to_owned(), fallback.clone());
+                continue;
+            }
+            let nullable = spec_field.is_some_and(|field| field.nullable);
             if !nullable {
                 return Err(ApplyError::MissingRequired {
                     address: address.clone(),
@@ -254,7 +259,11 @@ pub(crate) fn create_request(
 
 /// One update request of a write group: the operation, and the fields it carries.
 pub(crate) struct GroupRequest {
+    /// The operation, or empty for a group whose operation depends on the union's arm.
     pub(crate) operation: String,
+    /// For a group written by a different operation per arm of a union: the union field, and the
+    /// operation of each arm.
+    pub(crate) variants: Option<(String, BTreeMap<String, String>)>,
     pub(crate) shape: Shape,
     /// The document field names of the group that changed.
     pub(crate) changed: Vec<String>,
@@ -281,6 +290,29 @@ pub(crate) fn groups(
     }
     let mut requests = Vec::new();
     for group in &spec.write {
+        if let WriteGroup::ByVariant {
+            by_variant,
+            ops,
+            shape,
+        } = group
+        {
+            if names.contains(by_variant) {
+                requests.push(GroupRequest {
+                    operation: String::new(),
+                    variants: Some((by_variant.clone(), ops.clone())),
+                    shape: *shape,
+                    changed: vec![by_variant.clone()],
+                    written: written
+                        .iter()
+                        .filter(|path| path.info().field_name() == by_variant)
+                        .map(|path| path.to_string())
+                        .collect(),
+                    fields: vec![by_variant.clone()],
+                    reads_fresh: true,
+                });
+            }
+            continue;
+        }
         let WriteGroup::Op { op, fields, shape } = group else {
             continue;
         };
@@ -298,6 +330,7 @@ pub(crate) fn groups(
             });
             requests.push(GroupRequest {
                 operation: op.clone(),
+                variants: None,
                 shape: *shape,
                 written: written
                     .iter()
@@ -326,6 +359,131 @@ pub(crate) fn groups(
     Ok(requests)
 }
 
+/// The operation of a group: its own, or the one for the arm of the union the checkpoint names.
+pub(crate) fn group_operation(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    group: &GroupRequest,
+) -> Result<String, ApplyError> {
+    let Some((field, ops)) = &group.variants else {
+        return Ok(group.operation.clone());
+    };
+    let unsupported = |reason: &'static str| ApplyError::Unsupported {
+        address: address.clone(),
+        property: Some(field.clone()),
+        reason,
+    };
+    let tag = variant_tag(spec, address, checkpoint, field)?;
+
+    ops.get(&tag)
+        .cloned()
+        .ok_or_else(|| unsupported("has an arm that no operation writes"))
+}
+
+/// The arm of a union the checkpoint holds.
+fn variant_tag(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    field: &str,
+) -> Result<String, ApplyError> {
+    let unsupported = |reason: &'static str| ApplyError::Unsupported {
+        address: address.clone(),
+        property: Some(field.to_owned()),
+        reason,
+    };
+    let tag_name = match spec.fields.get(field).and_then(|f| parse_type(&f.ty).ok()) {
+        Some(FieldType::Union { tag }) => tag,
+        _ => return Err(unsupported("is not a union")),
+    };
+    let path = PropertyPath::from_spec(spec, &format!("{field}.{tag_name}"))
+        .map_err(|_| unsupported("has no tag"))?;
+    match checkpoint.property(&path) {
+        Some(CheckpointValueRef::NonSensitive(Json::String(tag))) => Ok(tag.clone()),
+        _ => Err(unsupported("does not say which arm it is")),
+    }
+}
+
+/// The body of a write whose operation depends on the arm of a union: the id, and every member
+/// the arm's operation takes. A member the document owns is sent as it says; one it leaves out
+/// keeps what Dokploy holds when the arm does not change, and otherwise is the spec's fallback,
+/// `null` where the operation takes one, or an error naming it.
+fn variant_body(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    group: &GroupRequest,
+    remote_id: &str,
+    fresh: Option<&Json>,
+    inputs: Inputs<'_>,
+) -> Result<Json, ApplyError> {
+    let (field_name, _) = group.variants.as_ref().expect("a union group");
+    let tag = variant_tag(spec, address, checkpoint, field_name)?;
+    let operation = group_operation(spec, address, checkpoint, group)?;
+    let field = spec
+        .fields
+        .get(field_name)
+        .expect("a write group names fields of its kind");
+    let arm = field
+        .arms
+        .get(&tag)
+        .expect("a checkpoint names an arm of the union");
+    let held_tag_key = field.request_name(field_name);
+    let same_arm = fresh
+        .and_then(|fresh| fresh.get(held_tag_key))
+        .and_then(Json::as_str)
+        == Some(tag.as_str());
+    let contract = request_contract(&operation);
+
+    let mut body = Map::new();
+    body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
+    for (member, member_field) in arm {
+        let dotted = format!("{field_name}.{tag}.{member}");
+        let path = PropertyPath::from_spec(spec, &dotted).map_err(|_| ApplyError::Unsupported {
+            address: address.clone(),
+            property: Some(dotted.clone()),
+            reason: "is not a property of the kind",
+        })?;
+        let wire = member_field.request_name(member).to_owned();
+        if checkpoint.property(&path).is_some() {
+            body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
+            continue;
+        }
+        let required = contract
+            .and_then(|contract| contract.body_field(&wire))
+            .is_some_and(|f| f.required());
+        if path.info().is_sensitive() {
+            // It cannot be read back, so an update that must send it needs its source.
+            if required {
+                return Err(ApplyError::NeedsSecret {
+                    address: address.clone(),
+                    property: dotted,
+                });
+            }
+            continue;
+        }
+        let held = same_arm
+            .then(|| fresh.and_then(|fresh| fresh.get(&wire)))
+            .flatten();
+        if let Some(held) = held {
+            body.insert(wire, held.clone());
+        } else if let Some(fallback) = &member_field.fallback {
+            body.insert(wire, fallback.clone());
+        } else if required {
+            if !member_field.nullable {
+                return Err(ApplyError::MissingRequired {
+                    address: address.clone(),
+                    field: dotted,
+                });
+            }
+            body.insert(wire, Json::Null);
+        }
+    }
+
+    Ok(Json::Object(body))
+}
+
 /// The body of one group's update. A `partial` group sends the id and the changed fields; a
 /// `full` group sends every field of the group from a fresh read, overlaid with the changes. A
 /// struct planned per member contributes its members, each under the key of its own; an
@@ -339,6 +497,9 @@ pub(crate) fn group_body(
     fresh: Option<&Json>,
     inputs: Inputs<'_>,
 ) -> Result<Json, ApplyError> {
+    if group.variants.is_some() {
+        return variant_body(spec, address, checkpoint, group, remote_id, fresh, inputs);
+    }
     let mut body = Map::new();
     body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
 

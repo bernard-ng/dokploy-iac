@@ -86,6 +86,17 @@ fn observe(
         PathShape::CollectionRoot | PathShape::CollectionEntry => return not_returned,
         PathShape::Atomic => {}
     }
+    if info.union_tag {
+        return observe_tag(info, item);
+    }
+    // A member of an arm exists only while Dokploy holds that arm.
+    if let (Some(arm), Some(tag_api)) = (info.arm.as_deref(), info.tag_api.as_deref()) {
+        match lookup(item, tag_api) {
+            None => return not_returned,
+            Some(Json::String(held)) if held == arm => {}
+            Some(_) => return PropertyObservation::KnownAbsent,
+        }
+    }
     if let Some(target) = info.selector.as_deref() {
         return observe_selector(target, lookup(item, &info.api), selectors);
     }
@@ -116,6 +127,20 @@ fn observe(
                 PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
                 PropertyObservation::Known,
             ),
+    }
+}
+
+/// The arm of a union Dokploy holds: one of the arms the spec names.
+fn observe_tag(info: &dokploy_spec::PropertyInfo, item: &Json) -> PropertyObservation {
+    match lookup(item, &info.api) {
+        None => PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
+        Some(Json::String(held)) => canonical_remote(&Json::String(held.clone()), &info.ty)
+            .and_then(|canonical| ComparableValue::try_from_json(canonical).ok())
+            .map_or(
+                PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+                PropertyObservation::Known,
+            ),
+        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
     }
 }
 

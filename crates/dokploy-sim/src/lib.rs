@@ -504,6 +504,16 @@ impl Sim {
                 }
             }
         }
+        // The columns of every arm of a union exist, and hold nothing until the arm is saved.
+        for field in spec.fields.values() {
+            for members in field.arms.values() {
+                for (member, member_field) in members {
+                    object
+                        .entry(member_field.request_name(member).to_owned())
+                        .or_insert(Value::Null);
+                }
+            }
+        }
         let stored = Value::Object(object.clone());
         inner
             .objects
