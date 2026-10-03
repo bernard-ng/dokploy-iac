@@ -15,6 +15,7 @@ mod compile;
 mod discover;
 mod fingerprint;
 mod project;
+mod recover;
 mod secrets;
 
 use dokploy_core::{Plan, RemoteStateError, StoredState, StoredStateError};
@@ -30,6 +31,7 @@ use thiserror::Error;
 pub use apply::{ApplyError, ApplySummary};
 pub use compile::{AddressError, CompileError, Compiled};
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
+pub use recover::{RecoverError, RecoveryAction, RecoveryPreview, RecoverySummary};
 pub use secrets::{MAX_SOURCE_BYTES, SecretError, SecretReader, WorkspaceSecrets};
 
 /// Anything that stops the engine from producing a plan.

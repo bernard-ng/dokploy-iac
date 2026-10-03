@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Recovery in `dokploy-engine` (milestone M2, ADR 0008; [`docs/design/engine.md`](docs/design/engine.md#recovery)).
+  `Engine::recover` settles an apply that stopped between sending a mutation and recording its
+  result, from fresh evidence and never by repeating the mutation: a lost create is adopted by finding
+  the resource, a create or update that never arrived is confirmed as no change, a lost delete is
+  checkpointed when the resource is gone, and anything it cannot prove (a changed resource, an
+  unreadable one, a secret rotation) is left to a person with nothing recorded. The identity of a
+  create whose response does not carry one is found the same way. `dokploy-core` gains
+  `compare_resource_observation_with_specs` so the comparison works for spec-defined kinds.
 - Apply in `dokploy-engine` (milestone M2, ADR 0008; [`docs/design/engine.md`](docs/design/engine.md#apply)).
   `Engine::apply` takes the writer lock, plans from the state it will change, lets the caller
   decline, checks in a preflight that every change can be made, then journals and executes one step

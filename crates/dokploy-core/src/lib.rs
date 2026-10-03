@@ -29,6 +29,6 @@ pub use snapshot::{
     ExternalResolution, MoveDirective, PropertyObservation, PropertyUnknownReason,
     ProtectionIntent, RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState,
     RemoteStateError, RemovalDirective, ResourceObservationMatch, StoredState, StoredStateError,
-    compare_resource_observation,
+    compare_resource_observation, compare_resource_observation_with_specs,
 };
 pub use spec_property::register_spec_kinds;

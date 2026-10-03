@@ -1357,18 +1357,39 @@ pub fn compare_resource_observation(
     observation: &RemoteObservation,
 ) -> Result<ResourceObservationMatch, StoredStateError> {
     let stored = StoredState::try_from_state(state)?;
+
+    Ok(compare_stored_observation(&stored, address, observation))
+}
+
+/// Like [`compare_resource_observation`], for state that may hold spec-defined kinds.
+pub fn compare_resource_observation_with_specs(
+    state: &StateFile,
+    address: &ResourceAddress,
+    observation: &RemoteObservation,
+    specs: &dokploy_spec::SpecRegistry,
+) -> Result<ResourceObservationMatch, StoredStateError> {
+    let stored = StoredState::try_from_state_with_specs(state, specs)?;
+
+    Ok(compare_stored_observation(&stored, address, observation))
+}
+
+fn compare_stored_observation(
+    stored: &StoredState,
+    address: &ResourceAddress,
+    observation: &RemoteObservation,
+) -> ResourceObservationMatch {
     let Some(expected) = stored.resources.get(address) else {
-        return Ok(ResourceObservationMatch::Different);
+        return ResourceObservationMatch::Different;
     };
     let RemoteObservation::Present(remote) = observation else {
-        return Ok(match observation {
+        return match observation {
             RemoteObservation::Missing => ResourceObservationMatch::Different,
             RemoteObservation::Unavailable(_) => ResourceObservationMatch::Unavailable,
             RemoteObservation::Present(_) => unreachable!("present observation was matched"),
-        });
+        };
     };
     if expected.remote_id != *remote.remote_id() {
-        return Ok(ResourceObservationMatch::Different);
+        return ResourceObservationMatch::Different;
     }
 
     let mut sensitive_unverifiable = false;
@@ -1390,20 +1411,20 @@ pub fn compare_resource_observation(
                 expected == actual
             }
             (_, Some(PropertyObservation::Unknown(_)) | None) => {
-                return Ok(ResourceObservationMatch::Unavailable);
+                return ResourceObservationMatch::Unavailable;
             }
             _ => false,
         };
         if !matches {
-            return Ok(ResourceObservationMatch::Different);
+            return ResourceObservationMatch::Different;
         }
     }
 
-    Ok(if sensitive_unverifiable {
+    if sensitive_unverifiable {
         ResourceObservationMatch::ExactExceptSensitive
     } else {
         ResourceObservationMatch::Exact
-    })
+    }
 }
 
 /// A complete set of fresh observations for the requested reconciliation.

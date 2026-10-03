@@ -56,9 +56,29 @@ reported after it is recorded, so the next plan shows it as drift.
 Secret values live in zeroizing memory inside `Compiled`, only so an apply can send them; they are
 never printed, planned, journaled, or checkpointed (state holds receipts).
 
+## Recovery
+
+`Engine::recover(&compiled, &store, approve)` settles the one interrupted apply of a document. It
+never repeats a mutation: it reads the resource again, compares it with the state the open step was
+meant to produce, and decides.
+
+| Open step | The remote shows | Recovery |
+|-----------|------------------|----------|
+| create | the resource, matching the target (a secret that cannot be read back is the one thing not compared) | adopts it: records its identity and checkpoints |
+| create | nothing | confirms no change |
+| update | the target | checkpoints the success |
+| update | the previous state | confirms no change |
+| delete | gone | checkpoints the removal |
+| delete | still there | confirms no change |
+| rename, forget | (state only) | checkpoints |
+| anything | something else, unreadable, or a secret rotation that cannot be proven | **a person decides**: nothing is recorded on a guess |
+
+A secret cannot be read back, so an update that rotates one is never proven by observation alone.
+`approve` sees the value-free action before anything is recorded.
+
 ## What it does not do yet
 
-- **Recovery and deploy.** Recovery is the next slice.
+- **Deploy.**
 - **Writing composite values** (unions, structs, keyed collections, `env`, `file`): refused in the
   preflight with a message naming the property. They arrive with the project kinds (M3).
 - **Follow-up updates after a create** for a field the create operation does not accept: refused
