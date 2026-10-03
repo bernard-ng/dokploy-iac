@@ -7,6 +7,7 @@ publish = false
 description = "The conformance suite: scenarios generated from a kind spec, run against the simulator."
 
 [dependencies]
+dokploy-api.workspace = true
 dokploy-core.workspace = true
 dokploy-engine.workspace = true
 dokploy-sdk.workspace = true

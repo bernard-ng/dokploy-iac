@@ -191,13 +191,17 @@ impl<T: Transport> Engine<T> {
                             address: address.clone(),
                         }
                     })?;
-                    request::create_request(
+                    let create = request::create_request(
                         spec,
                         address,
                         checkpoint,
                         Some("preflight"),
                         compiled,
                     )?;
+                    // What the create cannot carry must be writable by a write group.
+                    let deferred: Vec<&dokploy_core::PropertyPath> =
+                        create.deferred.iter().collect();
+                    request::groups(spec, address, &deferred)?;
                     if change.kind() == ChangeKind::Replace {
                         request::remove_request(spec, address, "preflight")?;
                         if change.replacement_order()

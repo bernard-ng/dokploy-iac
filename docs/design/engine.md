@@ -39,7 +39,7 @@ For each change, in the planner's dependency-safe order:
 
 | Change | Requests |
 |--------|----------|
-| create | one `create` carrying every managed property and the attachment to the parent; a field the contract requires and the document omits is sent as `null` if the spec allows it; the new identity is learned as the spec says (`from_response`, or `diff_collection` over the list read before and after) |
+| create | one `create` carrying every managed property the create operation accepts and the attachment to the parent; a field the contract requires and the document omits is sent as `null` if the spec allows it; the new identity is learned as the spec says (`from_response`, or `diff_collection` over the list read before and after). What the operation does not accept is written right after by the spec's write groups, as a second journaled step (an update from the state the create recorded), so an interruption between the two leaves a resource that state describes exactly and the next plan finishes |
 | update | one request per write group that has a change, in the spec's order: `partial` sends the id and the changed fields, `full` re-sends the group from a fresh read overlaid with the changes (a secret in it must be declared in the document) |
 | remove | one `remove`; a 404 counts as removed; Dokploy acknowledging it while the resource can still be read fails the step and keeps the resource tracked |
 | replace | remove, then create (the order the planner proved) |
@@ -81,8 +81,6 @@ A secret cannot be read back, so an update that rotates one is never proven by o
 - **Deploy.**
 - **Writing composite values** (unions, structs, keyed collections, `env`, `file`): refused in the
   preflight with a message naming the property. They arrive with the project kinds (M3).
-- **Follow-up updates after a create** for a field the create operation does not accept: refused
-  in the preflight for now.
 - **Create-before-delete replacement**, moving to another parent, and a rename combined with a
   change: refused in the preflight.
 - **Paged collections.** `application.search` answers `{items, total}`; reading pages arrives

@@ -403,6 +403,17 @@ impl ResourceCheckpoint {
         })
     }
 
+    /// The checkpoint without some properties: what a resource looks like before they are
+    /// written. A create that cannot carry every property is checkpointed in two steps, and
+    /// the first one expects exactly this.
+    #[must_use]
+    pub fn without(&self, paths: &[PropertyPath]) -> Self {
+        let mut reduced = self.clone();
+        reduced.properties.retain(|path, _| !paths.contains(path));
+
+        reduced
+    }
+
     /// Materializes the exact durable resource selected by the planner.
     pub fn materialize(
         &self,

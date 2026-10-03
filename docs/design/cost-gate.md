@@ -63,5 +63,3 @@ every conformance scenario live is the M8 differential.
   refuses composite values in its preflight today. Measuring it needs the application port, so it is
   the first thing to try in M3, with the decision to extend the grammar made by ADR if it needs more
   than `by_variant`.
-- **Follow-up updates after a create** (a field the create operation does not accept) are refused, and
-  every project kind will hit that (an application takes its source in a separate call).

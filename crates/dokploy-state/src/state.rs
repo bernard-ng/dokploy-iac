@@ -32,7 +32,6 @@ const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "document",
     "composefile",
     "content",
-    "command",
     "script",
 ];
 

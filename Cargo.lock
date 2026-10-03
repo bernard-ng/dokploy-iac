@@ -858,6 +858,7 @@ dependencies = [
 name = "dokploy-conformance"
 version = "0.1.0"
 dependencies = [
+ "dokploy-api",
  "dokploy-core",
  "dokploy-engine",
  "dokploy-sdk",

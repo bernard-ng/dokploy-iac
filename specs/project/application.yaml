@@ -1,6 +1,5 @@
-# PROTOTYPE (coverage: partial). The collection read is deliberately absent: `application.search`
-# is paged (`{items, total}`) and the engine reads pages with the project kinds (milestone M3),
-# so an application is found by its recorded identity only. Exercises the three hard shapes: a tagged union
+# PROTOTYPE (coverage: partial). The collection is the one `environment.one` embeds
+# (`application.search` is paged and is not needed). Exercises the three hard shapes: a tagged union
 # written by a different endpoint per arm, an environment block planned per key,
 # and create-only fields. Completed in milestone M3.
 kind: application
@@ -23,6 +22,9 @@ api:
   remove: { op: application.delete }
   deploy: { op: application.deploy }
   read:
+    list:
+      embedded_in: { parent_op: environment.one, pointer: /applications }
+      authority: authoritative
     one: { op: application.one, id_param: applicationId }
   create_identity:
     from_response: /applicationId

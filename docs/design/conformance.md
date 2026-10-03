@@ -30,12 +30,13 @@ Each runs in a world of its own: a fresh simulator, workspace, and engine.
 
 | Scenario | Checks |
 |----------|--------|
-| `create` | one apply creates the resource with every field as written, with one request; state records it; the next plan is empty |
+| `create` | one apply creates the resource with every field as written, with the create and one write per group for the fields the create does not accept; state records it; the next plan is empty |
 | `create_minimal` | only the required fields; the contract's required nullable fields are sent as `null` |
 | `converges` | applying again sends nothing |
 | `update:<field>` | changing one field sends exactly its write group's operation, only fields of that group, with the new value (a secret is rotated) |
 | `replace:<field>` | changing a `create_only` field removes then creates and gives a new identity |
 | `drift:<field>` | changing a field behind the engine's back plans one change naming it, and apply restores it |
+| `follow_up_rejected`, `follow_up_lost_before`, `follow_up_lost_after` | for a kind whose create does not carry every field: the follow-up write is rejected or lost; the resource exists and state describes what the create wrote, recovery settles the step without repeating the create, and one more apply finishes (skipped when the create carries everything) |
 | `delete`, `protected_delete` | removal sends one remove; a protected resource is refused with nothing sent |
 | `unmanaged_collision`, `ambiguous_collision` | an existing resource, or two, with the same identity block the plan and nothing is changed |
 | `partial_authority` | absence from a `partial` collection is not proof |

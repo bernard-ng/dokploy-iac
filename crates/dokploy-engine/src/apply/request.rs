@@ -115,19 +115,26 @@ fn secret_text(
         })
 }
 
+/// A create request, and the managed properties it cannot carry.
+pub(crate) struct CreateRequest {
+    pub(crate) request: OperationRequest,
+    /// Properties the create operation does not accept: written by an update right after.
+    pub(crate) deferred: Vec<PropertyPath>,
+}
+
 /// The create request: every managed property the create operation accepts, the attachment to
 /// the parent, and `null` for a field the contract requires that the document leaves out and
 /// the spec allows to be null.
 ///
-/// A managed property the create operation does not accept would need a follow-up update;
-/// that is refused for now (it arrives with the project kinds).
+/// A managed property the create operation does not accept is not sent: it is `deferred`, and
+/// the executor writes it with the spec's write groups once the resource exists.
 pub(crate) fn create_request(
     spec: &KindSpec,
     address: &ResourceAddress,
     checkpoint: &ResourceCheckpoint,
     parent_id: Option<&str>,
     compiled: &Compiled,
-) -> Result<OperationRequest, ApplyError> {
+) -> Result<CreateRequest, ApplyError> {
     let operation = spec
         .api
         .create
@@ -139,6 +146,7 @@ pub(crate) fn create_request(
         })?;
     let contract = request_contract(&operation.op);
     let mut body = Map::new();
+    let mut deferred = Vec::new();
 
     for path in checkpoint.property_paths() {
         let target = writable(spec, address, path)?;
@@ -149,11 +157,8 @@ pub(crate) fn create_request(
             && matches!(contract.body(), BodyShape::Object(_))
             && contract.body_field(target.wire).is_none()
         {
-            return Err(ApplyError::Unsupported {
-                address: address.clone(),
-                property: Some(path.to_string()),
-                reason: "is not accepted by the create operation and would need a follow-up update",
-            });
+            deferred.push(path.clone());
+            continue;
         }
         body.insert(
             target.wire.to_owned(),
@@ -194,7 +199,10 @@ pub(crate) fn create_request(
         }
     }
 
-    Ok(OperationRequest::new(&operation.op).body(Json::Object(body)))
+    Ok(CreateRequest {
+        request: OperationRequest::new(&operation.op).body(Json::Object(body)),
+        deferred,
+    })
 }
 
 /// One update request of a write group: the operation, and the fields it carries.

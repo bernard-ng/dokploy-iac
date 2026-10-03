@@ -121,13 +121,18 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         };
         let checkpoint = change.checkpoint().present().ok_or_else(invalid)?;
         let parent_id = self.parent_id(checkpoint);
-        let request = request::create_request(
+        let created = request::create_request(
             spec,
             address,
             checkpoint,
             parent_id.as_deref(),
             self.compiled,
         )?;
+        let request = created.request;
+        // What the create operation cannot carry is written by an update right after, as a
+        // step of its own: the create step expects only what the create writes.
+        let deferred = created.deferred;
+        let at_creation = checkpoint.without(&deferred);
 
         // Learning the identity by diffing needs the collection as it was before.
         let before = match &spec.api.create_identity {
@@ -147,7 +152,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             address.clone(),
             JournalAction::Create,
             ExpectedCheckpoint::create(
-                checkpoint
+                at_creation
                     .materialize(address, placeholder)
                     .map_err(|_| invalid())?,
             )
@@ -167,7 +172,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 self.diff_identity(
                     spec,
                     parent_id.as_deref(),
-                    checkpoint,
+                    &at_creation,
                     key,
                     before.unwrap_or_default(),
                 )
@@ -182,36 +187,56 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             });
         };
 
-        let resource = checkpoint
+        let resource = at_creation
             .materialize(address, remote_id.clone())
             .map_err(|_| invalid())?;
         self.state.upsert_resource(address.clone(), resource)?;
         self.journal
             .succeed(token, Some(remote_id.clone()), &self.state)?;
 
-        let paths: Vec<&PropertyPath> = checkpoint
+        let paths: Vec<&PropertyPath> = at_creation
             .property_paths()
             .into_iter()
             .filter(|path| !path.info().is_sensitive())
             .collect();
-        self.verify(spec, address, remote_id.as_str(), checkpoint, &paths)
-            .await
+        self.verify(spec, address, remote_id.as_str(), &at_creation, &paths)
+            .await?;
+
+        if deferred.is_empty() {
+            return Ok(());
+        }
+        let deferred: Vec<&PropertyPath> = deferred.iter().collect();
+        self.write(address, checkpoint, &deferred).await
     }
 
     async fn update(&mut self, change: &PlannedChange) -> Result<(), ApplyError> {
         let address = change.address();
-        let spec = self.spec(address)?;
         let invalid = || ApplyError::InvalidCheckpoint {
             address: address.clone(),
         };
         let checkpoint = change.checkpoint().present().ok_or_else(invalid)?;
-        let before = self.state.resource(address).ok_or_else(invalid)?.clone();
-        let remote_id = before.remote_id().clone();
         let written = written(change);
         if written.is_empty() {
             return self.adopt(change);
         }
-        let groups = request::groups(spec, address, &written)?;
+        self.write(address, checkpoint, &written).await
+    }
+
+    /// Writes properties of an existing resource with the spec's write groups, as one
+    /// journaled step that moves the state to `checkpoint`.
+    async fn write(
+        &mut self,
+        address: &ResourceAddress,
+        checkpoint: &ResourceCheckpoint,
+        written: &[&PropertyPath],
+    ) -> Result<(), ApplyError> {
+        let spec = self.spec(address)?;
+        let invalid = || ApplyError::InvalidCheckpoint {
+            address: address.clone(),
+        };
+        let before = self.state.resource(address).ok_or_else(invalid)?.clone();
+        let remote_id = before.remote_id().clone();
+        let groups = request::groups(spec, address, written)?;
 
         // A full group re-sends what is there, so it starts from a fresh read.
         let mut bodies = Vec::new();
@@ -258,7 +283,8 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             .succeed(token, Some(remote_id.clone()), &self.state)?;
 
         let paths: Vec<&PropertyPath> = written
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|path| !path.info().is_sensitive())
             .collect();
         self.verify(spec, address, remote_id.as_str(), checkpoint, &paths)

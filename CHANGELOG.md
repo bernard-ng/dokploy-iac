@@ -26,6 +26,12 @@ All notable changes to this project will be documented in this file.
   `sensitive` layers and all their tests. The golden ledger now lets a scenario outlive its test:
   what the first engine asserted stays `pending` as the definition of done for porting its kind.
   `DOKPLOY_FINGERPRINT_KEY` and the per-instance key in the credential store work as before.
+- **Breaking: durable state accepts a plain `command`**: the name check on managed inputs no longer
+  refuses it, because an application's `command` is public text. Secret-looking names are enforced
+  by the spec lint instead, and every other name in the check is unchanged.
+- The `application` prototype is found in the collection `environment.one` embeds, not the paged
+  `application.search`. The simulator returns a column the client never set with the value a fresh
+  resource held in the capture (`replicas: 1`), as a real Dokploy does.
 - **Breaking: the kernel carries no closed vocabulary** (ADR 0002, ADR 0016). `dokploy-state` has no
   built-in resource kinds, `DocumentId::Workspace`, or `StateFile::new_in_scope`/`StateStore::new`:
   every kind is registered from a spec, `StateFile::new(version, instance, document)` is the one
@@ -49,6 +55,18 @@ All notable changes to this project will be documented in this file.
   independently (a separate HMAC over the documented framing) for a registry address.
 
 ### Added
+
+- Follow-up writes after a create (milestone M3, ADR 0008). A property the create operation does not
+  accept (a project kind's create takes a name and little else) is no longer refused: the create is
+  a journaled step that expects exactly what it writes, and the spec's write groups write the rest
+  as a second journaled step. `ResourceCheckpoint::without` gives the first step's target. The
+  conformance suite sends and checks both, and adds `follow_up_rejected`, `follow_up_lost_before`,
+  and `follow_up_lost_after` (the resource exists, state describes what the create wrote, recovery
+  settles the step, nothing is repeated, one more apply finishes). A trimmed `application`
+  (no union or env yet) passes the whole suite as a project kind.
+- A spec lint: a public field cannot be named like a secret or a file body (`password`, `token`,
+  `api_key`, `content`, `script`, `document`, and so on); declare `class: secret` or `class: content`.
+  This is the rule the state's name check enforced at runtime, now stated where the classes live.
 
 - The vision ratchet (milestone M3; `crates/dokploy-model/tests/vision.rs`,
   [`docs/vision/README.md`](docs/vision/README.md)). The two vision documents are now version 2

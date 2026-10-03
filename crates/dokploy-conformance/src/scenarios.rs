@@ -38,6 +38,33 @@ fn create_op(w: &World<'_>) -> String {
         .clone()
 }
 
+/// The requests a create sends: the create operation, and then one write group for the fields
+/// it does not accept (a project kind's create takes a name and the rest is updated).
+fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
+    let spec = &w.case.spec;
+    let create = create_op(w);
+    let contract = dokploy_api::request_contract(&create);
+    let deferred = |name: &str| {
+        let Some(field) = spec.fields.get(name) else {
+            return false;
+        };
+        field.mutability != Mutability::Computed
+            && values.contains_key(name)
+            && contract
+                .is_some_and(|contract| contract.body_field(field.request_name(name)).is_none())
+    };
+    let mut operations = vec![create];
+    for group in &spec.write {
+        if let dokploy_spec::WriteGroup::Op { op, fields, .. } = group
+            && fields.iter().any(|name| deferred(name))
+        {
+            operations.push(op.clone());
+        }
+    }
+
+    operations
+}
+
 fn remove_op(w: &World<'_>) -> String {
     w.case
         .spec
@@ -107,8 +134,9 @@ pub(crate) async fn create(w: &World<'_>) -> Check<Verdict> {
     );
     holds(w, &values)?;
     ensure!(
-        w.operations() == [create_op(w)],
-        "a create sends one request, sent {:?}",
+        w.operations() == creation_ops(w, &values),
+        "a create sends {:?}, sent {:?}",
+        creation_ops(w, &values),
         w.operations()
     );
     ensure!(
@@ -215,9 +243,12 @@ pub(crate) async fn replace(w: &World<'_>, name: &str) -> Check<Verdict> {
     let changed = w.case.changed(&values, name);
     w.apply_ok(&changed).await?;
 
+    let expected: Vec<String> = std::iter::once(remove_op(w))
+        .chain(creation_ops(w, &changed))
+        .collect();
     ensure!(
-        w.operations() == [remove_op(w), create_op(w)],
-        "expected remove then create, sent {:?}",
+        w.operations() == expected,
+        "expected {expected:?}, sent {:?}",
         w.operations()
     );
     ensure!(
@@ -550,6 +581,82 @@ pub(crate) async fn interrupted(w: &World<'_>, step: Step, after: bool) -> Check
     }
 
     Ok(Verdict::Pass)
+}
+
+/// A create that Dokploy accepts but whose follow-up write fails or is interrupted: the
+/// resource exists and state records what the create wrote, nothing is repeated, and one more
+/// apply finishes the job.
+pub(crate) async fn follow_up(w: &World<'_>, how: FollowUp) -> Check<Verdict> {
+    let values = w.case.full();
+    let operations = creation_ops(w, &values);
+    let Some(operation) = operations.get(1).cloned() else {
+        return skip("the create carries every field");
+    };
+    let fault = match how {
+        FollowUp::Rejected => FaultKind::Reject { status: 400 },
+        FollowUp::LostBefore => FaultKind::DropBefore,
+        FollowUp::LostAfter => FaultKind::DropAfter,
+    };
+    w.sim.inject(Fault::new(operation.clone(), fault));
+
+    let result = w.apply(&values).await?;
+    match how {
+        FollowUp::Rejected => ensure!(
+            matches!(result, Err(ApplyError::Rejected { .. })),
+            "expected a rejection, got {result:?}"
+        ),
+        FollowUp::LostBefore | FollowUp::LostAfter => ensure!(
+            matches!(result, Err(ApplyError::OutcomeUnknown { .. })),
+            "expected an unknown outcome, got {result:?}"
+        ),
+    }
+    ensure!(w.objects().len() == 1, "the create did not happen");
+    ensure!(
+        w.state_resources() == 1,
+        "state does not record what the create wrote"
+    );
+    let creates = w
+        .operations()
+        .iter()
+        .filter(|op| **op == operations[0])
+        .count();
+    ensure!(creates == 1, "the create was sent {creates} times");
+
+    let recovered = w.recover(&values).await?;
+    let action = recovered.map_err(|error: RecoverError| format!("recovery failed: {error}"))?;
+    let expected = match how {
+        FollowUp::Rejected => RecoveryAction::ResolveOperation,
+        FollowUp::LostBefore => RecoveryAction::ConfirmNoChange,
+        FollowUp::LostAfter => RecoveryAction::CheckpointConfirmedSuccess,
+    };
+    ensure!(
+        action == expected,
+        "recovery chose {action:?}, expected {expected:?}"
+    );
+    ensure!(w.recovery_clean(), "recovery left the journal open");
+    let creates = w
+        .operations()
+        .iter()
+        .filter(|op| **op == operations[0])
+        .count();
+    ensure!(creates == 1, "recovery repeated the create");
+
+    w.apply_ok(&values).await?;
+    ensure!(
+        w.objects().len() == 1,
+        "finishing the job created a second object"
+    );
+    holds(w, &values)?;
+    converged(w, &values).await?;
+
+    Ok(Verdict::Pass)
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum FollowUp {
+    Rejected,
+    LostBefore,
+    LostAfter,
 }
 
 /// Dokploy acknowledges a removal and does nothing: the step fails and the resource stays

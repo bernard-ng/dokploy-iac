@@ -269,6 +269,16 @@ fn check_field(
         check_type_rules(context, path, field, parsed, shared_types);
     }
 
+    if field.class == ValueClass::Public
+        && !matches!(parsed, Some(FieldType::Env))
+        && looks_secret_bearing(name)
+    {
+        context.add(
+            format!("{path}.class"),
+            "the name suggests a secret or file content; declare `class: secret` or `class: content` (state refuses plain values under such names)",
+        );
+    }
+
     match (field.class, field.mutability) {
         (ValueClass::Secret, mutability) if mutability != Mutability::WriteOnly => {
             context.add(
@@ -317,6 +327,39 @@ fn check_field(
     {
         context.add(format!("{path}.pattern"), "must not be empty");
     }
+}
+
+/// Names whose values are secrets or file bodies. A public field cannot carry one: the
+/// durable state keeps the same list as a backstop and refuses plain values under them
+/// (ADR 0010), so the spec has to say which class the field is.
+const SECRET_BEARING_SUFFIXES: &[&str] = &[
+    "password",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "secret",
+    "buildsecrets",
+    "token",
+    "refreshtoken",
+    "buildargs",
+    "previewenv",
+    "previewbuildargs",
+    "document",
+    "composefile",
+    "content",
+    "script",
+];
+
+fn looks_secret_bearing(name: &str) -> bool {
+    let normalized: String = name
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+
+    SECRET_BEARING_SUFFIXES
+        .iter()
+        .any(|suffix| normalized.ends_with(suffix))
 }
 
 fn check_type_rules(

@@ -61,10 +61,21 @@ impl Shapes {
 pub(crate) fn fill(template: &Value, stored: &Map<String, Value>) -> Value {
     match template {
         Value::Object(keys) if keys.contains_key("success") && keys.len() == 1 => template.clone(),
-        // A key the stored object does not have is not returned, rather than returned as null.
+        // A key the stored object does not have is not returned, rather than returned as null,
+        // unless the capture shows a plain value: a column the client never set holds what
+        // a fresh resource held (`replicas: 1`), as it does on a real Dokploy.
         Value::Object(keys) => Value::Object(
-            keys.keys()
-                .filter_map(|key| stored.get(key).map(|value| (key.clone(), value.clone())))
+            keys.iter()
+                .filter_map(|(key, captured)| {
+                    let value = stored.get(key).cloned().or_else(|| {
+                        matches!(
+                            captured,
+                            Value::String(_) | Value::Number(_) | Value::Bool(_)
+                        )
+                        .then(|| captured.clone())
+                    })?;
+                    Some((key.clone(), value))
+                })
                 .collect(),
         ),
         other => other.clone(),
