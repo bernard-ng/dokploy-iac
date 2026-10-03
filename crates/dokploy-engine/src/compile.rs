@@ -9,8 +9,8 @@ use dokploy_core::{
 use dokploy_model::{Document, EnvValue, Resource, Root, Sections, Source, Value};
 use dokploy_spec::{FieldType, Granularity, KindSpec, PathError, Scope, SpecRegistry, parse_type};
 use dokploy_state::{
-    AddressSuffixError, ResourceAddress, ResourceAddressParseError, ResourceKind, ResourceName,
-    ResourceNameError, SensitivePropertyPath,
+    AddressSuffixError, DocumentId, ResourceAddress, ResourceAddressParseError, ResourceKind,
+    ResourceName, ResourceNameError, SensitivePropertyPath,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -20,11 +20,14 @@ use crate::fingerprint::Fingerprinter;
 use crate::secrets::{SecretError, SecretReader};
 
 /// A document compiled for planning.
-#[derive(Debug)]
 pub struct Compiled {
     pub(crate) scope: Scope,
+    pub(crate) document: DocumentId,
     pub(crate) desired: DesiredState,
     pub(crate) resources: BTreeMap<ResourceAddress, CompiledResource>,
+    /// Secret values by address and dotted property path, kept only so an apply can send
+    /// them. They are zeroed when the compiled document is dropped and never printed.
+    pub(crate) secrets: BTreeMap<(ResourceAddress, String), zeroize::Zeroizing<Vec<u8>>>,
 }
 
 /// What discovery needs to know about one desired resource.
@@ -33,6 +36,17 @@ pub(crate) struct CompiledResource {
     pub(crate) spec_kind: String,
     /// The values of the kind's collision fields, in canonical form.
     pub(crate) collision: BTreeMap<String, serde_json::Value>,
+}
+
+impl std::fmt::Debug for Compiled {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Compiled")
+            .field("document", &self.document)
+            .field("resources", &self.resources.keys().collect::<Vec<_>>())
+            .field("secrets", &self.secrets.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Compiled {
@@ -46,6 +60,12 @@ impl Compiled {
     #[must_use]
     pub const fn scope(&self) -> Scope {
         self.scope
+    }
+
+    /// The document this compiles, which names its state.
+    #[must_use]
+    pub fn document(&self) -> &DocumentId {
+        &self.document
     }
 
     /// Every address the document declares, in order.
@@ -133,6 +153,7 @@ impl Compiler<'_> {
 
         let mut desired = BTreeMap::new();
         let mut resources = BTreeMap::new();
+        let mut secrets = BTreeMap::new();
         for (address, resource, containment) in &pending {
             let spec = self
                 .specs
@@ -140,7 +161,7 @@ impl Compiler<'_> {
                 .ok_or_else(|| CompileError::UnknownKind {
                     kind: resource.kind.clone(),
                 })?;
-            let properties = self.properties(address, spec, resource)?;
+            let properties = self.properties(address, spec, resource, &mut secrets)?;
             let dependencies = resource
                 .depends_on
                 .iter()
@@ -188,10 +209,23 @@ impl Compiler<'_> {
 
         let digest = ConfigDigest::parse(hex(&Sha256::digest(document.render().as_bytes())))
             .expect("a SHA-256 digest is a valid configuration digest");
+        let document_id = match &document.root {
+            Root::Settings(_) => DocumentId::Settings,
+            Root::Project(project) => {
+                DocumentId::Project(ResourceName::new(project.key.clone()).map_err(|error| {
+                    CompileError::Address {
+                        key: project.key.clone(),
+                        source: error.into(),
+                    }
+                })?)
+            }
+        };
         Ok(Compiled {
             scope: document.scope,
+            document: document_id,
             desired: DesiredState::try_new(digest, desired)?,
             resources,
+            secrets,
         })
     }
 
@@ -242,6 +276,7 @@ impl Compiler<'_> {
         address: &ResourceAddress,
         spec: &KindSpec,
         resource: &Resource,
+        secrets: &mut Secrets,
     ) -> Result<BTreeMap<PropertyPath, OwnedValue>, CompileError> {
         let mut properties = BTreeMap::new();
         // A field that defaults to the key (the remote name) is managed even when the
@@ -298,6 +333,7 @@ impl Compiler<'_> {
                 Value::Source(source) => {
                     let bytes = self.read(address, name, source)?;
                     properties.insert(path(name)?, self.receipt(address, name, &bytes));
+                    secrets.insert((address.clone(), name.clone()), bytes);
                 }
                 Value::Env(variables) if variables.is_empty() => {
                     properties.insert(path(name)?, OwnedValue::EmptyCollection);
@@ -310,6 +346,7 @@ impl Compiler<'_> {
                             EnvValue::Secret(source) => self.read(address, &dotted, source)?,
                         };
                         properties.insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
+                        secrets.insert((address.clone(), dotted), bytes);
                     }
                 }
                 Value::Map(entries)
@@ -395,6 +432,8 @@ impl Compiler<'_> {
         ))
     }
 }
+
+type Secrets = BTreeMap<(ResourceAddress, String), zeroize::Zeroizing<Vec<u8>>>;
 
 fn comparable(json: serde_json::Value) -> OwnedValue {
     ComparableValue::try_from_json(json).map_or(OwnedValue::Null, OwnedValue::Value)

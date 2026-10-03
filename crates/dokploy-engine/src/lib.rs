@@ -5,10 +5,11 @@
 //! planner in `dokploy-core`, and every byte sent to Dokploy goes through a
 //! [`Transport`](dokploy_sdk::Transport), so the same code runs over HTTP or in memory.
 //!
-//! This is the skeleton (milestone M1): it compiles documents and plans settings kinds that
-//! have a flat collection read, offline against any transport. Applying, recovery, nested
-//! kinds, and deploy follow in later milestones.
+//! It compiles documents, plans kinds that have a collection read, and applies the plan:
+//! create, update by write group, remove, replace, and rename, each journaled, never
+//! retried, and read back. Recovery, nested kinds, and deploy follow.
 
+mod apply;
 mod canonical;
 mod compile;
 mod discover;
@@ -26,6 +27,7 @@ use dokploy_state::{
 };
 use thiserror::Error;
 
+pub use apply::{ApplyError, ApplySummary};
 pub use compile::{AddressError, CompileError, Compiled};
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
 pub use secrets::{MAX_SOURCE_BYTES, SecretError, SecretReader, WorkspaceSecrets};
@@ -107,8 +109,9 @@ impl<T: Transport> Engine<T> {
 
     /// Compiles a document into the planner's desired state.
     ///
-    /// Secret sources are read through `secrets`, fingerprinted, and forgotten: the compiled
-    /// result holds receipts, never values.
+    /// Secret sources are read through `secrets` and fingerprinted. The planner only ever sees
+    /// the receipts; the values stay in zeroizing memory inside the compiled document, only so
+    /// an apply can send them, and are never printed or written.
     pub fn compile(
         &self,
         document: &Document,

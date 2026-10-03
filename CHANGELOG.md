@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Apply in `dokploy-engine` (milestone M2, ADR 0008; [`docs/design/engine.md`](docs/design/engine.md#apply)).
+  `Engine::apply` takes the writer lock, plans from the state it will change, lets the caller
+  decline, checks in a preflight that every change can be made, then journals and executes one step
+  per change: create (identity learned from the response or by diffing the collection), update by
+  write group (`partial`, or `full` from a fresh read), remove, replace (delete then create), rename,
+  and adopt. A mutation is sent once; an unknown outcome leaves its step open for recovery; a
+  definitive rejection fails the step; and after each step the resource is read back and must read as
+  written. Secret values stay in zeroizing memory and never reach the plan, journal, state, or an
+  error. Tested against the simulator: create then empty plan, partial and full updates, secret
+  rotation, removal, decline, rejection, lost response, failed pre-read, replacement, and a read-back
+  mismatch. Composite values, follow-up updates, and create-before-delete are refused in the preflight
+  until the project kinds need them.
 - `dokploy-sim` (milestone M2, ADR 0015; [`docs/design/simulator.md`](docs/design/simulator.md)): an
   in-memory Dokploy reached through `Transport`, driven only by the kind specs. It checks every
   request against the generated contract, stores objects on create, merges updates (patches),

@@ -7,6 +7,8 @@ publish = false
 description = "The spec-driven engine: compile a document, discover the remote, and plan."
 
 [dependencies]
+dokploy-api.workspace = true
+semver.workspace = true
 dokploy-core.workspace = true
 dokploy-model.workspace = true
 dokploy-sdk.workspace = true
@@ -20,7 +22,7 @@ uuid.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-semver.workspace = true
+dokploy-sim.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 url.workspace = true

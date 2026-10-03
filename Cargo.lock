@@ -886,9 +886,11 @@ dependencies = [
 name = "dokploy-engine"
 version = "0.1.0"
 dependencies = [
+ "dokploy-api",
  "dokploy-core",
  "dokploy-model",
  "dokploy-sdk",
+ "dokploy-sim",
  "dokploy-spec",
  "dokploy-state",
  "hmac",
