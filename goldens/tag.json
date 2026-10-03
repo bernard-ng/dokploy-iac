@@ -57,8 +57,8 @@
         "SETTINGS"
       ],
       "category": "plan",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance tag `read_failure`",
       "reason": null
     },
     {
@@ -83,8 +83,8 @@
         "SETTINGS"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance tag `create`, `converges`, `delete`",
       "reason": null
     },
     {
@@ -109,8 +109,8 @@
         "SETTINGS"
       ],
       "category": "move",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance tag `update:name`, `update:color`",
       "reason": null
     },
     {
@@ -239,8 +239,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance tag `drift:color`; engine presence-aware projection (plan_registry)",
       "reason": null
     },
     {
@@ -254,8 +254,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `a_collection_past_the_bound_is_refused_not_read`; plan_registry `a_list_that_is_not_a_list_is_an_invalid_response`",
       "reason": null
     },
     {
@@ -269,8 +269,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `a_collection_that_lists_one_identity_twice_contradicts_itself`",
       "reason": null
     },
     {
@@ -284,8 +284,8 @@
       "fixtures": [],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine apply `a_change_that_does_not_read_back_is_reported_after_it_is_recorded`",
       "reason": null
     },
     {
@@ -301,8 +301,8 @@
       "fixtures": [],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance tag `create`, `create_minimal`",
       "reason": null
     },
     {
@@ -333,9 +333,9 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "Error sanitising is a property of the carried-over transport (ADR 0007, ADR 0016), tested with it; the generic engine adds no error text of its own."
     },
     {
       "id": "dokploy-sdk/tests/tags::get_fails_closed_on_identity_or_collection_disagreement",
@@ -348,8 +348,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`",
       "reason": null
     },
     {
@@ -369,8 +369,8 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`",
       "reason": null
     },
     {
@@ -384,8 +384,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse `empty_text_breaks_a_length_rule_so_nothing_is_ever_sent`",
       "reason": null
     },
     {
@@ -444,8 +444,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -461,8 +461,8 @@
       "fixtures": [],
       "data": [],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance tag `update:name`, `update:color` (partial group: the id and the change)",
       "reason": null
     }
   ]

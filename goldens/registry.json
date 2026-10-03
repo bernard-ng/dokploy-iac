@@ -128,8 +128,8 @@
         "SECRET_CANARY"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance registry: every scenario scans for the password that `registry.all` lists (captured live) and finds it nowhere",
       "reason": null
     }
   ]

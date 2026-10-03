@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The golden ledger records what the v2 engine now covers (milestone M2, ADR 0016): of the 55
+  legacy scenarios for `tag`, `registry`, and `redirect`, **37 are covered** (each names the
+  conformance scenario or engine test that proves it), 1 is dropped with its reason, and 17 stay
+  pending because they belong to later work (project tag membership and the application `registry`
+  selector in M3, import in M6, the live suite in M8). No legacy test is deleted yet. New tests
+  close the gaps the classification found: a model test that empty text is refused before any
+  request, and a meta-test that a partial collection is never proof of absence.
 - Discovery and apply refuse to conclude from reads that contradict themselves (milestone M2, ADR
   0007): a collection that lists an identity twice, holds more than 10,000 items, or names another
   parent's items, and a direct read that names another parent. A removal that Dokploy acknowledges

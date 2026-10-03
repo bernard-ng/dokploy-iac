@@ -581,3 +581,40 @@ settings:
     assert!(rendered.contains("DOKDOC006"), "{rendered}");
     assert!(rendered.lines().count() == 4);
 }
+
+#[test]
+fn empty_text_breaks_a_length_rule_so_nothing_is_ever_sent() {
+    let tag = "\
+version: 2
+settings:
+  tags:
+    blue:
+      name: \"\"
+";
+    assert_eq!(
+        codes(parse(tag)),
+        [(DiagnosticCode::Value, "settings.tags.blue.name".into())]
+    );
+
+    let redirect = "\
+version: 2
+project:
+  slug: shop
+  environments:
+    staging:
+      applications:
+        api:
+          redirects:
+            www:
+              regex: \"\"
+              replacement: /new
+              permanent: true
+";
+    assert_eq!(
+        codes(parse(redirect)),
+        [(
+            DiagnosticCode::Value,
+            "project.environments.staging.applications.api.redirects.www.regex".into()
+        )]
+    );
+}

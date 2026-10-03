@@ -19,8 +19,8 @@
         "PROJECTS"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `create`",
       "reason": null
     },
     {
@@ -40,8 +40,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `foreign_collection_item`",
       "reason": null
     },
     {
@@ -63,8 +63,8 @@
         "REDIRECTS"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `update:regex`, `update:replacement`, `update:permanent`",
       "reason": null
     },
     {
@@ -85,8 +85,8 @@
         "REDIRECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`",
       "reason": null
     },
     {
@@ -107,8 +107,8 @@
         "REDIRECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `foreign_direct_read`",
       "reason": null
     },
     {
@@ -129,8 +129,8 @@
         "REDIRECT"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `ambiguous_collision`",
       "reason": null
     },
     {
@@ -152,8 +152,8 @@
         "REDIRECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance redirect `foreign_direct_read`",
       "reason": null
     },
     {
@@ -174,8 +174,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
       "reason": null
     },
     {
@@ -197,8 +197,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
       "reason": null
     },
     {
@@ -220,8 +220,8 @@
         "REDIRECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
       "reason": null
     },
     {
@@ -242,8 +242,8 @@
         "REDIRECTS"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `unmanaged_collision`",
       "reason": null
     },
     {
@@ -278,8 +278,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `create` (embedded collection); engine discovery_safety bound",
       "reason": null
     },
     {
@@ -301,8 +301,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `create`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -318,8 +318,8 @@
         "EMPTY_PARENT"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `unknown_create_before`, `unknown_create_after`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -336,8 +336,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `unmanaged_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -359,8 +359,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry agreement test; conformance redirect `foreign_direct_read`",
       "reason": null
     },
     {
@@ -377,8 +377,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `unknown_{create,update,delete}_{before,after}` (the mutation is sent once)",
       "reason": null
     },
     {
@@ -392,8 +392,8 @@
       "fixtures": [],
       "data": [],
       "category": "noop",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse `empty_text_breaks_a_length_rule_so_nothing_is_ever_sent`",
       "reason": null
     },
     {
@@ -411,8 +411,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `fields_the_spec_does_not_know_are_ignored`; plan_registry `a_remote_value_outside_the_spec_blocks_that_registry_only`",
       "reason": null
     },
     {
@@ -429,8 +429,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `read_failure`",
       "reason": null
     },
     {
@@ -452,8 +452,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `removal_not_applied`; engine apply read-back test",
       "reason": null
     },
     {
@@ -472,8 +472,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `update:*` (a full group re-sends every field of the group), `delete`",
       "reason": null
     },
     {
@@ -489,8 +489,8 @@
         "REDIRECT_RESPONSE"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance redirect `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     }
   ]

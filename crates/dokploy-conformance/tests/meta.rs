@@ -150,3 +150,55 @@ ledger:
         report(&results)
     );
 }
+
+#[tokio::test]
+async fn a_partial_collection_is_not_proof_of_absence() {
+    let partial = tag_like().replace("authority: authoritative", "authority: partial");
+    let results = run(&partial, "gadget").await;
+
+    assert!(passed(&results, "partial_authority"), "{}", report(&results));
+    // Absence can never be proven, so nothing can be created: the apply is blocked, which is
+    // the correct outcome and exactly what fails the scenarios that need a create to start.
+    let reason = failed(&results, "create").expect("a create cannot be proven necessary");
+    assert!(reason.contains("DOKPLAN003"), "{reason}");
+}
+
+/// A settings kind on the tag operations, for tests that need a variation of one.
+fn tag_like() -> String {
+    "\
+kind: gadget
+scope: settings
+section: gadgets
+title: Gadget
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: \"gadget.{key}\"
+api:
+  id: tagId
+  create: { op: tag.create }
+  update: { op: tag.update }
+  remove: { op: tag.remove }
+  read:
+    list: { op: tag.all, authority: authoritative }
+    one: { op: tag.one, id_param: tagId, agree: true }
+  create_identity:
+    from_response: /tagId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  color:
+    type: text
+    nullable: true
+write:
+  - op: tag.update
+    fields: [name, color]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId]
+"
+    .to_owned()
+}
