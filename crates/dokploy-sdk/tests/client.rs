@@ -3,10 +3,7 @@ use std::net::TcpListener;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 
-use dokploy_sdk::{
-    ApplicationId, CreateProject, Dokploy, EnvironmentId, Error, ImperativeRequest,
-    MAX_JSON_RESPONSE_BYTES, ProjectId, ResponseField,
-};
+use dokploy_sdk::{Dokploy, Error, ImperativeRequest, MAX_JSON_RESPONSE_BYTES};
 
 struct TestServer {
     url: String,
@@ -184,28 +181,6 @@ fn request_is_complete(bytes: &[u8]) -> bool {
     bytes.len() >= header_end + 4 + content_length
 }
 
-#[tokio::test]
-async fn projects_all_reads_the_runtime_topology() {
-    let server = TestServer::respond_with_json(include_str!(
-        "../../../fixtures/api/live/v0.30.6/project-all.populated.owner.json"
-    ));
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let topology = client
-        .projects()
-        .all()
-        .await
-        .expect("project topology is readable");
-
-    let request = server.finish();
-    assert!(request.starts_with("GET /api/project.all HTTP/1.1\r\n"));
-    assert_eq!(topology.projects()[0].project_id.as_str(), "project-1");
-}
-
 #[test]
 fn client_exposes_its_normalized_api_base_url_without_credentials() {
     let client = Dokploy::builder()
@@ -231,10 +206,10 @@ async fn requests_authenticate_without_exposing_transport_configuration() {
         .expect("client configuration is valid");
 
     client
-        .projects()
-        .all()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
         .await
-        .expect("project topology is readable");
+        .expect("project.all is readable");
 
     let request = server.finish().to_ascii_lowercase();
     assert!(request.contains("\r\nx-api-key: test-api-key\r\n"));
@@ -243,445 +218,6 @@ async fn requests_authenticate_without_exposing_transport_configuration() {
         env!("CARGO_PKG_VERSION"),
         "\r\n"
     )));
-}
-
-#[tokio::test]
-async fn projects_get_uses_a_strong_id_and_decodes_project_details() {
-    let server = TestServer::respond_with_json(include_str!(
-        "../../../fixtures/api/live/v0.30.6/project-one.owner.json"
-    ));
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let project = client
-        .projects()
-        .get(ProjectId::new("project-1"))
-        .await
-        .expect("project is readable");
-
-    let request = server.finish();
-    assert!(request.starts_with("GET /api/project.one?projectId=project-1 HTTP/1.1\r\n"));
-    assert_eq!(project.project_id.as_str(), "project-1");
-    assert_eq!(project.name, "IaC Contract Test");
-}
-
-#[tokio::test]
-async fn environments_get_uses_a_strong_id_and_omits_secret_bearing_fields() {
-    let server = TestServer::respond_with_json(
-        r#"{
-          "environmentId":"environment-1",
-          "name":"production",
-          "description":"Production environment",
-          "projectId":"project-1",
-          "env":"SECRET=environment-secret-canary",
-          "applications":[{"env":"application-secret-canary"}]
-        }"#,
-    );
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let environment = client
-        .environments()
-        .get(EnvironmentId::new("environment-1"))
-        .await
-        .expect("environment is readable");
-
-    let request = server.finish();
-    let debug = format!("{environment:?}");
-    assert!(
-        request.starts_with("GET /api/environment.one?environmentId=environment-1 HTTP/1.1\r\n")
-    );
-    assert_eq!(environment.environment_id.as_str(), "environment-1");
-    assert_eq!(environment.project_id.as_str(), "project-1");
-    assert_eq!(
-        environment.description,
-        ResponseField::Value("Production environment".to_owned())
-    );
-    assert!(!debug.contains("environment-secret-canary"));
-    assert!(!debug.contains("application-secret-canary"));
-}
-
-#[tokio::test]
-async fn environments_by_project_preserves_description_presence() {
-    let server = TestServer::respond_with_json(
-        r#"[
-          {"environmentId":"environment-1","name":"omitted"},
-          {"environmentId":"environment-2","name":"null","description":null},
-          {"environmentId":"environment-3","name":"value","description":"Known"}
-        ]"#,
-    );
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let environments = client
-        .environments()
-        .by_project(ProjectId::new("project-1"))
-        .await
-        .expect("environment collection is readable");
-
-    let request = server.finish();
-    let descriptions = environments
-        .environments()
-        .iter()
-        .map(|environment| environment.description.clone())
-        .collect::<Vec<_>>();
-    assert!(
-        request.starts_with("GET /api/environment.byProjectId?projectId=project-1 HTTP/1.1\r\n")
-    );
-    assert_eq!(
-        descriptions,
-        vec![
-            ResponseField::NotReturned,
-            ResponseField::Null,
-            ResponseField::Value("Known".to_owned()),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn environment_reads_reject_empty_identifiers_before_transport() {
-    let client = Dokploy::builder()
-        .url("http://127.0.0.1:9")
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let environment_error = client
-        .environments()
-        .get(EnvironmentId::new(""))
-        .await
-        .expect_err("an empty environment ID is invalid");
-    let project_error = client
-        .environments()
-        .by_project(ProjectId::new(""))
-        .await
-        .expect_err("an empty project ID is invalid");
-
-    assert!(matches!(
-        environment_error,
-        Error::InvalidRequest {
-            operation: "environment.one",
-            ..
-        }
-    ));
-    assert!(matches!(
-        project_error,
-        Error::InvalidRequest {
-            operation: "environment.byProjectId",
-            ..
-        }
-    ));
-}
-
-#[tokio::test]
-async fn generated_request_validation_rejects_an_empty_project_id_before_transport() {
-    let client = Dokploy::builder()
-        .url("http://127.0.0.1:9")
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .projects()
-        .get(ProjectId::new(""))
-        .await
-        .expect_err("the generated request constraint rejects an empty project ID");
-
-    assert!(matches!(
-        error,
-        Error::InvalidRequest {
-            operation: "project.one",
-            ..
-        }
-    ));
-}
-
-#[tokio::test]
-async fn applications_get_uses_a_strong_id_and_decodes_application_details() {
-    let server = TestServer::respond_with_json(include_str!(
-        "../../../fixtures/api/live/v0.30.6/application-one.owner.json"
-    ));
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let application = client
-        .applications()
-        .get(ApplicationId::new("application-1"))
-        .await
-        .expect("application is readable");
-
-    let request = server.finish();
-    assert!(
-        request.starts_with("GET /api/application.one?applicationId=application-1 HTTP/1.1\r\n")
-    );
-    assert_eq!(application.application_id.as_str(), "application-1");
-    assert_eq!(application.name, "API");
-}
-
-#[tokio::test]
-async fn applications_by_environment_reads_every_page_through_one_narrow_interface() {
-    let first_items = (0..100)
-        .map(|index| {
-            serde_json::json!({
-                "applicationId": format!("application-{index}"),
-                "environmentId": "environment-1",
-                "name": format!("application-{index}")
-            })
-        })
-        .collect::<Vec<_>>();
-    let first = Box::leak(
-        serde_json::json!({"items": first_items, "total": 101})
-            .to_string()
-            .into_boxed_str(),
-    );
-    let second = Box::leak(
-        serde_json::json!({
-            "items": [{
-                "applicationId": "application-100",
-                "environmentId": "environment-1",
-                "name": "application-100"
-            }],
-            "total": 101
-        })
-        .to_string()
-        .into_boxed_str(),
-    );
-    let server = TestServer::respond_in_sequence(vec![
-        ("200 OK", first as &'static str),
-        ("200 OK", second as &'static str),
-    ]);
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let applications = client
-        .applications()
-        .by_environment(EnvironmentId::new("environment-1"))
-        .await
-        .expect("all application pages are readable");
-
-    assert_eq!(applications.applications().len(), 101);
-    let requests = server.finish_all();
-    assert_eq!(requests.len(), 2);
-    assert!(requests[0].starts_with("GET /api/application.search?"));
-    assert!(requests[0].contains("environmentId=environment-1"));
-    assert!(requests[0].contains("limit=100"));
-    assert!(requests[0].contains("offset=0"));
-    assert!(requests[1].starts_with("GET /api/application.search?"));
-    assert!(requests[1].contains("environmentId=environment-1"));
-    assert!(requests[1].contains("limit=100"));
-    assert!(requests[1].contains("offset=100"));
-}
-
-#[tokio::test]
-async fn applications_by_environment_rejects_premature_empty_pages() {
-    let server = TestServer::respond_with_json(r#"{"items":[],"total":1}"#);
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .applications()
-        .by_environment(EnvironmentId::new("environment-1"))
-        .await
-        .expect_err("an incomplete application collection is unsafe");
-
-    assert!(matches!(
-        error,
-        Error::UnexpectedResponse {
-            operation: "application.search"
-        }
-    ));
-    server.finish();
-}
-
-#[tokio::test]
-async fn applications_by_environment_rejects_pages_over_the_declared_total() {
-    let server = TestServer::respond_with_json(
-        r#"{"items":[{"applicationId":"application-1","environmentId":"environment-1","name":"one"},{"applicationId":"application-2","environmentId":"environment-1","name":"two"}],"total":1}"#,
-    );
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .applications()
-        .by_environment(EnvironmentId::new("environment-1"))
-        .await
-        .expect_err("a page cannot contain more than the declared total");
-
-    assert!(matches!(
-        error,
-        Error::UnexpectedResponse {
-            operation: "application.search"
-        }
-    ));
-    server.finish();
-}
-
-#[tokio::test]
-async fn applications_by_environment_rejects_totals_above_the_collection_cap() {
-    let server = TestServer::respond_with_json(r#"{"items":[],"total":10001}"#);
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .applications()
-        .by_environment(EnvironmentId::new("environment-1"))
-        .await
-        .expect_err("the bounded collection cap must be enforced");
-
-    assert!(matches!(
-        error,
-        Error::UnexpectedResponse {
-            operation: "application.search"
-        }
-    ));
-    server.finish();
-}
-
-#[tokio::test]
-async fn applications_by_environment_rejects_an_empty_parent_before_transport() {
-    let client = Dokploy::builder()
-        .url("http://127.0.0.1:9")
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .applications()
-        .by_environment(EnvironmentId::new(""))
-        .await
-        .expect_err("an empty parent ID is invalid");
-
-    assert!(matches!(
-        error,
-        Error::InvalidRequest {
-            operation: "application.search",
-            ..
-        }
-    ));
-}
-
-#[tokio::test]
-async fn applications_by_environment_rejects_totals_that_change_between_pages() {
-    let first_items = (0..100)
-        .map(|index| {
-            serde_json::json!({
-                "applicationId": format!("application-{index}"),
-                "environmentId": "environment-1",
-                "name": format!("application-{index}")
-            })
-        })
-        .collect::<Vec<_>>();
-    let first = Box::leak(
-        serde_json::json!({"items": first_items, "total": 101})
-            .to_string()
-            .into_boxed_str(),
-    );
-    let second = Box::leak(
-        serde_json::json!({"items": [], "total": 100})
-            .to_string()
-            .into_boxed_str(),
-    );
-    let server = TestServer::respond_in_sequence(vec![
-        ("200 OK", first as &'static str),
-        ("200 OK", second as &'static str),
-    ]);
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .applications()
-        .by_environment(EnvironmentId::new("environment-1"))
-        .await
-        .expect_err("changing totals are unsafe");
-
-    assert!(matches!(
-        error,
-        Error::UnexpectedResponse {
-            operation: "application.search"
-        }
-    ));
-    server.finish_all();
-}
-
-#[tokio::test]
-async fn sensitive_reads_discard_remote_error_text_and_preserve_status() {
-    let secret = "project-error-secret-canary";
-    let server = TestServer::respond(
-        "404 Not Found",
-        r#"{"code":"ECHO_project-error-secret-canary","message":"Project contains project-error-secret-canary","issues":[{"message":"project-error-secret-canary"}]}"#,
-    );
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("test-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .projects()
-        .get(ProjectId::new("missing-project"))
-        .await
-        .expect_err("missing project returns an error");
-
-    let details = error.dokploy().expect("Dokploy status remains structured");
-    assert_eq!(details.status(), 404);
-    assert_eq!(details.code(), "NOT_FOUND");
-    assert_eq!(details.message(), "Not Found");
-    assert!(details.issues().is_empty());
-    assert!(!format!("{error}").contains(secret));
-    assert!(!format!("{error:?}").contains(secret));
-    server.finish();
-}
-
-#[tokio::test]
-async fn sparse_authentication_errors_receive_a_stable_fallback_code() {
-    let server = TestServer::respond("401 Unauthorized", r#"{"message":"Unauthorized"}"#);
-    let client = Dokploy::builder()
-        .url(server.url())
-        .api_key("invalid-api-key")
-        .build()
-        .expect("client configuration is valid");
-
-    let error = client
-        .projects()
-        .all()
-        .await
-        .expect_err("invalid authentication returns an error");
-    let details = error
-        .dokploy()
-        .expect("the sparse response is normalized into structured details");
-
-    assert_eq!(details.status(), 401);
-    assert_eq!(details.code(), "UNAUTHORIZED");
-    assert_eq!(details.message(), "Unauthorized");
-    assert!(details.issues().is_empty());
-    server.finish();
 }
 
 #[tokio::test]
@@ -902,8 +438,11 @@ async fn oversized_non_success_responses_preserve_only_safe_status_details() {
         .api_key("test-api-key")
         .build()
         .unwrap()
-        .projects()
-        .delete(ProjectId::new("project-1"))
+        .imperative()
+        .execute(
+            ImperativeRequest::post("project.remove")
+                .body(serde_json::json!({"projectId": "project-1"})),
+        )
         .await
         .expect_err("an oversized rejection is represented without its body");
     let dokploy = error.dokploy().expect("HTTP status remains structured");
@@ -925,8 +464,11 @@ async fn malformed_and_oversized_successful_mutation_responses_are_outcome_unkno
         .api_key("test-api-key")
         .build()
         .unwrap()
-        .projects()
-        .create(CreateProject::new("response-bound-test"))
+        .imperative()
+        .execute(
+            ImperativeRequest::post("project.create")
+                .body(serde_json::json!({"name": "response-bound-test"})),
+        )
         .await
         .expect_err("a malformed accepted mutation response is uncertain");
     assert!(matches!(
@@ -948,8 +490,11 @@ async fn malformed_and_oversized_successful_mutation_responses_are_outcome_unkno
         .api_key("test-api-key")
         .build()
         .unwrap()
-        .projects()
-        .create(CreateProject::new("response-bound-test"))
+        .imperative()
+        .execute(
+            ImperativeRequest::post("project.create")
+                .body(serde_json::json!({"name": "response-bound-test"})),
+        )
         .await
         .expect_err("an oversized accepted mutation response is uncertain");
     assert!(matches!(
@@ -1032,12 +577,12 @@ async fn safe_reads_retry_transient_server_failures() {
         .expect("client configuration is valid");
 
     let topology = client
-        .projects()
-        .all()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
         .await
         .expect("safe read succeeds after transient failures");
 
-    assert!(topology.projects().is_empty());
+    assert_eq!(topology, serde_json::json!([]));
     assert_eq!(server.finish_all().len(), 3);
 }
 
@@ -1074,10 +619,10 @@ async fn builder_normalizes_an_existing_api_suffix() {
         .expect("client configuration is valid");
 
     client
-        .projects()
-        .all()
+        .imperative()
+        .execute(ImperativeRequest::get("project.all"))
         .await
-        .expect("project topology is readable");
+        .expect("project.all is readable");
 
     assert!(
         server

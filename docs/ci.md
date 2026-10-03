@@ -17,13 +17,12 @@ Every push and pull request runs six independent jobs:
   `cargo-audit` 0.22.2;
 - cargo-dist workflow drift detection and release-plan validation with
   cargo-dist 0.33.0;
-- a live apply-and-converge check against the digest-pinned local Dokploy
-  environment.
+- the engine against the digest-pinned Dokploy (`engine-live`, below).
 
 The contracts job only renders and validates `compose.integration.yaml`. It
 does not pull images, create secrets, access the Docker socket, or start the
-Dokploy integration environment. The separate integration job starts the
-disposable stack, runs `scripts/integration/test-apply.sh`, and always invokes
+Dokploy integration environment. The separate `engine-live` job starts the
+disposable stack, runs `scripts/integration/test-engine-live.sh`, and always invokes
 `scripts/integration/reset.sh` so containers, volumes, generated credentials,
 and local integration state do not survive the job.
 
@@ -144,7 +143,7 @@ cargo audit
 dist generate --mode=ci --check
 dist plan
 scripts/integration/up.sh
-scripts/integration/test-apply.sh
+scripts/integration/test-engine-live.sh
 scripts/integration/reset.sh
 ```
 

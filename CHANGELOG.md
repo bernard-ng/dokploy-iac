@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Breaking: the rest of the first engine is deleted** (ADR 0016). The `dokploy-config` crate, the SDK's
+  per-kind models, services, and client methods (`dokploy-sdk` is now the connection, `Transport`,
+  and the raw `api` commands), the first engine's live scripts (`test-*-apply.sh`, `test-*-sdk.sh`,
+  `*-evidence*.sh`) and the CI job that ran them are gone. The capture scripts and the fixtures stay:
+  they are the evidence the next kinds are ported from.
 - **Breaking: the CLI runs on the v2 engine and the first engine is deleted** (milestone M2,
   ADR 0016; no support for first-engine documents, as the product is unreleased).
   `validate`, `schema`, `plan`, `apply`, `recover`, `destroy`, `state`, and `init` read
