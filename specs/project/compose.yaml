@@ -1,5 +1,4 @@
-# A Docker Compose stack of an environment. `service_networks` (per-service network attachment)
-# is the one request field not modeled yet, which keeps the coverage partial.
+# A Docker Compose stack of an environment.
 #
 # Live facts (fixtures/api/live/*/compose-*): create answers the whole object, update answers the
 # object, delete takes `deleteVolumes` and answers the removed object, and the collection is the
@@ -14,7 +13,7 @@ parent: environment
 section: compose
 title: Compose stack
 class: managed
-coverage: partial
+coverage: full
 identity:
   key: name
   collision: [name]
@@ -147,9 +146,17 @@ fields:
     api: autoDeploy
     type: bool
     nullable: true
+  service_networks:
+    api: "/serviceNetworks/*[serviceName=$key]/networkIds"
+    type: "map<text, set<selector(network)>>"
+    granularity: key
+    nullable: true
+    needs_deploy: true
+    fallback: { detachDokployNetwork: false }
+    doc: The networks each Compose service attaches to, by service name. Dokploy holds one element per service with a `detachDokployNetwork` flag that is kept as it holds it (`false` for a service the document adds) and is not managed. A service left out is unmanaged.
 write:
   - op: compose.update
-    fields: [name, description, icon, compose_type, source, compose_path, command, suffix, randomize, isolated_deployment, isolated_deployments_volume, auto_deploy]
+    fields: [name, description, icon, compose_type, source, compose_path, command, suffix, randomize, isolated_deployment, isolated_deployments_volume, auto_deploy, service_networks]
     shape: partial
   - op: compose.saveEnvironment
     fields: [environment, create_env_file]

@@ -83,7 +83,7 @@ fn observe(
         PathShape::CollectionRoot if matches!(info.ty, FieldType::Env) => {
             return observe_environment(info, item);
         }
-        PathShape::CollectionRoot if is_selector_set(&info.ty) => {
+        PathShape::CollectionRoot if info.ty.selector_set_kind().is_some() => {
             return observe_selector_set(info, item, selectors);
         }
         PathShape::CollectionRoot | PathShape::CollectionEntry => return not_returned,
@@ -175,11 +175,16 @@ enum Held {
     Invalid,
 }
 
-/// Reads the ids a set of selectors holds: an array of ids under a key, or, for a relation, the
-/// ids inside the objects of an array (`/projectTags/*/tagId`). An element that does not hold an
-/// id is not guessed at: the whole read is invalid.
+/// Reads the ids a set of selectors holds. The pointer is one of:
+///
+/// - a key or a plain pointer to an array of ids (`networkIds`);
+/// - for a relation, `/projectTags/*/tagId`: the id inside each object of an array;
+/// - for a map of sets, `/serviceNetworks/*[serviceName=api]/networkIds`: the array of ids of the
+///   one element whose `serviceName` is `api` (none is an empty set).
+///
+/// An element that does not hold what it should is not guessed at: the whole read is invalid.
 fn held_ids(item: &Json, api: &str) -> Held {
-    let ids = |items: &[Json], member: Option<&str>| -> Held {
+    let strings = |items: &[Json], member: Option<&str>| -> Held {
         let mut ids = Vec::new();
         for element in items {
             let id = match member {
@@ -194,16 +199,39 @@ fn held_ids(item: &Json, api: &str) -> Held {
 
         Held::Ids(ids)
     };
-    let (base, member) = match api.split_once("/*/") {
-        Some((base, member)) => (base, Some(member)),
-        None => (api, None),
+    let Some((base, rest)) = api.split_once("/*") else {
+        return match lookup(item, api) {
+            None => Held::NotReturned,
+            Some(Json::Null) => Held::Null,
+            Some(Json::Array(items)) => strings(items, None),
+            Some(_) => Held::Invalid,
+        };
     };
-    match lookup(item, base) {
-        None => Held::NotReturned,
-        Some(Json::Null) => Held::Null,
-        Some(Json::Array(items)) => ids(items, member),
-        Some(_) => Held::Invalid,
+    let elements = match lookup(item, base) {
+        None => return Held::NotReturned,
+        Some(Json::Null) => return Held::Null,
+        Some(Json::Array(elements)) => elements,
+        Some(_) => return Held::Invalid,
+    };
+    if let Some(keyed) = rest.strip_prefix('[') {
+        // `[key=value]/member`
+        let Some((condition, member)) = keyed.split_once("]/") else {
+            return Held::Invalid;
+        };
+        let Some((key, value)) = condition.split_once('=') else {
+            return Held::Invalid;
+        };
+        let element = elements
+            .iter()
+            .find(|element| element.get(key).and_then(Json::as_str) == Some(value));
+        return match element.map(|element| element.get(member)) {
+            None => Held::Ids(Vec::new()),
+            Some(None | Some(Json::Null)) => Held::Ids(Vec::new()),
+            Some(Some(Json::Array(ids))) => strings(ids, None),
+            Some(Some(_)) => Held::Invalid,
+        };
     }
+    strings(elements, rest.strip_prefix('/'))
 }
 
 /// The ids a set of selectors holds in `item`, when the read says so.
@@ -212,22 +240,6 @@ pub(crate) fn held_member_ids(item: &Json, api: &str) -> Option<Vec<String>> {
         Held::Ids(ids) => Some(ids),
         Held::Null => Some(Vec::new()),
         Held::NotReturned | Held::Invalid => None,
-    }
-}
-
-/// Whether a type is a set of selectors, planned per member.
-fn is_selector_set(ty: &FieldType) -> bool {
-    matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
-}
-
-/// The kind a set of selectors selects.
-fn selector_set_kind(ty: &FieldType) -> Option<&str> {
-    match ty {
-        FieldType::Set(item) => match &**item {
-            FieldType::Selector(kind) => Some(kind),
-            _ => None,
-        },
-        _ => None,
     }
 }
 
@@ -240,27 +252,85 @@ fn observe_selector_set(
     selectors: &SelectorIndex,
 ) -> PropertyObservation {
     let not_returned = PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
-    let Some(kind) = selector_set_kind(&info.ty) else {
+    let Some(kind) = info.ty.selector_set_kind() else {
         return not_returned;
     };
-    match held_ids(item, &info.api) {
-        Held::NotReturned => not_returned,
-        Held::Null => PropertyObservation::KnownAbsent,
-        Held::Ids(ids) => {
-            let mut names = serde_json::Map::new();
-            for id in &ids {
-                let key = selectors
-                    .name_of(kind, id)
-                    .map_or_else(|| format!("?{id}"), str::to_owned);
-                names.insert(key, Json::Bool(true));
-            }
-            ComparableValue::try_from_json(Json::Object(names)).map_or(
-                PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
-                PropertyObservation::Known,
-            )
+    // A map of sets holds one element per key: its members are named `key.member`.
+    let held: Vec<(Option<String>, Held)> = if info.ty.is_map_of_selector_sets() {
+        match held_keyed_ids(item, &info.api) {
+            Some(Ok(keyed)) => keyed
+                .into_iter()
+                .map(|(key, ids)| (Some(key), Held::Ids(ids)))
+                .collect(),
+            Some(Err(())) => vec![(None, Held::Invalid)],
+            None => vec![(None, Held::NotReturned)],
         }
-        Held::Invalid => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+    } else {
+        vec![(None, held_ids(item, &info.api))]
+    };
+    let mut names = serde_json::Map::new();
+    for (key, ids) in held {
+        match ids {
+            Held::NotReturned => return not_returned,
+            Held::Null => return PropertyObservation::KnownAbsent,
+            Held::Invalid => {
+                return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse);
+            }
+            Held::Ids(ids) => {
+                for id in &ids {
+                    let member = selectors
+                        .name_of(kind, id)
+                        .map_or_else(|| format!("?{id}"), str::to_owned);
+                    let name = match &key {
+                        Some(key) => format!("{key}.{member}"),
+                        None => member,
+                    };
+                    names.insert(name, Json::Bool(true));
+                }
+            }
+        }
     }
+
+    ComparableValue::try_from_json(Json::Object(names)).map_or(
+        PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+        PropertyObservation::Known,
+    )
+}
+
+/// The ids every element of a keyed array holds, by key, for the root of a map of sets
+/// (`/serviceNetworks/*[serviceName=$key]/networkIds`). `None` when the array is not returned.
+fn held_keyed_ids(item: &Json, api: &str) -> Option<Result<Vec<(String, Vec<String>)>, ()>> {
+    let (base, rest) = api.split_once("/*[")?;
+    let (condition, member) = rest.split_once("]/")?;
+    let (key_name, _) = condition.split_once('=')?;
+    let elements = match lookup(item, base)? {
+        Json::Array(elements) => elements,
+        Json::Null => return Some(Ok(Vec::new())),
+        _ => return Some(Err(())),
+    };
+    let mut keyed = Vec::new();
+    for element in elements {
+        let Some(key) = element.get(key_name).and_then(Json::as_str) else {
+            return Some(Err(()));
+        };
+        let ids = match element.get(member) {
+            None | Some(Json::Null) => Vec::new(),
+            Some(Json::Array(ids)) => {
+                let mut texts = Vec::new();
+                for id in ids {
+                    let Some(id) = id.as_str() else {
+                        return Some(Err(()));
+                    };
+                    texts.push(id.to_owned());
+                }
+                texts
+            }
+            Some(_) => return Some(Err(())),
+        };
+        keyed.push((key.to_owned(), ids));
+    }
+
+    Some(Ok(keyed))
 }
 
 /// One member of a set of selectors: there, or not, by the name of the resource each id Dokploy
@@ -278,6 +348,12 @@ fn observe_selector_entry(
         .and_then(|root| info.path.strip_prefix(root))
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or_default();
+    // An entry of a map of sets is `key.member`; the read is already of the key's element.
+    let name = if info.api.contains("/*[") {
+        name.split_once('.').map_or(name, |(_, member)| member)
+    } else {
+        name
+    };
     match held_ids(item, &info.api) {
         Held::NotReturned => not_returned,
         Held::Null => PropertyObservation::KnownAbsent,

@@ -332,18 +332,40 @@ impl Compiler<'_> {
             let mut selectors = Vec::new();
             let mut declared_sets = Vec::new();
             for (name, field) in &resource.fields {
-                if let Value::List(items) = &field.value
-                    && !items.is_empty()
+                let names_members = match &field.value {
+                    Value::List(items) => !items.is_empty(),
+                    Value::Map(sets) => sets
+                        .values()
+                        .any(|set| matches!(set, Value::List(items) if !items.is_empty())),
+                    _ => false,
+                };
+                if names_members
                     && spec
                         .fields
                         .get(name)
                         .and_then(|spec_field| parse_type(&spec_field.ty).ok())
-                        .is_some_and(|ty| is_selector_set(&ty))
+                        .is_some_and(|ty| ty.selector_set_kind().is_some())
                 {
                     declared_sets.push(name.clone());
                 }
                 let found: Vec<(String, &dokploy_model::Selector)> = match &field.value {
                     Value::Selector(selector) => vec![(name.clone(), selector)],
+                    // Each member of each set of a map is an entry the planner resolves.
+                    Value::Map(sets) => sets
+                        .iter()
+                        .filter_map(|(key, set)| match set {
+                            Value::List(items) => Some((key, items)),
+                            _ => None,
+                        })
+                        .flat_map(|(key, items)| {
+                            items.iter().filter_map(move |item| match item {
+                                Value::Selector(
+                                    selector @ dokploy_model::Selector::Name(entry),
+                                ) => Some((format!("{name}.{key}.{entry}"), selector)),
+                                _ => None,
+                            })
+                        })
+                        .collect(),
                     // Each name of a set of selectors is an entry the planner resolves.
                     Value::List(items) => items
                         .iter()
@@ -561,7 +583,9 @@ impl Compiler<'_> {
                 // A set of selectors planned per member: each resource it names is an entry of its
                 // own, keyed by the name the document gives it.
                 Value::List(items)
-                    if is_selector_set(&ty) && spec_field.granularity == Some(Granularity::Key) =>
+                    if matches!(ty, FieldType::Set(_))
+                        && ty.selector_set_kind().is_some()
+                        && spec_field.granularity == Some(Granularity::Key) =>
                 {
                     if items.is_empty() {
                         properties.insert(path(name)?, OwnedValue::EmptyCollection);
@@ -574,6 +598,35 @@ impl Compiler<'_> {
                             path(&format!("{name}.{entry}"))?,
                             comparable(serde_json::json!({ "name": entry })),
                         );
+                    }
+                }
+                // A map from a key to a set of selectors: each member of each set is an entry,
+                // `key.member`, so the key cannot hold a dot.
+                Value::Map(sets)
+                    if ty.is_map_of_selector_sets()
+                        && spec_field.granularity == Some(Granularity::Key) =>
+                {
+                    if sets.is_empty() {
+                        properties.insert(path(name)?, OwnedValue::EmptyCollection);
+                    }
+                    for (key, set) in sets {
+                        if key.contains('.') {
+                            return Err(unsupported("has a key with a dot, which names no entry"));
+                        }
+                        let Value::List(items) = set else {
+                            return Err(unsupported(
+                                "holds a value that is not a list of selectors",
+                            ));
+                        };
+                        for item in items {
+                            let Value::Selector(dokploy_model::Selector::Name(entry)) = item else {
+                                return Err(unsupported("holds a selector that is not a name"));
+                            };
+                            properties.insert(
+                                path(&format!("{name}.{key}.{entry}"))?,
+                                comparable(serde_json::json!({ "name": entry })),
+                            );
+                        }
                     }
                 }
                 Value::Map(entries)
@@ -761,11 +814,6 @@ fn collision_values(spec: &KindSpec, resource: &Resource) -> BTreeMap<String, se
     }
 
     values
-}
-
-/// Whether a field type is a set of selectors.
-fn is_selector_set(ty: &FieldType) -> bool {
-    matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
 }
 
 fn selector_json(selector: &dokploy_model::Selector) -> serde_json::Value {

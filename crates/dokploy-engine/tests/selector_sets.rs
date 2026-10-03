@@ -176,3 +176,147 @@ async fn a_member_that_drifted_away_is_planned_back_in() {
     assert!(plan.applyable(), "{:?}", plan.diagnostics());
     assert_eq!(plan.changes().len(), 1, "{plan:?}");
 }
+
+/// A Compose stack with the networks of its services.
+fn stack(services: &str) -> String {
+    format!(
+        "version: 2\nproject:\n  slug: shop\n  environments:\n    production:\n      compose:\n        stack:\n          service_networks:\n{services}"
+    )
+}
+
+fn elements(world: &ProjectWorld) -> Vec<Value> {
+    let compose = world.sim.objects("compose").remove(0);
+    compose["serviceNetworks"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn element<'a>(elements: &'a [Value], service: &str) -> &'a Value {
+    elements
+        .iter()
+        .find(|element| element["serviceName"] == service)
+        .unwrap_or_else(|| panic!("no element for `{service}` in {elements:?}"))
+}
+
+fn ids_of(element: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = element["networkIds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| id.as_str().unwrap().to_owned())
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[tokio::test]
+async fn the_networks_of_each_compose_service_are_written_as_one_element_per_service() {
+    let world = ProjectWorld::new();
+    let backend = network(&world, "backend");
+    let data = network(&world, "data");
+    let document = stack(
+        "            api: [{ name: backend }]\n            worker: [{ name: backend }, { name: data }]\n",
+    );
+
+    world.apply_text(&document, &[]).await.expect("applies");
+
+    let held = elements(&world);
+    assert_eq!(held.len(), 2, "{held:?}");
+    assert_eq!(ids_of(element(&held, "api")), [backend.clone()]);
+    let mut both = vec![backend, data];
+    both.sort();
+    assert_eq!(ids_of(element(&held, "worker")), both);
+    assert_eq!(
+        element(&held, "api")["detachDokployNetwork"],
+        false,
+        "a service the document adds starts attached to Dokploy's own network"
+    );
+    let plan = world.plan_text(&document, &[]).await;
+    assert!(plan.applyable(), "{:?}", plan.diagnostics());
+    assert!(plan.changes().is_empty(), "converged: {plan:?}");
+}
+
+#[tokio::test]
+async fn a_service_the_document_stops_attaching_to_a_network_is_detached_from_it() {
+    let world = ProjectWorld::new();
+    let backend = network(&world, "backend");
+    let data = network(&world, "data");
+    world
+        .apply_text(
+            &stack("            worker: [{ name: backend }, { name: data }]\n"),
+            &[],
+        )
+        .await
+        .expect("applies");
+
+    let document = stack("            worker: [{ name: backend }]\n");
+    world.apply_text(&document, &[]).await.expect("applies");
+
+    let held = elements(&world);
+    assert_eq!(ids_of(element(&held, "worker")), [backend]);
+    assert!(!ids_of(element(&held, "worker")).contains(&data));
+    let plan = world.plan_text(&document, &[]).await;
+    assert!(plan.changes().is_empty(), "converged: {plan:?}");
+}
+
+#[tokio::test]
+async fn another_service_and_the_flag_dokploy_holds_are_kept() {
+    let world = ProjectWorld::new();
+    let backend = network(&world, "backend");
+    let other = network(&world, "other");
+    let document = stack("            api: [{ name: backend }]\n");
+    world.apply_text(&document, &[]).await.expect("applies");
+    // Another service attached elsewhere, and the flag of `api` set in Dokploy.
+    let id = world.sim.objects("compose").remove(0)["composeId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    world.sim.patch(
+        "compose",
+        &id,
+        &json!({ "serviceNetworks": [
+            { "serviceName": "api", "networkIds": [backend], "detachDokployNetwork": true },
+            { "serviceName": "db", "networkIds": [other], "detachDokployNetwork": false }
+        ] }),
+    );
+
+    let plan = world.plan_text(&document, &[]).await;
+    assert!(plan.changes().is_empty(), "not drift: {plan:?}");
+
+    let data = network(&world, "data");
+    world
+        .apply_text(
+            &stack("            api: [{ name: backend }, { name: data }]\n"),
+            &[],
+        )
+        .await
+        .expect("applies");
+    let held = elements(&world);
+    assert_eq!(held.len(), 2, "{held:?}");
+    assert_eq!(element(&held, "db")["networkIds"], json!([other]));
+    assert_eq!(
+        element(&held, "api")["detachDokployNetwork"],
+        true,
+        "the flag is Dokploy's, not the document's"
+    );
+    assert!(ids_of(element(&held, "api")).contains(&data));
+}
+
+#[tokio::test]
+async fn a_service_network_that_does_not_exist_blocks_the_plan() {
+    let world = ProjectWorld::new();
+
+    let plan = world
+        .plan_text(&stack("            api: [{ name: nowhere }]\n"), &[])
+        .await;
+
+    assert!(!plan.applyable());
+    assert!(
+        plan.diagnostics()
+            .iter()
+            .any(|d| d.code() == PlanDiagnosticCode::UnresolvedExternalSelector),
+        "{:?}",
+        plan.diagnostics()
+    );
+}

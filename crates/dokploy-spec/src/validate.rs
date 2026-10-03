@@ -438,8 +438,7 @@ fn check_type_rules(
             "class content and type file go together",
         );
     }
-    let selector_set =
-        matches!(&parsed, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)));
+    let selector_set = parsed.selector_set_kind().is_some();
     if field.granularity.is_some()
         && !(matches!(
             parsed,
@@ -563,10 +562,9 @@ fn check_write_groups(context: &mut Context<'_>, spec: &KindSpec) {
             let path = format!("fields.{name}.membership");
             check_operation(context, &format!("{path}.add.op"), &membership.add.op);
             check_operation(context, &format!("{path}.remove.op"), &membership.remove.op);
-            let keyed_selector_set = matches!(
-                parse_type(&field.ty),
-                Ok(FieldType::Set(item)) if matches!(*item, FieldType::Selector(_))
-            ) && field.granularity == Some(crate::model::Granularity::Key);
+            let keyed_selector_set = parse_type(&field.ty)
+                .is_ok_and(|ty| ty.selector_set_kind().is_some())
+                && field.granularity == Some(crate::model::Granularity::Key);
             if !keyed_selector_set {
                 context.add(
                     path.clone(),

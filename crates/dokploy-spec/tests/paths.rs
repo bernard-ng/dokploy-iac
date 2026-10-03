@@ -292,3 +292,123 @@ fn every_listed_property_resolves_to_itself() {
         }
     }
 }
+
+#[test]
+fn a_set_of_selectors_is_a_collection_whose_entries_are_selectors_named_by_the_document() {
+    let registry = registry();
+
+    let root = registry.property("application", "networks").unwrap();
+    assert_eq!(root.shape, PathShape::CollectionRoot);
+    assert!(root.nullable, "`null` clears every attachment");
+    assert_eq!(root.api, "networkIds");
+    assert_eq!(root.ty.selector_set_kind(), Some("network"));
+
+    let entry = registry
+        .property("application", "networks.backend")
+        .unwrap();
+    assert_eq!(entry.shape, PathShape::CollectionEntry);
+    assert_eq!(entry.root.as_deref(), Some("networks"));
+    assert_eq!(entry.selector.as_deref(), Some("network"));
+    assert_eq!(entry.ty, FieldType::Selector("network".into()));
+    assert!(!entry.is_sensitive(), "a network name is not a secret");
+
+    // A name may hold dots: everything after the field is the key.
+    let dotted = registry.property("application", "networks.my.net").unwrap();
+    assert_eq!(dotted.root.as_deref(), Some("networks"));
+}
+
+#[test]
+fn a_relation_reads_the_ids_inside_the_objects_of_an_array() {
+    let tags = registry().property("project", "tags").unwrap();
+
+    assert_eq!(tags.shape, PathShape::CollectionRoot);
+    assert_eq!(tags.api, "/projectTags/*/tagId");
+    assert_eq!(tags.request_key(), "projectTags");
+    let entry = registry().property("project", "tags.prod").unwrap();
+    assert_eq!(entry.selector.as_deref(), Some("tag"));
+}
+
+#[test]
+fn an_entry_of_a_map_of_sets_names_its_key_and_its_member_and_addresses_one_element() {
+    let registry = registry();
+
+    let root = registry.property("compose", "service_networks").unwrap();
+    assert_eq!(root.shape, PathShape::CollectionRoot);
+    assert!(root.ty.is_map_of_selector_sets());
+    assert_eq!(root.request_key(), "serviceNetworks");
+
+    let entry = registry
+        .property("compose", "service_networks.api.backend")
+        .unwrap();
+    assert_eq!(entry.shape, PathShape::CollectionEntry);
+    assert_eq!(entry.selector.as_deref(), Some("network"));
+    assert_eq!(
+        entry.api, "/serviceNetworks/*[serviceName=api]/networkIds",
+        "the key of the entry is the element it reads and writes"
+    );
+
+    assert!(
+        matches!(
+            registry.property("compose", "service_networks.api"),
+            Err(PathError::InvalidKey { .. })
+        ),
+        "a key alone names no entry"
+    );
+    for wrong in ["service_networks.api.", "service_networks..backend"] {
+        assert!(
+            registry.property("compose", wrong).is_err(),
+            "`{wrong}` names no entry"
+        );
+    }
+}
+
+#[test]
+fn a_relation_belongs_to_no_write_group_and_a_set_of_selectors_needs_a_key_granularity() {
+    let broken = |fields: &str, write: &str| {
+        let text = format!(
+            r#"
+kind: widget
+scope: settings
+section: widgets
+title: Widget
+identity: {{ key: name, collision: [name], address: "widget.{{key}}" }}
+api:
+  id: widgetId
+  create: {{ op: tag.create }}
+  update: {{ op: tag.update }}
+  remove: {{ op: tag.remove }}
+fields:
+  name: {{ type: text, min_len: 1, default: key }}
+{fields}
+write:
+  - {{ op: tag.update, fields: [{write}], shape: partial }}
+"#
+        );
+        let spec = parse_spec(&text).expect("the test spec parses");
+        dokploy_spec::validate_spec(&spec, &std::collections::BTreeSet::new())
+    };
+
+    // `granularity: key` only on a set of selectors, a map, an env, or a struct.
+    let issues = broken(
+        "  peers: { type: \"set<text>\", granularity: key }",
+        "name, peers",
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.to_string().contains("granularity")),
+        "{issues:?}"
+    );
+
+    // A relation is changed by its own operations, so a write group may not carry it.
+    let issues = broken(
+        "  peers:\n    api: /peers/*/id\n    type: \"set<selector(tag)>\"\n    granularity: key\n    nullable: true\n    membership:\n      add: { op: tag.create, member: tagId }\n      remove: { op: tag.remove, member: tagId }",
+        "name, peers",
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue.to_string().contains("no write group")),
+        "{issues:?}"
+    );
+}

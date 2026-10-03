@@ -27,9 +27,10 @@ pub(crate) struct Inputs<'a> {
     pub(crate) selectors: Option<&'a SelectorIndex>,
 }
 
-/// Whether a field type is a set of selectors, planned per member.
+/// Whether a field type is a set of selectors, or a map from a key to such sets: the types planned
+/// per member.
 fn is_selector_set(ty: &FieldType) -> bool {
-    matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
+    ty.selector_set_kind().is_some()
 }
 
 /// A property the executor can write.
@@ -84,10 +85,13 @@ pub(crate) fn writable(
             }
         }
     }
+    // A relation and a keyed array are read through a pointer into the array of the direct read,
+    // and written under its first segment.
     let relation = spec
         .fields
         .get(info.field_name())
-        .is_some_and(|field| field.membership.is_some());
+        .is_some_and(|field| field.membership.is_some())
+        || info.api.contains("/*");
     if !relation && info.api.trim_start_matches('/').contains('/') {
         return Err(unsupported(
             "maps to a nested request key, which the executor does not write yet",
@@ -746,6 +750,23 @@ pub(crate) fn group_body(
             }
             continue;
         }
+        // A map from a key to a set of selectors is an array with one element per key.
+        if ty.as_ref().is_some_and(FieldType::is_map_of_selector_sets) {
+            let wire = field.request_name(name).to_owned();
+            if group.changed.contains(name) {
+                body.insert(
+                    wire.clone(),
+                    keyed_set_elements(
+                        spec, address, checkpoint, group, name, &wire, fresh, inputs,
+                    )?,
+                );
+            } else if group.shape == Shape::Full
+                && let Some(current) = fresh.and_then(|fresh| fresh.get(&wire))
+            {
+                body.insert(wire, current.clone());
+            }
+            continue;
+        }
         // A set of selectors is one array of ids: what Dokploy holds, less the members the
         // document removed, plus the ones it names.
         if is_selector_set(ty.as_ref().unwrap_or(&FieldType::Text)) {
@@ -837,6 +858,143 @@ pub(crate) fn group_body(
     }
 
     Ok(Json::Object(body))
+}
+
+/// The array of a map from a key to a set of selectors after the update: one element per key,
+/// `{ <key name>: key, <member>: [ids], ..the rest of the template }`. Dokploy's own elements are the
+/// start, so what the document does not own (another service, another key of an element) stays; a
+/// member it stopped naming is removed from its element, and a key it names that Dokploy has no
+/// element for gets one from the field's `fallback` template.
+#[allow(clippy::too_many_arguments)]
+fn keyed_set_elements(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    group: &GroupRequest,
+    name: &str,
+    wire: &str,
+    fresh: Option<&Json>,
+    inputs: Inputs<'_>,
+) -> Result<Json, ApplyError> {
+    let unsupported = |reason: &'static str| ApplyError::Unsupported {
+        address: address.clone(),
+        property: Some(name.to_owned()),
+        reason,
+    };
+    let root = PropertyPath::from_spec(spec, name)
+        .map_err(|_| unsupported("is not a property of the kind"))?;
+    match checkpoint.property(&root) {
+        Some(CheckpointValueRef::Null) => return Ok(Json::Null),
+        Some(CheckpointValueRef::EmptyCollection) => return Ok(Json::Array(Vec::new())),
+        _ => {}
+    }
+    let field = spec
+        .fields
+        .get(name)
+        .ok_or_else(|| unsupported("is not a field of the kind"))?;
+    let kind = parse_type(&field.ty)
+        .ok()
+        .and_then(|ty| ty.selector_set_kind().map(str::to_owned))
+        .ok_or_else(|| unsupported("is not a map of sets of selectors"))?;
+    // `/serviceNetworks/*[serviceName=$key]/networkIds`
+    let api = field.api.as_deref().unwrap_or_default();
+    let (key_name, member) = api
+        .split_once("/*[")
+        .and_then(|(_, rest)| rest.split_once("]/"))
+        .and_then(|(condition, member)| {
+            condition
+                .split_once('=')
+                .map(|(key_name, _)| (key_name.to_owned(), member.to_owned()))
+        })
+        .ok_or_else(|| unsupported("has no keyed array to read and write"))?;
+
+    let prefix = format!("{name}.");
+    let split = |path: &str| -> Option<(String, String)> {
+        let rest = path.strip_prefix(prefix.as_str())?;
+        let (key, entry) = rest.split_once('.')?;
+        Some((key.to_owned(), entry.to_owned()))
+    };
+
+    // What the document names now, by key, as ids.
+    let mut owned: BTreeMap<String, Vec<Json>> = BTreeMap::new();
+    for path in checkpoint.property_paths() {
+        if path.info().root.as_deref() != Some(name)
+            || matches!(checkpoint.property(path), Some(CheckpointValueRef::Null))
+        {
+            continue;
+        }
+        let Some((key, _)) = split(&path.to_string()) else {
+            continue;
+        };
+        owned
+            .entry(key)
+            .or_default()
+            .push(body_value(inputs, address, checkpoint, path)?);
+    }
+    // What it stopped naming: written, and `null` in the checkpoint.
+    let removed: Vec<(String, String)> = group
+        .written
+        .iter()
+        .filter_map(|path| {
+            let entry = PropertyPath::from_spec(spec, path).ok()?;
+            matches!(checkpoint.property(&entry), Some(CheckpointValueRef::Null))
+                .then(|| split(path))
+                .flatten()
+        })
+        .collect();
+
+    let mut elements: Vec<Json> = match fresh.and_then(|fresh| fresh.get(wire)) {
+        Some(Json::Array(held)) => held.clone(),
+        _ => Vec::new(),
+    };
+    let mut seen = Vec::new();
+    for element in &mut elements {
+        let Some(key) = element
+            .get(&key_name)
+            .and_then(Json::as_str)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        let mut ids: Vec<Json> = element
+            .get(&member)
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(selectors) = inputs.selectors {
+            ids.retain(|id| {
+                let held = id.as_str().and_then(|id| selectors.name_of(&kind, id));
+                !removed
+                    .iter()
+                    .any(|(removed_key, entry)| *removed_key == key && Some(entry.as_str()) == held)
+            });
+        }
+        for id in owned.get(&key).into_iter().flatten() {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+        if let Some(object) = element.as_object_mut() {
+            object.insert(member.clone(), Json::Array(ids));
+        }
+        seen.push(key);
+    }
+    for (key, ids) in &owned {
+        if seen.contains(key) {
+            continue;
+        }
+        let mut element = field
+            .fallback
+            .as_ref()
+            .and_then(Json::as_object)
+            .cloned()
+            .unwrap_or_default();
+        element.insert(key_name.clone(), Json::String(key.clone()));
+        element.insert(member.clone(), Json::Array(ids.clone()));
+        elements.push(Json::Object(element));
+    }
+
+    Ok(Json::Array(elements))
 }
 
 /// The ids of a set of selectors after the update. Dokploy holds one array; the document owns

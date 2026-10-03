@@ -42,6 +42,31 @@ pub enum FieldType {
     Shared(String),
 }
 
+impl FieldType {
+    /// The kind a set of selectors selects (`set<selector(network)>`), or a map from a key to such
+    /// sets (`map<text, set<selector(network)>>`) selects: the types planned per member, each
+    /// resource an entry of its own.
+    #[must_use]
+    pub fn selector_set_kind(&self) -> Option<&str> {
+        match self {
+            Self::Set(item) => match &**item {
+                Self::Selector(kind) => Some(kind),
+                _ => None,
+            },
+            Self::Map(item) => item
+                .selector_set_kind()
+                .filter(|_| matches!(**item, Self::Set(_))),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a map from a key to a set of selectors.
+    #[must_use]
+    pub fn is_map_of_selector_sets(&self) -> bool {
+        matches!(self, Self::Map(item) if matches!(**item, Self::Set(_)) && item.selector_set_kind().is_some())
+    }
+}
+
 /// A malformed type expression.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("invalid type `{expression}`: {reason}")]

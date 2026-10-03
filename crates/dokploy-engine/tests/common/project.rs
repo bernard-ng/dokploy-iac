@@ -28,12 +28,17 @@ pub struct ProjectWorld {
 
 impl ProjectWorld {
     pub fn new() -> Self {
-        let world = Self {
-            sim: sim(),
-            directory: tempfile::tempdir().unwrap(),
-        };
+        let world = Self::bare();
         world.seed_ancestors();
         world
+    }
+
+    /// A simulator with nothing in it and no state: the project is created by the apply.
+    pub fn bare() -> Self {
+        Self {
+            sim: sim(),
+            directory: tempfile::tempdir().unwrap(),
+        }
     }
 
     /// The project and its environment exist, remotely and in state, as if an earlier apply had

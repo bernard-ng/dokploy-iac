@@ -67,12 +67,14 @@ pub(crate) fn fill(template: &Value, stored: &Map<String, Value>) -> Value {
         Value::Object(keys) => Value::Object(
             keys.iter()
                 .filter_map(|(key, captured)| {
-                    let value = stored.get(key).cloned().or_else(|| {
-                        matches!(
-                            captured,
-                            Value::String(_) | Value::Number(_) | Value::Bool(_)
-                        )
-                        .then(|| captured.clone())
+                    let value = stored.get(key).cloned().or_else(|| match captured {
+                        Value::String(_) | Value::Number(_) | Value::Bool(_) => {
+                            Some(captured.clone())
+                        }
+                        // A nested object of the capture (`{ project: { projectId } }`) is the
+                        // same resource seen from inside a wrapper: it is filled from it.
+                        Value::Object(_) => Some(fill(captured, stored)),
+                        _ => None,
                     })?;
                     Some((key.clone(), value))
                 })
