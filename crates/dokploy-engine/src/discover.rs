@@ -155,7 +155,7 @@ async fn read_top_level<T: Transport>(
         .ok_or_else(|| unsupported(spec, "the spec declares no collection operation"))?;
     let listing = fetch_list(transport, OperationRequest::new(operation)).await;
 
-    Ok(settle(transport, spec, list, group, listing).await)
+    Ok(settle(transport, spec, list, group, listing, None).await)
 }
 
 /// A child kind: its collection is read once per parent, from what was learned about it.
@@ -208,7 +208,7 @@ async fn read_nested<T: Transport>(
                         ));
                     }
                     match raw.pointer(&embedded.pointer) {
-                        Some(Json::Array(items)) => Ok(items.clone()),
+                        Some(Json::Array(items)) => bounded(items.clone()),
                         _ => Err(RemoteFailureKind::InvalidResponse),
                     }
                 } else if let (Some(operation), Some(scope)) =
@@ -225,7 +225,17 @@ async fn read_nested<T: Transport>(
                         "a nested collection must be embedded in its parent or scoped by it",
                     ));
                 };
-                results.extend(settle(transport, spec, list, &owned, listing).await);
+                let attach = spec
+                    .api
+                    .create
+                    .as_ref()
+                    .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
+                    .map(|(field, _)| Attachment {
+                        field,
+                        parent_id: id.as_str(),
+                    });
+                results
+                    .extend(settle(transport, spec, list, &owned, listing, attach.as_ref()).await);
             }
         }
     }
@@ -233,15 +243,27 @@ async fn read_nested<T: Transport>(
     Ok(results)
 }
 
+/// The most items one collection may hold. A response past it is not a collection this tool
+/// can reason about, so it is refused instead of read.
+pub(crate) const MAX_COLLECTION_ITEMS: usize = 10_000;
+
 async fn fetch_list<T: Transport>(
     transport: &T,
     request: OperationRequest,
 ) -> Result<Vec<Json>, RemoteFailureKind> {
     match transport.call(request).await {
-        Ok(Json::Array(items)) => Ok(items),
+        Ok(Json::Array(items)) => bounded(items),
         Ok(_) => Err(RemoteFailureKind::InvalidResponse),
         Err(error) => Err(failure(&error)),
     }
+}
+
+fn bounded(items: Vec<Json>) -> Result<Vec<Json>, RemoteFailureKind> {
+    if items.len() > MAX_COLLECTION_ITEMS {
+        return Err(RemoteFailureKind::InvalidResponse);
+    }
+
+    Ok(items)
 }
 
 /// A kind with no collection read can only be found by the identity state recorded: absence
@@ -287,6 +309,7 @@ async fn settle<T: Transport>(
     list: &ListRead,
     group: &[Subject<'_>],
     listing: Result<Vec<Json>, RemoteFailureKind>,
+    attachment: Option<&Attachment<'_>>,
 ) -> Vec<(ResourceAddress, Outcome)> {
     let listing = match listing {
         Ok(items) => items,
@@ -296,20 +319,34 @@ async fn settle<T: Transport>(
         .iter()
         .filter_map(|item| item_id(spec, item).map(|id| (id, item)))
         .collect();
+    // A collection that lists one identity twice, or names another parent's items, contradicts
+    // itself: nothing can be concluded from it.
+    let identified = listing
+        .iter()
+        .filter(|item| item_id(spec, item).is_some())
+        .count();
+    let foreign =
+        attachment.is_some_and(|attachment| listing.iter().any(|item| !attachment.owns(item)));
+    if by_id.len() != identified || foreign {
+        return all(
+            group,
+            Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
+        );
+    }
 
     let mut results = Vec::new();
     for subject in group {
         let outcome = if list.authority == Authority::Partial {
             // Absence from a partial collection proves nothing.
             match find(spec, subject, &by_id, &listing) {
-                Found::Item(item) => resolve(transport, spec, item).await,
+                Found::Item(item) => resolve(transport, spec, item, attachment).await,
                 Found::Nothing | Found::Ambiguous => {
                     Outcome::Unavailable(RemoteFailureKind::Unavailable)
                 }
             }
         } else {
             match find(spec, subject, &by_id, &listing) {
-                Found::Item(item) => resolve(transport, spec, item).await,
+                Found::Item(item) => resolve(transport, spec, item, attachment).await,
                 Found::Nothing => Outcome::Missing,
                 Found::Ambiguous => Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
             }
@@ -363,7 +400,12 @@ fn find<'a>(
 
 /// Turns a matched list item into an outcome, reading and cross-checking the resource
 /// directly when the spec asks for agreement.
-async fn resolve<T: Transport>(transport: &T, spec: &KindSpec, listed: &Json) -> Outcome {
+async fn resolve<T: Transport>(
+    transport: &T,
+    spec: &KindSpec,
+    listed: &Json,
+    attachment: Option<&Attachment<'_>>,
+) -> Outcome {
     let Some(id) = item_id(spec, listed).and_then(|id| RemoteId::new(id).ok()) else {
         return Outcome::Unavailable(RemoteFailureKind::InvalidResponse);
     };
@@ -380,7 +422,10 @@ async fn resolve<T: Transport>(transport: &T, spec: &KindSpec, listed: &Json) ->
         Ok(_) => return Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
         Err(error) => return Outcome::Unavailable(failure(&error)),
     };
-    if item_id(spec, &direct) != Some(id.as_str()) || (one.agree && !agree(spec, listed, &direct)) {
+    if item_id(spec, &direct) != Some(id.as_str())
+        || (one.agree && !agree(spec, listed, &direct))
+        || attachment.is_some_and(|attachment| !attachment.owns(&direct))
+    {
         return Outcome::Unavailable(RemoteFailureKind::InvalidResponse);
     }
 
@@ -475,6 +520,21 @@ fn observation(outcome: &Outcome) -> RemoteObservation {
     }
 }
 
+/// How a child is tied to its parent in a response: the request field that holds the
+/// parent's id. A response that names another parent is not this parent's child.
+struct Attachment<'a> {
+    field: &'a str,
+    parent_id: &'a str,
+}
+
+impl Attachment<'_> {
+    /// Whether `item` belongs to the parent. An item that does not say is taken to.
+    fn owns(&self, item: &Json) -> bool {
+        item.get(self.field)
+            .is_none_or(|value| value.as_str() == Some(self.parent_id))
+    }
+}
+
 /// The collection a kind's resources are found in, read fresh: the top-level list, the list
 /// scoped by `parent_id`, or the collection embedded in the parent's direct read. Used before a
 /// create whose identity is learned by diffing the collection.
@@ -510,7 +570,7 @@ pub(crate) async fn read_collection<T: Transport>(
             .await
             .map_err(|error| failure(&error))?;
         return match parent.pointer(&embedded.pointer) {
-            Some(Json::Array(items)) => Ok(items.clone()),
+            Some(Json::Array(items)) => bounded(items.clone()),
             _ => Err(RemoteFailureKind::InvalidResponse),
         };
     }

@@ -22,6 +22,11 @@ pub enum FaultKind {
     },
     /// A read is answered with a server error.
     Unavailable,
+    /// A mutation is acknowledged as if it had succeeded but nothing is changed.
+    Swallow,
+    /// A create succeeds and a second, identical object appears too, as if another client had
+    /// created the same thing at the same moment.
+    Duplicate,
 }
 
 /// One injected fault: an operation, optionally a specific call of it, and what happens.

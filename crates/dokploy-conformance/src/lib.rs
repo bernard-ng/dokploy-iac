@@ -10,6 +10,9 @@
 //! - one replacement per `create_only` field, and one drift per field;
 //! - delete, and delete of a protected resource;
 //! - an unmanaged resource with the same identity, two of them, and an unreadable remote;
+//! - a removal Dokploy acknowledges and does not apply, a create whose identity is ambiguous
+//!   because another client made the same thing, and a collection or a direct read that names
+//!   another parent;
 //! - a rejected create, a declined plan;
 //! - a mutation interrupted before and after Dokploy applies it, for create, update, and
 //!   delete, each settled by recovery without repeating it.
@@ -144,6 +147,16 @@ impl Suite {
         ));
         scenario!("partial_authority", |w| scenarios::partial_authority(&w));
         scenario!("read_failure", |w| scenarios::read_failure(&w));
+        scenario!("removal_not_applied", |w| scenarios::removal_not_applied(
+            &w
+        ));
+        scenario!("identity_ambiguous", |w| scenarios::identity_ambiguous(&w));
+        scenario!("foreign_collection_item", |w| scenarios::foreign_parent(
+            &w, false
+        ));
+        scenario!("foreign_direct_read", |w| scenarios::foreign_parent(
+            &w, true
+        ));
         scenario!("declined", |w| scenarios::declined(&w));
         scenario!("rejected_create", |w| scenarios::rejected_create(&w));
         for (label, step) in [

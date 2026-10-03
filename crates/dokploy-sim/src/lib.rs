@@ -100,8 +100,11 @@ impl std::fmt::Debug for Logged {
     }
 }
 
+type Tamper = Arc<dyn Fn(&mut Value) + Send + Sync>;
+
 #[derive(Default)]
 struct Inner {
+    tampers: BTreeMap<String, Tamper>,
     objects: BTreeMap<String, Vec<Object>>,
     next_id: u64,
     calls: BTreeMap<String, usize>,
@@ -205,6 +208,14 @@ impl Sim {
     /// Queues a fault.
     pub fn inject(&self, fault: Fault) {
         self.lock().faults.push(fault);
+    }
+
+    /// Rewrites every successful response of `operation` with `rewrite`, until it is replaced:
+    /// a Dokploy that says something other than what is stored.
+    pub fn tamper(&self, operation: &str, rewrite: impl Fn(&mut Value) + Send + Sync + 'static) {
+        self.lock()
+            .tampers
+            .insert(operation.to_owned(), Arc::new(rewrite));
     }
 
     /// Every request received so far, in order.
@@ -335,10 +346,27 @@ impl Sim {
             Some(FaultKind::DropBefore) => return Err(dropped(wire, mutation)),
             Some(FaultKind::Reject { status }) => return Err(rejected(status)),
             Some(FaultKind::Unavailable) => return Err(rejected(503)),
-            Some(FaultKind::DropAfter | FaultKind::RejectAfter { .. }) | None => {}
+            Some(
+                FaultKind::DropAfter
+                | FaultKind::RejectAfter { .. }
+                | FaultKind::Swallow
+                | FaultKind::Duplicate,
+            )
+            | None => {}
         }
 
-        let outcome = self.execute(&mut inner, request);
+        let mut outcome = if fault == Some(FaultKind::Swallow) {
+            Ok(Value::Bool(true))
+        } else {
+            self.execute(&mut inner, request)
+        };
+        if fault == Some(FaultKind::Duplicate) && outcome.is_ok() {
+            self.duplicate_last(&mut inner, request);
+        }
+        if let (Ok(response), Some(rewrite)) = (&mut outcome, inner.tampers.get(operation).cloned())
+        {
+            rewrite(response);
+        }
 
         match (fault, outcome) {
             (Some(FaultKind::DropAfter), Ok(_)) => Err(dropped(wire, mutation)),
@@ -346,6 +374,39 @@ impl Sim {
             (_, Ok(value)) => Ok(value),
             (_, Err(error)) => Err(Error::Api(error)),
         }
+    }
+
+    /// Adds a copy of the object the create just made, under a new identity.
+    fn duplicate_last(&self, inner: &mut Inner, request: &OperationRequest) {
+        let Some(route) = self
+            .routes
+            .get(request.operation())
+            .and_then(|routes| routes.iter().find(|r| r.action == Action::Create))
+        else {
+            return;
+        };
+        let spec = self
+            .specs
+            .get(&route.kind)
+            .expect("a routed kind has a spec");
+        let Some(mut copy) = inner
+            .objects
+            .get(&route.kind)
+            .and_then(|all| all.last())
+            .cloned()
+        else {
+            return;
+        };
+        inner.next_id += 1;
+        copy.insert(
+            spec.api.id.clone(),
+            Value::String(format!("sim-{}-{}", spec.kind, inner.next_id)),
+        );
+        inner
+            .objects
+            .entry(route.kind.clone())
+            .or_default()
+            .push(copy);
     }
 
     fn execute(

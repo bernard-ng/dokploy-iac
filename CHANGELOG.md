@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Discovery and apply refuse to conclude from reads that contradict themselves (milestone M2, ADR
+  0007): a collection that lists an identity twice, holds more than 10,000 items, or names another
+  parent's items, and a direct read that names another parent. A removal that Dokploy acknowledges
+  while the resource can still be read fails its step (`ApplyError::NotRemoved`) and the resource
+  stays tracked. The simulator gains three more ways a real Dokploy misbehaves (`Swallow`,
+  `Duplicate`, `tamper`) and the conformance suite four scenarios that use them.
 - Nested kinds in the engine (milestone M2, ADR 0007; [`docs/design/engine.md`](docs/design/engine.md)).
   Discovery reads parents before children and reads a child's collection once per parent, scoped by
   it (`list: { op, scope: { param } }`, now implemented in the spec grammar as documented) or embedded

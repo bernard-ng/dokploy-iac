@@ -40,7 +40,10 @@ Each runs in a world of its own: a fresh simulator, workspace, and engine.
 | `unmanaged_collision`, `ambiguous_collision` | an existing resource, or two, with the same identity block the plan and nothing is changed |
 | `partial_authority` | absence from a `partial` collection is not proof |
 | `read_failure` | an unreadable collection blocks the apply |
-| `declined`, `rejected_create` | a declined plan changes nothing; a rejected create leaves nothing recorded |
+| `removal_not_applied` | Dokploy acknowledges a remove and does nothing: the step fails (the journal is closed by `recover`), the resource stays tracked, and the retry removes it |
+| `identity_ambiguous` | another client creates the same thing at the same moment: a create whose identity is learned by diffing the collection says the outcome is unknown instead of picking one, and recovery leaves it to a person |
+| `foreign_collection_item`, `foreign_direct_read` | a child collection, or a direct read, that names another parent is not this parent's child: the plan is blocked |
+| `declined`, `rejected_create` | a declined plan changes nothing; a rejected create leaves nothing recorded and `recover` closes its journal so the retry works |
 | `unknown_{create,update,delete}_{before,after}` | the request is dropped before, or the response after, Dokploy applies it; the mutation is sent once, recovery chooses the right action (adopt, confirm no change, checkpoint), never repeats it, and one more apply converges |
 
 Every scenario ends by scanning the workspace and everything the scenario printed (errors, plans,

@@ -317,7 +317,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         let token = self.journal.start_recoverable_step(
             address.clone(),
             action,
-            ExpectedCheckpoint::remove(before),
+            ExpectedCheckpoint::remove(before.clone()),
         )?;
         if let Some(request) = request
             && let Err(error) = self.engine.transport.call(request).await
@@ -325,10 +325,30 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         {
             return self.failed(token, address, &error);
         }
+        // An acknowledged removal that leaves the resource readable did not happen: the step
+        // fails and the resource stays tracked, so the next plan removes it again.
+        if action == JournalAction::Delete
+            && self.still_there(spec, before.remote_id().as_str()).await
+        {
+            self.journal.fail(token, FailureCode::RemoteRejected)?;
+            return Err(ApplyError::NotRemoved {
+                address: address.clone(),
+            });
+        }
         self.state.remove_resource(address)?;
         self.journal.succeed(token, None, &self.state)?;
 
         Ok(())
+    }
+
+    /// Whether the resource can still be read. An error other than a success proves nothing
+    /// either way: the remove was acknowledged, so it is taken as gone.
+    async fn still_there(&self, spec: &KindSpec, remote_id: &str) -> bool {
+        let Some(one) = spec.api.read.one.as_ref() else {
+            return false;
+        };
+        let request = OperationRequest::new(&one.op).query(one.id_param.clone(), remote_id);
+        matches!(self.engine.transport.call(request).await, Ok(response) if response.is_object())
     }
 
     /// A rename: only the logical address changes.

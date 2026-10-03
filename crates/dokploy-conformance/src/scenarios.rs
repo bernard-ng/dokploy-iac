@@ -394,6 +394,13 @@ pub(crate) async fn rejected_create(w: &World<'_>) -> Check<Verdict> {
     );
     ensure!(w.objects().is_empty(), "a rejected create left an object");
     ensure!(w.state_resources() == 0, "a rejected create was recorded");
+    let closed = w.recover(&values).await?;
+    ensure!(
+        matches!(closed, Ok(RecoveryAction::ResolveOperation)),
+        "recovering a failed step: {closed:?}"
+    );
+    w.apply_ok(&values).await?;
+    holds(w, &values)?;
 
     Ok(Verdict::Pass)
 }
@@ -541,6 +548,143 @@ pub(crate) async fn interrupted(w: &World<'_>, step: Step, after: bool) -> Check
         holds(w, &expect_converged_on)?;
         converged(w, &expect_converged_on).await?;
     }
+
+    Ok(Verdict::Pass)
+}
+
+/// Dokploy acknowledges a removal and does nothing: the step fails and the resource stays
+/// tracked, so the next plan removes it again.
+pub(crate) async fn removal_not_applied(w: &World<'_>) -> Check<Verdict> {
+    let values = w.case.full();
+    w.apply_ok(&values).await?;
+    w.sim.inject(Fault::new(remove_op(w), FaultKind::Swallow));
+
+    let result = w
+        .apply_text(&w.case.without_child(), Default::default())
+        .await?;
+    ensure!(
+        matches!(result, Err(ApplyError::NotRemoved { .. })),
+        "an unapplied removal was reported as done"
+    );
+    ensure!(
+        w.state_resources() == 1,
+        "state forgot a resource that is still there"
+    );
+    ensure!(w.objects().len() == 1, "the object disappeared");
+    // A failed step leaves the journal for recovery to close before the next apply.
+    let closed = w
+        .recover_text(&w.case.without_child(), Default::default())
+        .await?;
+    ensure!(
+        matches!(closed, Ok(RecoveryAction::ResolveOperation)),
+        "recovering a failed step: {closed:?}"
+    );
+    w.apply_text(&w.case.without_child(), Default::default())
+        .await?
+        .map_err(|error| format!("the retry failed: {error}"))?;
+    ensure!(w.objects().is_empty(), "the retry did not remove it");
+
+    Ok(Verdict::Pass)
+}
+
+/// Another client creates the same thing at the same moment: the engine cannot tell which
+/// object its create made, and says so instead of picking one.
+pub(crate) async fn identity_ambiguous(w: &World<'_>) -> Check<Verdict> {
+    use dokploy_spec::CreateIdentity;
+    if !matches!(
+        w.case.spec.api.create_identity,
+        Some(CreateIdentity::DiffCollection { .. })
+    ) {
+        return skip("the identity comes from the create response");
+    }
+    let values = w.case.full();
+    w.sim.inject(Fault::new(create_op(w), FaultKind::Duplicate));
+
+    let result = w.apply(&values).await?;
+    ensure!(
+        matches!(result, Err(ApplyError::OutcomeUnknown { .. })),
+        "an ambiguous identity was guessed"
+    );
+    ensure!(w.objects().len() == 2, "expected the create and its twin");
+    ensure!(
+        w.state_resources() == 0,
+        "state recorded one of two candidates"
+    );
+    let recovered = w.recover(&values).await?;
+    ensure!(
+        matches!(recovered, Err(RecoverError::ManualIntervention)),
+        "recovery chose between twins"
+    );
+
+    Ok(Verdict::Pass)
+}
+
+/// A kind's collection that names another parent's items, or a direct read that names another
+/// parent, is not this parent's child: nothing may be concluded from it.
+pub(crate) async fn foreign_parent(w: &World<'_>, direct: bool) -> Check<Verdict> {
+    let Some(attach) = w
+        .case
+        .spec
+        .api
+        .create
+        .as_ref()
+        .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
+        .map(|(field, _)| field.clone())
+    else {
+        return skip("the kind has no parent");
+    };
+    let values = w.case.full();
+    let id_field = w.case.spec.api.id.clone();
+    if direct {
+        w.apply_ok(&values).await?;
+        let one = w
+            .case
+            .spec
+            .api
+            .read
+            .one
+            .as_ref()
+            .expect("a direct read")
+            .op
+            .clone();
+        w.sim.tamper(&one, move |response| {
+            response[attach.clone()] = json!("another-parent")
+        });
+    } else {
+        let list = w.case.spec.api.read.list.as_ref().expect("a collection");
+        let (operation, pointer) = match (&list.op, &list.embedded_in) {
+            (Some(op), _) => (op.clone(), String::new()),
+            (None, Some(embedded)) => (embedded.parent_op.clone(), embedded.pointer.clone()),
+            (None, None) => return skip("no collection"),
+        };
+        let stranger = {
+            let mut object = w.case.collision_object(&values);
+            object[&id_field] = json!("a-stranger");
+            object[&attach] = json!("another-parent");
+            object
+        };
+        w.sim.tamper(&operation, move |response| {
+            let items = if pointer.is_empty() {
+                Some(&mut *response)
+            } else {
+                response.pointer_mut(&pointer)
+            };
+            if let Some(Json::Array(items)) = items {
+                items.push(stranger.clone());
+            }
+        });
+    }
+
+    let plan = w.plan(&values).await?;
+    ensure!(
+        !plan.applyable(),
+        "a response naming another parent was trusted"
+    );
+    let result = w.apply(&values).await?;
+    ensure!(
+        matches!(result, Err(ApplyError::Blocked { .. })),
+        "the apply was not blocked"
+    );
 
     Ok(Verdict::Pass)
 }

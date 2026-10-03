@@ -88,6 +88,10 @@ pub enum ApplyError {
     /// Whether the change happened is not known. The step stays open: run recovery.
     #[error("{address}: the outcome of the change is unknown; recover before applying again")]
     OutcomeUnknown { address: ResourceAddress },
+    /// Dokploy acknowledged a removal but the resource can still be read. The step is recorded
+    /// as failed and the resource stays tracked.
+    #[error("{address}: Dokploy acknowledged the removal, but the resource is still there")]
+    NotRemoved { address: ResourceAddress },
     /// The change was made and recorded, but it does not read back as written.
     #[error(
         "{address}: `{property}` does not read back as written; the next plan shows the difference"

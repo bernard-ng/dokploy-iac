@@ -367,3 +367,43 @@ async fn requests_are_logged_and_never_print_their_values() {
     assert!(!format!("{:?}", sim.requests()).contains("canary-password"));
     assert!(!format!("{sim:?}").contains("canary-password"));
 }
+
+#[tokio::test]
+async fn a_swallowed_mutation_is_acknowledged_and_changes_nothing() {
+    let sim = sim();
+    let id = sim.seed("tag", &json!({"name": "keep"}));
+    sim.inject(Fault::new("tag.remove", FaultKind::Swallow));
+    let answer = call(&sim, "tag.remove", &[], Some(json!({"tagId": id})))
+        .await
+        .unwrap();
+    assert_eq!(answer, json!(true));
+    assert!(
+        sim.object("tag", &id).is_some(),
+        "the object is still there"
+    );
+}
+
+#[tokio::test]
+async fn a_duplicate_fault_makes_a_second_identical_object_appear() {
+    let sim = sim();
+    sim.inject(Fault::new("tag.create", FaultKind::Duplicate));
+    call(&sim, "tag.create", &[], Some(json!({"name": "twin"})))
+        .await
+        .unwrap();
+    let tags = sim.objects("tag");
+    assert_eq!(tags.len(), 2);
+    assert_eq!(tags[0]["name"], tags[1]["name"]);
+    assert_ne!(tags[0]["tagId"], tags[1]["tagId"], "under a new identity");
+}
+
+#[tokio::test]
+async fn a_tampered_response_differs_from_what_is_stored() {
+    let sim = sim();
+    let id = sim.seed("tag", &json!({"name": "honest"}));
+    sim.tamper("tag.one", |response| response["name"] = json!("liar"));
+    let one = call(&sim, "tag.one", &[("tagId", &id)], None)
+        .await
+        .unwrap();
+    assert_eq!(one["name"], "liar");
+    assert_eq!(sim.object("tag", &id).unwrap()["name"], "honest");
+}

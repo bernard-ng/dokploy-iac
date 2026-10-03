@@ -19,7 +19,7 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 | Stage | Does |
 |-------|------|
 | **compile** | Gives every resource its hierarchical address and containment; turns field values into canonical comparable values; reads each secret source once, fingerprints it, and forgets it (`SecretReader`, `Fingerprinter`); applies `default: key`; resolves `depends_on` by address suffix; computes the digest of the canonical text |
-| **discover** | Reads the minimum: one list per kind, and a direct read only for a resource that matched. A kind nobody mentions is not read. A failed read makes exactly its addresses unavailable. A direct read that disagrees with the collection is unavailable, not guessed. Parents are read before children; a child's collection is read once per parent, either **scoped** by it (`environment.byProjectId?projectId=…`) or **embedded** in the parent's direct read (`application.one` carries `redirects`), which costs no extra request. A child of a missing parent is missing, and of an unavailable parent is unavailable |
+| **discover** | Reads the minimum: one list per kind, and a direct read only for a resource that matched. A kind nobody mentions is not read. A failed read makes exactly its addresses unavailable. A direct read that disagrees with the collection is unavailable, not guessed. A collection that lists one identity twice, holds more than 10,000 items, or names another parent's items contradicts itself, and so does a direct read that names another parent: nothing is concluded from them. Parents are read before children; a child's collection is read once per parent, either **scoped** by it (`environment.byProjectId?projectId=…`) or **embedded** in the parent's direct read (`application.one` carries `redirects`), which costs no extra request. A child of a missing parent is missing, and of an unavailable parent is unavailable |
 | **project** | Tolerant and presence-aware: a field not returned is "not returned", `null` is a value, a value outside its type or enum is "invalid response" for that property, and secret and write-only values are dropped at the boundary |
 | **plan** | The planner, unchanged: deterministic, value-free |
 | **apply** | Executes the plan under the writer lock, one journaled step per change (below) |
@@ -41,7 +41,7 @@ For each change, in the planner's dependency-safe order:
 |--------|----------|
 | create | one `create` carrying every managed property and the attachment to the parent; a field the contract requires and the document omits is sent as `null` if the spec allows it; the new identity is learned as the spec says (`from_response`, or `diff_collection` over the list read before and after) |
 | update | one request per write group that has a change, in the spec's order: `partial` sends the id and the changed fields, `full` re-sends the group from a fresh read overlaid with the changes (a secret in it must be declared in the document) |
-| remove | one `remove`; a 404 counts as removed |
+| remove | one `remove`; a 404 counts as removed; Dokploy acknowledging it while the resource can still be read fails the step and keeps the resource tracked |
 | replace | remove, then create (the order the planner proved) |
 | rename, adopt, forget | state only |
 
