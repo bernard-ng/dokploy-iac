@@ -47,6 +47,12 @@ inside their parent (`environments:` → `applications:` → `redirects:`).
   `..`, a leading `/`, or empty segments.
 - `environment` values are `text`, `{ value: text }`, `{ secret: <source> }`, or `{ vault: ... }`.
   Names are letters, digits, and underscores.
+- A **union** is a mapping whose tag names the arm: `source: { type: github, owner: acme,
+  repository: shop, branch: main }`. Only the members of that arm are legal, a member left out is
+  unmanaged, and a secret member is a source like any other
+  (`source: { type: docker, image: acme/shop, password: { env: DOCKER_TOKEN } }`). Changing `type`
+  switches the arm. Plans and `ignore_changes` name the members by path: `source.type`,
+  `source.github.owner`.
 - Every resource may also carry `lifecycle: { protect, ignore_changes }` (each path must be a
   legal property of the kind) and `depends_on: [address]`.
 

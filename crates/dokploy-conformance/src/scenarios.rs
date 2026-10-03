@@ -96,6 +96,26 @@ fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
     operations
 }
 
+/// Whether `operation` writes a scalar secret of the values: a field of its group, or a member
+/// of the arm it writes. A variable of an environment block is not one: it is there or it is
+/// not, so observing it proves the write.
+fn writes_a_secret(w: &World<'_>, values: &Values, operation: &str) -> bool {
+    let is_secret = |name: &str| matches!(values.get(name), Some(crate::case::Val::Secret(_)));
+    w.case.spec.write.iter().any(|group| match group {
+        dokploy_spec::WriteGroup::Op { op, fields, .. } => {
+            op == operation && fields.iter().any(|name| is_secret(name))
+        }
+        dokploy_spec::WriteGroup::ByVariant {
+            by_variant, ops, ..
+        } => {
+            ops.values().any(|op| op == operation)
+                && values
+                    .keys()
+                    .any(|name| name.starts_with(&format!("{by_variant}.")) && is_secret(name))
+        }
+    })
+}
+
 fn remove_op(w: &World<'_>) -> String {
     w.case
         .spec
@@ -706,6 +726,17 @@ pub(crate) async fn follow_up(w: &World<'_>, how: FollowUp) -> Check<Verdict> {
     ensure!(creates == 1, "the create was sent {creates} times");
 
     let recovered = w.recover(&values).await?;
+    // A secret cannot be read back, so a lost response to a write that carries one proves
+    // nothing: everything observable may agree and the secret still be the old one. A person
+    // decides, and the engine must not record a success it cannot see.
+    if matches!(how, FollowUp::LostAfter) && writes_a_secret(w, &values, &operation) {
+        ensure!(
+            matches!(recovered, Err(RecoverError::ManualIntervention)),
+            "recovery claimed to prove a secret write it cannot observe: {recovered:?}"
+        );
+        ensure!(w.objects().len() == 1, "recovery changed the remote");
+        return Ok(Verdict::Pass);
+    }
     let action = recovered.map_err(|error: RecoverError| format!("recovery failed: {error}"))?;
     let expected: &[RecoveryAction] = match how {
         FollowUp::Rejected => &[RecoveryAction::ResolveOperation],

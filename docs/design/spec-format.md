@@ -99,8 +99,13 @@ fields:
 ```
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
-`needs_deploy`, `disruptive`, `granularity` (`field` or `key`), `trim`, `since`,
+`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `since`,
 `until`, `doc` (one line for the generated reference), `example`.
+
+`fallback` is the value sent when a write needs a field and the document gives none and Dokploy
+holds none for it: `build_path: { fallback: "/" }`, `trigger_type: { fallback: push }`. It never
+overrides a value the document or Dokploy has, and it is what a create and a change of arm of a
+union use for a required request field.
 
 ### Types
 
@@ -118,7 +123,8 @@ A *property* is a field at planning granularity; its dotted path is what plans, 
 
 | Field | Properties |
 |-------|------------|
-| scalar, enum, list, set, file, ref, selector, blob, shared type, union | one: the field name (a union is planned as one value; its arm members are not paths) |
+| scalar, enum, list, set, file, ref, selector, blob, shared type | one: the field name |
+| `union(tag)` | the tag (`source.type`) and one per member of each arm (`source.github.owner`, `source.docker.password`); the union itself is not a path |
 | `env` or `map` with `granularity: key` | the root (`environment`: owned only to clear it or declare it empty) and one entry per key (`environment.LOG_LEVEL`) |
 | `struct` with `granularity: field` | one per member (`limits.cpu`); the struct itself is not a path |
 | `struct` without it | one: the field name |
@@ -150,8 +156,9 @@ write:
   - { op: compose.saveEnvironment, fields: [environment, create_env_file], shape: partial }
 ```
 
-`shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation
-by a union tag.
+`shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation by a
+union tag, `ops: { arm: operation }`: one request per apply, to the operation of the arm the
+document names, carrying the members of that arm (see [`engine.md`](engine.md#unions)).
 
 ## Children
 
@@ -259,8 +266,8 @@ fields:
         owner:      { api: owner,      type: text }
         repository: { api: repository, type: text }
         branch:     { api: branch,     type: text }
-        build_path: { api: buildPath,  type: text }
-        trigger_type: { api: triggerType, type: "enum[push, tag]" }
+        build_path: { api: buildPath,  type: text, fallback: "/" }
+        trigger_type: { api: triggerType, type: "enum[push, tag]", fallback: push }
       docker:
         image:        { api: dockerImage, type: text }
         registry_url: { api: registryUrl, type: text }

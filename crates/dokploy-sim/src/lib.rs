@@ -557,6 +557,25 @@ impl Sim {
                 object.insert(key.clone(), value.clone());
             }
         }
+        // The operation that saves an arm of a union is what makes it the arm Dokploy holds: the
+        // tag is implied by the request, not sent in it.
+        for group in &spec.write {
+            let WriteGroup::ByVariant {
+                by_variant, ops, ..
+            } = group
+            else {
+                continue;
+            };
+            let arm = ops
+                .iter()
+                .find_map(|(arm, op)| (op == request.operation()).then_some(arm));
+            if let (Some(arm), Some(field)) = (arm, spec.fields.get(by_variant)) {
+                object.insert(
+                    field.request_name(by_variant).to_owned(),
+                    Value::String(arm.clone()),
+                );
+            }
+        }
         let object = object.clone();
 
         Ok(

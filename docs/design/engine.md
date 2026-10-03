@@ -52,6 +52,33 @@ whole instead. A write reads the text fresh, sets the variables the document own
 end, and leaves every other line exactly as it was. A recovered update that only added variables is
 proven by their presence; a rotated value is not provable and is left to a person.
 
+## Unions
+
+A `union(tag)` is planned per member ([ADR 0018](../decisions/0018-several-parents-and-per-member-unions.md)):
+the tag (`source.type`) and each member of each arm (`source.github.owner`,
+`source.docker.password`) are properties. A member the document leaves out is unmanaged, and a
+secret inside an arm is an ordinary secret property with a receipt. Compiling a document keeps a
+member only for the arm its tag names.
+
+Reading a union back reads the tag from the response (`sourceType`) and a member only while Dokploy
+holds that arm: the members of any other arm are known to be absent.
+
+Writing is a `by_variant` group: one request per apply, to the operation of the arm the document
+names (`application.saveDockerProvider`), whichever of the tag and members changed. The request
+carries every member the arm's operation takes, `full`:
+
+1. a member the document owns is sent as it says;
+2. a member it leaves out keeps what Dokploy holds, from a fresh read, while the arm does not
+   change;
+3. otherwise, after a change of arm, the member's `fallback` (`build_path: "/"`,
+   `trigger_type: push`), then `null` where the operation takes one, and otherwise the apply is
+   refused naming the member;
+4. a secret the document leaves out is not sent, and an operation that requires one is refused
+   with the secret's name.
+
+The tag is implied by the operation, not sent in it (`derived` in the ledger): the simulator makes
+the saved arm the held one, as Dokploy does.
+
 ## Selectors
 
 A `selector(kind)` field holds `{ name }`, or `{ local: true }` for a server, and Dokploy holds the
@@ -117,18 +144,22 @@ A secret cannot be read back, so an update that rotates one is never proven by o
 ## What it does not do yet
 
 - **Deploy.**
-- **Writing unions and files**: refused in the preflight with a message naming the property. A
-  union waits for the decision on how it is planned; a file waits for the secrets milestone (M4).
-  Structs planned per member and `env` blocks are written (below).
+- **Writing files**: refused in the preflight with a message naming the property; a file waits for
+  the secrets milestone (M4). Structs planned per member, `env` blocks, and unions are written
+  (above).
 - **Create-before-delete replacement**, moving to another parent, and a rename combined with a
   change: refused in the preflight.
 - **Paged collections.** `application.search` and its siblings answer `{items, total}` and are not
   read: a project kind is found in the collection its environment's direct read embeds. A kind with
   neither is found by its recorded identity only and one that is not recorded is unavailable, never
   guessed to be absent.
-- **Reading unions back**, and plain `map` collections: they read as "not returned", which blocks
-  planning for a property the document manages.
-- **Secrets inside a union, a struct member, or a plain collection** are refused at compile time.
+- **Plain `map` collections** read as "not returned", which blocks planning for a property the
+  document manages.
+- **Secrets inside a struct member or a plain collection** are refused at compile time. A secret
+  inside a union arm works.
+- **Recovering a lost response to a union write that carries a scalar secret**: the secret cannot be
+  read back, so everything observable can agree and recovery still does not call it a success; a
+  person decides.
 
 ## Cost
 

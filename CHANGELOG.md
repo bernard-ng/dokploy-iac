@@ -56,6 +56,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Unions planned per member (milestone M3, [ADR 0018](docs/decisions/0018-several-parents-and-per-member-unions.md);
+  [`engine.md`](docs/design/engine.md#unions)). A `union(tag)` is the tag plus the members of each
+  arm (`source.type`, `source.github.owner`, `source.docker.password`), so an omitted member is
+  unmanaged and a secret inside an arm works. The engine compiles, reads back, stores, and writes
+  unions through `by_variant`, one request to the operation of the arm the document names, and a new
+  `fallback` field attribute supplies a value for a required member the document leaves out
+  (`trigger_type: push`). The `application` gains its full `source` with six arms (`github`,
+  `gitlab`, `bitbucket`, `gitea`, `git`, `docker`) and runs the conformance suite through each.
+  **Breaking:** a union is no longer one property; the path `source` is `PathError::UnionMember`,
+  `PropertyInfo` gains `union_tag`, `arm`, and `tag_api`, `WriteGroup::ByVariant` is written, and the
+  simulator makes the saved arm the held one. Recovery of a lost response to a write that carries a
+  scalar secret ends with a person deciding, and the scenario says so.
+
 - Kinds with several parents (milestone M3, [ADR 0018](docs/decisions/0018-several-parents-and-per-member-unions.md)).
   `parent:` takes a list; `api.create.attach_by_parent` and `api.parent_field` state what differs by
   parent, a fixed `attach` value is sent as written, and `embedded_in.parent_op` defaults to the

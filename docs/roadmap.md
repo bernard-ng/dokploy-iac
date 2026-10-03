@@ -82,25 +82,21 @@ so they do not move when a spec does.
 
 Started. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `port`, and `security`
 (full conformance); the databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis`, and the
-`environment` (conformance for the fields they carry); the `application` without its union `source`
-(85 scenarios). Engine work the kinds needed: follow-up writes after a create, selectors, struct
+`environment` (conformance for the fields they carry); the `application` with its six-arm union
+`source` (91 to 101 scenarios per arm). Engine work the kinds needed: follow-up writes after a create, selectors, struct
 members and environment blocks, creation requirements that follow the create operation, and
 `moves` and `removed`. The vision ratchet (`docs/vision/gaps/`) counts what the parser still
 rejects of the two vision documents: 28 lines for the project document, 19 for the settings one.
 
-Two decisions block the rest, and both change the spec grammar or ADR 0004, so they are the owner's:
+Both decisions that blocked the rest are made ([ADR 0018](decisions/0018-several-parents-and-per-member-unions.md)):
+a kind may have several parents (`mount`, `domain`), and a union is planned per member (the
+application `source`).
 
-1. **How a union is planned** (the application `source` and `build`, the Compose `source`, the
-   libsql `node`). Per member is recommended: the tag and each member of the active arm are
-   properties, so omitted members are unmanaged and a secret inside an arm (a registry password
-   for a Docker image) works. The alternative keeps a union atomic, which cannot hold secrets.
-2. **How a kind with several parents is modelled** (`mount`, `schedule`, `volume_backup`, `patch`
-   under an application, Compose, or a database; `domain` under an application or Compose;
-   `backup` under a database or Compose). A `parent:` list on one kind is recommended; the
-   alternative is one near-identical kind per parent.
-
-Still open, and not blocked: tag membership (a hook), `networks`, the swarm settings (blobs), and
-the Compose multi-service schedules hook.
+Still open, and not blocked: the `libsql` `node` (can now be a union), `compose` (a union source),
+`build` (a union), the swarm settings, `networks`, and tag membership (a hook); the Compose
+multi-service schedules hook. Needs destinations (M5): backups and volume backups, which need a
+`destination` spec. Needs a grammar addition: schedules and patches, whose list reads take two
+parameters.
 
 ## Cost gate (end of M2)
 
