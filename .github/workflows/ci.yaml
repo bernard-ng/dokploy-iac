@@ -21,6 +21,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Install system libraries
+        # The CLI keeps credentials in the system keyring, which links libdbus on Linux.
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libdbus-1-dev pkg-config
+
       - name: Show pinned Rust toolchain
         run: rustc --version --verbose
 
