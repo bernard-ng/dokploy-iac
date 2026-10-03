@@ -384,6 +384,9 @@ impl Val {
             Val::Json(json) => json.clone(),
             Val::Secret(secret) => Json::String(secret.clone()),
             Val::Selector { id, .. } => Json::String(id.clone()),
+            Val::Environment { variables, .. } => {
+                Json::String(crate::case::environment_text(variables))
+            }
         }
     }
 }

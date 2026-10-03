@@ -757,8 +757,17 @@ fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
     // A nullable column that was not given is null; the simulator cannot invent a default for
     // a column that must have a value, so it leaves it unreturned rather than wrong.
     for (name, field) in &spec.fields {
-        if field.nullable {
+        // An environment block is empty as `null`, and the members of a struct are columns of
+        // their own.
+        let is_environment = dokploy_spec::parse_type(&field.ty)
+            .is_ok_and(|ty| matches!(ty, dokploy_spec::FieldType::Env));
+        if field.nullable || is_environment {
             object.insert(field.request_name(name).to_owned(), Value::Null);
+        }
+        for (member, member_field) in &field.members {
+            if member_field.nullable {
+                object.insert(member_field.request_name(member).to_owned(), Value::Null);
+            }
         }
     }
     for name in &spec.ledger.readonly {

@@ -72,10 +72,33 @@ fields:
     type: list<text>
     nullable: true
     needs_deploy: true
+  resources:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      memory_limit: { api: memoryLimit, type: text, nullable: true }
+      memory_reservation: { api: memoryReservation, type: text, nullable: true }
+      cpu_limit: { api: cpuLimit, type: text, nullable: true }
+      cpu_reservation: { api: cpuReservation, type: text, nullable: true }
   environment:
     api: env
     type: env
     granularity: key
+    needs_deploy: true
+  build_args:
+    api: buildArgs
+    type: env
+    granularity: key
+    needs_deploy: true
+  build_secrets:
+    api: buildSecrets
+    type: env
+    granularity: key
+    needs_deploy: true
+  create_env_file:
+    api: createEnvFile
+    type: bool
     needs_deploy: true
   source:
     type: union(type)
@@ -101,11 +124,11 @@ fields:
           nullable: true
 write:
   - op: application.update
-    fields: [name, description, registry, build_registry, rollback_registry, replicas, command, args]
+    fields: [name, description, registry, build_registry, rollback_registry, resources, replicas, command, args]
     shape: partial
   - op: application.saveEnvironment
-    fields: [environment]
-    shape: partial
+    fields: [environment, build_args, build_secrets, create_env_file]
+    shape: full
   - by_variant: source
     ops:
       github: application.saveGithubProvider

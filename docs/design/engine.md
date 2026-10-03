@@ -27,6 +27,21 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 Fingerprints are an HMAC-SHA-256 over instance, address, path, and value, checked against an
 independently computed vector, so a change to the framing cannot pass by agreeing with itself.
 
+## Structs and environment blocks
+
+A `struct` with `granularity: field` is a grouping in the document only: each member is a property
+(`resources.memory_limit`) and a key of its own in the request and the response (`memoryLimit`).
+Reading, writing, and the write groups all work per member; a `full` group re-sends the members it
+did not change from a fresh read.
+
+An `env` field is one text of `KEY=VALUE` lines at Dokploy and one property per variable in the
+document, each a secret (a receipt in state, never a value in a plan). Discovery observes the
+variables the document or state owns, and each is there or not (its value is never read back); a
+collection the document owns as a whole (`null` to clear, `{}` to declare empty) is observed as a
+whole instead. A write reads the text fresh, sets the variables the document owns in place or at the
+end, and leaves every other line exactly as it was. A recovered update that only added variables is
+proven by their presence; a rotated value is not provable and is left to a person.
+
 ## Selectors
 
 A `selector(kind)` field holds `{ name }`, or `{ local: true }` for a server, and Dokploy holds the
@@ -92,17 +107,18 @@ A secret cannot be read back, so an update that rotates one is never proven by o
 ## What it does not do yet
 
 - **Deploy.**
-- **Writing composite values** (unions, structs, keyed collections, `env`, `file`): refused in the
-  preflight with a message naming the property. They arrive with the project kinds (M3).
+- **Writing unions and files**: refused in the preflight with a message naming the property. A
+  union waits for the decision on how it is planned; a file waits for the secrets milestone (M4).
+  Structs planned per member and `env` blocks are written (below).
 - **Create-before-delete replacement**, moving to another parent, and a rename combined with a
   change: refused in the preflight.
-- **Paged collections.** `application.search` answers `{items, total}`; reading pages arrives
-  with the project kinds (M3). Until then the prototype `application` spec has no collection read,
-  so an application is found by its recorded identity only and one that is not recorded is
-  unavailable, never guessed to be absent.
-- **Composite values on the remote side**: unions, structs, and keyed collections are compiled but
-  read back as "not returned", which blocks planning for a property the document manages.
-- **Secrets inside a union, struct, or collection** are refused at compile time.
+- **Paged collections.** `application.search` and its siblings answer `{items, total}` and are not
+  read: a project kind is found in the collection its environment's direct read embeds. A kind with
+  neither is found by its recorded identity only and one that is not recorded is unavailable, never
+  guessed to be absent.
+- **Reading unions back**, and plain `map` collections: they read as "not returned", which blocks
+  planning for a property the document manages.
+- **Secrets inside a union, a struct member, or a plain collection** are refused at compile time.
 
 ## Cost
 

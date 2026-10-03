@@ -280,7 +280,12 @@ impl<T: Transport> Engine<T> {
                         // The step writes no secret, so a secret that cannot be read back
                         // cannot have been changed by it either.
                         ResourceObservationMatch::ExactExceptSensitive
-                            if secrets_unchanged(current, &proposed, step.address()) =>
+                            if secrets_unchanged(
+                                &self.specs,
+                                current,
+                                &proposed,
+                                step.address(),
+                            ) =>
                         {
                             Ok(Decision::NoChange { sequence })
                         }
@@ -290,7 +295,12 @@ impl<T: Transport> Engine<T> {
                     // everything that can be compared agrees, and that is proof enough.
                     ResourceObservationMatch::ExactExceptSensitive
                         if step.action() == JournalAction::Update
-                            && secrets_unchanged(current, &proposed, step.address()) =>
+                            && secrets_unchanged(
+                                &self.specs,
+                                current,
+                                &proposed,
+                                step.address(),
+                            ) =>
                     {
                         Ok(Decision::Checkpoint {
                             sequence,
@@ -311,9 +321,34 @@ impl<T: Transport> Engine<T> {
     }
 }
 
-fn secrets_unchanged(current: &StateFile, proposed: &StateFile, address: &ResourceAddress) -> bool {
-    match (current.resource(address), proposed.resource(address)) {
-        (Some(before), Some(after)) => before.sensitive_inputs() == after.sensitive_inputs(),
-        _ => false,
-    }
+/// Whether the step changed no secret that observation cannot account for. A variable added to
+/// an environment block is accounted for: it is there or it is not, so observing it proves the
+/// step. A rotated secret, or a removed one, is not.
+fn secrets_unchanged(
+    specs: &dokploy_spec::SpecRegistry,
+    current: &StateFile,
+    proposed: &StateFile,
+    address: &ResourceAddress,
+) -> bool {
+    let (Some(before), Some(after)) = (current.resource(address), proposed.resource(address))
+    else {
+        return false;
+    };
+    let Some(spec) = specs.get(after.kind().as_str()) else {
+        return false;
+    };
+    let before = before.sensitive_inputs();
+    let after = after.sensitive_inputs();
+    let added_variable = |path: &dokploy_state::SensitivePropertyPath| {
+        before.fingerprint(path).is_none()
+            && dokploy_core::PropertyPath::from_spec(spec, path.as_str())
+                .is_ok_and(|property| property.info().root.is_some())
+    };
+
+    before
+        .paths()
+        .all(|path| after.fingerprint(path) == before.fingerprint(path))
+        && after
+            .paths()
+            .all(|path| added_variable(path) || before.fingerprint(path) == after.fingerprint(path))
 }

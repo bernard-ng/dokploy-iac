@@ -7,14 +7,13 @@ use std::collections::BTreeMap;
 use dokploy_api::{BodyShape, request_contract};
 use dokploy_core::{CheckpointValueRef, ExternalResolution, PropertyPath, ResourceCheckpoint};
 use dokploy_sdk::OperationRequest;
-use dokploy_spec::{
-    Field, FieldType, KindSpec, Mutability, PathShape, Shape, WriteGroup, parse_type,
-};
+use dokploy_spec::{FieldType, KindSpec, Mutability, PathShape, Shape, WriteGroup, parse_type};
 use dokploy_state::ResourceAddress;
 use serde_json::{Map, Value as Json};
 
 use super::ApplyError;
 use crate::compile::Compiled;
+use crate::envtext::EnvText;
 use crate::selectors::SelectorIndex;
 
 /// What a request is built from besides the spec and the checkpoint: the document's secrets and
@@ -26,58 +25,62 @@ pub(crate) struct Inputs<'a> {
     pub(crate) selectors: Option<&'a SelectorIndex>,
 }
 
-/// A property the executor can write: an atomic top-level value.
-pub(crate) struct Writable<'s> {
-    /// The document's field name (equal to the dotted path of an atomic property).
-    pub(crate) name: &'s str,
-    pub(crate) field: &'s Field,
+/// A property the executor can write.
+pub(crate) struct Writable {
+    /// The document field the property belongs to (its first path segment): what a write group
+    /// names.
+    pub(crate) name: String,
     /// The body key.
-    pub(crate) wire: &'s str,
+    pub(crate) wire: String,
+    pub(crate) mutability: Mutability,
 }
 
 /// Resolves a property path to something the executor can write, or says why it cannot.
-pub(crate) fn writable<'s>(
-    spec: &'s KindSpec,
+pub(crate) fn writable(
+    spec: &KindSpec,
     address: &ResourceAddress,
     path: &PropertyPath,
-) -> Result<Writable<'s>, ApplyError> {
+) -> Result<Writable, ApplyError> {
     let unsupported = |reason: &'static str| ApplyError::Unsupported {
         address: address.clone(),
         property: Some(path.to_string()),
         reason,
     };
     let info = path.info();
-    if info.shape != PathShape::Atomic {
-        return Err(unsupported(
-            "is a keyed collection, which the executor does not write yet",
-        ));
+    if !spec.fields.contains_key(info.field_name()) {
+        return Err(unsupported("is not a field of the kind"));
     }
-    let (name, field) = spec
-        .fields
-        .get_key_value(info.path.as_str())
-        .ok_or_else(|| unsupported("is not a field of the kind"))?;
-    let ty =
-        parse_type(&field.ty).map_err(|_| unsupported("has a type the executor cannot read"))?;
-    if matches!(
-        ty,
-        FieldType::Union { .. } | FieldType::Env | FieldType::File | FieldType::Struct
-    ) {
-        return Err(unsupported(
-            "is a composite value, which the executor does not write yet",
-        ));
+    match info.shape {
+        // The variables of an environment block are written as the block's one text.
+        PathShape::CollectionRoot | PathShape::CollectionEntry
+            if matches!(info.ty, FieldType::Env) => {}
+        PathShape::CollectionRoot | PathShape::CollectionEntry => {
+            return Err(unsupported(
+                "is a keyed collection of plain values, which the executor does not write yet",
+            ));
+        }
+        PathShape::Atomic => {
+            if matches!(
+                info.ty,
+                FieldType::Union { .. } | FieldType::Env | FieldType::File | FieldType::Struct
+            ) {
+                return Err(unsupported(
+                    "is a composite value, which the executor does not write yet",
+                ));
+            }
+        }
     }
-    let wire = field.request_name(name);
-    if field
-        .api
-        .as_deref()
-        .is_some_and(|api| api.trim_start_matches('/').contains('/'))
-    {
+    if info.api.trim_start_matches('/').contains('/') {
         return Err(unsupported(
             "maps to a nested request key, which the executor does not write yet",
         ));
     }
 
-    Ok(Writable { name, field, wire })
+    Ok(Writable {
+        name: info.field_name().to_owned(),
+        wire: info.request_key().to_owned(),
+        mutability: info.mutability,
+    })
 }
 
 /// The JSON a checkpoint property is sent as: a value, `null`, or a secret read from the
@@ -184,20 +187,21 @@ pub(crate) fn create_request(
 
     for path in checkpoint.property_paths() {
         let target = writable(spec, address, path)?;
-        if target.field.mutability == Mutability::Computed {
+        if target.mutability == Mutability::Computed {
             continue;
         }
-        if let Some(contract) = contract
-            && matches!(contract.body(), BodyShape::Object(_))
-            && contract.body_field(target.wire).is_none()
+        // An environment block is one text that is built from what Dokploy holds, so it is
+        // always written after the create.
+        if path.info().shape != PathShape::Atomic
+            || contract.is_some_and(|contract| {
+                matches!(contract.body(), BodyShape::Object(_))
+                    && contract.body_field(&target.wire).is_none()
+            })
         {
             deferred.push(path.clone());
             continue;
         }
-        body.insert(
-            target.wire.to_owned(),
-            body_value(inputs, address, checkpoint, path)?,
-        );
+        body.insert(target.wire, body_value(inputs, address, checkpoint, path)?);
     }
 
     for (field, source) in &operation.attach {
@@ -245,8 +249,14 @@ pub(crate) struct GroupRequest {
     pub(crate) shape: Shape,
     /// The document field names of the group that changed.
     pub(crate) changed: Vec<String>,
+    /// The dotted paths of the properties written (a member of a struct, a variable of an
+    /// environment block, or a field).
+    pub(crate) written: Vec<String>,
     /// Every field of the group, in the spec's order.
     pub(crate) fields: Vec<String>,
+    /// Whether the body is built from what Dokploy holds now: a `full` group re-sends it, and
+    /// an environment block keeps the variables the document does not own.
+    pub(crate) reads_fresh: bool,
 }
 
 /// Splits the written properties into the spec's write groups, in the order the spec lists
@@ -258,7 +268,7 @@ pub(crate) fn groups(
 ) -> Result<Vec<GroupRequest>, ApplyError> {
     let mut names = Vec::new();
     for path in written {
-        names.push(writable(spec, address, path)?.name.to_owned());
+        names.push(writable(spec, address, path)?.name);
     }
     let mut requests = Vec::new();
     for group in &spec.write {
@@ -271,11 +281,23 @@ pub(crate) fn groups(
             .cloned()
             .collect();
         if !changed.is_empty() {
+            let has_environment = fields.iter().any(|name| {
+                spec.fields
+                    .get(name)
+                    .and_then(|field| parse_type(&field.ty).ok())
+                    .is_some_and(|ty| matches!(ty, FieldType::Env))
+            });
             requests.push(GroupRequest {
                 operation: op.clone(),
                 shape: *shape,
+                written: written
+                    .iter()
+                    .filter(|path| fields.iter().any(|f| f == path.info().field_name()))
+                    .map(|path| path.to_string())
+                    .collect(),
                 changed,
                 fields: fields.clone(),
+                reads_fresh: *shape == Shape::Full || has_environment,
             });
         }
     }
@@ -296,7 +318,9 @@ pub(crate) fn groups(
 }
 
 /// The body of one group's update. A `partial` group sends the id and the changed fields; a
-/// `full` group sends every field of the group from a fresh read, overlaid with the changes.
+/// `full` group sends every field of the group from a fresh read, overlaid with the changes. A
+/// struct planned per member contributes its members, each under the key of its own; an
+/// environment block is rebuilt from the fresh text with the owned variables set.
 pub(crate) fn group_body(
     spec: &KindSpec,
     address: &ResourceAddress,
@@ -306,7 +330,6 @@ pub(crate) fn group_body(
     fresh: Option<&Json>,
     inputs: Inputs<'_>,
 ) -> Result<Json, ApplyError> {
-    let compiled = inputs.compiled;
     let mut body = Map::new();
     body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
 
@@ -315,41 +338,118 @@ pub(crate) fn group_body(
             .fields
             .get(name)
             .expect("a write group names fields of its kind");
-        let wire = field.request_name(name).to_owned();
-        let path = PropertyPath::from_spec(spec, name).map_err(|_| ApplyError::Unsupported {
-            address: address.clone(),
-            property: Some(name.clone()),
-            reason: "is not a property of the kind",
-        })?;
-        if group.changed.contains(name) {
-            body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
-            continue;
-        }
-        if group.shape == Shape::Partial {
-            continue;
-        }
-        // A full group re-sends what is already there. A secret cannot be read back, so its
-        // source must be declared in the document.
-        let secret = field.class != dokploy_spec::ValueClass::Public
-            || field.mutability == Mutability::WriteOnly;
-        if secret {
-            match checkpoint.property(&path) {
-                Some(CheckpointValueRef::Sensitive) => {
-                    body.insert(wire, secret_text(compiled, address, name)?);
-                }
-                _ => {
-                    return Err(ApplyError::NeedsSecret {
-                        address: address.clone(),
-                        property: name.clone(),
-                    });
-                }
+        let ty = parse_type(&field.ty).ok();
+        if matches!(ty, Some(FieldType::Env)) {
+            let wire = field.request_name(name).to_owned();
+            if group.changed.contains(name) {
+                body.insert(
+                    wire.clone(),
+                    environment_text(spec, address, checkpoint, name, &wire, fresh, inputs)?,
+                );
+            } else if group.shape == Shape::Full
+                && let Some(current) = fresh.and_then(|fresh| fresh.get(&wire))
+            {
+                body.insert(wire, current.clone());
             }
-        } else if let Some(current) = fresh.and_then(|fresh| fresh.get(&wire)) {
-            body.insert(wire, current.clone());
+            continue;
+        }
+        // The properties the field plans as: its members, or itself.
+        let paths: Vec<String> = if matches!(ty, Some(FieldType::Struct)) {
+            field
+                .members
+                .keys()
+                .map(|member| format!("{name}.{member}"))
+                .collect()
+        } else {
+            vec![name.clone()]
+        };
+        for dotted in paths {
+            let path =
+                PropertyPath::from_spec(spec, &dotted).map_err(|_| ApplyError::Unsupported {
+                    address: address.clone(),
+                    property: Some(dotted.clone()),
+                    reason: "is not a property of the kind",
+                })?;
+            let wire = path.info().request_key().to_owned();
+            if group.written.contains(&dotted) {
+                body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
+                continue;
+            }
+            if group.shape == Shape::Partial {
+                continue;
+            }
+            // A full group re-sends what is already there. A secret cannot be read back, so its
+            // source must be declared in the document.
+            if path.info().is_sensitive() {
+                match checkpoint.property(&path) {
+                    Some(CheckpointValueRef::Sensitive) => {
+                        body.insert(wire, secret_text(inputs.compiled, address, &dotted)?);
+                    }
+                    _ => {
+                        return Err(ApplyError::NeedsSecret {
+                            address: address.clone(),
+                            property: dotted,
+                        });
+                    }
+                }
+            } else if let Some(current) = fresh.and_then(|fresh| fresh.get(&wire)) {
+                body.insert(wire, current.clone());
+            }
         }
     }
 
     Ok(Json::Object(body))
+}
+
+/// The text of an environment block after the update: the fresh text with every variable the
+/// document owns set to its value, so the variables it does not own stay as they are. Clearing
+/// the block sends `null`, declaring it empty sends an empty text.
+fn environment_text(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    name: &str,
+    wire: &str,
+    fresh: Option<&Json>,
+    inputs: Inputs<'_>,
+) -> Result<Json, ApplyError> {
+    let unsupported = |reason: &'static str| ApplyError::Unsupported {
+        address: address.clone(),
+        property: Some(name.to_owned()),
+        reason,
+    };
+    let root = PropertyPath::from_spec(spec, name)
+        .map_err(|_| unsupported("is not a property of the kind"))?;
+    match checkpoint.property(&root) {
+        Some(CheckpointValueRef::Null) => return Ok(Json::Null),
+        Some(CheckpointValueRef::EmptyCollection) => return Ok(Json::String(String::new())),
+        _ => {}
+    }
+    let mut text = EnvText::parse(
+        fresh
+            .and_then(|fresh| fresh.get(wire))
+            .and_then(Json::as_str)
+            .unwrap_or_default(),
+    );
+    for path in checkpoint.property_paths() {
+        if path.info().root.as_deref() != Some(name) {
+            continue;
+        }
+        let dotted = path.to_string();
+        let key = dotted.split_once('.').map_or("", |(_, key)| key);
+        let value = match secret_text(inputs.compiled, address, &dotted)? {
+            Json::String(value) => value,
+            _ => return Err(unsupported("has a variable that is not text")),
+        };
+        if value.contains(['\n', '\r']) {
+            return Err(unsupported(
+                "has a variable whose value spans lines, which an environment block cannot carry",
+            ));
+        }
+        text.set(key, &value);
+    }
+
+    Ok(Json::String(text.render()))
 }
 
 /// The remove request.

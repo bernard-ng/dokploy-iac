@@ -11,6 +11,7 @@ use dokploy_spec::{Field, FieldType, KindSpec, PathShape, parse_type};
 use serde_json::Value as Json;
 
 use crate::canonical::canonical_remote;
+use crate::envtext::EnvText;
 use crate::selectors::SelectorIndex;
 
 /// The response key (or JSON pointer) a field is read from.
@@ -40,24 +41,36 @@ pub(crate) fn field_value(spec: &KindSpec, name: &str, item: &Json) -> Option<Js
     canonical_remote(lookup(item, api_name(name, field))?, &ty)
 }
 
-/// Projects an item onto every property of the kind.
+/// Projects an item onto every property of the kind, and onto the entries of keyed
+/// collections the document or state names (`entries`): a collection's entries are named by
+/// whoever owns them, so they are not in the spec.
 pub(crate) fn project(
     spec: &KindSpec,
     item: &Json,
     selectors: &SelectorIndex,
+    entries: &[PropertyPath],
 ) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut observed = BTreeMap::new();
+    // A collection is observed by its owned entries or as a whole, never both.
+    let entered: Vec<&str> = entries
+        .iter()
+        .filter_map(|path| path.info().root.as_deref())
+        .collect();
     for info in spec.properties() {
-        let observation = observe(spec, &info.path, &info, item, selectors);
+        if info.shape == PathShape::CollectionRoot && entered.contains(&info.path.as_str()) {
+            continue;
+        }
+        let observation = observe(&info, item, selectors);
         observed.insert(PropertyPath::from_property_info(info), observation);
+    }
+    for path in entries {
+        observed.insert(path.clone(), observe_entry(path.info(), item));
     }
 
     observed
 }
 
 fn observe(
-    spec: &KindSpec,
-    path: &str,
     info: &dokploy_spec::PropertyInfo,
     item: &Json,
     selectors: &SelectorIndex,
@@ -65,23 +78,21 @@ fn observe(
     if info.is_sensitive() {
         return PropertyObservation::Unknown(PropertyUnknownReason::Sensitive);
     }
-    // Collections, struct members, selectors, and unions are not read back yet; a desired
-    // property of those kinds stays unknown, which blocks planning for it alone.
     let not_returned = PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
-    let Some(field) = spec.fields.get(path) else {
-        return not_returned;
-    };
-    if info.shape != PathShape::Atomic {
-        return not_returned;
+    match info.shape {
+        PathShape::CollectionRoot if matches!(info.ty, FieldType::Env) => {
+            return observe_environment(info, item);
+        }
+        PathShape::CollectionRoot | PathShape::CollectionEntry => return not_returned,
+        PathShape::Atomic => {}
     }
     if let Some(target) = info.selector.as_deref() {
-        return observe_selector(target, lookup(item, api_name(path, field)), selectors);
+        return observe_selector(target, lookup(item, &info.api), selectors);
     }
-    let Ok(ty) = parse_type(&field.ty) else {
-        return not_returned;
-    };
+    // Structs without per-member planning, unions, and files are not read back yet; a desired
+    // property of those kinds stays unknown, which blocks planning for it alone.
     if !matches!(
-        ty,
+        info.ty,
         FieldType::Text
             | FieldType::Ref(_)
             | FieldType::Enum(_)
@@ -96,15 +107,49 @@ fn observe(
         return not_returned;
     }
 
-    match lookup(item, api_name(path, field)) {
+    match lookup(item, &info.api) {
         None => not_returned,
         Some(Json::Null) => PropertyObservation::KnownAbsent,
-        Some(value) => canonical_remote(value, &ty)
+        Some(value) => canonical_remote(value, &info.ty)
             .and_then(|canonical| ComparableValue::try_from_json(canonical).ok())
             .map_or(
                 PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
                 PropertyObservation::Known,
             ),
+    }
+}
+
+/// An environment block read as a whole: no text is nothing at all, an empty text is an empty
+/// block, and otherwise the names of the variables with nothing else about them.
+fn observe_environment(info: &dokploy_spec::PropertyInfo, item: &Json) -> PropertyObservation {
+    match lookup(item, &info.api) {
+        None => PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
+        Some(Json::Null) => PropertyObservation::KnownAbsent,
+        Some(Json::String(text)) => {
+            let names: serde_json::Map<String, Json> = EnvText::parse(text)
+                .keys()
+                .map(|key| (key.to_owned(), Json::Bool(true)))
+                .collect();
+            ComparableValue::try_from_json(Json::Object(names)).map_or(
+                PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+                PropertyObservation::Known,
+            )
+        }
+        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+    }
+}
+
+/// One variable of an environment block: there, or not. Its value is secret and never read.
+fn observe_entry(info: &dokploy_spec::PropertyInfo, item: &Json) -> PropertyObservation {
+    let key = info.path.split_once('.').map_or("", |(_, key)| key);
+    match lookup(item, &info.api) {
+        None => PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
+        Some(Json::Null) => PropertyObservation::KnownAbsent,
+        Some(Json::String(text)) if EnvText::parse(text).contains(key) => {
+            PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+        }
+        Some(Json::String(_)) => PropertyObservation::KnownAbsent,
+        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
     }
 }
 

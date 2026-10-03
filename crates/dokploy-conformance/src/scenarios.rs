@@ -206,7 +206,8 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
             Shape::Partial => vec![field.wire.as_str()],
             Shape::Full => group_fields
                 .iter()
-                .map(|name| w.case.field(name).wire.as_str())
+                .flat_map(|name| w.case.cases_of(name))
+                .map(|case| case.wire.as_str())
                 .collect(),
         })
         .collect();
@@ -639,7 +640,14 @@ pub(crate) async fn selector_unresolved(w: &World<'_>, ambiguous: bool) -> Check
 pub(crate) async fn follow_up(w: &World<'_>, how: FollowUp) -> Check<Verdict> {
     let values = w.case.full();
     let operations = creation_ops(w, &values);
-    let Some(operation) = operations.get(1).cloned() else {
+    // The follow-up is one request per write group, in order. A response lost on the last of
+    // them means everything was applied; lost on an earlier one means only a part was, which
+    // recovery rightly does not call a success.
+    let Some(operation) = (match how {
+        FollowUp::LostAfter => operations.last().filter(|_| operations.len() > 1),
+        FollowUp::Rejected | FollowUp::LostBefore => operations.get(1),
+    })
+    .cloned() else {
         return skip("the create carries every field");
     };
     let fault = match how {

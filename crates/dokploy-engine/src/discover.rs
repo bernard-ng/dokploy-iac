@@ -41,6 +41,9 @@ struct Subject<'a> {
     parent: Option<ResourceAddress>,
     collision: Option<&'a BTreeMap<String, Json>>,
     stored: Option<RemoteId>,
+    /// The entries of keyed collections the document or state owns, which are observed one by
+    /// one because the spec cannot name them.
+    entries: Vec<PropertyPath>,
 }
 
 pub(crate) async fn discover<T: Transport>(
@@ -61,6 +64,7 @@ pub(crate) async fn discover<T: Transport>(
                     parent: address.parent(),
                     collision: Some(&resource.collision),
                     stored: None,
+                    entries: owned_entries(compiled, address),
                 },
             ),
         );
@@ -77,11 +81,34 @@ pub(crate) async fn discover<T: Transport>(
                             parent: address.parent(),
                             collision: None,
                             stored: None,
+                            entries: Vec::new(),
                         },
                     )
                 })
                 .1
                 .stored = Some(resource.remote_id().clone());
+            if let Some((_, subject)) = subjects.get_mut(address) {
+                // A collection the document owns as a whole is observed as a whole.
+                let owned_roots: Vec<&str> = compiled
+                    .desired
+                    .resources()
+                    .get(address)
+                    .into_iter()
+                    .flat_map(|resource| resource.properties().keys())
+                    .filter(|path| path.is_collection_root())
+                    .map(|path| path.info().path.as_str())
+                    .collect();
+                for path in stored_entries(specs, resource) {
+                    let whole = path
+                        .info()
+                        .root
+                        .as_deref()
+                        .is_some_and(|root| owned_roots.contains(&root));
+                    if !whole && !subject.entries.contains(&path) {
+                        subject.entries.push(path);
+                    }
+                }
+            }
         }
     }
 
@@ -305,7 +332,7 @@ async fn direct_only<T: Transport>(
                         if direct.is_object() && item_id(spec, &direct) == Some(id.as_str()) =>
                     {
                         Outcome::Present {
-                            properties: project(spec, &direct, selectors),
+                            properties: project(spec, &direct, selectors, &subject.entries),
                             id: id.clone(),
                             raw: direct,
                         }
@@ -361,14 +388,34 @@ async fn settle<T: Transport>(
         let outcome = if list.authority == Authority::Partial {
             // Absence from a partial collection proves nothing.
             match find(spec, subject, &by_id, &listing) {
-                Found::Item(item) => resolve(transport, spec, item, attachment, selectors).await,
+                Found::Item(item) => {
+                    resolve(
+                        transport,
+                        spec,
+                        item,
+                        attachment,
+                        selectors,
+                        &subject.entries,
+                    )
+                    .await
+                }
                 Found::Nothing | Found::Ambiguous => {
                     Outcome::Unavailable(RemoteFailureKind::Unavailable)
                 }
             }
         } else {
             match find(spec, subject, &by_id, &listing) {
-                Found::Item(item) => resolve(transport, spec, item, attachment, selectors).await,
+                Found::Item(item) => {
+                    resolve(
+                        transport,
+                        spec,
+                        item,
+                        attachment,
+                        selectors,
+                        &subject.entries,
+                    )
+                    .await
+                }
                 Found::Nothing => Outcome::Missing,
                 Found::Ambiguous => Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
             }
@@ -428,13 +475,14 @@ async fn resolve<T: Transport>(
     listed: &Json,
     attachment: Option<&Attachment<'_>>,
     selectors: &SelectorIndex,
+    entries: &[PropertyPath],
 ) -> Outcome {
     let Some(id) = item_id(spec, listed).and_then(|id| RemoteId::new(id).ok()) else {
         return Outcome::Unavailable(RemoteFailureKind::InvalidResponse);
     };
     let Some(one) = spec.api.read.one.as_ref() else {
         return Outcome::Present {
-            properties: project(spec, listed, selectors),
+            properties: project(spec, listed, selectors, entries),
             id,
             raw: listed.clone(),
         };
@@ -453,7 +501,7 @@ async fn resolve<T: Transport>(
     }
 
     Outcome::Present {
-        properties: project(spec, &direct, selectors),
+        properties: project(spec, &direct, selectors, entries),
         id,
         raw: direct,
     }
@@ -485,6 +533,41 @@ fn failure(error: &SdkError) -> RemoteFailureKind {
         }
         _ => RemoteFailureKind::Unavailable,
     }
+}
+
+/// The entries of keyed collections the document owns.
+fn owned_entries(compiled: &Compiled, address: &ResourceAddress) -> Vec<PropertyPath> {
+    compiled
+        .desired
+        .resources()
+        .get(address)
+        .map(|resource| {
+            resource
+                .properties()
+                .keys()
+                .filter(|path| path.info().root.is_some())
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The entries of keyed collections state recorded: their values are receipts, under the
+/// dotted path of the entry.
+fn stored_entries(
+    specs: &SpecRegistry,
+    resource: &dokploy_state::ResourceState,
+) -> Vec<PropertyPath> {
+    let Some(spec) = specs.get(resource.kind().as_str()) else {
+        return Vec::new();
+    };
+
+    resource
+        .sensitive_inputs()
+        .paths()
+        .filter_map(|path| PropertyPath::from_spec(spec, path.as_str()).ok())
+        .filter(|path| path.info().root.is_some())
+        .collect()
 }
 
 /// Tells the planner what each selector the document sets means right now.

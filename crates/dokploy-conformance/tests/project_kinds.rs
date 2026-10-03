@@ -3,7 +3,7 @@
 //!
 //! The repository's `application` spec is partial until the composite values (union, env) are
 //! written by the executor, so this runs a trimmed copy of it: the same operations and fields
-//! minus those two. It goes away when `application` itself conforms.
+//! minus the union. It goes away when `application` itself conforms.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -20,13 +20,9 @@ fn trimmed_application() -> KindSpec {
         .expect("the spec exists");
     let mut spec = parse_spec(&text).expect("the spec parses");
     spec.coverage = dokploy_spec::Coverage::Full;
-    for composite in ["environment", "source"] {
-        spec.fields.remove(composite);
-    }
+    spec.fields.remove("source");
     spec.write.retain(|group| match group {
-        dokploy_spec::WriteGroup::Op { fields, .. } => {
-            !fields.iter().any(|f| f == "environment" || f == "source")
-        }
+        dokploy_spec::WriteGroup::Op { fields, .. } => !fields.iter().any(|f| f == "source"),
         dokploy_spec::WriteGroup::ByVariant { .. } => false,
     });
     spec.ledger.derived.clear();

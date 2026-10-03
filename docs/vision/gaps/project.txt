@@ -2,10 +2,7 @@ DOKDOC004 moves
 DOKDOC004 project.env
 DOKDOC004 project.environments.production.compose
 DOKDOC004 project.environments.staging.applications.api.build
-DOKDOC004 project.environments.staging.applications.api.build_args
-DOKDOC004 project.environments.staging.applications.api.build_secrets
 DOKDOC004 project.environments.staging.applications.api.build_server
-DOKDOC004 project.environments.staging.applications.api.create_env_file
 DOKDOC004 project.environments.staging.applications.api.deploy
 DOKDOC004 project.environments.staging.applications.api.detach_dokploy_network
 DOKDOC004 project.environments.staging.applications.api.domains
@@ -16,7 +13,6 @@ DOKDOC004 project.environments.staging.applications.api.mounts
 DOKDOC004 project.environments.staging.applications.api.networks
 DOKDOC004 project.environments.staging.applications.api.patches
 DOKDOC004 project.environments.staging.applications.api.preview
-DOKDOC004 project.environments.staging.applications.api.resources
 DOKDOC004 project.environments.staging.applications.api.schedules
 DOKDOC004 project.environments.staging.applications.api.swarm
 DOKDOC004 project.environments.staging.applications.api.traefik_config
@@ -27,10 +23,8 @@ DOKDOC004 project.environments.staging.env
 DOKDOC004 project.environments.staging.libsql
 DOKDOC004 project.environments.staging.postgres.main.backups
 DOKDOC004 project.environments.staging.postgres.main.detach_dokploy_network
-DOKDOC004 project.environments.staging.postgres.main.environment
 DOKDOC004 project.environments.staging.postgres.main.mounts
 DOKDOC004 project.environments.staging.postgres.main.networks
-DOKDOC004 project.environments.staging.postgres.main.resources
 DOKDOC004 project.environments.staging.postgres.main.schedules
 DOKDOC004 project.environments.staging.postgres.main.swarm
 DOKDOC004 project.environments.staging.postgres.main.volume_backups

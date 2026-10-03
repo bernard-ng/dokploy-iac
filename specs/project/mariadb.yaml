@@ -1,6 +1,5 @@
-# PROTOTYPE (coverage: partial). A database of an environment. The swarm settings, resource
-# limits, networks, and the environment block need struct and env values in the executor and
-# are still unclassified requests.
+# PROTOTYPE (coverage: partial). A database of an environment. The swarm settings and the
+# networks are still unclassified requests.
 #
 # Live facts (fixtures/api/live/*/mariadb-*): create answers the whole object, update answers
 # `true`, remove answers the removed object, and the collection is the `mariadb` array that
@@ -86,6 +85,20 @@ fields:
     class: secret
     mutability: write_only
     needs_deploy: true
+  resources:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      memory_limit: { api: memoryLimit, type: text, nullable: true }
+      memory_reservation: { api: memoryReservation, type: text, nullable: true }
+      cpu_limit: { api: cpuLimit, type: text, nullable: true }
+      cpu_reservation: { api: cpuReservation, type: text, nullable: true }
+  environment:
+    api: env
+    type: env
+    granularity: key
+    needs_deploy: true
   external_port:
     api: externalPort
     type: int
@@ -98,7 +111,10 @@ fields:
     needs_deploy: true
 write:
   - op: mariadb.update
-    fields: [name, description, image, command, args, database, username, password, root_password, external_port, replicas]
+    fields: [name, description, image, command, args, database, username, password, root_password, resources, external_port, replicas]
+    shape: partial
+  - op: mariadb.saveEnvironment
+    fields: [environment]
     shape: partial
 ledger:
   readonly: [createdAt, applicationStatus]

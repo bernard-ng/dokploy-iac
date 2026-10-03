@@ -56,6 +56,18 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Struct members and environment blocks in the executor (milestone M3, ADR 0004;
+  [`docs/design/engine.md`](docs/design/engine.md#structs-and-environment-blocks)). A struct planned
+  per member (`resources.memory_limit`) reads and writes each member under the key of its own, in
+  `partial` and `full` write groups; an `env` field is observed per owned variable (present or not)
+  or as a whole, and written by setting the owned variables in the text Dokploy holds, leaving every
+  other line as it was. `PropertyInfo` gains `api` and `pattern`. Recovery proves an added variable by
+  its presence. The conformance suite renders members and environment blocks (update, drift, canary
+  scan) and the simulator nulls struct members and environment columns. The databases gain `resources`
+  and `environment`; the application gains `resources`, `environment`, `build_args`, `build_secrets`,
+  and `create_env_file` (`application.saveEnvironment` takes all four every time, a `full` group), and
+  passes the whole suite with 55 scenarios when its union `source` is left out.
+
 - The databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis` (milestone M3): five specs of about
   60 lines, no Rust, each found in the collection `environment.one` embeds. They pass the conformance
   suite for the fields they carry (39 to 44 scenarios each; the swarm settings, resource limits,

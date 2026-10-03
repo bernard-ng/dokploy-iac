@@ -259,7 +259,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         // A full group re-sends what is there, so it starts from a fresh read.
         let mut bodies = Vec::new();
         for group in &groups {
-            let fresh = if group.shape == dokploy_spec::Shape::Full {
+            let fresh = if group.reads_fresh {
                 Some(
                     self.direct_read(spec, remote_id.as_str())
                         .await
@@ -546,7 +546,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                     address: address.clone(),
                     code,
                 })?;
-        let observed = project(spec, &direct, &self.selectors);
+        let observed = project(spec, &direct, &self.selectors, &[]);
         for path in paths {
             let matches = match (checkpoint.property(path), observed.get(*path)) {
                 (
@@ -557,6 +557,11 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                     Some(dokploy_core::CheckpointValueRef::Null),
                     Some(PropertyObservation::KnownAbsent),
                 ) => true,
+                (
+                    Some(dokploy_core::CheckpointValueRef::EmptyCollection),
+                    Some(PropertyObservation::Known(seen)),
+                ) => ComparableValue::try_from_json(serde_json::json!({}))
+                    .is_ok_and(|empty| &empty == seen),
                 _ => false,
             };
             if !matches {

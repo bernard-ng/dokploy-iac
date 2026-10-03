@@ -13,6 +13,7 @@ mod apply;
 mod canonical;
 mod compile;
 mod discover;
+mod envtext;
 mod fingerprint;
 mod project;
 mod recover;

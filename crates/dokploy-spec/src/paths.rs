@@ -66,6 +66,27 @@ pub struct PropertyInfo {
     pub rules: ValueRules,
     /// Whether the document supplies a default (`default: key`).
     pub has_default: bool,
+    /// The regular expression a text value must match, when the spec gives one.
+    pub pattern: Option<String>,
+    /// The response key or JSON pointer the value is read from: the field's `api`, or its own
+    /// name. A struct member is a key of its own, not nested in the struct, and an entry of a
+    /// keyed collection has its root's.
+    pub api: String,
+}
+
+impl PropertyInfo {
+    /// The key the value is sent under in a request body: the first segment of [`Self::api`].
+    #[must_use]
+    pub fn request_key(&self) -> &str {
+        let trimmed = self.api.strip_prefix('/').unwrap_or(&self.api);
+        trimmed.split('/').next().unwrap_or(trimmed)
+    }
+
+    /// The name of the document field this property belongs to: the first segment of its path.
+    #[must_use]
+    pub fn field_name(&self) -> &str {
+        self.path.split('.').next().unwrap_or(&self.path)
+    }
 }
 
 impl PropertyInfo {
@@ -231,6 +252,7 @@ fn selector_of(parsed: &FieldType) -> Option<String> {
 fn base(
     spec: &KindSpec,
     path: String,
+    name: &str,
     field: &crate::model::Field,
     parsed: &FieldType,
     inherited: Option<Mutability>,
@@ -255,6 +277,8 @@ fn base(
             max: field.max,
         },
         has_default: field.default.is_some(),
+        pattern: field.pattern.clone(),
+        api: field.api.clone().unwrap_or_else(|| name.to_owned()),
     }
 }
 
@@ -272,7 +296,8 @@ fn resolve_inside(
         if is_per_member(parsed, granularity) {
             return Err(PathError::NeedsMember { prefix });
         }
-        let mut info = base(spec, prefix, field, parsed, inherited);
+        let name = prefix.rsplit('.').next().unwrap_or(&prefix).to_owned();
+        let mut info = base(spec, prefix, &name, field, parsed, inherited);
         if is_collection(parsed, granularity) {
             info.shape = PathShape::CollectionRoot;
             info.nullable = true;
@@ -286,7 +311,8 @@ fn resolve_inside(
             FieldType::Map(inner) => (**inner).clone(),
             _ => FieldType::Env,
         };
-        let mut info = base(spec, full.to_owned(), field, &element, inherited);
+        let name = prefix.rsplit('.').next().unwrap_or(&prefix).to_owned();
+        let mut info = base(spec, full.to_owned(), &name, field, &element, inherited);
         info.shape = PathShape::CollectionEntry;
         info.nullable = true;
         info.selector = selector_of(&element);
@@ -387,7 +413,8 @@ fn collect(
         }
         return;
     }
-    let mut info = base(spec, path.to_owned(), field, parsed, inherited);
+    let name = path.rsplit('.').next().unwrap_or(path);
+    let mut info = base(spec, path.to_owned(), name, field, parsed, inherited);
     if is_collection(parsed, field.granularity) {
         info.shape = PathShape::CollectionRoot;
         info.nullable = true;

@@ -4,8 +4,7 @@
 use std::collections::BTreeMap;
 
 use dokploy_spec::{
-    Field, FieldType, KindSpec, Mutability, PathShape, Scope, SpecRegistry, ValueClass, WriteGroup,
-    parse_type,
+    FieldType, KindSpec, Mutability, PathShape, Scope, SpecRegistry, ValueClass, WriteGroup,
 };
 use dokploy_state::{DocumentId, ResourceName};
 use serde_json::{Value as Json, json};
@@ -23,6 +22,13 @@ pub(crate) enum Val {
         kind: String,
         name: String,
         id: String,
+    },
+    /// An environment block: variables whose values are secrets read from the environment.
+    Environment {
+        /// The request and response key of the block.
+        wire: String,
+        /// Variable name and secret value, in name order.
+        variables: Vec<(String, String)>,
     },
 }
 
@@ -97,13 +103,33 @@ impl Case {
         }
         let key = "conf-key".to_owned();
         let mut fields = Vec::new();
-        for (name, field) in &spec.fields {
-            let Ok(info) = spec.property(name) else {
-                continue;
-            };
-            if info.shape != PathShape::Atomic || field.mutability == Mutability::Computed {
+        for info in spec.properties() {
+            let name = info.path.clone();
+            if info.mutability == Mutability::Computed {
                 continue;
             }
+            let secret =
+                info.class != ValueClass::Public || info.mutability == Mutability::WriteOnly;
+            let group = spec.write.iter().find_map(|group| match group {
+                WriteGroup::Op { op, fields, shape }
+                    if fields.iter().any(|f| f == info.field_name()) =>
+                {
+                    Some((op.clone(), *shape, fields.clone()))
+                }
+                _ => None,
+            });
+            let field_case = |a: Val, b: Option<Val>, secret: bool, default_key: bool| FieldCase {
+                name: name.clone(),
+                wire: info.request_key().to_owned(),
+                mutability: info.mutability,
+                secret,
+                required: info.is_required_on_create(),
+                default_key,
+                a,
+                b,
+                group: group.clone(),
+            };
+
             if let Some(target) = info.selector.as_deref() {
                 // Only a target the suite can seed: a kind with a spec and a name to match.
                 let seedable = specs.get(target).is_some_and(|spec| {
@@ -119,30 +145,32 @@ impl Case {
                     name: format!("{name}-{variant}"),
                     id: format!("sel-{target}-{name}-{variant}"),
                 };
-                let group = spec.write.iter().find_map(|group| match group {
-                    WriteGroup::Op { op, fields, shape } if fields.contains(name) => {
-                        Some((op.clone(), *shape, fields.clone()))
-                    }
-                    _ => None,
-                });
-                fields.push(FieldCase {
-                    name: name.clone(),
-                    wire: field.request_name(name).to_owned(),
-                    mutability: field.mutability,
-                    secret: false,
-                    required: info.is_required_on_create(),
-                    default_key: false,
-                    a: selector("a"),
-                    b: Some(selector("b")),
-                    group,
-                });
+                fields.push(field_case(selector("a"), Some(selector("b")), false, false));
                 continue;
             }
-            let Ok(ty) = parse_type(&field.ty) else {
+            // An environment block: two variables whose values are secret.
+            if info.shape == PathShape::CollectionRoot {
+                if !matches!(info.ty, FieldType::Env) {
+                    continue;
+                }
+                let block = |variant: &str| Val::Environment {
+                    wire: info.request_key().to_owned(),
+                    variables: ["LOG_LEVEL", "REGION"]
+                        .iter()
+                        .map(|key| {
+                            (
+                                (*key).to_owned(),
+                                format!("canary-{name}-{}-{variant}", key.to_ascii_lowercase()),
+                            )
+                        })
+                        .collect(),
+                };
+                fields.push(field_case(block("a"), Some(block("b")), true, false));
                 continue;
-            };
-            let secret =
-                field.class != ValueClass::Public || field.mutability == Mutability::WriteOnly;
+            }
+            if info.shape != PathShape::Atomic {
+                continue;
+            }
             let (a, b) = if secret {
                 (
                     Some(Val::Secret(format!("canary-{name}-a"))),
@@ -150,14 +178,16 @@ impl Case {
                 )
             } else {
                 (
-                    sample(&ty, field, name, 0).map(Val::Json),
-                    sample(&ty, field, name, 1).map(Val::Json),
+                    sample(&info, &name, 0).map(Val::Json),
+                    sample(&info, &name, 1).map(Val::Json),
                 )
             };
-            let default_key = field.default.as_deref() == Some("key");
-            let required = info.is_required_on_create();
+            let default_key = spec
+                .fields
+                .get(&name)
+                .is_some_and(|field| field.default.as_deref() == Some("key"));
             let Some(a) = a else {
-                if required {
+                if info.is_required_on_create() {
                     return Err(format!(
                         "cannot make a sample value for required field `{name}`"
                     ));
@@ -165,23 +195,7 @@ impl Case {
                 continue;
             };
             let b = b.filter(|b| *b != a);
-            let group = spec.write.iter().find_map(|group| match group {
-                WriteGroup::Op { op, fields, shape } if fields.contains(name) => {
-                    Some((op.clone(), *shape, fields.clone()))
-                }
-                _ => None,
-            });
-            fields.push(FieldCase {
-                name: name.clone(),
-                wire: field.request_name(name).to_owned(),
-                mutability: field.mutability,
-                secret,
-                required,
-                default_key,
-                a,
-                b,
-                group,
-            });
+            fields.push(field_case(a, b, secret, default_key));
         }
 
         Ok(Self {
@@ -190,6 +204,14 @@ impl Case {
             fields,
             ancestors,
         })
+    }
+
+    /// The cases of one field of a write group: the field itself, or the members of a struct.
+    pub(crate) fn cases_of(&self, field: &str) -> Vec<&FieldCase> {
+        self.fields
+            .iter()
+            .filter(|f| f.name == field || f.name.starts_with(&format!("{field}.")))
+            .collect()
     }
 
     pub(crate) fn field(&self, name: &str) -> &FieldCase {
@@ -231,13 +253,22 @@ impl Case {
 
     /// The environment that makes the secrets in `values` readable.
     pub(crate) fn environment(&self, values: &Values) -> BTreeMap<String, String> {
-        values
-            .iter()
-            .filter_map(|(name, value)| match value {
-                Val::Secret(secret) => Some((env_name(name), secret.clone())),
-                Val::Json(_) | Val::Selector { .. } => None,
-            })
-            .collect()
+        let mut environment = BTreeMap::new();
+        for (name, value) in values {
+            match value {
+                Val::Secret(secret) => {
+                    environment.insert(env_name(name), secret.clone());
+                }
+                Val::Environment { variables, .. } => {
+                    for (key, secret) in variables {
+                        environment.insert(env_name(&format!("{name}.{key}")), secret.clone());
+                    }
+                }
+                Val::Json(_) | Val::Selector { .. } => {}
+            }
+        }
+
+        environment
     }
 
     /// Which state the kind's documents are tracked in.
@@ -254,13 +285,35 @@ impl Case {
     /// document with the kind nested under its ancestors otherwise.
     pub(crate) fn document(&self, values: &Values, protect: bool) -> String {
         let mut fields = Vec::new();
+        // The members of a struct are written together, under the struct.
+        let mut members: BTreeMap<&str, Vec<String>> = BTreeMap::new();
         for (name, value) in values {
             let rendered = match value {
                 Val::Json(json) => json.to_string(),
                 Val::Secret(_) => format!("{{ env: {} }}", env_name(name)),
                 Val::Selector { name, .. } => format!("{{ name: {name} }}"),
+                Val::Environment { variables, .. } => format!(
+                    "{{ {} }}",
+                    variables
+                        .iter()
+                        .map(|(key, _)| format!(
+                            "{key}: {{ secret: {{ env: {} }} }}",
+                            env_name(&format!("{name}.{key}"))
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             };
-            fields.push(format!("{name}: {rendered}"));
+            match name.split_once('.') {
+                Some((field, member)) => members
+                    .entry(field)
+                    .or_default()
+                    .push(format!("{member}: {rendered}")),
+                None => fields.push(format!("{name}: {rendered}")),
+            }
+        }
+        for (field, entries) in members {
+            fields.push(format!("{field}: {{ {} }}", entries.join(", ")));
         }
         if protect {
             fields.push("lifecycle: { protect: true }".to_owned());
@@ -332,6 +385,9 @@ impl Case {
                 Some(Val::Selector { id, .. }) => {
                     expected.insert(field.wire.clone(), json!(id));
                 }
+                Some(Val::Environment { variables, .. }) => {
+                    expected.insert(field.wire.clone(), json!(environment_text(variables)));
+                }
                 None if field.default_key => {
                     expected.insert(field.wire.clone(), json!(self.key));
                 }
@@ -362,9 +418,12 @@ impl Case {
             .iter()
             .flat_map(|f| [Some(&f.a), f.b.as_ref()])
             .flatten()
-            .filter_map(|value| match value {
-                Val::Secret(secret) => Some(secret.clone()),
-                Val::Json(_) | Val::Selector { .. } => None,
+            .flat_map(|value| match value {
+                Val::Secret(secret) => vec![secret.clone()],
+                Val::Environment { variables, .. } => {
+                    variables.iter().map(|(_, secret)| secret.clone()).collect()
+                }
+                Val::Json(_) | Val::Selector { .. } => Vec::new(),
             })
             .collect()
     }
@@ -384,6 +443,15 @@ impl Case {
     }
 }
 
+/// The text Dokploy holds for an environment block: one `KEY=VALUE` line per variable.
+pub(crate) fn environment_text(variables: &[(String, String)]) -> String {
+    variables
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn push_fields(lines: &mut Vec<String>, indent: usize, fields: &[String]) {
     if fields.is_empty() {
         if let Some(last) = lines.last_mut() {
@@ -397,26 +465,45 @@ fn push_fields(lines: &mut Vec<String>, indent: usize, fields: &[String]) {
 }
 
 fn env_name(field: &str) -> String {
-    format!("CONF_{}", field.to_ascii_uppercase())
+    let name: String = field
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("CONF_{name}")
 }
 
-/// A sample value of a field's type; `variant` 0 and 1 differ when the type allows two.
-fn sample(ty: &FieldType, field: &Field, name: &str, variant: usize) -> Option<Json> {
-    if field.pattern.is_some() {
+/// A sample value of a property's type; `variant` 0 and 1 differ when the type allows two.
+fn sample(info: &dokploy_spec::PropertyInfo, name: &str, variant: usize) -> Option<Json> {
+    if info.pattern.is_some() {
         return None;
     }
+    sample_type(&info.ty, info, name, variant)
+}
+
+fn sample_type(
+    ty: &FieldType,
+    info: &dokploy_spec::PropertyInfo,
+    name: &str,
+    variant: usize,
+) -> Option<Json> {
     match ty {
         FieldType::Text => {
             let mut text = format!("{name}-{}", ["a", "b"][variant]);
-            while (text.len() as u64) < field.min_len.unwrap_or(0) {
+            while (text.len() as u64) < info.rules.min_len.unwrap_or(0) {
                 text.push('x');
             }
             Some(json!(text))
         }
         FieldType::Int => {
-            let base = field.min.unwrap_or(0.0).ceil() as i64;
+            let base = info.rules.min.unwrap_or(0.0).ceil() as i64;
             let value = base + 1 + variant as i64;
-            if field.max.is_some_and(|max| value as f64 > max) {
+            if info.rules.max.is_some_and(|max| value as f64 > max) {
                 return None;
             }
             Some(json!(value))
@@ -427,7 +514,7 @@ fn sample(ty: &FieldType, field: &Field, name: &str, variant: usize) -> Option<J
             .or_else(|| values.first())
             .map(|v| json!(v)),
         FieldType::List(item) | FieldType::Set(item) => {
-            sample(item, field, name, variant).map(|value| json!([value]))
+            sample_type(item, info, name, variant).map(|value| json!([value]))
         }
         _ => None,
     }
