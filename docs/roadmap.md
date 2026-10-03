@@ -55,8 +55,23 @@ Schema; [`document-format.md`](design/document-format.md)).
 The `Transport` trait (`dokploy-sdk`): the engine sends through it, over HTTP or in memory.
 The engine skeleton (`dokploy-engine`, [`engine.md`](design/engine.md)): **a settings document
 containing a registry is planned against a canned remote**, in memory and over HTTP.
-**M1 is complete.** Next is M2: discovery and projection for the remaining shapes, the executor,
-`dokploy-sim`, the conformance generator, and the first three ported kinds, then the cost gate.
+**M1 is complete.**
+
+## M2 status
+
+Done: the generated request contracts; live captures of `registry` and `tag` on 0.30.6 and 0.30.7;
+`dokploy-sim` ([`simulator.md`](design/simulator.md)); apply and recovery in `dokploy-engine`
+([`engine.md`](design/engine.md)); nested kinds (scoped and embedded collections); the conformance
+suite ([`conformance.md`](design/conformance.md)); a live engine test in CI for both versions; the
+golden ledger classification (37 of the 55 scenarios of the three kinds covered); and the CLI cut over
+to the v2 engine with the whole first engine deleted (no support for version 1 documents). `tag`,
+`registry`, and `redirect` pass the full suite with no per-kind Rust. The **cost gate** is measured
+([`cost-gate.md`](design/cost-gate.md)): met for the flat and leaf shapes, the union shape is the
+first thing to try in M3.
+
+Left from the plan's M2 row: nothing, except two things the gate records: the first engine's closed
+property vocabulary is still in `dokploy-core` and `dokploy-state` (the kernel tests are written
+against it), and `import`, saved plans, and `--parallelism` are removed until M6 and later.
 
 ## Cost gate (end of M2)
 
@@ -81,7 +96,7 @@ commit `96cab73`.
 | After | Declarative commands cover |
 |-------|----------------------------|
 | M1 | `validate`, `schema`, `plan` for ported settings kinds against canned data |
-| M2 | plan, apply, recover, destroy for `tag`, `registry`, and `redirect` |
+| M2 | validate, schema, plan, apply, recover, destroy, state for `tag`, `registry`, and `redirect` (**done**) |
 | M3 | every project kind (no deploy, no import) |
 | M5 | every settings kind |
 | M6 | `import` for everything |

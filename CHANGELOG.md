@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Milestone M2 is complete ([`docs/design/cost-gate.md`](docs/design/cost-gate.md)): `tag`,
+  `registry`, and `redirect` run end to end with no per-kind Rust or test code (specs of 42, 66, and
+  41 lines), against the simulator and the live Dokploy on 0.30.6 and 0.30.7. The union shape is not
+  measured yet.
 - **Breaking: the rest of the first engine is deleted** (ADR 0016). The `dokploy-config` crate, the SDK's
   per-kind models, services, and client methods (`dokploy-sdk` is now the connection, `Transport`,
   and the raw `api` commands), the first engine's live scripts (`test-*-apply.sh`, `test-*-sdk.sh`,
