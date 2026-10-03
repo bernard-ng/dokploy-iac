@@ -93,7 +93,24 @@ impl Suite {
     /// When `kind` has no spec.
     pub async fn run(&self, kind: &str) -> Vec<ScenarioResult> {
         let spec = self.specs.get(kind).expect("a kind with a spec");
-        let case = match Case::new(spec, &self.specs) {
+        if spec.parents.len() > 1 {
+            // A kind that lives under several parents is exercised under each of them.
+            let mut results = Vec::new();
+            for parent in &spec.parents {
+                results.extend(self.run_under(kind, Some(parent)).await);
+            }
+
+            return results;
+        }
+
+        self.run_under(kind, None).await
+    }
+
+    async fn run_under(&self, kind: &str, parent: Option<&str>) -> Vec<ScenarioResult> {
+        let spec = self.specs.get(kind).expect("a kind with a spec");
+        let label = parent.map_or_else(|| kind.to_owned(), |parent| format!("{kind}@{parent}"));
+        let kind = label.as_str();
+        let case = match Case::new(spec, &self.specs, parent) {
             Ok(case) => case,
             Err(reason) => {
                 return vec![ScenarioResult {

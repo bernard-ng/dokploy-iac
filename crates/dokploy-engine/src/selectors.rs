@@ -62,7 +62,7 @@ impl SelectorIndex {
             let Some(key) = spec.identity.key.as_deref() else {
                 continue;
             };
-            if spec.parent.is_some() || spec.api.read.list.is_none() {
+            if !spec.parents.is_empty() || spec.api.read.list.is_none() {
                 continue;
             }
             let entries = read_collection(transport, specs, spec, None)

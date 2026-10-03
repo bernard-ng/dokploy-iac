@@ -79,19 +79,10 @@ fn remove_op(w: &World<'_>) -> String {
 /// The operation whose failure makes the kind's collection unreadable: its list, or the
 /// parent's direct read when the collection is embedded in it.
 fn list_op(w: &World<'_>) -> String {
-    let list = w
-        .case
-        .spec
-        .api
-        .read
-        .list
-        .as_ref()
-        .expect("a kind with a collection read");
-    match (&list.op, &list.embedded_in) {
-        (Some(op), _) => op.clone(),
-        (None, Some(embedded)) => embedded.parent_op.clone(),
-        (None, None) => unreachable!("a list has an op or is embedded"),
-    }
+    w.case
+        .collection_source()
+        .map(|(operation, _)| operation)
+        .expect("a kind with a collection read")
 }
 
 /// The remote object holds what the values say.
@@ -682,14 +673,19 @@ pub(crate) async fn follow_up(w: &World<'_>, how: FollowUp) -> Check<Verdict> {
 
     let recovered = w.recover(&values).await?;
     let action = recovered.map_err(|error: RecoverError| format!("recovery failed: {error}"))?;
-    let expected = match how {
-        FollowUp::Rejected => RecoveryAction::ResolveOperation,
-        FollowUp::LostBefore => RecoveryAction::ConfirmNoChange,
-        FollowUp::LostAfter => RecoveryAction::CheckpointConfirmedSuccess,
+    let expected: &[RecoveryAction] = match how {
+        FollowUp::Rejected => &[RecoveryAction::ResolveOperation],
+        // Nothing was applied; when Dokploy's own defaults already equal the document, the
+        // remote already shows the target and that is a success all the same.
+        FollowUp::LostBefore => &[
+            RecoveryAction::ConfirmNoChange,
+            RecoveryAction::CheckpointConfirmedSuccess,
+        ],
+        FollowUp::LostAfter => &[RecoveryAction::CheckpointConfirmedSuccess],
     };
     ensure!(
-        action == expected,
-        "recovery chose {action:?}, expected {expected:?}"
+        expected.contains(&action),
+        "recovery chose {action:?}, expected one of {expected:?}"
     );
     ensure!(w.recovery_clean(), "recovery left the journal open");
     let creates = w
@@ -787,15 +783,7 @@ pub(crate) async fn identity_ambiguous(w: &World<'_>) -> Check<Verdict> {
 /// A kind's collection that names another parent's items, or a direct read that names another
 /// parent, is not this parent's child: nothing may be concluded from it.
 pub(crate) async fn foreign_parent(w: &World<'_>, direct: bool) -> Check<Verdict> {
-    let Some(attach) = w
-        .case
-        .spec
-        .api
-        .create
-        .as_ref()
-        .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
-        .map(|(field, _)| field.clone())
-    else {
+    let Some(attach) = w.case.parent_id_field() else {
         return skip("the kind has no parent");
     };
     let values = w.case.full();
@@ -816,11 +804,8 @@ pub(crate) async fn foreign_parent(w: &World<'_>, direct: bool) -> Check<Verdict
             response[attach.clone()] = json!("another-parent")
         });
     } else {
-        let list = w.case.spec.api.read.list.as_ref().expect("a collection");
-        let (operation, pointer) = match (&list.op, &list.embedded_in) {
-            (Some(op), _) => (op.clone(), String::new()),
-            (None, Some(embedded)) => (embedded.parent_op.clone(), embedded.pointer.clone()),
-            (None, None) => return skip("no collection"),
+        let Some((operation, pointer)) = w.case.collection_source() else {
+            return skip("no collection");
         };
         let stranger = {
             let mut object = w.case.collision_object(&values);

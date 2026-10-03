@@ -149,7 +149,7 @@ pub(crate) async fn discover<T: Transport>(
         let spec = specs
             .get(kind)
             .ok_or_else(|| EngineError::UnknownKind { kind: kind.clone() })?;
-        let read = if spec.parent.is_some() {
+        let read = if !spec.parents.is_empty() {
             read_nested(transport, specs, spec, group, &outcomes, &selectors).await?
         } else {
             read_top_level(transport, spec, group, &selectors).await?
@@ -165,18 +165,21 @@ pub(crate) async fn discover<T: Transport>(
 }
 
 fn depth(specs: &SpecRegistry, kind: &str) -> usize {
-    let mut depth = 0;
-    let mut current = specs.get(kind);
-    while let Some(spec) = current {
-        let Some(parent) = &spec.parent else { break };
-        depth += 1;
-        current = specs.get(parent);
-        if depth > 32 {
-            break;
+    fn deepest(specs: &SpecRegistry, kind: &str, budget: usize) -> usize {
+        let Some(spec) = specs.get(kind) else {
+            return 0;
+        };
+        if budget == 0 {
+            return 0;
         }
+        spec.parents
+            .iter()
+            .map(|parent| 1 + deepest(specs, parent, budget - 1))
+            .max()
+            .unwrap_or(0)
     }
 
-    depth
+    deepest(specs, kind, 32)
 }
 
 fn unsupported(spec: &KindSpec, reason: &'static str) -> EngineError {
@@ -222,12 +225,6 @@ async fn read_nested<T: Transport>(
     let Some(list) = spec.api.read.list.as_ref() else {
         return Ok(direct_only(transport, spec, group, selectors).await);
     };
-    let parent_spec = spec
-        .parent
-        .as_deref()
-        .and_then(|parent| specs.get(parent))
-        .ok_or_else(|| unsupported(spec, "the parent kind has no spec"))?;
-
     let mut by_parent: BTreeMap<Option<&ResourceAddress>, Vec<&Subject<'_>>> = BTreeMap::new();
     for subject in group {
         by_parent
@@ -252,9 +249,18 @@ async fn read_nested<T: Transport>(
                 results.extend(all(&owned, Outcome::Unavailable(*kind)));
             }
             Some(Outcome::Present { id, raw, .. }) => {
+                let parent_kind = parent.map_or("", |parent| parent.kind().as_str());
+                let parent_spec = specs
+                    .get(parent_kind)
+                    .ok_or_else(|| unsupported(spec, "the parent kind has no spec"))?;
                 let listing = if let Some(embedded) = &list.embedded_in {
                     let one = parent_spec.api.read.one.as_ref();
-                    if one.is_none_or(|one| one.op != embedded.parent_op) {
+                    if one.is_none_or(|one| {
+                        embedded
+                            .parent_op
+                            .as_deref()
+                            .is_some_and(|parent_op| one.op != parent_op)
+                    }) {
                         return Err(unsupported(
                             spec,
                             "an embedded collection must come from the parent's direct read",
@@ -278,15 +284,10 @@ async fn read_nested<T: Transport>(
                         "a nested collection must be embedded in its parent or scoped by it",
                     ));
                 };
-                let attach = spec
-                    .api
-                    .create
-                    .as_ref()
-                    .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
-                    .map(|(field, _)| Attachment {
-                        field,
-                        parent_id: id.as_str(),
-                    });
+                let attach = spec.parent_column(parent_kind).map(|field| Attachment {
+                    field,
+                    parent_id: id.as_str(),
+                });
                 results.extend(
                     settle(
                         transport,
@@ -691,8 +692,9 @@ pub(crate) async fn read_collection<T: Transport>(
     transport: &T,
     specs: &SpecRegistry,
     spec: &KindSpec,
-    parent_id: Option<&str>,
+    parent: Option<(&str, &str)>,
 ) -> Result<Vec<Json>, RemoteFailureKind> {
+    let (parent_kind, parent_id) = parent.unzip();
     let list = spec
         .api
         .read
@@ -700,9 +702,7 @@ pub(crate) async fn read_collection<T: Transport>(
         .as_ref()
         .ok_or(RemoteFailureKind::Unavailable)?;
     if let Some(embedded) = &list.embedded_in {
-        let parent_spec = spec
-            .parent
-            .as_deref()
+        let parent_spec = parent_kind
             .and_then(|parent| specs.get(parent))
             .ok_or(RemoteFailureKind::Unavailable)?;
         let one = parent_spec
@@ -710,7 +710,12 @@ pub(crate) async fn read_collection<T: Transport>(
             .read
             .one
             .as_ref()
-            .filter(|one| one.op == embedded.parent_op)
+            .filter(|one| {
+                embedded
+                    .parent_op
+                    .as_deref()
+                    .is_none_or(|parent_op| one.op == parent_op)
+            })
             .ok_or(RemoteFailureKind::Unavailable)?;
         let parent_id = parent_id.ok_or(RemoteFailureKind::Unavailable)?;
         let request = OperationRequest::new(&one.op).query(one.id_param.clone(), parent_id);

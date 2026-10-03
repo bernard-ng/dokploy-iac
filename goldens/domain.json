@@ -14,8 +14,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance domain canary scan and `create`; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -38,8 +38,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance domain canary scan and `create`; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     }
   ]

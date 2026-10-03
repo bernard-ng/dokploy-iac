@@ -113,3 +113,36 @@ async fn the_environment_and_the_databases_conform_for_the_fields_they_carry() {
         );
     }
 }
+
+/// A kind that lives under several parents is exercised under each of them.
+#[tokio::test]
+async fn a_mount_conforms_under_every_parent() {
+    let specs = load_dir(&root().join("specs")).expect("repository specs are valid");
+    let suite = Suite::new(specs, root().join("fixtures/api/live/v0.30.6"));
+
+    let results = suite.run("mount").await;
+
+    println!("{}", report(&results));
+    let failures: Vec<_> = results
+        .iter()
+        .filter(|r| matches!(r.outcome, Outcome::Fail(_)))
+        .collect();
+    assert!(failures.is_empty(), "{}", report(&results));
+    for parent in [
+        "application",
+        "postgres",
+        "mysql",
+        "mariadb",
+        "mongo",
+        "redis",
+    ] {
+        let kind = format!("mount@{parent}");
+        assert!(
+            results
+                .iter()
+                .any(|r| r.kind == kind && r.outcome == Outcome::Pass),
+            "`{kind}` did not run: {}",
+            report(&results)
+        );
+    }
+}

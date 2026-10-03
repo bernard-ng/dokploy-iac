@@ -365,24 +365,22 @@ fn validate_desired_containment(
             address: address.clone(),
         });
     }
-    match (
-        address.kind().containment_parent_kind(),
-        resource.containment.as_ref(),
-    ) {
-        (None, None) => Ok(()),
-        (None, Some(_)) => Err(DesiredStateError::UnexpectedContainment {
+    let required = address.kind().containment_parent_kinds();
+    match (required.is_empty(), resource.containment.as_ref()) {
+        (true, None) => Ok(()),
+        (true, Some(_)) => Err(DesiredStateError::UnexpectedContainment {
             address: address.clone(),
         }),
-        (Some(_), None) => Err(DesiredStateError::MissingContainment {
+        (false, None) => Err(DesiredStateError::MissingContainment {
             address: address.clone(),
         }),
-        (Some(required), Some(parent)) if parent.kind() != required => {
+        (false, Some(parent)) if !required.contains(&parent.kind()) => {
             Err(DesiredStateError::InvalidContainmentKind {
                 address: address.clone(),
                 parent: parent.clone(),
             })
         }
-        (Some(_), Some(_)) => Ok(()),
+        (false, Some(_)) => Ok(()),
     }
 }
 

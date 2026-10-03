@@ -9,7 +9,8 @@ use std::fs;
 use dokploy_state::{
     AddressSuffixError, DocumentId, ExpectedState, InstanceIdentity, KindRegistrationError,
     ManagedInputs, RemoteId, ResourceAddress, ResourceAddressParseError, ResourceKind,
-    ResourceName, ResourceState, StateError, StateFile, StateScope, StateStore, StateStoreError,
+    ResourceName, ResourceState, ResourceStateError, SensitiveInputs, StateError, StateFile,
+    StateScope, StateStore, StateStoreError,
 };
 use semver::Version;
 use serde_json::json;
@@ -202,29 +203,29 @@ fn a_typed_suffix_resolves_when_it_names_exactly_one_address() {
 fn a_spec_kind_must_be_registered_before_it_can_be_named() {
     assert!("widget_alpha.main".parse::<ResourceAddress>().is_err());
 
-    let kind = ResourceKind::register("widget_alpha", StateScope::Settings, None).unwrap();
+    let kind = ResourceKind::register("widget_alpha", StateScope::Settings, &[]).unwrap();
     assert_eq!(kind.as_str(), "widget_alpha");
     assert_eq!(kind.scope(), StateScope::Settings);
-    assert_eq!(kind.containment_parent_kind(), None);
+    assert!(kind.containment_parent_kinds().is_empty());
     assert_eq!("widget_alpha".parse::<ResourceKind>().unwrap(), kind);
     assert_eq!(address("widget_alpha.main").kind(), kind);
 
     // Registering again with the same facts is idempotent; different facts are refused.
     assert_eq!(
-        ResourceKind::register("widget_alpha", StateScope::Settings, None).unwrap(),
+        ResourceKind::register("widget_alpha", StateScope::Settings, &[]).unwrap(),
         kind
     );
     assert!(matches!(
-        ResourceKind::register("widget_alpha", StateScope::Project, None),
+        ResourceKind::register("widget_alpha", StateScope::Project, &[]),
         Err(KindRegistrationError::Conflict { .. })
     ));
 }
 
 #[test]
 fn a_registered_kind_carries_its_containment() {
-    let parent = ResourceKind::register("widget_parent", StateScope::Project, None).unwrap();
-    let child = ResourceKind::register("widget_child", StateScope::Project, Some(parent)).unwrap();
-    assert_eq!(child.containment_parent_kind(), Some(parent));
+    let parent = ResourceKind::register("widget_parent", StateScope::Project, &[]).unwrap();
+    let child = ResourceKind::register("widget_child", StateScope::Project, &[parent]).unwrap();
+    assert_eq!(child.containment_parent_kinds(), &[parent]);
     assert_eq!(child.scope(), StateScope::Project);
 
     let serialized = serde_json::to_string(&child).unwrap();
@@ -238,11 +239,11 @@ fn a_registered_kind_carries_its_containment() {
 #[test]
 fn the_first_engine_kinds_keep_their_built_in_facts() {
     assert_eq!(
-        ResourceKind::register("redirect", StateScope::Project, Some(kinds().application)).unwrap(),
+        ResourceKind::register("redirect", StateScope::Project, &[kinds().application]).unwrap(),
         kinds().redirect
     );
     assert!(matches!(
-        ResourceKind::register("redirect", StateScope::Settings, None),
+        ResourceKind::register("redirect", StateScope::Settings, &[]),
         Err(KindRegistrationError::Conflict { .. })
     ));
     assert_eq!(kinds().redirect.scope(), StateScope::Project);
@@ -260,7 +261,7 @@ fn kind_names_are_validated() {
     ] {
         assert!(
             matches!(
-                ResourceKind::register(bad, StateScope::Project, None),
+                ResourceKind::register(bad, StateScope::Project, &[]),
                 Err(KindRegistrationError::InvalidName { .. })
             ),
             "`{bad}`"
@@ -556,4 +557,42 @@ fn a_store_refuses_state_recorded_for_another_document() {
 fn a_document_decides_the_scope_of_its_state() {
     assert_eq!(DocumentId::Settings.scope(), StateScope::Settings);
     assert_eq!(project("shop").scope(), StateScope::Project);
+}
+
+#[test]
+fn a_kind_can_live_under_several_parents() {
+    let first = ResourceKind::register("widget_home", StateScope::Project, &[]).unwrap();
+    let second = ResourceKind::register("widget_garage", StateScope::Project, &[]).unwrap();
+    let shared =
+        ResourceKind::register("widget_shared", StateScope::Project, &[first, second]).unwrap();
+
+    assert_eq!(shared.containment_parent_kinds(), &[first, second]);
+    assert_eq!(
+        ResourceKind::register("widget_shared", StateScope::Project, &[first, second]).unwrap(),
+        shared,
+        "the same facts register again"
+    );
+    assert!(matches!(
+        ResourceKind::register("widget_shared", StateScope::Project, &[first]),
+        Err(KindRegistrationError::Conflict { .. })
+    ));
+
+    let state_under = |parent: &str| {
+        ResourceState::try_new(
+            shared,
+            RemoteId::new("remote-1").unwrap(),
+            false,
+            ManagedInputs::try_from_json(serde_json::json!({})).unwrap(),
+            SensitiveInputs::default(),
+            Some(parent.parse::<ResourceAddress>().unwrap()),
+            Vec::new(),
+        )
+    };
+    assert!(state_under("widget_home.a").is_ok());
+    assert!(state_under("widget_garage.b").is_ok());
+    ResourceKind::register("widget_stranger", StateScope::Project, &[]).unwrap();
+    assert!(matches!(
+        state_under("widget_stranger.c"),
+        Err(ResourceStateError::InvalidContainmentKind { .. })
+    ));
 }

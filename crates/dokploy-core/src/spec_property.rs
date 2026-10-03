@@ -322,21 +322,20 @@ pub fn register_spec_kinds(
         let before = pending.len();
         let mut waiting = Vec::new();
         for spec in pending {
-            let parent = match &spec.parent {
-                None => None,
-                Some(parent) => match registered.get(parent) {
-                    Some(kind) => Some(*kind),
-                    None => {
-                        waiting.push(spec);
-                        continue;
-                    }
-                },
+            let parents: Option<Vec<ResourceKind>> = spec
+                .parents
+                .iter()
+                .map(|parent| registered.get(parent).copied())
+                .collect();
+            let Some(parents) = parents else {
+                waiting.push(spec);
+                continue;
             };
             let scope = match spec.scope {
                 Scope::Project => StateScope::Project,
                 Scope::Settings => StateScope::Settings,
             };
-            let kind = ResourceKind::register(&spec.kind, scope, parent)?;
+            let kind = ResourceKind::register(&spec.kind, scope, &parents)?;
             registered.insert(spec.kind.clone(), kind);
         }
         // A registry is validated, so parents exist and chains end; this guards a loop.

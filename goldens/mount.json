@@ -27,8 +27,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
       "reason": null
     },
     {
@@ -44,8 +44,8 @@
         "CONTENT_CANARY"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
       "reason": null
     },
     {
@@ -59,8 +59,8 @@
       "fixtures": [],
       "data": [],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
       "reason": null
     },
     {
@@ -97,8 +97,8 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -138,8 +138,8 @@
         "VOLUME"
       ],
       "category": "ordering",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -176,8 +176,8 @@
         "VOLUME"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -225,8 +225,8 @@
         "VOLUME"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `delete`",
       "reason": null
     },
     {
@@ -269,8 +269,8 @@
         "ROTATED_CANARY"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
       "reason": null
     },
     {
@@ -307,8 +307,8 @@
         "VOLUME"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
       "reason": null
     },
     {
@@ -352,8 +352,8 @@
         "VOLUME"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:*`, `delete`",
       "reason": null
     },
     {
@@ -397,8 +397,8 @@
         "VOLUME"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `delete`",
       "reason": null
     },
     {
@@ -442,8 +442,8 @@
         "VOLUME"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `replace:type`",
       "reason": null
     },
     {
@@ -521,8 +521,8 @@
       "fixtures": [],
       "data": [],
       "category": "noop",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
       "reason": null
     },
     {
@@ -554,8 +554,8 @@
         "CONTENT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
       "reason": null
     },
     {
@@ -583,8 +583,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
       "reason": null
     },
     {
@@ -612,8 +612,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
       "reason": null
     },
     {
@@ -641,8 +641,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
       "reason": null
     },
     {
@@ -672,8 +672,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
       "reason": null
     },
     {
@@ -703,8 +703,8 @@
         "CONTENT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
       "reason": null
     },
     {
@@ -734,8 +734,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
       "reason": null
     },
     {
@@ -765,8 +765,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_update_*`, `unknown_delete_*`",
       "reason": null
     },
     {
@@ -797,8 +797,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -818,8 +818,8 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discover (a child of a missing parent is missing)",
       "reason": null
     },
     {
@@ -850,8 +850,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     },
     {
@@ -880,8 +880,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     },
     {
@@ -913,8 +913,8 @@
       "fixtures": [],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -948,8 +948,8 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -980,8 +980,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -1012,8 +1012,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -1042,8 +1042,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     },
     {
@@ -1074,8 +1074,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `read_failure`",
       "reason": null
     },
     {
@@ -1106,8 +1106,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `foreign_direct_read`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -1136,8 +1136,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
       "reason": null
     },
     {
@@ -1186,8 +1186,8 @@
         "MOUNT_BASE"
       ],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1203,8 +1203,8 @@
         "MOUNT_BASE"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1218,8 +1218,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1235,8 +1235,8 @@
         "MOUNT_BASE"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-core planner_mutation `unsafe_ignore_metadata_is_refused_when_the_desired_state_is_built`",
       "reason": null
     },
     {
@@ -1250,8 +1250,8 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1267,8 +1267,8 @@
         "MOUNT_BASE"
       ],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1284,8 +1284,8 @@
         "MOUNT_BASE"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     },
     {
@@ -1301,8 +1301,8 @@
         "MOUNT_BASE"
       ],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1318,8 +1318,8 @@
         "MOUNT_BASE"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1363,8 +1363,8 @@
       "fixtures": [],
       "data": [],
       "category": "wire",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -1382,8 +1382,8 @@
         "VOLUME_RESPONSE"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:content` and the canary scan (a file is read once, fingerprinted, never stored)",
       "reason": null
     },
     {
@@ -1401,8 +1401,8 @@
         "VOLUME_RESPONSE"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `create`, `converges` (for every parent)",
       "reason": null
     },
     {
@@ -1418,8 +1418,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1439,8 +1439,8 @@
         "VOLUME_RESPONSE"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1460,8 +1460,8 @@
         "VOLUME_RESPONSE"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1475,8 +1475,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `unknown_create_before`, `unknown_create_after`, `rejected_create`",
       "reason": null
     },
     {
@@ -1490,8 +1490,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); engine discovery_safety (bounded collections)",
       "reason": null
     },
     {
@@ -1507,8 +1507,8 @@
       "fixtures": [],
       "data": [],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mount@<parent> `update:*`, `delete`",
       "reason": null
     }
   ]

@@ -518,31 +518,43 @@ impl<'de> Deserialize<'de> for ResourceState {
 pub enum ResourceStateError {
     #[error("managed and sensitive inputs overlap at `{path}`")]
     OverlappingInput { path: SensitivePropertyPath },
-    #[error("resource kind `{kind}` requires containment by `{required}`")]
+    #[error("resource kind `{kind}` requires containment by {}", kinds(required))]
     MissingContainment {
         kind: ResourceKind,
-        required: ResourceKind,
+        required: &'static [ResourceKind],
     },
     #[error("resource kind `{kind}` cannot have a containment parent")]
     UnexpectedContainment { kind: ResourceKind },
-    #[error("resource kind `{kind}` requires containment by `{required}`, found `{found}`")]
+    #[error(
+        "resource kind `{kind}` requires containment by {}, found `{found}`",
+        kinds(required)
+    )]
     InvalidContainmentKind {
         kind: ResourceKind,
-        required: ResourceKind,
+        required: &'static [ResourceKind],
         found: ResourceKind,
     },
+}
+
+fn kinds(kinds: &[ResourceKind]) -> String {
+    kinds
+        .iter()
+        .map(|kind| format!("`{kind}`"))
+        .collect::<Vec<_>>()
+        .join(" or ")
 }
 
 fn validate_containment(
     kind: ResourceKind,
     containment: Option<&ResourceAddress>,
 ) -> Result<(), ResourceStateError> {
-    match (kind.containment_parent_kind(), containment) {
-        (None, None) => Ok(()),
-        (None, Some(_)) => Err(ResourceStateError::UnexpectedContainment { kind }),
-        (Some(required), None) => Err(ResourceStateError::MissingContainment { kind, required }),
-        (Some(required), Some(parent)) if parent.kind() == required => Ok(()),
-        (Some(required), Some(parent)) => Err(ResourceStateError::InvalidContainmentKind {
+    let required = kind.containment_parent_kinds();
+    match (required.is_empty(), containment) {
+        (true, None) => Ok(()),
+        (true, Some(_)) => Err(ResourceStateError::UnexpectedContainment { kind }),
+        (false, None) => Err(ResourceStateError::MissingContainment { kind, required }),
+        (false, Some(parent)) if required.contains(&parent.kind()) => Ok(()),
+        (false, Some(parent)) => Err(ResourceStateError::InvalidContainmentKind {
             kind,
             required,
             found: parent.kind(),

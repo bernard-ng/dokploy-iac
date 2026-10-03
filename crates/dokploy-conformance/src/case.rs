@@ -42,6 +42,8 @@ pub(crate) struct FieldCase {
     pub(crate) wire: String,
     pub(crate) mutability: Mutability,
     pub(crate) secret: bool,
+    /// Its value is a file's content, written `{ file: path }`, not an environment variable.
+    pub(crate) content: bool,
     pub(crate) required: bool,
     pub(crate) default_key: bool,
     /// The value the first document gives, and a different one for changes.
@@ -67,6 +69,8 @@ pub(crate) struct Ancestor {
 /// Everything a scenario needs to know about one kind.
 pub(crate) struct Case {
     pub(crate) spec: KindSpec,
+    /// The kind it is exercised under, for a kind that can live under several.
+    pub(crate) parent_kind: Option<String>,
     pub(crate) key: String,
     pub(crate) fields: Vec<FieldCase>,
     /// The resources above the kind, outermost first; empty for a settings kind.
@@ -74,11 +78,21 @@ pub(crate) struct Case {
 }
 
 impl Case {
-    /// Builds the case, or says why this kind cannot be exercised yet.
-    pub(crate) fn new(spec: &KindSpec, specs: &SpecRegistry) -> Result<Self, String> {
+    /// Builds the case, or says why this kind cannot be exercised yet. A kind with several
+    /// parents is exercised under one of them, `parent`.
+    pub(crate) fn new(
+        spec: &KindSpec,
+        specs: &SpecRegistry,
+        parent: Option<&str>,
+    ) -> Result<Self, String> {
         let mut ancestors = Vec::new();
         let mut current = spec;
-        while let Some(parent) = &current.parent {
+        let mut chosen = parent;
+        while let Some(parent) = chosen
+            .map(str::to_owned)
+            .or_else(|| current.parents.first().cloned())
+        {
+            let parent = &parent;
             let parent_spec = specs
                 .get(parent)
                 .ok_or_else(|| format!("the parent kind `{parent}` has no spec"))?;
@@ -87,8 +101,8 @@ impl Case {
                 .api
                 .create
                 .as_ref()
-                .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
-                .map(|(field, _)| field.clone());
+                .and_then(|op| op.parent_id_field(parent_spec.parents.first().map(String::as_str)))
+                .map(str::to_owned);
             ancestors.push(Ancestor {
                 spec: parent_spec.clone(),
                 key: format!("conf-{parent}"),
@@ -96,6 +110,7 @@ impl Case {
                 attach,
             });
             current = parent_spec;
+            chosen = None;
         }
         ancestors.reverse();
         if spec.scope == Scope::Project && ancestors.is_empty() {
@@ -123,6 +138,7 @@ impl Case {
                 wire: info.request_key().to_owned(),
                 mutability: info.mutability,
                 secret,
+                content: info.class == ValueClass::Content,
                 required: dokploy_engine::required_at_creation(spec, &info),
                 default_key,
                 a,
@@ -133,7 +149,7 @@ impl Case {
             if let Some(target) = info.selector.as_deref() {
                 // Only a target the suite can seed: a kind with a spec and a name to match.
                 let seedable = specs.get(target).is_some_and(|spec| {
-                    spec.parent.is_none()
+                    spec.parents.is_empty()
                         && spec.api.read.list.is_some()
                         && spec.identity.key.is_some()
                 });
@@ -199,6 +215,7 @@ impl Case {
         }
 
         Ok(Self {
+            parent_kind: ancestors.last().map(|parent| parent.spec.kind.clone()),
             spec: spec.clone(),
             key,
             fields,
@@ -212,6 +229,70 @@ impl Case {
             .iter()
             .filter(|f| f.name == field || f.name.starts_with(&format!("{field}.")))
             .collect()
+    }
+
+    /// The response field that names the parent.
+    pub(crate) fn parent_id_field(&self) -> Option<String> {
+        self.parent_kind
+            .as_deref()
+            .and_then(|parent| self.spec.parent_column(parent))
+            .map(str::to_owned)
+    }
+
+    /// The operation whose response holds the kind's collection, and the pointer into it (empty
+    /// for a list operation): the list itself, or the parent's direct read.
+    pub(crate) fn collection_source(&self) -> Option<(String, String)> {
+        let list = self.spec.api.read.list.as_ref()?;
+        match (&list.op, &list.embedded_in) {
+            (Some(op), _) => Some((op.clone(), String::new())),
+            (None, Some(embedded)) => {
+                let parent_one = self
+                    .ancestors
+                    .last()
+                    .and_then(|parent| parent.spec.api.read.one.as_ref())
+                    .map(|one| one.op.clone());
+                embedded
+                    .parent_op
+                    .clone()
+                    .or(parent_one)
+                    .map(|op| (op, embedded.pointer.clone()))
+            }
+            (None, None) => None,
+        }
+    }
+
+    /// The request fields a created child carries that name its parent: the parent's id, and the
+    /// fixed values the spec attaches for this parent kind.
+    pub(crate) fn attachments(&self, parent_id: &str) -> Vec<(String, String)> {
+        let mut fields: Vec<(String, String)> = self
+            .spec
+            .api
+            .create
+            .as_ref()
+            .map(|op| {
+                op.attachments(self.parent_kind.as_deref())
+                    .into_iter()
+                    .map(|(field, value)| {
+                        let value = if value == "parent_id" {
+                            parent_id
+                        } else {
+                            value
+                        };
+                        (field.to_owned(), value.to_owned())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        // The row also names its parent in a column of its own.
+        if let Some(column) = self.parent_id_field() {
+            fields.push((column, parent_id.to_owned()));
+        }
+
+        fields
+    }
+
+    fn is_content(&self, name: &str) -> bool {
+        self.fields.iter().any(|f| f.name == name && f.content)
     }
 
     pub(crate) fn field(&self, name: &str) -> &FieldCase {
@@ -256,6 +337,12 @@ impl Case {
         let mut environment = BTreeMap::new();
         for (name, value) in values {
             match value {
+                Val::Secret(secret) if self.is_content(name) => {
+                    environment.insert(
+                        format!("{FILE_PREFIX}{}", content_path(name)),
+                        secret.clone(),
+                    );
+                }
                 Val::Secret(secret) => {
                     environment.insert(env_name(name), secret.clone());
                 }
@@ -290,6 +377,9 @@ impl Case {
         for (name, value) in values {
             let rendered = match value {
                 Val::Json(json) => json.to_string(),
+                Val::Secret(_) if self.is_content(name) => {
+                    format!("{{ file: {} }}", content_path(name))
+                }
                 Val::Secret(_) => format!("{{ env: {} }}", env_name(name)),
                 Val::Selector { name, .. } => format!("{{ name: {name} }}"),
                 Val::Environment { variables, .. } => format!(
@@ -463,6 +553,18 @@ fn push_fields(lines: &mut Vec<String>, indent: usize, fields: &[String]) {
         lines.push(format!("{}{field}", " ".repeat(indent)));
     }
 }
+
+/// A key of [`Case::environment`] that is not a variable but a file the world writes in the
+/// workspace before it compiles the document.
+pub(crate) const FILE_PREFIX: &str = "@file/";
+
+/// Where the suite writes the content a field names.
+fn content_path(field: &str) -> String {
+    format!("conformance/{}.txt", env_name(field).to_ascii_lowercase())
+}
+
+/// The directory of those files, which the leak scan skips: the suite wrote the canaries there.
+pub(crate) const CONTENT_DIRECTORY: &str = "conformance";
 
 fn env_name(field: &str) -> String {
     let name: String = field

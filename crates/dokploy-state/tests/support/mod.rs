@@ -32,31 +32,31 @@ pub struct Kinds {
 pub fn kinds() -> &'static Kinds {
     static KINDS: OnceLock<Kinds> = OnceLock::new();
     KINDS.get_or_init(|| {
-        let register = |name, scope, parent| {
+        let register = |name, scope, parent: &[ResourceKind]| {
             ResourceKind::register(name, scope, parent).expect("the test kind registers")
         };
-        let project = register("project", StateScope::Project, None);
-        let environment = register("environment", StateScope::Project, Some(project));
-        let application = register("application", StateScope::Project, Some(environment));
+        let project = register("project", StateScope::Project, &[]);
+        let environment = register("environment", StateScope::Project, &[project]);
+        let application = register("application", StateScope::Project, &[environment]);
         Kinds {
             project,
             environment,
             application,
-            compose: register("compose", StateScope::Project, Some(environment)),
-            postgres: register("postgres", StateScope::Project, Some(environment)),
-            mysql: register("mysql", StateScope::Project, Some(environment)),
-            mariadb: register("mariadb", StateScope::Project, Some(environment)),
-            mongo: register("mongo", StateScope::Project, Some(environment)),
-            libsql: register("libsql", StateScope::Project, Some(environment)),
-            redis: register("redis", StateScope::Project, Some(environment)),
-            domain: register("domain", StateScope::Project, Some(environment)),
-            port: register("port", StateScope::Project, Some(application)),
-            redirect: register("redirect", StateScope::Project, Some(application)),
-            security: register("security", StateScope::Project, Some(application)),
-            mount: register("mount", StateScope::Project, Some(environment)),
-            schedule: register("schedule", StateScope::Project, Some(environment)),
-            backup: register("backup", StateScope::Project, Some(environment)),
-            tag: register("tag", StateScope::Settings, None),
+            compose: register("compose", StateScope::Project, &[environment]),
+            postgres: register("postgres", StateScope::Project, &[environment]),
+            mysql: register("mysql", StateScope::Project, &[environment]),
+            mariadb: register("mariadb", StateScope::Project, &[environment]),
+            mongo: register("mongo", StateScope::Project, &[environment]),
+            libsql: register("libsql", StateScope::Project, &[environment]),
+            redis: register("redis", StateScope::Project, &[environment]),
+            domain: register("domain", StateScope::Project, &[environment]),
+            port: register("port", StateScope::Project, &[application]),
+            redirect: register("redirect", StateScope::Project, &[application]),
+            security: register("security", StateScope::Project, &[application]),
+            mount: register("mount", StateScope::Project, &[environment]),
+            schedule: register("schedule", StateScope::Project, &[environment]),
+            backup: register("backup", StateScope::Project, &[environment]),
+            tag: register("tag", StateScope::Settings, &[]),
         }
     })
 }

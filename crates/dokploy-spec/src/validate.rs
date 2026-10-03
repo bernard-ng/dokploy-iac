@@ -163,6 +163,14 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
     if api.read.list.is_none() && api.read.one.is_none() {
         context.add("api.read", "a kind needs at least one read");
     }
+    for parent in api.parent_field.keys() {
+        if !spec.parents.contains(parent) {
+            context.add(
+                "api.parent_field",
+                format!("`{parent}` is not a parent kind of this kind"),
+            );
+        }
+    }
     if let Some(list) = &api.read.list {
         match (&list.op, &list.embedded_in) {
             (None, None) => context.add("api.read.list", "needs `op` or `embedded_in`"),
@@ -171,11 +179,15 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
             }
             (Some(op), None) => check_operation(context, "api.read.list.op", op),
             (None, Some(embedded)) => {
-                check_operation(
-                    context,
-                    "api.read.list.embedded_in.parent_op",
-                    &embedded.parent_op,
-                );
+                if let Some(parent_op) = &embedded.parent_op {
+                    check_operation(context, "api.read.list.embedded_in.parent_op", parent_op);
+                }
+                if spec.parents.is_empty() {
+                    context.add(
+                        "api.read.list.embedded_in",
+                        "needs a parent kind to embed in",
+                    );
+                }
                 if !embedded.pointer.starts_with('/') {
                     context.add(
                         "api.read.list.embedded_in.pointer",
@@ -191,8 +203,14 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
                     "applies to a list `op`, not an embedded one",
                 );
             }
-            if spec.parent.is_none() {
+            if spec.parents.is_empty() {
                 context.add("api.read.list.scope", "needs a parent kind to scope by");
+            }
+            if spec.parents.len() > 1 {
+                context.add(
+                    "api.read.list.scope",
+                    "a collection scoped by one parent cannot serve several parent kinds",
+                );
             }
             if scope.param.trim().is_empty() {
                 context.add("api.read.list.scope.param", "must name a query parameter");

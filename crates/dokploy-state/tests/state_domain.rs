@@ -92,7 +92,7 @@ fn resource_addresses_have_one_canonical_text_form() {
         let address = ResourceAddress::from_str(value).expect("database address must parse");
         assert_eq!(address.kind(), kind);
         assert_eq!(address.to_string(), value);
-        assert_eq!(kind.containment_parent_kind(), Some(kinds().environment));
+        assert_eq!(kind.containment_parent_kinds(), &[kinds().environment]);
     }
 }
 
@@ -193,7 +193,7 @@ fn redirect_and_security_state_require_application_containment() {
         assert!(new_state(Some(environment.clone())).is_err());
         assert!(new_state(None).is_err());
         assert_eq!(kind.as_str().parse::<ResourceKind>().unwrap(), kind);
-        assert_eq!(kind.containment_parent_kind(), Some(kinds().application));
+        assert_eq!(kind.containment_parent_kinds(), &[kinds().application]);
     }
 }
 
@@ -1054,7 +1054,7 @@ fn instance() -> InstanceIdentity {
 }
 
 fn resource_state(kind: ResourceKind, remote_id: &str) -> ResourceState {
-    let containment = match kind.containment_parent_kind() {
+    let containment = match kind.containment_parent_kinds().first().copied() {
         None => None,
         Some(parent) if parent == kinds().project => {
             Some("project.main".parse().expect("containment must parse"))

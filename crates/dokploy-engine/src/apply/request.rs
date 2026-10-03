@@ -60,10 +60,13 @@ pub(crate) fn writable(
             ));
         }
         PathShape::Atomic => {
+            // A file is written as the bytes of the file the document names, which is a secret
+            // value as far as the request is concerned.
             if matches!(
                 info.ty,
-                FieldType::Union { .. } | FieldType::Env | FieldType::File | FieldType::Struct
-            ) {
+                FieldType::Union { .. } | FieldType::Env | FieldType::Struct
+            ) || (matches!(info.ty, FieldType::File) && !info.is_sensitive())
+            {
                 return Err(unsupported(
                     "is a composite value, which the executor does not write yet",
                 ));
@@ -204,14 +207,20 @@ pub(crate) fn create_request(
         body.insert(target.wire, body_value(inputs, address, checkpoint, path)?);
     }
 
-    for (field, source) in &operation.attach {
+    let parent_kind = checkpoint
+        .containment()
+        .map(|parent| parent.kind().as_str());
+    for (field, source) in operation.attachments(parent_kind) {
         if source == "parent_id" {
             let id = parent_id.ok_or_else(|| ApplyError::Unsupported {
                 address: address.clone(),
                 property: None,
                 reason: "needs its parent to exist",
             })?;
-            body.insert(field.clone(), Json::String(id.to_owned()));
+            body.insert(field.to_owned(), Json::String(id.to_owned()));
+        } else {
+            // A value fixed by the spec, such as the type of the parent.
+            body.insert(field.to_owned(), Json::String(source.to_owned()));
         }
     }
 

@@ -162,8 +162,27 @@ children:
   - { kind: schedule, section: schedules }
 ```
 
-A child spec names `parent:` and how it attaches (`attach: { field: composeId, from: parent_id }`
-plus any fixed values such as `domainType: compose`).
+A child spec names `parent:` and how it attaches. A kind that lives under several parents lists
+them (`parent: [application, compose, postgres]`, [ADR 0018](../decisions/0018-several-parents-and-per-member-unions.md))
+and each parent lists it under `children`. What differs by parent is in the spec:
+
+```yaml
+api:
+  create:
+    op: mounts.create
+    attach: { serviceId: parent_id }          # for every parent
+    attach_by_parent:                         # laid over `attach` for one parent kind
+      application: { serviceType: application }
+      postgres: { serviceType: postgres }
+  parent_field:                               # the response column that names the parent
+    application: applicationId
+    postgres: postgresId
+  read:
+    list: { embedded_in: { pointer: /mounts } }   # `parent_op` defaults to the parent's direct read
+```
+
+`parent_id` is the id of the containing resource; any other value is sent as written
+(`domainType: compose`). The conformance suite exercises the kind under each parent.
 
 ## Hooks
 

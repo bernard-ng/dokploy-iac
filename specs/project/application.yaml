@@ -171,6 +171,8 @@ write:
       github: application.saveGithubProvider
       docker: application.saveDockerProvider
 children:
+  - { kind: mount, section: mounts }
+  - { kind: domain, section: domains }
   - { kind: redirect, section: redirects }
   - { kind: port, section: ports }
   - { kind: security, section: security }

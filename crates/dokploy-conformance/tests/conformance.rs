@@ -25,7 +25,10 @@ async fn every_kind_with_a_full_spec_conforms() {
     for kind in suite.kinds() {
         let ran = results
             .iter()
-            .filter(|r| r.kind == kind && r.outcome == Outcome::Pass)
+            .filter(|r| {
+                (r.kind == kind || r.kind.starts_with(&format!("{kind}@")))
+                    && r.outcome == Outcome::Pass
+            })
             .count();
         assert!(
             ran >= 10,

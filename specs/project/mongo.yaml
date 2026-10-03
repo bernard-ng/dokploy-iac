@@ -116,3 +116,5 @@ write:
     shape: partial
 ledger:
   readonly: [createdAt, applicationStatus]
+children:
+  - { kind: mount, section: mounts }

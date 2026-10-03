@@ -44,9 +44,11 @@ pub struct KindSpec {
     pub kind: String,
     /// The document scope.
     pub scope: Scope,
-    /// The containing kind, if any.
-    #[serde(default)]
-    pub parent: Option<String>,
+    /// The kinds that can contain it: none for a document root, one for most kinds, several for
+    /// a kind such as `mount` that lives under an application, a Compose, or a database. Written
+    /// `parent: application` or `parent: [application, compose]`.
+    #[serde(default, rename = "parent", deserialize_with = "one_or_many")]
+    pub parents: Vec<String>,
     /// The key under the parent (or document root) that holds this kind's map.
     pub section: String,
     /// The first Dokploy version the kind exists in.
@@ -120,6 +122,28 @@ pub struct Api {
     /// Deploys, for deployable kinds (ADR 0012).
     #[serde(default)]
     pub deploy: Option<Deploy>,
+    /// The response field that names the parent, by parent kind, when it is not the request
+    /// field that attaches the child (a mount is created with `serviceId` and answers with
+    /// `applicationId`, `postgresId`, and so on).
+    #[serde(default)]
+    pub parent_field: BTreeMap<String, String>,
+}
+
+impl KindSpec {
+    /// The response field that names the parent when it is of kind `parent`.
+    #[must_use]
+    pub fn parent_column(&self, parent: &str) -> Option<&str> {
+        self.api
+            .parent_field
+            .get(parent)
+            .map(String::as_str)
+            .or_else(|| {
+                self.api
+                    .create
+                    .as_ref()
+                    .and_then(|operation| operation.parent_id_field(Some(parent)))
+            })
+    }
 }
 
 /// One referenced operation.
@@ -131,9 +155,44 @@ pub struct Operation {
     /// The parameter that carries the identity, when it is not the id field.
     #[serde(default)]
     pub id_param: Option<String>,
-    /// Request fields filled from context instead of configuration.
+    /// Request fields filled from context instead of configuration. `parent_id` is the id of the
+    /// containing resource; any other value is sent as written (`domainType: compose`).
     #[serde(default)]
     pub attach: BTreeMap<String, String>,
+    /// Fields that differ by the kind of the parent, laid over `attach` for that parent
+    /// (`applicationId` under an application, `composeId` under a Compose).
+    #[serde(default)]
+    pub attach_by_parent: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+impl Operation {
+    /// The request fields filled from context for a resource under a parent of kind `parent`.
+    #[must_use]
+    pub fn attachments(&self, parent: Option<&str>) -> BTreeMap<&str, &str> {
+        let mut fields: BTreeMap<&str, &str> = self
+            .attach
+            .iter()
+            .map(|(field, value)| (field.as_str(), value.as_str()))
+            .collect();
+        if let Some(overrides) = parent.and_then(|parent| self.attach_by_parent.get(parent)) {
+            fields.extend(
+                overrides
+                    .iter()
+                    .map(|(field, value)| (field.as_str(), value.as_str())),
+            );
+        }
+
+        fields
+    }
+
+    /// The request field that carries the parent's id, for a parent of kind `parent`.
+    #[must_use]
+    pub fn parent_id_field(&self, parent: Option<&str>) -> Option<&str> {
+        self.attachments(parent)
+            .into_iter()
+            .find(|(_, value)| *value == "parent_id")
+            .map(|(field, _)| field)
+    }
 }
 
 /// Read operations.
@@ -189,8 +248,10 @@ pub struct ListScope {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Embedded {
-    /// The parent operation that returns it.
-    pub parent_op: String,
+    /// The parent operation that returns it. Left out, it is the parent's direct read, which is
+    /// what a kind with several parents needs.
+    #[serde(default)]
+    pub parent_op: Option<String>,
     /// A JSON pointer to the array inside that response.
     pub pointer: String,
 }
@@ -434,4 +495,23 @@ impl Field {
         let trimmed = raw.strip_prefix('/').unwrap_or(raw);
         trimmed.split('/').next().unwrap_or(trimmed)
     }
+}
+
+/// `parent: kind` or `parent: [kind, ...]`.
+fn one_or_many<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    Ok(match Option::<OneOrMany>::deserialize(deserializer)? {
+        None => Vec::new(),
+        Some(OneOrMany::One(one)) => vec![one],
+        Some(OneOrMany::Many(many)) => many,
+    })
 }

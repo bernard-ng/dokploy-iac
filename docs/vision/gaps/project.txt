@@ -1,8 +1,6 @@
 DOKDOC004 project.environments.production.compose
 DOKDOC004 project.environments.staging.applications.api.build
-DOKDOC004 project.environments.staging.applications.api.domains
 DOKDOC004 project.environments.staging.applications.api.env_file
-DOKDOC004 project.environments.staging.applications.api.mounts
 DOKDOC004 project.environments.staging.applications.api.networks
 DOKDOC004 project.environments.staging.applications.api.patches
 DOKDOC004 project.environments.staging.applications.api.preview.build_args
@@ -16,7 +14,6 @@ DOKDOC004 project.environments.staging.applications.site-static.build
 DOKDOC004 project.environments.staging.compose
 DOKDOC004 project.environments.staging.libsql
 DOKDOC004 project.environments.staging.postgres.main.backups
-DOKDOC004 project.environments.staging.postgres.main.mounts
 DOKDOC004 project.environments.staging.postgres.main.networks
 DOKDOC004 project.environments.staging.postgres.main.schedules
 DOKDOC004 project.environments.staging.postgres.main.swarm

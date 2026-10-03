@@ -222,6 +222,9 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
             names.insert(param.clone());
         }
         names.extend(operation.attach.keys().cloned());
+        for overrides in operation.attach_by_parent.values() {
+            names.extend(overrides.keys().cloned());
+        }
     }
     if let Some(one) = &spec.api.read.one {
         names.insert(one.id_param.clone());

@@ -55,7 +55,8 @@ pub struct ResourceKind(&'static str);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct KindInfo {
     scope: StateScope,
-    parent: Option<ResourceKind>,
+    /// The kinds that can contain it; empty for a document root.
+    parents: &'static [ResourceKind],
 }
 
 /// Registered kinds are bounded so a hostile name cannot grow the table.
@@ -76,13 +77,13 @@ impl ResourceKind {
 
     /// Registers a kind from a spec and returns it.
     ///
-    /// `parent` is the kind that contains it (`None` for a document root) and must
+    /// `parents` are the kinds that can contain it (none for a document root) and must
     /// already be known. Registering a kind again with the same facts returns the same
     /// kind; different facts are refused.
     pub fn register(
         name: &str,
         scope: StateScope,
-        parent: Option<Self>,
+        parents: &[Self],
     ) -> Result<Self, KindRegistrationError> {
         let valid = name.len() <= MAX_KIND_LEN
             && name.chars().next().is_some_and(|c| c.is_ascii_lowercase())
@@ -94,10 +95,9 @@ impl ResourceKind {
                 name: name.to_owned(),
             });
         }
-        let info = KindInfo { scope, parent };
         let mut kinds = registry().write().expect("kind registry is not poisoned");
         if let Some((known, existing)) = kinds.get_key_value(name) {
-            return if *existing == info {
+            return if existing.scope == scope && existing.parents == parents {
                 Ok(Self(known))
             } else {
                 Err(KindRegistrationError::Conflict {
@@ -109,7 +109,8 @@ impl ResourceKind {
             return Err(KindRegistrationError::TooMany);
         }
         let interned: &'static str = Box::leak(name.to_owned().into_boxed_str());
-        kinds.insert(interned, info);
+        let parents: &'static [Self] = Box::leak(parents.to_vec().into_boxed_slice());
+        kinds.insert(interned, KindInfo { scope, parents });
         Ok(Self(interned))
     }
 
@@ -128,10 +129,11 @@ impl ResourceKind {
             .map_or(StateScope::Project, |info| info.scope)
     }
 
-    /// Returns the required containment parent kind, if the resource is nested.
+    /// Returns the kinds that can contain this one: none for a document root, one for most
+    /// nested kinds, several for a kind that lives under more than one.
     #[must_use]
-    pub fn containment_parent_kind(self) -> Option<Self> {
-        self.registered().and_then(|info| info.parent)
+    pub fn containment_parent_kinds(self) -> &'static [Self] {
+        self.registered().map_or(&[], |info| info.parents)
     }
 }
 

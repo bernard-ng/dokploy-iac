@@ -142,16 +142,10 @@ impl<'c> World<'c> {
     /// Adds a resource of the kind that nobody manages, attached to the seeded parent.
     pub(crate) fn seed_child(&self, fields: &Json) -> String {
         let mut object = fields.as_object().cloned().unwrap_or_default();
-        let attach = self
-            .case
-            .spec
-            .api
-            .create
-            .as_ref()
-            .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
-            .map(|(field, _)| field.clone());
-        if let (Some(field), Some(parent)) = (attach, self.parent_id.borrow().clone()) {
-            object.insert(field, Json::String(parent));
+        if let Some(parent) = self.parent_id.borrow().clone() {
+            for (field, value) in self.case.attachments(&parent) {
+                object.insert(field, Json::String(value));
+            }
         }
 
         self.sim.seed(&self.case.spec.kind, &Json::Object(object))
@@ -187,6 +181,15 @@ impl<'c> World<'c> {
         let document = engine
             .parse(text)
             .map_err(|error| format!("the generated document is invalid:\n{error}\n{text}"))?;
+        for (key, content) in &env {
+            if let Some(path) = key.strip_prefix(crate::case::FILE_PREFIX) {
+                let path = self.dir.path().join(path);
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).expect("the workspace is writable");
+                }
+                std::fs::write(&path, content).expect("the workspace is writable");
+            }
+        }
         let secrets = WorkspaceSecrets::new(self.dir.path().to_path_buf(), move |name: &str| {
             env.get(name).cloned()
         });
@@ -358,6 +361,13 @@ impl<'c> World<'c> {
             };
             for entry in entries.flatten() {
                 let path = entry.path();
+                if path
+                    .file_name()
+                    .is_some_and(|name| name == crate::case::CONTENT_DIRECTORY)
+                {
+                    // The suite put its own canaries here, as the document's sources.
+                    continue;
+                }
                 if path.is_dir() {
                     walk(&path, out);
                 } else if let Ok(text) = std::fs::read_to_string(&path) {
@@ -398,8 +408,12 @@ mod tests {
     fn world_for_registry() -> (Case, Arc<SpecRegistry>) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let specs = Arc::new(dokploy_spec::load_dir(&root.join("specs")).expect("specs load"));
-        let case =
-            Case::new(specs.get("registry").expect("a registry spec"), &specs).expect("a case");
+        let case = Case::new(
+            specs.get("registry").expect("a registry spec"),
+            &specs,
+            None,
+        )
+        .expect("a case");
 
         (case, specs)
     }

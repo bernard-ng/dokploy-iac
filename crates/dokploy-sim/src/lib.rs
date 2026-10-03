@@ -457,23 +457,53 @@ impl Sim {
         request: &OperationRequest,
     ) -> Result<Value, DokployError> {
         let body = body_object(request)?;
-        if let Some(parent) = &spec.parent {
-            let parent_spec = self.specs.get(parent).expect("a parent kind has a spec");
-            let attach = spec.api.create.as_ref().map(|op| &op.attach);
-            for (field, source) in attach.into_iter().flatten() {
-                if source != "parent_id" {
-                    continue;
-                }
-                let found = body
-                    .get(field)
+        if let Some(first) = spec.parents.first() {
+            // The parent is whichever of the possible parent kinds holds the id the body names.
+            let create = spec.api.create.as_ref();
+            let held = spec.parents.iter().any(|parent| {
+                let Some(parent_spec) = self.specs.get(parent) else {
+                    return false;
+                };
+                create
+                    .and_then(|op| op.parent_id_field(Some(parent)))
+                    .and_then(|field| body.get(field))
                     .and_then(Value::as_str)
-                    .is_some_and(|id| find(inner, parent_spec, id).is_some());
-                if !found {
-                    return Err(not_found(parent_spec));
+                    .is_some_and(|id| find(inner, parent_spec, id).is_some())
+            });
+            if !held {
+                let parent_spec = self.specs.get(first).expect("a parent kind has a spec");
+                return Err(not_found(parent_spec));
+            }
+        }
+        let mut object = new_object(spec, &body, inner);
+        // The row names its parent in a column of its own, whatever the request called it.
+        for parent in &spec.parents {
+            let id = spec
+                .api
+                .create
+                .as_ref()
+                .and_then(|op| op.parent_id_field(Some(parent)))
+                .and_then(|field| body.get(field))
+                .and_then(Value::as_str);
+            if let (Some(column), Some(id)) = (spec.parent_column(parent), id) {
+                let parent_spec = self.specs.get(parent).expect("a parent kind has a spec");
+                if find(inner, parent_spec, id).is_some() {
+                    object.insert(column.to_owned(), Value::String(id.to_owned()));
                 }
             }
         }
-        let object = new_object(spec, &body, inner);
+        // A column the request did not set holds the value a fresh row held in the capture.
+        if let Some(Value::Object(captured)) = self
+            .shapes
+            .template(request.operation(), Role::Mutation)
+            .filter(|template| template.get("success").is_none())
+        {
+            for (key, value) in captured {
+                if matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_)) {
+                    object.entry(key).or_insert(value);
+                }
+            }
+        }
         let stored = Value::Object(object.clone());
         inner
             .objects
@@ -610,15 +640,14 @@ impl Sim {
             else {
                 continue;
             };
-            if embedded.parent_op != request.operation() {
+            let parent_op = embedded
+                .parent_op
+                .as_deref()
+                .or_else(|| spec.api.read.one.as_ref().map(|one| one.op.as_str()));
+            if parent_op != Some(request.operation()) {
                 continue;
             }
-            let field = child
-                .api
-                .create
-                .as_ref()
-                .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
-                .map(|(field, _)| field.clone());
+            let field = child.parent_column(&spec.kind).map(str::to_owned);
             let Some(field) = field else { continue };
             let children: Vec<Value> = inner
                 .objects
@@ -812,12 +841,7 @@ fn cascade_remove(specs: &SpecRegistry, inner: &mut Inner, kind: &str, id: &str)
         all.retain(|object| id_of(spec, object).as_deref() != Some(id));
     }
     for child in specs.children_of(kind) {
-        let field = child
-            .api
-            .create
-            .as_ref()
-            .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
-            .map(|(field, _)| field.clone());
+        let field = child.parent_column(kind).map(str::to_owned);
         let Some(field) = field else { continue };
         let doomed: Vec<String> = inner
             .objects

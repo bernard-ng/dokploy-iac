@@ -56,6 +56,16 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Kinds with several parents (milestone M3, [ADR 0018](docs/decisions/0018-several-parents-and-per-member-unions.md)).
+  `parent:` takes a list; `api.create.attach_by_parent` and `api.parent_field` state what differs by
+  parent, a fixed `attach` value is sent as written, and `embedded_in.parent_op` defaults to the
+  parent's direct read. **Breaking:** `KindSpec::parent` is `parents`, `ResourceKind::register` takes
+  the parent kinds, and `containment_parent_kind` is `containment_parent_kinds`. The conformance suite
+  runs a kind under each parent (`mount@postgres`) and supports content read from files. The
+  simulator names the parent in a column of its own and stores the capture's defaults for columns a
+  request did not set. New kinds, spec files only: `mount` (an application or any database) and
+  `domain` (an application), both full coverage.
+
 - `moves` and `removed` (milestone M3, ADR 0005; [`docs/design/document-format.md`](docs/design/document-format.md)).
   A document can say that a resource has a new address (`moves: [{ from, to }]`) or is no longer
   managed (`removed: [{ from, destroy }]`, `destroy` defaulting to `false`). The model reads, renders,

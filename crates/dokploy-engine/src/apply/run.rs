@@ -145,6 +145,10 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         };
         let checkpoint = change.checkpoint().present().ok_or_else(invalid)?;
         let parent_id = self.parent_id(checkpoint);
+        let parent: Option<(String, String)> = checkpoint
+            .containment()
+            .map(|parent| parent.kind().as_str().to_owned())
+            .zip(parent_id.clone());
         let created = request::create_request(
             spec,
             address,
@@ -161,12 +165,15 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         // Learning the identity by diffing needs the collection as it was before.
         let before = match &spec.api.create_identity {
             Some(CreateIdentity::DiffCollection { .. }) => Some(
-                self.listing(spec, parent_id.as_deref())
-                    .await
-                    .map_err(|code| ApplyError::Preparation {
-                        address: address.clone(),
-                        code,
-                    })?,
+                self.listing(
+                    spec,
+                    parent.as_ref().map(|(k, id)| (k.as_str(), id.as_str())),
+                )
+                .await
+                .map_err(|code| ApplyError::Preparation {
+                    address: address.clone(),
+                    code,
+                })?,
             ),
             _ => None,
         };
@@ -195,7 +202,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             Some(CreateIdentity::DiffCollection { key }) => {
                 self.diff_identity(
                     spec,
-                    parent_id.as_deref(),
+                    parent.as_ref().map(|(k, id)| (k.as_str(), id.as_str())),
                     &at_creation,
                     key,
                     before.unwrap_or_default(),
@@ -531,27 +538,22 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
     async fn listing(
         &self,
         spec: &KindSpec,
-        parent_id: Option<&str>,
+        parent: Option<(&str, &str)>,
     ) -> Result<Vec<Json>, FailureCode> {
-        crate::discover::read_collection(
-            &self.engine.transport,
-            &self.engine.specs,
-            spec,
-            parent_id,
-        )
-        .await
-        .map_err(|kind| match kind {
-            dokploy_core::RemoteFailureKind::Unauthorized => FailureCode::Unauthorized,
-            dokploy_core::RemoteFailureKind::InvalidResponse => FailureCode::Validation,
-            _ => FailureCode::Internal,
-        })
+        crate::discover::read_collection(&self.engine.transport, &self.engine.specs, spec, parent)
+            .await
+            .map_err(|kind| match kind {
+                dokploy_core::RemoteFailureKind::Unauthorized => FailureCode::Unauthorized,
+                dokploy_core::RemoteFailureKind::InvalidResponse => FailureCode::Validation,
+                _ => FailureCode::Internal,
+            })
     }
 
     /// The one new item whose key fields match what was created.
     async fn diff_identity(
         &self,
         spec: &KindSpec,
-        parent_id: Option<&str>,
+        parent: Option<(&str, &str)>,
         checkpoint: &ResourceCheckpoint,
         key: &[String],
         before: Vec<Json>,
@@ -560,7 +562,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             .iter()
             .filter_map(|item| item_id(spec, item))
             .collect();
-        let after = self.listing(spec, parent_id).await.ok()?;
+        let after = self.listing(spec, parent).await.ok()?;
         let wanted: Vec<(String, Json)> = key
             .iter()
             .map(|name| {
