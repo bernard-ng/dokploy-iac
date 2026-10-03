@@ -108,3 +108,20 @@ pub fn load_dir(root: &Path) -> Result<SpecRegistry, LoadError> {
     }
     SpecRegistry::from_specs(specs, &BTreeSet::new()).map_err(LoadError::Invalid)
 }
+
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
+}
+
+/// The kind specs in `specs/`, compiled into this binary.
+pub fn embedded() -> Result<SpecRegistry, LoadError> {
+    let mut specs = Vec::new();
+    for (name, source) in embedded::FILES {
+        let spec = parse_spec(source).map_err(|message| LoadError::Parse {
+            path: PathBuf::from(name),
+            message,
+        })?;
+        specs.push(spec);
+    }
+    SpecRegistry::from_specs(specs, &BTreeSet::new()).map_err(LoadError::Invalid)
+}

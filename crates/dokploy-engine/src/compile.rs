@@ -62,6 +62,27 @@ impl Compiled {
         self.scope
     }
 
+    /// The same document with nothing declared: applying it removes every resource its state
+    /// tracks (protected ones are refused by the planner), which is what destroy is.
+    ///
+    /// # Panics
+    ///
+    /// Never: an empty desired state is always valid.
+    #[must_use]
+    pub fn cleared(&self) -> Self {
+        let digest = ConfigDigest::parse(hex(&Sha256::digest(b"dokploy-iac\0destroy")))
+            .expect("a SHA-256 digest is a valid configuration digest");
+
+        Self {
+            scope: self.scope,
+            document: self.document.clone(),
+            desired: DesiredState::try_new(digest, BTreeMap::new())
+                .expect("an empty desired state is valid"),
+            resources: BTreeMap::new(),
+            secrets: BTreeMap::new(),
+        }
+    }
+
     /// The document this compiles, which names its state.
     #[must_use]
     pub fn document(&self) -> &DocumentId {

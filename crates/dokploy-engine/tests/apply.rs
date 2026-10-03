@@ -536,3 +536,19 @@ async fn a_full_group_resends_what_a_fresh_read_returns() {
     );
     assert_eq!(body["tagId"], id);
 }
+
+#[tokio::test]
+async fn a_cleared_document_removes_everything_the_state_tracks() {
+    let sim = sim();
+    let engine = engine(&sim);
+    let workspace = Workspace::new();
+    let store = workspace.store(&engine);
+    apply(&engine, &store, DOCUMENT, PASSWORD).await.unwrap();
+    let compiled = compile(&engine, DOCUMENT, &[("GHCR_TOKEN", PASSWORD)]);
+
+    let summary = engine.apply(&compiled.cleared(), &store, |_| true).await.expect("destroys");
+
+    assert_eq!(summary.applied(), 1);
+    assert!(sim.objects("registry").is_empty());
+    assert!(store.inspect().unwrap().unwrap().resources().is_empty());
+}

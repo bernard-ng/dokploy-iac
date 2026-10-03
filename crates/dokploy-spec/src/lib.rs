@@ -19,7 +19,7 @@ mod versions;
 
 pub use error::{Issue, LoadError};
 pub use ledger::{KindLedger, LedgerReport, OperationIndex, check_ledger};
-pub use load::{load_dir, parse_spec};
+pub use load::{embedded, load_dir, parse_spec};
 pub use model::{
     Api, Authority, Child, Coverage, CreateIdentity, Deploy, Embedded, Field, Granularity, Hook,
     Identity, Ignored, KindClass, KindSpec, Ledger, ListRead, ListScope, Mutability, OneRead,
