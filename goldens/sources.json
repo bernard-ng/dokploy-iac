@@ -464,6 +464,10 @@
       "reason": "The v2 engine; not legacy."
     },
     {
+      "path": "crates/dokploy-sim/",
+      "reason": "The v2 simulator (ADR 0015); not legacy."
+    },
+    {
       "path": "crates/dokploy-sdk/tests/transport.rs",
       "reason": "The v2 Transport seam (ADR 0003); not legacy."
     },

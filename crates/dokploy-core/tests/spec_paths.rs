@@ -700,15 +700,15 @@ fn stored_state_that_the_spec_cannot_place_is_refused() {
     project_state(json!({"description": null})).expect("an owned clear projects");
 
     // A kind without a spec cannot be projected through the registry.
-    let tag = state_with(
-        ResourceKind::Tag,
-        "tag.prod",
-        "tag-1",
-        json!({"name": "x"}),
+    let postgres = state_with(
+        ResourceKind::Postgres,
+        "postgres.main",
+        "postgres-1",
+        json!({"database": "x"}),
         SensitiveInputs::default(),
     );
     assert!(matches!(
-        StoredState::try_from_state_with_specs(&tag, specs()),
+        StoredState::try_from_state_with_specs(&postgres, specs()),
         Err(StoredStateError::UnsupportedProperty { .. })
     ));
 }

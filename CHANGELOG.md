@@ -6,6 +6,19 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `dokploy-sim` (milestone M2, ADR 0015; [`docs/design/simulator.md`](docs/design/simulator.md)): an
+  in-memory Dokploy reached through `Transport`, driven only by the kind specs. It checks every
+  request against the generated contract, stores objects on create, merges updates (patches),
+  removes what hangs below a parent, embeds child collections in their parent's read, filters
+  collections by query, and copies response shapes from the recorded fixtures (`registry.one` omits
+  the password, `registry.all` lists it, `registry.update` answers `true`). Faults drop the connection
+  before or after a request, reject it, or save and then fail (the registry login quirk). Adding a
+  flat kind changes nothing in it.
+- The `tag` kind (`specs/settings/tag.yaml`): a second flat settings kind, a spec file and nothing
+  else. Corrected from live captures: `registry` learns its identity from the create response and its
+  update is a patch (no `resend_on_update`), and `redirect` learns its identity by diffing the
+  parent's collection, because `redirects.create` answers `true`.
+- `DokployError::new` is public, so a `Transport` other than HTTP can answer with a rejection.
 - Live captures of the `registry` and `tag` settings kinds, on Dokploy 0.30.6 and 0.30.7
   (`scripts/integration/capture-registry-contract.sh`, `capture-tag-contract.sh`, and the shared
   `capture-lib.sh`; milestone M2, ADR 0007). They pin facts the simulator and the engine depend on:

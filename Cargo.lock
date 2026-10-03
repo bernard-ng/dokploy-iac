@@ -932,6 +932,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dokploy-sim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dokploy-api",
+ "dokploy-sdk",
+ "dokploy-spec",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "dokploy-spec"
 version = "0.1.0"
 dependencies = [

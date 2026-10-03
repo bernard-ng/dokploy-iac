@@ -1,5 +1,10 @@
 # Container registry credentials. A flat settings kind: eight fields, one write
 # group, no hook. This is the cost target for ADR 0002.
+#
+# Live facts (captured on 0.30.6 and 0.30.7, fixtures/api/live/*/registry-*): create runs
+# `docker login` and returns the whole object; `registry.all` lists the password but
+# `registry.one` omits it; update returns `true` and is a patch, and a login Dokploy
+# rejects still persists the change; names are not unique at Dokploy.
 kind: registry
 scope: settings
 section: registries
@@ -18,7 +23,7 @@ api:
     list: { op: registry.all, authority: authoritative }
     one: { op: registry.one, id_param: registryId, agree: true }
   create_identity:
-    diff_collection: { key: [name] }
+    from_response: /registryId
 fields:
   name:
     api: registryName
@@ -42,8 +47,7 @@ fields:
     min_len: 1
     class: secret
     mutability: write_only
-    resend_on_update: true
-    doc: Update replaces the whole object, so the secret source must be declared.
+    doc: Sent when the secret changes; an update that omits it keeps the stored one.
   image_prefix:
     api: imagePrefix
     type: text
@@ -57,6 +61,6 @@ fields:
 write:
   - op: registry.update
     fields: [name, type, url, username, password, image_prefix, server]
-    shape: full
+    shape: partial
 ledger:
   readonly: [createdAt, organizationId]

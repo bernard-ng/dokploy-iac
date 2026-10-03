@@ -31,7 +31,8 @@ How the v2 engine is built and the rules it must not break. Decisions are in
 `dokploy-engine` is the only crate that talks to Dokploy (its skeleton exists: see
 [`docs/design/engine.md`](docs/design/engine.md)). `dokploy-core` has no
 transport, runtime, or CLI dependency; it reads `dokploy-spec` for property paths and
-mutation contracts. See [ADR 0003](docs/decisions/0003-layered-architecture-and-kept-kernel.md).
+mutation contracts. `dokploy-sim` is an in-memory Dokploy behind the same `Transport` for
+tests ([`docs/design/simulator.md`](docs/design/simulator.md)). See [ADR 0003](docs/decisions/0003-layered-architecture-and-kept-kernel.md).
 
 ## Data flow
 
