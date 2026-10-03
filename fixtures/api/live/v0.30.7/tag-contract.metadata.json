@@ -1,0 +1,17 @@
+{
+  "capturedAt": "2026-10-03",
+  "createReturns": "object",
+  "createStatus": 200,
+  "duplicateStatus": 400,
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "nullClearsColor": true,
+  "removeReturns": "success",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "uniqueNamePerOrganization": true,
+  "updateIsPatch": true,
+  "updateReturns": "object",
+  "version": "v0.30.7"
+}

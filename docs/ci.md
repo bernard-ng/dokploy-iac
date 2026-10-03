@@ -99,6 +99,11 @@ scripts/integration/capture-all.sh          # or: capture-all.sh redirect port
 scripts/integration/reset.sh
 ```
 
+The `registry` capture starts a throwaway `registry:2` (pinned by digest) on
+`127.0.0.1:5000` (`DOKPLOY_CAPTURE_REGISTRY_PORT`), because Dokploy runs `docker login` when it
+creates a registry. The settings captures (`registry`, `tag`) share `capture-lib.sh` and need an
+instance with no registries or tags.
+
 Without those variables the scripts use the default version. The `fixtures` capture needs an
 empty instance and leaves a project the `domain` and `redis` captures reuse, so reset between
 full runs. While a version is incomplete the checker runs in `DOKPLOY_FIXTURE_CHECK=partial`

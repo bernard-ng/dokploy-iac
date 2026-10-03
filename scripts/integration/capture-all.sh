@@ -11,8 +11,8 @@
 # `fixtures` is the base project/application/Postgres capture. It needs an empty
 # instance, runs first, and leaves its "IaC Contract Test" project behind because the
 # `domain` and `redis` captures reuse it; run reset.sh and up.sh before capturing again. Every other name is capture-<name>-contract.sh.
-# The tag capture records response shapes without publishing fixtures, so `all`
-# leaves it out. A capture that fails does not stop the others; the exit status
+# The registry capture starts a throwaway registry on 127.0.0.1:5000 (DOKPLOY_CAPTURE_REGISTRY_PORT).
+# A capture that fails does not stop the others; the exit status
 # says whether all succeeded.
 
 set -euo pipefail
@@ -37,9 +37,7 @@ if [[ ${#requested[@]} -eq 0 || ( ${#requested[@]} -eq 1 && "${requested[0]}" ==
     for script in "$script_directory"/capture-*-contract.sh; do
         name="$(basename "$script" -contract.sh)"
         name="${name#capture-}"
-        if [[ "$name" != tag ]]; then
-            requested+=("$name")
-        fi
+        requested+=("$name")
     done
 fi
 

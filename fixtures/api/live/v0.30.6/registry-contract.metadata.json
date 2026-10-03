@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-10-03",
+  "createReturns": "object",
+  "createStatus": 200,
+  "detailOmitsCredential": true,
+  "duplicateNamesAllowed": true,
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "listingIncludesCredential": true,
+  "loginOnCreate": true,
+  "rejectedLoginPersistsChange": true,
+  "rejectedLoginStatus": 400,
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": true,
+  "updateReturns": "true",
+  "version": "v0.30.6"
+}

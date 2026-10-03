@@ -37,6 +37,10 @@ def normalized_scalar:
     if .value == null then . else .value = "mount-1" end
   elif .key == "portId" then
     if .value == null then . else .value = "port-1" end
+  elif .key == "registryId" then
+    if .value == null then . else .value = "registry-1" end
+  elif .key == "tagId" then
+    if .value == null then . else .value = "tag-1" end
   elif .key == "redirectId" then
     if .value == null then . else .value = "redirect-1" end
   elif .key == "securityId" then

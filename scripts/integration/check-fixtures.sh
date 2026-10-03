@@ -179,6 +179,35 @@ required_port_fixtures=(
     "port-contract.metadata.json"
 )
 
+required_registry_fixtures=(
+    "registry-create.owner.json"
+    "registry-all.created.owner.json"
+    "registry-one.created.owner.json"
+    "registry-update.owner.json"
+    "registry-one.updated.owner.json"
+    "registry-update.full.owner.json"
+    "registry-one.full-updated.owner.json"
+    "registry-one.login-failed.owner.json"
+    "registry-remove.owner.json"
+    "registry-one.removed.owner.json"
+    "registry-all.removed.owner.json"
+    "registry-contract.metadata.json"
+)
+
+required_tag_fixtures=(
+    "tag-create.owner.json"
+    "tag-all.created.owner.json"
+    "tag-one.created.owner.json"
+    "tag-update.owner.json"
+    "tag-one.updated.owner.json"
+    "tag-update.cleared.owner.json"
+    "tag-one.cleared.owner.json"
+    "tag-remove.owner.json"
+    "tag-one.removed.owner.json"
+    "tag-all.removed.owner.json"
+    "tag-contract.metadata.json"
+)
+
 required_redirect_fixtures=(
     "redirect-create.owner.json"
     "application-one.redirect-created.owner.json"
@@ -308,6 +337,20 @@ done
 for fixture_name in "${required_port_fixtures[@]}"; do
     if fixture_missing "$fixture_name"; then
         echo "Missing Port contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_registry_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Registry contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_tag_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Tag contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1364,6 +1407,121 @@ if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_ima
     and .cleanupEvidence.projectOneStatus == 404
 ' "$versioned_fixture_directory/redirect-contract.metadata.json" >/dev/null; then
     echo "Redirect metadata does not prove identity, update, non-deployment, and cleanup." >&2
+    exit 1
+fi
+
+# Settings kinds: registry and tag (milestone M2). The simulator copies these shapes.
+if ! jq --exit-status '
+    .registryId == "registry-1"
+    and .registryName == "registry-contract"
+    and .password == "<redacted>"
+    and .imagePrefix == null
+    and has("createdAt") and has("organizationId")
+' "$versioned_fixture_directory/registry-create.owner.json" >/dev/null; then
+    echo "Registry create fixture does not preserve the whole-object response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    length == 1 and .[0].registryId == "registry-1" and .[0].password == "<redacted>"
+' "$versioned_fixture_directory/registry-all.created.owner.json" >/dev/null; then
+    echo "Registry collection fixture does not show the listed password field." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .registryId == "registry-1" and (has("password") | not) and .username == "owner"
+' "$versioned_fixture_directory/registry-one.created.owner.json" >/dev/null; then
+    echo "Registry detail fixture must omit the password." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '. == true' "$versioned_fixture_directory/registry-update.owner.json" >/dev/null; then
+    echo "Registry update fixture does not preserve the boolean response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .registryName == "registry-contract" and .imagePrefix == "team" and .username == "owner"
+' "$versioned_fixture_directory/registry-one.updated.owner.json" >/dev/null; then
+    echo "Registry patch fixture does not prove omitted fields are kept." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .registryUrl == "unreachable.invalid"
+' "$versioned_fixture_directory/registry-one.login-failed.owner.json" >/dev/null; then
+    echo "Registry fixture does not prove a rejected login still persists the change." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .createReturns == "object"
+    and .updateReturns == "true"
+    and .updateIsPatch == true
+    and .listingIncludesCredential == true
+    and .detailOmitsCredential == true
+    and .loginOnCreate == true
+    and .rejectedLoginStatus == 400
+    and .rejectedLoginPersistsChange == true
+    and .duplicateNamesAllowed == true
+    and .removedOneStatus == 404
+' "$versioned_fixture_directory/registry-contract.metadata.json" >/dev/null; then
+    echo "Registry metadata does not prove the captured contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .tagId == "tag-1" and .name == "tag-contract" and .color == "#e11d48"
+    and has("createdAt") and has("organizationId")
+' "$versioned_fixture_directory/tag-create.owner.json" >/dev/null; then
+    echo "Tag create fixture does not preserve the whole-object response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    length == 1 and .[0].tagId == "tag-1" and .[0].name == "tag-contract"
+' "$versioned_fixture_directory/tag-all.created.owner.json" >/dev/null; then
+    echo "Tag collection fixture does not prove one exact created identity." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .tagId == "tag-1" and .name == "tag-contract" and .color == "#16a34a"
+' "$versioned_fixture_directory/tag-update.owner.json" >/dev/null; then
+    echo "Tag patch fixture does not keep the omitted name." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .tagId == "tag-1" and .name == "tag-contract-renamed" and .color == null
+' "$versioned_fixture_directory/tag-one.cleared.owner.json" >/dev/null; then
+    echo "Tag fixture does not prove an explicit null clears the color." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '.success == true' "$versioned_fixture_directory/tag-remove.owner.json" >/dev/null; then
+    echo "Tag remove fixture does not preserve the success response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .createReturns == "object"
+    and .updateReturns == "object"
+    and .removeReturns == "success"
+    and .updateIsPatch == true
+    and .nullClearsColor == true
+    and .uniqueNamePerOrganization == true
+    and .duplicateStatus == 400
+    and .removedOneStatus == 404
+' "$versioned_fixture_directory/tag-contract.metadata.json" >/dev/null; then
+    echo "Tag metadata does not prove the captured contract." >&2
     exit 1
 fi
 

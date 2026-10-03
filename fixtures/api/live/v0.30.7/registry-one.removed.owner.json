@@ -1,0 +1,10 @@
+{
+  "code": "NOT_FOUND",
+  "data": {
+    "code": "NOT_FOUND",
+    "httpStatus": 404,
+    "path": "registry.one",
+    "zodError": null
+  },
+  "message": "Registry not found"
+}

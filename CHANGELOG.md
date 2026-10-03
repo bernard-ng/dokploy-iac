@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Live captures of the `registry` and `tag` settings kinds, on Dokploy 0.30.6 and 0.30.7
+  (`scripts/integration/capture-registry-contract.sh`, `capture-tag-contract.sh`, and the shared
+  `capture-lib.sh`; milestone M2, ADR 0007). They pin facts the simulator and the engine depend on:
+  `registry.create` runs `docker login` and returns the whole object, password included, and so does
+  `registry.all` while `registry.one` omits it; `registry.update` returns `true`, is a patch, and a
+  rejected login (HTTP 400) **still persists** the change; registries may share a name. A tag's
+  create and update return the object, update is a patch, an explicit `null` clears the color, remove
+  returns `{"success": true}`, and a duplicate name is refused. Both versions behave identically.
+  The tag capture used to record shapes only and now publishes fixtures; `capture-all.sh` includes it.
 - Request contracts in `dokploy-api` (milestone M2, ADR 0008 and 0015). `request_contract("registry.create")`
   returns the query parameters and JSON body properties an operation accepts, and which are
   required, generated from the pinned OpenAPI by `cargo xtask codegen` and kept current by
