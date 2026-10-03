@@ -206,11 +206,26 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
             if spec.parents.is_empty() {
                 context.add("api.read.list.scope", "needs a parent kind to scope by");
             }
-            if spec.parents.len() > 1 {
+            // One parent id parameter serves several parent kinds only when the list is told
+            // which kind the id names.
+            if spec.parents.len() > 1
+                && spec
+                    .parents
+                    .iter()
+                    .any(|parent| !scope.query_by_parent.contains_key(parent))
+            {
                 context.add(
                     "api.read.list.scope",
-                    "a collection scoped by one parent cannot serve several parent kinds",
+                    "a collection scoped by one parent needs `query_by_parent` for every parent kind it serves",
                 );
+            }
+            for parent in scope.query_by_parent.keys() {
+                if !spec.parents.contains(parent) {
+                    context.add(
+                        "api.read.list.scope.query_by_parent",
+                        format!("`{parent}` is not a parent of the kind"),
+                    );
+                }
             }
             if scope.param.trim().is_empty() {
                 context.add("api.read.list.scope.param", "must name a query parameter");

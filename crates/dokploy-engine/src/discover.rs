@@ -273,11 +273,11 @@ async fn read_nested<T: Transport>(
                 } else if let (Some(operation), Some(scope)) =
                     (list.op.as_deref(), list.scope.as_ref())
                 {
-                    fetch_list(
-                        transport,
-                        OperationRequest::new(operation).query(scope.param.clone(), id.as_str()),
-                    )
-                    .await
+                    let mut request = OperationRequest::new(operation);
+                    for (name, value) in scope.query_for(Some(parent_kind), id.as_str()) {
+                        request = request.query(name, value);
+                    }
+                    fetch_list(transport, request).await
                 } else {
                     return Err(unsupported(
                         spec,
@@ -732,7 +732,9 @@ pub(crate) async fn read_collection<T: Transport>(
     let mut request = OperationRequest::new(operation);
     if let Some(scope) = &list.scope {
         let parent_id = parent_id.ok_or(RemoteFailureKind::Unavailable)?;
-        request = request.query(scope.param.clone(), parent_id);
+        for (name, value) in scope.query_for(parent_kind, parent_id) {
+            request = request.query(name, value);
+        }
     }
 
     fetch_list(transport, request).await

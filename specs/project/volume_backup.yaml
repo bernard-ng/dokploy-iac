@@ -1,0 +1,102 @@
+# A scheduled copy of a volume of an application, a Compose stack, or a database to a destination
+# (ADR 0018). One kind for everything that can have one: `serviceType` is the parent's kind.
+#
+# Live facts: none captured yet. `volumeBackups.list` is read per parent with the parent's id and
+# its type, so the identity of a new one is learned by diffing that list by name, and an update
+# takes the name, the volume, the prefix, the schedule, and the destination every time.
+kind: volume_backup
+scope: project
+parent: [application, compose, postgres, mysql, mariadb, mongo, redis, libsql]
+section: volume_backups
+title: Volume backup
+class: managed
+identity:
+  key: null
+  collision: [name]
+  address: "volume_backup.{key}"
+api:
+  id: volumeBackupId
+  create:
+    op: volumeBackups.create
+    attach_by_parent:
+      application: { applicationId: parent_id, serviceType: application }
+      compose: { composeId: parent_id, serviceType: compose }
+      postgres: { postgresId: parent_id, serviceType: postgres }
+      mysql: { mysqlId: parent_id, serviceType: mysql }
+      mariadb: { mariadbId: parent_id, serviceType: mariadb }
+      mongo: { mongoId: parent_id, serviceType: mongo }
+      redis: { redisId: parent_id, serviceType: redis }
+      libsql: { libsqlId: parent_id, serviceType: libsql }
+  update: { op: volumeBackups.update }
+  remove: { op: volumeBackups.delete }
+  read:
+    list:
+      op: volumeBackups.list
+      authority: authoritative
+      scope:
+        param: id
+        query_by_parent:
+          application: { volumeBackupType: application }
+          compose: { volumeBackupType: compose }
+          postgres: { volumeBackupType: postgres }
+          mysql: { volumeBackupType: mysql }
+          mariadb: { volumeBackupType: mariadb }
+          mongo: { volumeBackupType: mongo }
+          redis: { volumeBackupType: redis }
+          libsql: { volumeBackupType: libsql }
+    one: { op: volumeBackups.one, id_param: volumeBackupId, agree: true }
+  parent_field:
+    application: applicationId
+    compose: composeId
+    postgres: postgresId
+    mysql: mysqlId
+    mariadb: mariadbId
+    mongo: mongoId
+    redis: redisId
+    libsql: libsqlId
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+  volume_name:
+    api: volumeName
+    type: text
+    min_len: 1
+  prefix:
+    type: text
+    min_len: 1
+    doc: The folder of the destination the copies go to.
+  cron_expression:
+    api: cronExpression
+    type: text
+    min_len: 1
+  destination:
+    api: destinationId
+    type: selector(destination)
+  keep_latest:
+    api: keepLatestCount
+    type: int
+    min: 1
+    nullable: true
+  turn_off:
+    api: turnOff
+    type: bool
+    doc: Stop the service while the volume is copied.
+  enabled:
+    type: bool
+    nullable: true
+  service_name:
+    api: serviceName
+    type: text
+    nullable: true
+    doc: The Compose service whose volume it is; empty otherwise.
+write:
+  - op: volumeBackups.update
+    fields: [name, volume_name, prefix, cron_expression, destination, keep_latest, turn_off, enabled, service_name]
+    shape: full
+ledger:
+  readonly: [createdAt]
+  ignored:
+    - { field: appName, reason: "Dokploy's Docker-level name of the target, set by Dokploy" }

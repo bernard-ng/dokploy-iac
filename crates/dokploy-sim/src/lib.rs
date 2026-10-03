@@ -615,16 +615,41 @@ impl Sim {
     }
 
     fn list(&self, inner: &Inner, spec: &KindSpec, request: &OperationRequest) -> Value {
+        // A list that serves several parents is told which one its id names by fixed parameters;
+        // the id is then a column of that parent, and the fixed parameters are not columns.
+        let query = request.query_parameters();
+        let scope = spec
+            .api
+            .read
+            .list
+            .as_ref()
+            .and_then(|list| list.scope.as_ref())
+            .filter(|scope| !scope.query_by_parent.is_empty());
+        let scoped = scope.and_then(|scope| {
+            let (parent, fixed) = scope.query_by_parent.iter().find(|(_, fixed)| {
+                fixed
+                    .iter()
+                    .all(|(name, value)| query.get(name).and_then(Value::as_str) == Some(value))
+            })?;
+            let column = spec.parent_column(parent)?;
+            Some((scope.param.as_str(), column, fixed))
+        });
         let items: Vec<&Object> = inner
             .objects
             .get(&spec.kind)
             .into_iter()
             .flatten()
-            .filter(|object| {
-                request
-                    .query_parameters()
+            .filter(|object| match scoped {
+                Some((param, column, fixed)) => query.iter().all(|(name, value)| {
+                    if name == param {
+                        object.get(column) == Some(value)
+                    } else {
+                        fixed.contains_key(name) || object.get(name) == Some(value)
+                    }
+                }),
+                None => query
                     .iter()
-                    .all(|(name, value)| object.get(name) == Some(value))
+                    .all(|(name, value)| object.get(name) == Some(value)),
             })
             .filter(|object| {
                 id_of(spec, object)

@@ -136,3 +136,4 @@ ledger:
 children:
   - { kind: mount, section: mounts }
   - { kind: backup, section: backups }
+  - { kind: volume_backup, section: volume_backups }

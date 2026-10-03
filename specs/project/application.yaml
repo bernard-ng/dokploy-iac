@@ -270,5 +270,8 @@ children:
   - { kind: redirect, section: redirects }
   - { kind: port, section: ports }
   - { kind: security, section: security }
+  - { kind: schedule, section: schedules }
+  - { kind: patch, section: patches }
+  - { kind: volume_backup, section: volume_backups }
 ledger:
   readonly: [createdAt]

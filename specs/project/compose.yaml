@@ -162,3 +162,6 @@ ledger:
 children:
   - { kind: domain, section: domains }
   - { kind: mount, section: mounts }
+  - { kind: schedule, section: schedules }
+  - { kind: patch, section: patches }
+  - { kind: volume_backup, section: volume_backups }

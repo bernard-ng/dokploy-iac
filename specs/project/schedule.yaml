@@ -1,0 +1,84 @@
+# A scheduled command of an application or a Compose stack (ADR 0018). Dokploy has schedules for
+# the Dokploy host and for servers too; those belong to the settings of an instance, not to a
+# project, and are not here.
+#
+# Live facts (fixtures/api/live/*/schedule-*, `schedule-contract.metadata.json`): create answers the
+# whole row, `schedule.list` is read per parent and needs the parent's id with its type, and an
+# update takes the name, the cron expression, and the command every time.
+kind: schedule
+scope: project
+parent: [application, compose]
+section: schedules
+title: Schedule
+class: managed
+identity:
+  key: null
+  collision: [name]
+  address: "schedule.{key}"
+api:
+  id: scheduleId
+  create:
+    op: schedule.create
+    attach_by_parent:
+      application: { applicationId: parent_id, scheduleType: application }
+      compose: { composeId: parent_id, scheduleType: compose }
+  update: { op: schedule.update }
+  remove: { op: schedule.delete }
+  read:
+    list:
+      op: schedule.list
+      authority: authoritative
+      scope:
+        param: id
+        query_by_parent:
+          application: { scheduleType: application }
+          compose: { scheduleType: compose }
+    one: { op: schedule.one, id_param: scheduleId, agree: true }
+  parent_field:
+    application: applicationId
+    compose: composeId
+  create_identity:
+    from_response: /scheduleId
+fields:
+  name:
+    type: text
+    min_len: 1
+  description:
+    type: text
+    nullable: true
+  cron_expression:
+    api: cronExpression
+    type: text
+    min_len: 1
+  timezone:
+    type: text
+    nullable: true
+  shell_type:
+    api: shellType
+    type: enum[bash, sh]
+  enabled:
+    type: bool
+  service_name:
+    api: serviceName
+    type: text
+    nullable: true
+    doc: The Compose service the command runs in; empty for an application.
+  command:
+    type: file
+    class: content
+    doc: The command, written in the document or read from a file.
+  script:
+    type: file
+    class: content
+    nullable: true
+    doc: A script run instead of the command, written in the document or read from a file.
+write:
+  - op: schedule.update
+    fields: [name, description, cron_expression, timezone, shell_type, enabled, service_name, command, script]
+    shape: full
+ledger:
+  readonly: [createdAt]
+  ignored:
+    - { field: appName, reason: "Dokploy's Docker-level name of the target, set by Dokploy" }
+    - { field: serverId, reason: "the target of a schedule of a server; not a project schedule" }
+    - { field: organizationId, reason: "the owner of a schedule of the Dokploy host; not a project schedule" }

@@ -230,6 +230,19 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
     if let Some(one) = &spec.api.read.one {
         names.insert(one.id_param.clone());
     }
+    // The parameters of a list read per parent are context, not configuration.
+    if let Some(scope) = spec
+        .api
+        .read
+        .list
+        .as_ref()
+        .and_then(|list| list.scope.as_ref())
+    {
+        names.insert(scope.param.clone());
+        for fixed in scope.query_by_parent.values() {
+            names.extend(fixed.keys().cloned());
+        }
+    }
     names
 }
 

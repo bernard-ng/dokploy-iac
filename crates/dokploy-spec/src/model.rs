@@ -246,6 +246,27 @@ pub struct ListRead {
 pub struct ListScope {
     /// The query parameter carrying the parent's id.
     pub param: String,
+    /// Further query parameters the list requires, by the kind of the parent: the same list
+    /// serves several parents and is told which one the id names (`scheduleType: application`).
+    #[serde(default)]
+    pub query_by_parent: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+impl ListScope {
+    /// The query of the list of the children of a parent of kind `parent` and id `id`.
+    #[must_use]
+    pub fn query_for(&self, parent: Option<&str>, id: &str) -> Vec<(String, String)> {
+        let mut query = vec![(self.param.clone(), id.to_owned())];
+        if let Some(fixed) = parent.and_then(|parent| self.query_by_parent.get(parent)) {
+            query.extend(
+                fixed
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone())),
+            );
+        }
+
+        query
+    }
 }
 
 /// A collection that arrives inside another operation's response.

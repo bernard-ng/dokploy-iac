@@ -85,5 +85,5 @@ write:
     shape: full
 ledger:
   ignored:
-    - { field: userId, reason: the owner of a web-server backup; web-server backups are not supported }
-    - { field: composeId, reason: Compose backups are not supported on this version (ADR 0039) }
+    - { field: userId, reason: "the owner of a web-server backup; web-server backups are not supported" }
+    - { field: composeId, reason: "Compose backups are not supported on this version (ADR 0039)" }
