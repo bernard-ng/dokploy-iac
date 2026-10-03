@@ -93,9 +93,14 @@ Exceptions and what the exit leaves to later:
 
 - The `project` root stays `partial`: the generic suite cannot yet write a project root document, so
   its lifecycle (create with variables and tags, update, destroy) is covered by engine tests.
-- Not verified against a real Dokploy: the live jobs still cover `tag` and `registry` only. The specs
-  of `destination`, `network`, `patch`, `volume_backup`, and the tags relation say which facts come from
-  the API schema, not from a capture, and the first live capture of the project kinds is M8's.
+- Verified against a real Dokploy after the merge: `destination`, `network`, `patch`, `volume_backup`,
+  and the tags relation of a project were captured on 0.30.6 and 0.30.7 (`capture-destination`,
+  `-network`, `-patch`, `-volume-backup`, `-project-tag`), and the live engine test runs `network`
+  and `destination` end to end. The captures found three facts the simulator does not model yet:
+  `patch.update` adds a trailing newline to `content` (M4, with content digests), removing a
+  destination deletes the volume backups that name it, and a second patch of one file path is an
+  HTTP 500. The other project kinds (`application`, `compose`, the databases, and the leaves
+  captured before M2) still lean on the earlier fixtures; the full live engine suite is M8's.
 - The vision ratchet (`docs/vision/gaps/`) counts 2 lines for the project document (`env_file` of the
   application and of the Compose, which is M4's) and the settings document's remaining kinds (M5).
 - Not modeled, on purpose: database schedules (Dokploy runs schedules in applications and Compose

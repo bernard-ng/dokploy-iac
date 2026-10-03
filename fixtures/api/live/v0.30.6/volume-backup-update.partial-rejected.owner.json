@@ -1,0 +1,56 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "volumeBackups.update",
+    "zodError": {
+      "fieldErrors": {
+        "cronExpression": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "destinationId": "destination-1",
+        "prefix": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "volumeName": "volume-1"
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "volumeName"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "prefix"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "cronExpression"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "destinationId"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

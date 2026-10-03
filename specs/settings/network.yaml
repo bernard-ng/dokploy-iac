@@ -2,9 +2,12 @@
 # A flat settings kind with no update operation: Dokploy can create, recreate, resync, and remove a
 # network, so every field is create-only and a change replaces it.
 #
-# Live facts: none captured yet. `network.all` lists the organisation's networks (optionally of one
-# server), the create answer is not captured, so the identity is the one new item of `network.all`
-# by name, and whether `network.all` is complete is to be verified in the live suite.
+# Live facts (0.30.6 and 0.30.7, fixtures/api/live/*/network-contract.metadata.json): create answers
+# the whole object and makes the Docker network, and an unset `ipam` is read back as `{}` (the live
+# engine test shows it does not read as drift). `dockerId` stays null. A second network of the same
+# name is a 400 (Docker's conflict), and remove answers the removed object and removes the Docker
+# network. An overlay network needs Swarm and is a 400 without it; the integration instance does
+# not run Swarm, so no overlay capture exists.
 kind: network
 scope: settings
 section: networks

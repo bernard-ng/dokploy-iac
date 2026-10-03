@@ -1,0 +1,63 @@
+{
+  "appName": "volume-backup-contract-test",
+  "application": {
+    "appName": "application-contract-test",
+    "applicationId": "application-1",
+    "environment": {
+      "createdAt": "2026-09-28T00:00:00.000Z",
+      "description": "Production environment",
+      "env": "",
+      "environmentId": "environment-1",
+      "isDefault": true,
+      "name": "production",
+      "project": {
+        "createdAt": "2026-09-28T00:00:00.000Z",
+        "description": null,
+        "env": "",
+        "name": "volume-backup-contract-project",
+        "organizationId": "organization-1",
+        "projectId": "project-1"
+      },
+      "projectId": "project-1"
+    },
+    "serverId": null
+  },
+  "applicationId": "application-1",
+  "compose": null,
+  "composeId": null,
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "cronExpression": "0 4 * * 0",
+  "destination": {
+    "additionalFlags": [],
+    "bucket": "capture-bucket",
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "destinationId": "destination-1",
+    "endpoint": "http://s3.invalid:9000",
+    "name": "volume-backup-contract-destination",
+    "organizationId": "organization-1",
+    "provider": "",
+    "region": "us-east-1"
+  },
+  "destinationId": "destination-1",
+  "enabled": false,
+  "keepLatestCount": null,
+  "libsql": null,
+  "libsqlId": null,
+  "mariadb": null,
+  "mariadbId": null,
+  "mongo": null,
+  "mongoId": null,
+  "mysql": null,
+  "mysqlId": null,
+  "name": "weekly",
+  "postgres": null,
+  "postgresId": null,
+  "prefix": "weekly",
+  "redis": null,
+  "redisId": null,
+  "serviceName": null,
+  "serviceType": "application",
+  "turnOff": true,
+  "volumeBackupId": "volume-backup-1",
+  "volumeName": "volume-1"
+}

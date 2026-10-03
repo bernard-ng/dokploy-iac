@@ -1,9 +1,13 @@
 # A scheduled copy of a volume of an application, a Compose stack, or a database to a destination
 # (ADR 0018). One kind for everything that can have one: `serviceType` is the parent's kind.
 #
-# Live facts: none captured yet. `volumeBackups.list` is read per parent with the parent's id and
-# its type, so the identity of a new one is learned by diffing that list by name, and an update
-# takes the name, the volume, the prefix, the schedule, and the destination every time.
+# Live facts (0.30.6 and 0.30.7, fixtures/api/live/*/volume-backup-contract.metadata.json): create
+# answers the whole row and delete answers 200 with no body; `volumeBackups.list` is read per parent with the parent's id and its type
+# and nests the parent, and `volumeBackups.one` also nests the destination without its keys. An
+# update takes the name, the volume, the prefix, the schedule, and the destination every time (a
+# partial body is a 400). Names are not unique, so a new one is learned by diffing the list by name.
+# Dokploy does not validate the cron expression. Removing a destination deletes the volume backups
+# that name it, with no error.
 kind: volume_backup
 scope: project
 parent: [application, compose, postgres, mysql, mariadb, mongo, redis, libsql]

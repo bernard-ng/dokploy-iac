@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-10-03",
+  "createMakesDockerNetwork": true,
+  "createReturns": "object",
+  "createStatus": 200,
+  "dockerIdAfterCreate": null,
+  "duplicateNamesAllowed": false,
+  "duplicateStatus": 400,
+  "hasUpdate": false,
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "removeReturns": "object",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "removesDockerNetwork": true,
+  "role": "owner",
+  "sanitized": true,
+  "unsetIpamReads": "{}",
+  "version": "v0.30.7"
+}

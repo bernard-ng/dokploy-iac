@@ -1,0 +1,25 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "patch.create",
+    "zodError": {
+      "fieldErrors": {
+        "content": "<redacted>"
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "content"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

@@ -3,10 +3,12 @@
 # tags. Its tags are a relation: Dokploy assigns and removes one tag at a time, and the direct
 # read holds them as `projectTags`.
 #
-# Live facts: `projectTags` is on `project.one` and `project.all` and has always been captured
-# empty (`[]`), so the shape of one assigned tag has not been observed. The spec reads the id from
-# a `tagId` key of each element; any other shape is an invalid response and blocks planning for
-# the tags alone, so nothing is written on a guess. The live suite verifies it.
+# Live facts (0.30.6 and 0.30.7, fixtures/api/live/*/project-tag-contract.metadata.json):
+# `projectTags` is on `project.one` and `project.all` as `[{ id, projectId, tagId, tag: {...} }]`;
+# the spec reads the id from the `tagId` key of each element, and any other shape is an invalid
+# response that blocks planning for the tags alone. `tag.assignToProject` answers the link row;
+# assigning a tag twice is a 400, removing one that is not assigned is a success, removing a tag
+# removes its links, and `project.create` and `project.update` ignore a `tagIds` field.
 kind: project
 scope: project
 section: project

@@ -1,0 +1,11 @@
+{
+  "applicationId": "application-1",
+  "composeId": null,
+  "content": "<redacted>",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "enabled": false,
+  "filePath": "docs/guide.md",
+  "patchId": "patch-1",
+  "type": "update",
+  "updatedAt": "2026-09-28T00:00:00.000Z"
+}

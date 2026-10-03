@@ -1,0 +1,23 @@
+{
+  "appName": "volume-backup-contract-test",
+  "applicationId": null,
+  "composeId": "compose-1",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "cronExpression": "0 5 * * *",
+  "destinationId": "destination-1",
+  "enabled": null,
+  "keepLatestCount": null,
+  "libsqlId": null,
+  "mariadbId": null,
+  "mongoId": null,
+  "mysqlId": null,
+  "name": "stack-data",
+  "postgresId": null,
+  "prefix": "stack",
+  "redisId": null,
+  "serviceName": "web",
+  "serviceType": "compose",
+  "turnOff": false,
+  "volumeBackupId": "volume-backup-1",
+  "volumeName": "volume-1"
+}

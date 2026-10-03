@@ -1,0 +1,78 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "destination.update",
+    "zodError": {
+      "fieldErrors": {
+        "accessKey": "<redacted>",
+        "bucket": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "endpoint": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "provider": [
+          "Invalid input: expected nonoptional, received undefined"
+        ],
+        "region": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "secretAccessKey": "<redacted>"
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "accessKey"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "bucket"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "region"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "endpoint"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "secretAccessKey"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "nonoptional",
+      "message": "Invalid input: expected nonoptional, received undefined",
+      "path": [
+        "provider"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

@@ -1,9 +1,13 @@
 # A file edit Dokploy applies to the repository of an application or a Compose stack before it
 # builds (ADR 0018).
 #
-# Live facts: none captured yet (`patch.byEntityId` is read per parent with the parent's id and its
-# type), so the identity is the one new item of that list by file path, and whether `patch.create`
-# answers the row is to be verified in the live suite.
+# Live facts (0.30.6 and 0.30.7, fixtures/api/live/*/patch-contract.metadata.json): `patch.create`
+# answers the whole row with `content` as sent, and `patch.byEntityId` is read per parent with the
+# parent's id and its type (empty for the other type). `patch.update` is a patch but stores `content`
+# with a trailing newline added when it has none, so a read after an update differs from what was
+# sent (`content` is redacted in the fixtures, so the metadata holds it): comparing content through a
+# digest of what was sent, not a read-back, is M4's. A second patch of one file path for one parent
+# is an HTTP 500, not a 4xx, and a `delete` patch still needs `content` (empty is accepted).
 kind: patch
 scope: project
 parent: [application, compose]

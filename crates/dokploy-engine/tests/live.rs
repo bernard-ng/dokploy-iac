@@ -272,3 +272,104 @@ async fn a_registry_lives_its_whole_life_through_the_engine() {
         json!([])
     );
 }
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
+async fn a_network_converges_and_is_replaced_through_the_engine() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    assert_eq!(
+        call(&raw, OperationRequest::new("network.all")).await,
+        json!([]),
+        "a fresh instance"
+    );
+    let document = |internal: bool| {
+        format!(
+            "version: 2\nsettings:\n  networks:\n    iac-live-backend:\n      driver: bridge\n      internal: {internal}\n"
+        )
+    };
+
+    assert_eq!(live.apply(&document(false), &[]).await.unwrap(), 1);
+    let all = call(&raw, OperationRequest::new("network.all")).await;
+    assert_eq!(all[0]["name"], "iac-live-backend");
+    assert_eq!(
+        all[0]["ipam"],
+        json!({}),
+        "Dokploy reads an unset IPAM block as an empty object"
+    );
+    assert_eq!(
+        live.changes(&document(false), &[]).await,
+        0,
+        "converged: an empty IPAM object is not drift, which would replace the network"
+    );
+
+    // No update exists: a changed create-only field removes the network and makes it again.
+    live.apply(&document(true), &[]).await.unwrap();
+    let all = call(&raw, OperationRequest::new("network.all")).await;
+    assert_eq!(all.as_array().unwrap().len(), 1);
+    assert_eq!(all[0]["internal"], true);
+    assert_eq!(live.changes(&document(true), &[]).await, 0);
+
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("network.all")).await,
+        json!([])
+    );
+}
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
+async fn a_destination_lives_its_whole_life_through_the_engine() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    assert_eq!(
+        call(&raw, OperationRequest::new("destination.all")).await,
+        json!([]),
+        "a fresh instance"
+    );
+    let document = |bucket: &str| {
+        format!(
+            "version: 2\nsettings:\n  destinations:\n    offsite:\n      bucket: {bucket}\n      region: us-east-1\n      endpoint: http://s3.invalid:9000\n      access_key:\n        env: LIVE_DESTINATION_ACCESS_KEY\n      secret_access_key:\n        env: LIVE_DESTINATION_SECRET_KEY\n"
+        )
+    };
+    let env = [
+        ("LIVE_DESTINATION_ACCESS_KEY", "live-access-canary-1"),
+        ("LIVE_DESTINATION_SECRET_KEY", "live-secret-canary-1"),
+    ];
+
+    assert_eq!(live.apply(&document("backups"), &env).await.unwrap(), 1);
+    let all = call(&raw, OperationRequest::new("destination.all")).await;
+    assert_eq!(all[0]["name"], "offsite");
+    assert_eq!(all[0]["bucket"], "backups");
+    assert_eq!(all[0]["secretAccessKey"], "live-secret-canary-1");
+    assert_eq!(
+        live.changes(&document("backups"), &env).await,
+        0,
+        "converged, with two secrets"
+    );
+
+    // Update needs every field, so a bucket change resends both secrets.
+    assert_eq!(live.apply(&document("archive"), &env).await.unwrap(), 1);
+    let all = call(&raw, OperationRequest::new("destination.all")).await;
+    assert_eq!(all[0]["bucket"], "archive");
+    assert_eq!(all[0]["accessKey"], "live-access-canary-1");
+    assert_eq!(all[0]["secretAccessKey"], "live-secret-canary-1");
+
+    let rotated = [
+        ("LIVE_DESTINATION_ACCESS_KEY", "live-access-canary-1"),
+        ("LIVE_DESTINATION_SECRET_KEY", "live-secret-canary-2"),
+    ];
+    assert_eq!(live.apply(&document("archive"), &rotated).await.unwrap(), 1);
+    assert_eq!(
+        call(&raw, OperationRequest::new("destination.all")).await[0]["secretAccessKey"],
+        "live-secret-canary-2"
+    );
+
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("destination.all")).await,
+        json!([])
+    );
+}

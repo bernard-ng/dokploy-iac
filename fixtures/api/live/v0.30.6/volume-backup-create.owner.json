@@ -1,0 +1,23 @@
+{
+  "appName": "volume-backup-contract-test",
+  "applicationId": "application-1",
+  "composeId": null,
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "cronExpression": "0 3 * * *",
+  "destinationId": "destination-1",
+  "enabled": true,
+  "keepLatestCount": 3,
+  "libsqlId": null,
+  "mariadbId": null,
+  "mongoId": null,
+  "mysqlId": null,
+  "name": "nightly",
+  "postgresId": null,
+  "prefix": "nightly",
+  "redisId": null,
+  "serviceName": null,
+  "serviceType": "application",
+  "turnOff": false,
+  "volumeBackupId": "volume-backup-1",
+  "volumeName": "volume-1"
+}

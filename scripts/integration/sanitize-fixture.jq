@@ -51,6 +51,12 @@ def normalized_scalar:
     if .value == null then . else .value = "backup-1" end
   elif .key == "destinationId" then
     if .value == null then . else .value = "destination-1" end
+  elif .key == "networkId" then
+    if .value == null then . else .value = "network-1" end
+  elif .key == "patchId" then
+    if .value == null then . else .value = "patch-1" end
+  elif .key == "volumeBackupId" then
+    if .value == null then . else .value = "volume-backup-1" end
   elif .key == "volumeName" then
     if .value == null then . else .value = "volume-1" end
   elif .key == "organizationId" then
@@ -88,7 +94,11 @@ def normalized_scalar:
 walk(
   if type == "object" then
     with_entries(normalized_scalar)
-    | if has("applicationId") and has("appName") then
+    | if has("volumeBackupId") and has("appName") then
+        .appName = "volume-backup-contract-test"
+      elif has("projectId") and has("tagId") and has("id") then
+        .id = "project-tag-1"
+      elif has("applicationId") and has("appName") then
         .appName = "application-contract-test"
       elif has("postgresId") and has("appName") then
         .appName = "postgres-contract-test"

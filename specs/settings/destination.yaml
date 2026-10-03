@@ -1,12 +1,13 @@
 # An S3-compatible backup destination. A flat settings kind: the backups and volume backups of the
 # project kinds name one by selector.
 #
-# Live facts: only the empty `destination.all` selector capture exists (fixtures/api/live/*/
-# destination-all.selectors.json). The create answer is not captured, so the identity is the one
-# new item of `destination.all` by name; `destination.update` requires every field of the
-# destination on each call, secrets included, so its write group is `full` and the document must
-# declare both secrets. Whether `destination.all` returns the keys is to be verified in the live
-# suite; both are treated as secrets and are never compared.
+# Live facts (0.30.6 and 0.30.7, fixtures/api/live/*/destination-contract.metadata.json): create
+# and update answer the whole object, and `destination.all` and `destination.one` return both keys
+# in clear (the fixtures redact them). `destination.update` requires every field, secrets included
+# (a partial body is a 400), so its write group is `full` and the document must declare both
+# secrets. Two destinations may share a name, so the identity stays the one new item of
+# `destination.all` by name. Dokploy never contacts the endpoint on create or update. Removing a
+# destination deletes the volume backups that name it, with no error (see `volume_backup`).
 kind: destination
 scope: settings
 section: destinations

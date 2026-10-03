@@ -1,0 +1,23 @@
+{
+  "attachable": true,
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "dockerId": null,
+  "driver": "bridge",
+  "enableIPv4": true,
+  "enableIPv6": false,
+  "internal": true,
+  "ipam": {
+    "config": [
+      {
+        "gateway": "172.29.77.1",
+        "subnet": "172.29.77.0/24"
+      }
+    ],
+    "driver": "default"
+  },
+  "mtu": 1400,
+  "name": "iac-contract-net-configured",
+  "networkId": "network-1",
+  "organizationId": "organization-1",
+  "serverId": null
+}

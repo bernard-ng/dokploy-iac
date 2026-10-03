@@ -1,0 +1,10 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "tag.assignToProject",
+    "zodError": null
+  },
+  "message": "Error assigning tag to project: Failed query: insert into \"project_tag\" (\"id\", \"projectId\", \"tagId\") values ($1, $2, $3) returning \"id\", \"projectId\", \"tagId\"\nparams: bMv0hHu4hbZRh3-ioR9Nt,lgMofH64p8bS_lRo4ODwW,DFabO28x8kh5xOK0puS9i"
+}

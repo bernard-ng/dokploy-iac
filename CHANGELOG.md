@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Live captures of `destination`, `network`, `patch`, `volume_backup`, and the tags of a project
+  (`scripts/integration/capture-{destination,network,patch,volume-backup,project-tag}-contract.sh`) on
+  Dokploy 0.30.6 and 0.30.7, with fixture checks and a shared `capture_project_setup` helper. They
+  confirm the specs written from the API schema and found: `patch.update` stores `content` with a
+  trailing newline, removing a destination silently deletes the volume backups that name it, an unset
+  network `ipam` reads back as `{}`, and the `projectTags` element is `{ id, projectId, tagId, tag }`.
+  The live engine test (`scripts/integration/test-engine-live.sh`) now also runs `network` and
+  `destination` through the engine.
+
 ### Changed
 
 - Milestone M2 is complete ([`docs/design/cost-gate.md`](docs/design/cost-gate.md)): `tag`,

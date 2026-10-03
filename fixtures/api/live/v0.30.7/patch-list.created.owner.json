@@ -1,0 +1,13 @@
+[
+  {
+    "applicationId": "application-1",
+    "composeId": null,
+    "content": "<redacted>",
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "enabled": true,
+    "filePath": "README.md",
+    "patchId": "patch-1",
+    "type": "create",
+    "updatedAt": "2026-09-28T00:00:00.000Z"
+  }
+]

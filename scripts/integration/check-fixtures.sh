@@ -208,6 +208,83 @@ required_tag_fixtures=(
     "tag-contract.metadata.json"
 )
 
+required_destination_fixtures=(
+    "destination-create.owner.json"
+    "destination-all.created.owner.json"
+    "destination-one.created.owner.json"
+    "destination-update.partial-rejected.owner.json"
+    "destination-update.owner.json"
+    "destination-one.updated.owner.json"
+    "destination-remove.owner.json"
+    "destination-one.removed.owner.json"
+    "destination-all.removed.owner.json"
+    "destination-contract.metadata.json"
+)
+
+required_network_fixtures=(
+    "network-create.owner.json"
+    "network-all.created.owner.json"
+    "network-one.created.owner.json"
+    "network-all.duplicate.owner.json"
+    "network-create.configured.owner.json"
+    "network-one.configured.owner.json"
+    "network-remove.owner.json"
+    "network-one.removed.owner.json"
+    "network-all.removed.owner.json"
+    "network-contract.metadata.json"
+)
+
+required_patch_fixtures=(
+    "patch-create.owner.json"
+    "patch-create.compose.owner.json"
+    "patch-list.created.owner.json"
+    "patch-list.compose.owner.json"
+    "patch-list.wrong-type.owner.json"
+    "patch-one.created.owner.json"
+    "patch-update.owner.json"
+    "patch-update.full.owner.json"
+    "patch-one.updated.owner.json"
+    "patch-create.duplicate.owner.json"
+    "patch-list.duplicate.owner.json"
+    "patch-create.delete-patch.owner.json"
+    "patch-remove.owner.json"
+    "patch-one.removed.owner.json"
+    "patch-list.removed.owner.json"
+    "patch-contract.metadata.json"
+)
+
+required_volume_backup_fixtures=(
+    "volume-backup-create.owner.json"
+    "volume-backup-create.postgres.owner.json"
+    "volume-backup-create.compose.owner.json"
+    "volume-backup-list.created.owner.json"
+    "volume-backup-list.postgres.owner.json"
+    "volume-backup-list.compose.owner.json"
+    "volume-backup-one.created.owner.json"
+    "volume-backup-update.partial-rejected.owner.json"
+    "volume-backup-update.owner.json"
+    "volume-backup-one.updated.owner.json"
+    "volume-backup-create.duplicate.owner.json"
+    "volume-backup-one.removed.owner.json"
+    "volume-backup-list.removed.owner.json"
+    "volume-backup-list.destination-removed.owner.json"
+    "volume-backup-contract.metadata.json"
+)
+
+required_project_tag_fixtures=(
+    "project-one.empty.owner.json"
+    "project-tag-assign.owner.json"
+    "project-one.tagged.owner.json"
+    "project-all.tagged.owner.json"
+    "project-tag-assign.duplicate.owner.json"
+    "project-one.after-update.owner.json"
+    "project-tag-remove.owner.json"
+    "project-one.untagged.owner.json"
+    "project-tag-remove.again.owner.json"
+    "project-one.tag-removed.owner.json"
+    "project-tag-contract.metadata.json"
+)
+
 required_redirect_fixtures=(
     "redirect-create.owner.json"
     "application-one.redirect-created.owner.json"
@@ -351,6 +428,41 @@ done
 for fixture_name in "${required_tag_fixtures[@]}"; do
     if fixture_missing "$fixture_name"; then
         echo "Missing Tag contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_destination_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Destination contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_network_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Network contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_patch_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Patch contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_volume_backup_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Volume backup contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
+for fixture_name in "${required_project_tag_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing Project tag contract fixture: $fixture_name" >&2
         exit 1
     fi
 done
@@ -1522,6 +1634,137 @@ if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_ima
     and .removedOneStatus == 404
 ' "$versioned_fixture_directory/tag-contract.metadata.json" >/dev/null; then
     echo "Tag metadata does not prove the captured contract." >&2
+    exit 1
+fi
+
+# Settings and relation kinds captured by M3's live pass: destination, network, patch, volume
+# backup, and the tags of a project. The simulator copies these shapes.
+if ! jq --exit-status '
+    .destinationId == "destination-1" and .name == "destination-contract"
+    and .accessKey == "<redacted>" and .secretAccessKey == "<redacted>" and .additionalFlags == []
+' "$versioned_fixture_directory/destination-create.owner.json" >/dev/null; then
+    echo "Destination create fixture does not preserve the whole-object response with redacted secrets." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .createReturns == "object"
+    and .updateReturns == "object"
+    and .updateRequiresEveryField == true
+    and .listingIncludesCredentials == true
+    and .detailIncludesCredentials == true
+    and .removeReturns == "object"
+    and .duplicateNamesAllowed == true
+    and .partialUpdateStatus == 400
+    and .removedOneStatus == 404
+' "$versioned_fixture_directory/destination-contract.metadata.json" >/dev/null; then
+    echo "Destination metadata does not prove the captured contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .networkId == "network-1" and .name == "iac-contract-net" and .driver == "bridge"
+    and .ipam == {} and .dockerId == null and .mtu == null
+' "$versioned_fixture_directory/network-create.owner.json" >/dev/null; then
+    echo "Network create fixture does not show an unset IPAM block as {}." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .createReturns == "object"
+    and .removeReturns == "object"
+    and .hasUpdate == false
+    and .unsetIpamReads == "{}"
+    and .createMakesDockerNetwork == true
+    and .removesDockerNetwork == true
+    and .duplicateNamesAllowed == false
+    and .duplicateStatus == 400
+' "$versioned_fixture_directory/network-contract.metadata.json" >/dev/null; then
+    echo "Network metadata does not prove the captured contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .patchId == "patch-1" and .filePath == "README.md" and .type == "create" and .enabled == true
+    and .applicationId == "application-1" and .composeId == null
+' "$versioned_fixture_directory/patch-create.owner.json" >/dev/null; then
+    echo "Patch create fixture does not preserve the whole-row response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .createReturns == "object"
+    and .createKeepsContent == true
+    and .updateReturns == "object"
+    and .updateIsPatch == true
+    and .updateAppendsTrailingNewline == true
+    and .duplicateFilePathStatus == 500
+    and .deletePatchNeedsContentStatus == 400
+    and .removeReturns == "object"
+    and .removedOneStatus == 404
+' "$versioned_fixture_directory/patch-contract.metadata.json" >/dev/null; then
+    echo "Patch metadata does not prove the captured contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    .volumeBackupId == "volume-backup-1" and .serviceType == "application"
+    and .applicationId == "application-1" and .destinationId == "destination-1"
+    and .appName == "volume-backup-contract-test" and .keepLatestCount == 3
+' "$versioned_fixture_directory/volume-backup-create.owner.json" >/dev/null; then
+    echo "Volume backup create fixture does not preserve the whole-row response." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .createReturns == "object"
+    and .updateReturns == "object"
+    and .removeReturns == "empty"
+    and .updateRequiresNameVolumePrefixCronDestination == true
+    and .partialUpdateStatus == 400
+    and .duplicateNamesAllowed == true
+    and .cronExpressionValidated == false
+    and .listNestsParent == true
+    and .oneNestsDestinationWithoutCredentials == true
+    and .removingDestinationDeletesVolumeBackups == true
+    and .removedOneStatus == 404
+' "$versioned_fixture_directory/volume-backup-contract.metadata.json" >/dev/null; then
+    echo "Volume backup metadata does not prove the captured contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    (.projectTags | length) == 2
+    and all(.projectTags[]; keys == ["id", "projectId", "tag", "tagId"]
+        and .id == "project-tag-1" and .tag.tagId == .tagId)
+' "$versioned_fixture_directory/project-one.tagged.owner.json" >/dev/null; then
+    echo "Project tag fixture does not show the projectTags element shape." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version
+    and .image == $image
+    and .sanitized == true
+    and .assignReturns == "link-row"
+    and .assigningTwiceStatus == 400
+    and .removingUnassignedStatus == 200
+    and .projectUpdateIgnoresTagIds == true
+    and .removingTagRemovesLinks == true
+' "$versioned_fixture_directory/project-tag-contract.metadata.json" >/dev/null; then
+    echo "Project tag metadata does not prove the captured contract." >&2
     exit 1
 fi
 

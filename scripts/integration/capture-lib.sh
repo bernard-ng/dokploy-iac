@@ -134,3 +134,42 @@ capture_publish() {
         install -m 0644 "$fixture" "$dokploy_fixture_directory/$(basename "$fixture")"
     done
 }
+
+# A throwaway project with an application, a Compose stack, and a Postgres database, for the
+# captures of kinds that hang off a parent. Sets capture_project_id, capture_environment_id,
+# capture_application_id, capture_compose_id, and capture_postgres_id. Call
+# capture_remove_project from capture_cleanup; Dokploy removes the project's services with it.
+capture_project_setup() {
+    local prefix="$1" status
+    request_body "$workspace/setup-project.request.json" --arg name "$prefix-contract-project" '{name:$name}'
+    status="$(api_request POST project.create "$workspace/setup-project.json" "$workspace/setup-project.request.json")"
+    require_status "$status" 200 "project.create (setup)"
+    capture_project_id="$(jq -er '.project.projectId' "$workspace/setup-project.json")"
+    capture_environment_id="$(jq -er '.environment.environmentId' "$workspace/setup-project.json")"
+
+    request_body "$workspace/setup-application.request.json" --arg environment "$capture_environment_id" \
+        --arg name "$prefix-application" '{name:$name,environmentId:$environment}'
+    status="$(api_request POST application.create "$workspace/setup-application.json" "$workspace/setup-application.request.json")"
+    require_status "$status" 200 "application.create (setup)"
+    capture_application_id="$(jq -er '.applicationId' "$workspace/setup-application.json")"
+
+    request_body "$workspace/setup-compose.request.json" --arg environment "$capture_environment_id" \
+        --arg name "$prefix-compose" '{name:$name,environmentId:$environment}'
+    status="$(api_request POST compose.create "$workspace/setup-compose.json" "$workspace/setup-compose.request.json")"
+    require_status "$status" 200 "compose.create (setup)"
+    capture_compose_id="$(jq -er '.composeId' "$workspace/setup-compose.json")"
+
+    request_body "$workspace/setup-postgres.request.json" --arg environment "$capture_environment_id" \
+        --arg name "$prefix-postgres" --arg app "$prefix-pg" '
+        {name:$name,appName:$app,databaseName:"contract",databaseUser:"contract",
+         databasePassword:"capture-password-1",environmentId:$environment}'
+    status="$(api_request POST postgres.create "$workspace/setup-postgres.json" "$workspace/setup-postgres.request.json")"
+    require_status "$status" 200 "postgres.create (setup)"
+    capture_postgres_id="$(jq -er '.postgresId' "$workspace/setup-postgres.json")"
+}
+
+capture_remove_project() {
+    [[ -n "${capture_project_id:-}" ]] || return 0
+    request_body "$workspace/cleanup-project.request.json" --arg id "$capture_project_id" '{projectId:$id}'
+    api_request POST project.remove "$workspace/cleanup-project.json" "$workspace/cleanup-project.request.json" >/dev/null
+}

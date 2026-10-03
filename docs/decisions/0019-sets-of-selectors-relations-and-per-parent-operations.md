@@ -51,9 +51,9 @@ member's id, each removed one is another, in the step that changes the resource,
 member Dokploy holds. The `api` of the field says where the held ids are: `/projectTags/*/tagId`, the id
 inside each object of an array.
 
-The shape of an assigned tag has never been captured (`projectTags` has always been empty), so a read
-that does not look like that is an invalid response, which blocks planning for the field alone. Nothing
-is written on a guess, and the live suite verifies the shape.
+The shape of an assigned tag is `{ id, projectId, tagId, tag: {...} }`, captured on 0.30.6 and 0.30.7
+(`project-tag-contract`). A read that does not look like that is an invalid response, which blocks
+planning for the field alone, and nothing is written on a guess.
 
 ### A map from a key to a set of selectors
 

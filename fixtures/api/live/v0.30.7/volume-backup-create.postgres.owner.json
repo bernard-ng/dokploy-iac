@@ -1,0 +1,23 @@
+{
+  "appName": "volume-backup-contract-test",
+  "applicationId": null,
+  "composeId": null,
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "cronExpression": "0 4 * * *",
+  "destinationId": "destination-1",
+  "enabled": null,
+  "keepLatestCount": null,
+  "libsqlId": null,
+  "mariadbId": null,
+  "mongoId": null,
+  "mysqlId": null,
+  "name": "pg-data",
+  "postgresId": "postgres-1",
+  "prefix": "pg",
+  "redisId": null,
+  "serviceName": null,
+  "serviceType": "postgres",
+  "turnOff": false,
+  "volumeBackupId": "volume-backup-1",
+  "volumeName": "volume-1"
+}

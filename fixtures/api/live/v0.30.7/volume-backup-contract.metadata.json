@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-10-03",
+  "createReturns": "object",
+  "createStatus": 200,
+  "cronExpressionValidated": false,
+  "duplicateNamesAllowed": true,
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "listNestsParent": true,
+  "oneNestsDestinationWithoutCredentials": true,
+  "partialUpdateStatus": 400,
+  "removeReturns": "empty",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "removingDestinationDeletesVolumeBackups": true,
+  "role": "owner",
+  "sanitized": true,
+  "updateRequiresNameVolumePrefixCronDestination": true,
+  "updateReturns": "object",
+  "version": "v0.30.7"
+}

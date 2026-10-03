@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-10-03",
+  "contentRedacted": true,
+  "createKeepsContent": true,
+  "createReturns": "object",
+  "createStatus": 200,
+  "deletePatchNeedsContentStatus": 400,
+  "duplicateFilePathStatus": 500,
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "removeReturns": "object",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateAppendsTrailingNewline": true,
+  "updateIsPatch": true,
+  "updateKeepsExistingTrailingNewline": true,
+  "updateReturns": "object",
+  "version": "v0.30.6"
+}

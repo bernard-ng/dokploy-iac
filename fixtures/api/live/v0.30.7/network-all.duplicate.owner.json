@@ -1,0 +1,17 @@
+[
+  {
+    "attachable": false,
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "dockerId": null,
+    "driver": "bridge",
+    "enableIPv4": true,
+    "enableIPv6": false,
+    "internal": false,
+    "ipam": {},
+    "mtu": null,
+    "name": "iac-contract-net",
+    "networkId": "network-1",
+    "organizationId": "organization-1",
+    "serverId": null
+  }
+]
