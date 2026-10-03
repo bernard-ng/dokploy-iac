@@ -13,6 +13,7 @@
 //! - a removal Dokploy acknowledges and does not apply, a create whose identity is ambiguous
 //!   because another client made the same thing, and a collection or a direct read that names
 //!   another parent;
+//! - a selector that names nothing, or two things;
 //! - a rejected create, a declined plan, and a create whose follow-up write (for the fields the
 //!   create operation does not accept) is rejected or lost;
 //! - a mutation interrupted before and after Dokploy applies it, for create, update, and
@@ -160,6 +161,12 @@ impl Suite {
         ));
         scenario!("declined", |w| scenarios::declined(&w));
         scenario!("rejected_create", |w| scenarios::rejected_create(&w));
+        scenario!("selector_unmatched", |w| scenarios::selector_unresolved(
+            &w, false
+        ));
+        scenario!("selector_ambiguous", |w| scenarios::selector_unresolved(
+            &w, true
+        ));
         for (name, how) in [
             ("follow_up_rejected", FollowUp::Rejected),
             ("follow_up_lost_before", FollowUp::LostBefore),

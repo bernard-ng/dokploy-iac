@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use dokploy_api::{BodyShape, request_contract};
-use dokploy_core::{CheckpointValueRef, PropertyPath, ResourceCheckpoint};
+use dokploy_core::{CheckpointValueRef, ExternalResolution, PropertyPath, ResourceCheckpoint};
 use dokploy_sdk::OperationRequest;
 use dokploy_spec::{
     Field, FieldType, KindSpec, Mutability, PathShape, Shape, WriteGroup, parse_type,
@@ -15,6 +15,16 @@ use serde_json::{Map, Value as Json};
 
 use super::ApplyError;
 use crate::compile::Compiled;
+use crate::selectors::SelectorIndex;
+
+/// What a request is built from besides the spec and the checkpoint: the document's secrets and
+/// the selectors as they resolve now. The preflight builds requests without reading, so it has
+/// no selector index.
+#[derive(Clone, Copy)]
+pub(crate) struct Inputs<'a> {
+    pub(crate) compiled: &'a Compiled,
+    pub(crate) selectors: Option<&'a SelectorIndex>,
+}
 
 /// A property the executor can write: an atomic top-level value.
 pub(crate) struct Writable<'s> {
@@ -56,11 +66,6 @@ pub(crate) fn writable<'s>(
             "is a composite value, which the executor does not write yet",
         ));
     }
-    if info.is_selector() {
-        return Err(unsupported(
-            "is a selector, which the executor does not resolve yet",
-        ));
-    }
     let wire = field.request_name(name);
     if field
         .api
@@ -78,19 +83,48 @@ pub(crate) fn writable<'s>(
 /// The JSON a checkpoint property is sent as: a value, `null`, or a secret read from the
 /// document's source.
 fn body_value(
-    compiled: &Compiled,
+    inputs: Inputs<'_>,
     address: &ResourceAddress,
     checkpoint: &ResourceCheckpoint,
     path: &PropertyPath,
 ) -> Result<Json, ApplyError> {
+    let Inputs {
+        compiled,
+        selectors,
+    } = inputs;
     match checkpoint.property(path) {
         Some(CheckpointValueRef::Null) => Ok(Json::Null),
+        Some(CheckpointValueRef::NonSensitive(value)) if path.info().is_selector() => {
+            selector_id(address, path, value, selectors)
+        }
         Some(CheckpointValueRef::NonSensitive(value)) => Ok(value.clone()),
         Some(CheckpointValueRef::Sensitive) => secret_text(compiled, address, &path.to_string()),
         Some(CheckpointValueRef::EmptyCollection) | None => Err(ApplyError::Unsupported {
             address: address.clone(),
             property: Some(path.to_string()),
             reason: "has no value to send",
+        }),
+    }
+}
+
+/// What Dokploy is given for a selector: the id of the one resource with that name, resolved
+/// now, or `null` for the host. The preflight reads nothing, so it only checks the shape.
+fn selector_id(
+    address: &ResourceAddress,
+    path: &PropertyPath,
+    value: &Json,
+    selectors: Option<&SelectorIndex>,
+) -> Result<Json, ApplyError> {
+    let Some(selectors) = selectors else {
+        return Ok(Json::Null);
+    };
+    let kind = path.info().selector.as_deref().unwrap_or_default();
+    match selectors.resolve(kind, value) {
+        Some(ExternalResolution::Local) => Ok(Json::Null),
+        Some(ExternalResolution::Resolved(id)) => Ok(Json::String(id.as_str().to_owned())),
+        _ => Err(ApplyError::UnresolvedSelector {
+            address: address.clone(),
+            property: path.to_string(),
         }),
     }
 }
@@ -133,7 +167,7 @@ pub(crate) fn create_request(
     address: &ResourceAddress,
     checkpoint: &ResourceCheckpoint,
     parent_id: Option<&str>,
-    compiled: &Compiled,
+    inputs: Inputs<'_>,
 ) -> Result<CreateRequest, ApplyError> {
     let operation = spec
         .api
@@ -162,7 +196,7 @@ pub(crate) fn create_request(
         }
         body.insert(
             target.wire.to_owned(),
-            body_value(compiled, address, checkpoint, path)?,
+            body_value(inputs, address, checkpoint, path)?,
         );
     }
 
@@ -270,8 +304,9 @@ pub(crate) fn group_body(
     group: &GroupRequest,
     remote_id: &str,
     fresh: Option<&Json>,
-    compiled: &Compiled,
+    inputs: Inputs<'_>,
 ) -> Result<Json, ApplyError> {
+    let compiled = inputs.compiled;
     let mut body = Map::new();
     body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
 
@@ -287,7 +322,7 @@ pub(crate) fn group_body(
             reason: "is not a property of the kind",
         })?;
         if group.changed.contains(name) {
-            body.insert(wire, body_value(compiled, address, checkpoint, &path)?);
+            body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
             continue;
         }
         if group.shape == Shape::Partial {

@@ -17,6 +17,7 @@ mod fingerprint;
 mod project;
 mod recover;
 mod secrets;
+mod selectors;
 
 use dokploy_core::{Plan, RemoteStateError, StoredState, StoredStateError};
 use dokploy_model::Document;

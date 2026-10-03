@@ -19,6 +19,7 @@ use serde_json::Value as Json;
 use crate::EngineError;
 use crate::compile::Compiled;
 use crate::project::{field_value, item_id, project};
+use crate::selectors::SelectorIndex;
 
 /// What was learned about one address; rebuilt into core types on demand.
 #[derive(Clone)]
@@ -94,6 +95,11 @@ pub(crate) async fn discover<T: Transport>(
     let mut kinds: Vec<&String> = by_kind.keys().collect();
     kinds.sort_by_key(|kind| (depth(specs, kind), (*kind).clone()));
 
+    // The collections of the kinds the subjects select from serve both to turn the ids Dokploy
+    // returns into names and to resolve the names the document uses.
+    let targets = SelectorIndex::targets(specs, by_kind.keys().map(String::as_str));
+    let selectors = SelectorIndex::load(transport, specs, &targets).await;
+
     let mut outcomes: BTreeMap<ResourceAddress, (String, Outcome)> = BTreeMap::new();
     for kind in kinds {
         let group = &by_kind[kind];
@@ -101,16 +107,18 @@ pub(crate) async fn discover<T: Transport>(
             .get(kind)
             .ok_or_else(|| EngineError::UnknownKind { kind: kind.clone() })?;
         let read = if spec.parent.is_some() {
-            read_nested(transport, specs, spec, group, &outcomes).await?
+            read_nested(transport, specs, spec, group, &outcomes, &selectors).await?
         } else {
-            read_top_level(transport, spec, group).await?
+            read_top_level(transport, spec, group, &selectors).await?
         };
         for (address, outcome) in read {
             outcomes.insert(address, (kind.clone(), outcome));
         }
     }
 
-    build(specs, instance, outcomes)
+    let remote = build(specs, instance, outcomes)?;
+
+    resolve_selectors(compiled, &selectors, remote)
 }
 
 fn depth(specs: &SpecRegistry, kind: &str) -> usize {
@@ -139,9 +147,10 @@ async fn read_top_level<T: Transport>(
     transport: &T,
     spec: &KindSpec,
     group: &[Subject<'_>],
+    selectors: &SelectorIndex,
 ) -> Result<Vec<(ResourceAddress, Outcome)>, EngineError> {
     let Some(list) = spec.api.read.list.as_ref() else {
-        return Ok(direct_only(transport, spec, group).await);
+        return Ok(direct_only(transport, spec, group, selectors).await);
     };
     if list.embedded_in.is_some() || list.scope.is_some() {
         return Err(unsupported(
@@ -155,7 +164,7 @@ async fn read_top_level<T: Transport>(
         .ok_or_else(|| unsupported(spec, "the spec declares no collection operation"))?;
     let listing = fetch_list(transport, OperationRequest::new(operation)).await;
 
-    Ok(settle(transport, spec, list, group, listing, None).await)
+    Ok(settle(transport, spec, list, group, listing, None, selectors).await)
 }
 
 /// A child kind: its collection is read once per parent, from what was learned about it.
@@ -165,9 +174,10 @@ async fn read_nested<T: Transport>(
     spec: &KindSpec,
     group: &[Subject<'_>],
     outcomes: &BTreeMap<ResourceAddress, (String, Outcome)>,
+    selectors: &SelectorIndex,
 ) -> Result<Vec<(ResourceAddress, Outcome)>, EngineError> {
     let Some(list) = spec.api.read.list.as_ref() else {
-        return Ok(direct_only(transport, spec, group).await);
+        return Ok(direct_only(transport, spec, group, selectors).await);
     };
     let parent_spec = spec
         .parent
@@ -234,8 +244,18 @@ async fn read_nested<T: Transport>(
                         field,
                         parent_id: id.as_str(),
                     });
-                results
-                    .extend(settle(transport, spec, list, &owned, listing, attach.as_ref()).await);
+                results.extend(
+                    settle(
+                        transport,
+                        spec,
+                        list,
+                        &owned,
+                        listing,
+                        attach.as_ref(),
+                        selectors,
+                    )
+                    .await,
+                );
             }
         }
     }
@@ -272,6 +292,7 @@ async fn direct_only<T: Transport>(
     transport: &T,
     spec: &KindSpec,
     group: &[Subject<'_>],
+    selectors: &SelectorIndex,
 ) -> Vec<(ResourceAddress, Outcome)> {
     let mut results = Vec::new();
     for subject in group {
@@ -284,7 +305,7 @@ async fn direct_only<T: Transport>(
                         if direct.is_object() && item_id(spec, &direct) == Some(id.as_str()) =>
                     {
                         Outcome::Present {
-                            properties: project(spec, &direct),
+                            properties: project(spec, &direct, selectors),
                             id: id.clone(),
                             raw: direct,
                         }
@@ -310,6 +331,7 @@ async fn settle<T: Transport>(
     group: &[Subject<'_>],
     listing: Result<Vec<Json>, RemoteFailureKind>,
     attachment: Option<&Attachment<'_>>,
+    selectors: &SelectorIndex,
 ) -> Vec<(ResourceAddress, Outcome)> {
     let listing = match listing {
         Ok(items) => items,
@@ -339,14 +361,14 @@ async fn settle<T: Transport>(
         let outcome = if list.authority == Authority::Partial {
             // Absence from a partial collection proves nothing.
             match find(spec, subject, &by_id, &listing) {
-                Found::Item(item) => resolve(transport, spec, item, attachment).await,
+                Found::Item(item) => resolve(transport, spec, item, attachment, selectors).await,
                 Found::Nothing | Found::Ambiguous => {
                     Outcome::Unavailable(RemoteFailureKind::Unavailable)
                 }
             }
         } else {
             match find(spec, subject, &by_id, &listing) {
-                Found::Item(item) => resolve(transport, spec, item, attachment).await,
+                Found::Item(item) => resolve(transport, spec, item, attachment, selectors).await,
                 Found::Nothing => Outcome::Missing,
                 Found::Ambiguous => Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
             }
@@ -405,13 +427,14 @@ async fn resolve<T: Transport>(
     spec: &KindSpec,
     listed: &Json,
     attachment: Option<&Attachment<'_>>,
+    selectors: &SelectorIndex,
 ) -> Outcome {
     let Some(id) = item_id(spec, listed).and_then(|id| RemoteId::new(id).ok()) else {
         return Outcome::Unavailable(RemoteFailureKind::InvalidResponse);
     };
     let Some(one) = spec.api.read.one.as_ref() else {
         return Outcome::Present {
-            properties: project(spec, listed),
+            properties: project(spec, listed, selectors),
             id,
             raw: listed.clone(),
         };
@@ -430,7 +453,7 @@ async fn resolve<T: Transport>(
     }
 
     Outcome::Present {
-        properties: project(spec, &direct),
+        properties: project(spec, &direct, selectors),
         id,
         raw: direct,
     }
@@ -462,6 +485,29 @@ fn failure(error: &SdkError) -> RemoteFailureKind {
         }
         _ => RemoteFailureKind::Unavailable,
     }
+}
+
+/// Tells the planner what each selector the document sets means right now.
+fn resolve_selectors(
+    compiled: &Compiled,
+    selectors: &SelectorIndex,
+    remote: RemoteState,
+) -> Result<RemoteState, EngineError> {
+    let mut resolutions = Vec::new();
+    for (address, resource) in &compiled.resources {
+        for (path, value) in &resource.selectors {
+            let Some(kind) = path.info().selector.as_deref() else {
+                continue;
+            };
+            if let Some(resolution) = selectors.resolve(kind, value) {
+                resolutions.push(((address.clone(), path.clone()), resolution));
+            }
+        }
+    }
+
+    remote
+        .with_external_resolutions(resolutions)
+        .map_err(EngineError::Remote)
 }
 
 /// Builds the planner's remote snapshot. A resource whose observation the planner rejects

@@ -21,8 +21,8 @@ flat settings kind adds a spec file and nothing else: the new kind is enrolled t
 For each field the suite makes a sample value of its type (a second one for changes), notes the write
 group that carries it, and treats a `secret` or `write_only` field as a secret read from an
 environment variable. A field that defaults to the key is left out of the first document so the
-default is exercised. Selectors, unions, structs, keyed collections, `env`, and `file` fields are
-not exercised yet.
+default is exercised. A selector field gets two seeded targets (`{ name }` values the suite resolves
+to ids); unions, structs, keyed collections, `env`, and `file` fields are not exercised yet.
 
 ## Scenarios
 
@@ -37,6 +37,7 @@ Each runs in a world of its own: a fresh simulator, workspace, and engine.
 | `replace:<field>` | changing a `create_only` field removes then creates and gives a new identity |
 | `drift:<field>` | changing a field behind the engine's back plans one change naming it, and apply restores it |
 | `follow_up_rejected`, `follow_up_lost_before`, `follow_up_lost_after` | for a kind whose create does not carry every field: the follow-up write is rejected or lost; the resource exists and state describes what the create wrote, recovery settles the step without repeating the create, and one more apply finishes (skipped when the create carries everything) |
+| `selector_unmatched`, `selector_ambiguous` | a selector that names nothing, or two resources, blocks the plan with a typed diagnostic and changes nothing (skipped when the kind has no selector whose target the suite can seed) |
 | `delete`, `protected_delete` | removal sends one remove; a protected resource is refused with nothing sent |
 | `unmanaged_collision`, `ambiguous_collision` | an existing resource, or two, with the same identity block the plan and nothing is changed |
 | `partial_authority` | absence from a `partial` collection is not proof |

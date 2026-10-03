@@ -583,6 +583,56 @@ pub(crate) async fn interrupted(w: &World<'_>, step: Step, after: bool) -> Check
     Ok(Verdict::Pass)
 }
 
+/// A selector that names nothing, or two things, is not guessed at: the plan is blocked with a
+/// typed diagnostic and nothing is changed.
+pub(crate) async fn selector_unresolved(w: &World<'_>, ambiguous: bool) -> Check<Verdict> {
+    let Some(field) = w
+        .case
+        .fields
+        .iter()
+        .find(|field| matches!(field.a, crate::case::Val::Selector { .. }))
+    else {
+        return skip("the kind has no selector the suite can seed");
+    };
+    let crate::case::Val::Selector { kind, name, .. } = field.a.clone() else {
+        unreachable!("matched above");
+    };
+    let mut values = w.case.full();
+    if ambiguous {
+        w.seed_target(&kind, "twin-of-the-target", &name);
+    } else {
+        values.insert(
+            field.name.clone(),
+            crate::case::Val::Selector {
+                kind,
+                name: "nobody-has-this-name".to_owned(),
+                id: "no-such-id".to_owned(),
+            },
+        );
+    }
+
+    let plan = w.plan(&values).await?;
+    ensure!(
+        !plan.applyable(),
+        "an unresolved selector did not block the plan"
+    );
+    ensure!(
+        plan.diagnostics()
+            .iter()
+            .any(|d| d.code() == PlanDiagnosticCode::UnresolvedExternalSelector),
+        "the plan does not say which selector is unresolved: {:?}",
+        plan.diagnostics()
+    );
+    let result = w.apply(&values).await?;
+    ensure!(
+        matches!(result, Err(ApplyError::Blocked { .. })),
+        "the apply was not blocked"
+    );
+    ensure!(w.sim.mutations().is_empty(), "something was changed");
+
+    Ok(Verdict::Pass)
+}
+
 /// A create that Dokploy accepts but whose follow-up write fails or is interrupted: the
 /// resource exists and state records what the create wrote, nothing is repeated, and one more
 /// apply finishes the job.

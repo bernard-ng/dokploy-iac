@@ -56,6 +56,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Selectors in the executor (milestone M3, ADR 0007; [`docs/design/engine.md`](docs/design/engine.md#selectors)).
+  Discovery reads the collection of each selector target kind once and uses it to read ids back as
+  names, to resolve the names a document uses (a name that matches nothing or two resources blocks
+  the plan), and apply resolves again right before it writes `registryId` and the like. The
+  `application` prototype gains `registry`, `build_registry`, and `rollback_registry`. The
+  conformance suite seeds the targets of a kind's selector fields, runs update and drift on them,
+  and adds `selector_unmatched` and `selector_ambiguous`. The simulator keeps an id given to a
+  seeded object.
+
 - The leaf kinds `port` and `security` (milestone M3): two specs of 48 and 44 lines, no Rust. Both pass
   the full conformance suite (26 and 22 scenarios) as children of an application, the vision's
   `ports:` and `security:` blocks now validate (two lines closed in `docs/vision/gaps/project.txt`),

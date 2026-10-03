@@ -11,6 +11,7 @@ use dokploy_spec::{Field, FieldType, KindSpec, PathShape, parse_type};
 use serde_json::Value as Json;
 
 use crate::canonical::canonical_remote;
+use crate::selectors::SelectorIndex;
 
 /// The response key (or JSON pointer) a field is read from.
 pub(crate) fn api_name<'a>(name: &'a str, field: &'a Field) -> &'a str {
@@ -40,10 +41,14 @@ pub(crate) fn field_value(spec: &KindSpec, name: &str, item: &Json) -> Option<Js
 }
 
 /// Projects an item onto every property of the kind.
-pub(crate) fn project(spec: &KindSpec, item: &Json) -> BTreeMap<PropertyPath, PropertyObservation> {
+pub(crate) fn project(
+    spec: &KindSpec,
+    item: &Json,
+    selectors: &SelectorIndex,
+) -> BTreeMap<PropertyPath, PropertyObservation> {
     let mut observed = BTreeMap::new();
     for info in spec.properties() {
-        let observation = observe(spec, &info.path, &info, item);
+        let observation = observe(spec, &info.path, &info, item, selectors);
         observed.insert(PropertyPath::from_property_info(info), observation);
     }
 
@@ -55,6 +60,7 @@ fn observe(
     path: &str,
     info: &dokploy_spec::PropertyInfo,
     item: &Json,
+    selectors: &SelectorIndex,
 ) -> PropertyObservation {
     if info.is_sensitive() {
         return PropertyObservation::Unknown(PropertyUnknownReason::Sensitive);
@@ -65,8 +71,11 @@ fn observe(
     let Some(field) = spec.fields.get(path) else {
         return not_returned;
     };
-    if info.shape != PathShape::Atomic || info.is_selector() {
+    if info.shape != PathShape::Atomic {
         return not_returned;
+    }
+    if let Some(target) = info.selector.as_deref() {
+        return observe_selector(target, lookup(item, api_name(path, field)), selectors);
     }
     let Ok(ty) = parse_type(&field.ty) else {
         return not_returned;
@@ -96,5 +105,30 @@ fn observe(
                 PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
                 PropertyObservation::Known,
             ),
+    }
+}
+
+/// A selector as the document writes it: the name of the resource Dokploy holds the id of. No
+/// id means no resource, which for a server is the Dokploy host itself.
+fn observe_selector(
+    target: &str,
+    held: Option<&Json>,
+    selectors: &SelectorIndex,
+) -> PropertyObservation {
+    let not_returned = PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
+    let comparable = |value: Json| {
+        ComparableValue::try_from_json(value).map_or(
+            PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+            PropertyObservation::Known,
+        )
+    };
+    match held {
+        None => not_returned,
+        Some(Json::Null) if target == "server" => comparable(serde_json::json!({ "local": true })),
+        Some(Json::Null) => PropertyObservation::KnownAbsent,
+        Some(Json::String(id)) => selectors.name_of(target, id).map_or(not_returned, |name| {
+            comparable(serde_json::json!({ "name": name }))
+        }),
+        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
     }
 }

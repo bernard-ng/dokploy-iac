@@ -47,6 +47,19 @@ fields:
     type: selector(server)
     mutability: create_only
     nullable: true
+  registry:
+    api: registryId
+    type: selector(registry)
+    nullable: true
+    doc: The registry the image is pulled from.
+  build_registry:
+    api: buildRegistryId
+    type: selector(registry)
+    nullable: true
+  rollback_registry:
+    api: rollbackRegistryId
+    type: selector(registry)
+    nullable: true
   replicas:
     type: int
     min: 0
@@ -88,7 +101,7 @@ fields:
           nullable: true
 write:
   - op: application.update
-    fields: [name, description, replicas, command, args]
+    fields: [name, description, registry, build_registry, rollback_registry, replicas, command, args]
     shape: partial
   - op: application.saveEnvironment
     fields: [environment]

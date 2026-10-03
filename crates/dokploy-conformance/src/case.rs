@@ -17,6 +17,13 @@ pub(crate) enum Val {
     Json(Json),
     /// A secret: the document names an environment variable, the world sets it to this.
     Secret(String),
+    /// A resource outside the document, named by the document and held by id at Dokploy. The
+    /// world seeds it with this id.
+    Selector {
+        kind: String,
+        name: String,
+        id: String,
+    },
 }
 
 pub(crate) type Values = BTreeMap<String, Val>;
@@ -94,10 +101,41 @@ impl Case {
             let Ok(info) = spec.property(name) else {
                 continue;
             };
-            if info.shape != PathShape::Atomic
-                || info.is_selector()
-                || field.mutability == Mutability::Computed
-            {
+            if info.shape != PathShape::Atomic || field.mutability == Mutability::Computed {
+                continue;
+            }
+            if let Some(target) = info.selector.as_deref() {
+                // Only a target the suite can seed: a kind with a spec and a name to match.
+                let seedable = specs.get(target).is_some_and(|spec| {
+                    spec.parent.is_none()
+                        && spec.api.read.list.is_some()
+                        && spec.identity.key.is_some()
+                });
+                if !seedable {
+                    continue;
+                }
+                let selector = |variant: &str| Val::Selector {
+                    kind: target.to_owned(),
+                    name: format!("{name}-{variant}"),
+                    id: format!("sel-{target}-{name}-{variant}"),
+                };
+                let group = spec.write.iter().find_map(|group| match group {
+                    WriteGroup::Op { op, fields, shape } if fields.contains(name) => {
+                        Some((op.clone(), *shape, fields.clone()))
+                    }
+                    _ => None,
+                });
+                fields.push(FieldCase {
+                    name: name.clone(),
+                    wire: field.request_name(name).to_owned(),
+                    mutability: field.mutability,
+                    secret: false,
+                    required: info.is_required_on_create(),
+                    default_key: false,
+                    a: selector("a"),
+                    b: Some(selector("b")),
+                    group,
+                });
                 continue;
             }
             let Ok(ty) = parse_type(&field.ty) else {
@@ -197,7 +235,7 @@ impl Case {
             .iter()
             .filter_map(|(name, value)| match value {
                 Val::Secret(secret) => Some((env_name(name), secret.clone())),
-                Val::Json(_) => None,
+                Val::Json(_) | Val::Selector { .. } => None,
             })
             .collect()
     }
@@ -220,6 +258,7 @@ impl Case {
             let rendered = match value {
                 Val::Json(json) => json.to_string(),
                 Val::Secret(_) => format!("{{ env: {} }}", env_name(name)),
+                Val::Selector { name, .. } => format!("{{ name: {name} }}"),
             };
             fields.push(format!("{name}: {rendered}"));
         }
@@ -290,6 +329,9 @@ impl Case {
                 Some(Val::Secret(secret)) => {
                     expected.insert(field.wire.clone(), json!(secret));
                 }
+                Some(Val::Selector { id, .. }) => {
+                    expected.insert(field.wire.clone(), json!(id));
+                }
                 None if field.default_key => {
                     expected.insert(field.wire.clone(), json!(self.key));
                 }
@@ -322,7 +364,21 @@ impl Case {
             .flatten()
             .filter_map(|value| match value {
                 Val::Secret(secret) => Some(secret.clone()),
-                Val::Json(_) => None,
+                Val::Json(_) | Val::Selector { .. } => None,
+            })
+            .collect()
+    }
+
+    /// The selector targets the suite seeds before any scenario: every value of every selector
+    /// field, as (kind, id, name).
+    pub(crate) fn selector_targets(&self) -> Vec<(String, String, String)> {
+        self.fields
+            .iter()
+            .flat_map(|f| [Some(&f.a), f.b.as_ref()])
+            .flatten()
+            .filter_map(|value| match value {
+                Val::Selector { kind, name, id } => Some((kind.clone(), id.clone(), name.clone())),
+                _ => None,
             })
             .collect()
     }

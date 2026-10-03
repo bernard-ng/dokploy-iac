@@ -241,7 +241,8 @@ impl Sim {
     }
 
     /// Adds an object as if it had always been there, without a request. Returns its id.
-    /// Missing nullable fields are `null`, the id and server-owned fields are filled in.
+    /// Missing nullable fields are `null`, the id and server-owned fields are filled in; an id
+    /// in `fields` is kept.
     ///
     /// # Panics
     ///
@@ -772,10 +773,13 @@ fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
         object.insert(key.clone(), value.clone());
     }
     inner.next_id += 1;
-    object.insert(
-        spec.api.id.clone(),
-        Value::String(format!("sim-{}-{}", spec.kind, inner.next_id)),
-    );
+    // A seeded object may bring its own id, so a test can name it in advance.
+    if !fields.contains_key(&spec.api.id) {
+        object.insert(
+            spec.api.id.clone(),
+            Value::String(format!("sim-{}-{}", spec.kind, inner.next_id)),
+        );
+    }
 
     object
 }

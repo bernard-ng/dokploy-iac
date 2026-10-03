@@ -27,6 +27,19 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 Fingerprints are an HMAC-SHA-256 over instance, address, path, and value, checked against an
 independently computed vector, so a change to the framing cannot pass by agreeing with itself.
 
+## Selectors
+
+A `selector(kind)` field holds `{ name }`, or `{ local: true }` for a server, and Dokploy holds the
+target's id. Discovery reads the collection of each target kind its subjects select from (one list
+per kind, only for kinds that have a spec with a top-level collection), and that one read does
+three jobs: it turns the id Dokploy returned into the name the document uses, it resolves the
+document's name for the planner (`Resolved(id)`, `Unmatched`, `Ambiguous`, or `Unavailable`; a name
+that is not exactly one resource blocks the plan with `DOKPLAN019` and a typed reason), and apply
+reads it again before the first write so the id sent is the one that exists now. No id at Dokploy
+reads as `{ local: true }` for a server and as absent for anything else; a document's `null` for a
+server selector means the same and is compiled as `{ local: true }`. A kind with no spec yet (`server`
+until its settings milestone) is not read, so its selectors stay unresolved and block the plan.
+
 ## Apply
 
 `Engine::apply(&compiled, &store, approve)` takes the writer lock, reads the state, makes the plan
@@ -87,8 +100,6 @@ A secret cannot be read back, so an update that rotates one is never proven by o
   with the project kinds (M3). Until then the prototype `application` spec has no collection read,
   so an application is found by its recorded identity only and one that is not recorded is
   unavailable, never guessed to be absent.
-- **Selectors** (`server`, `registry`): compiled, but not resolved, so a desired selector blocks the
-  plan with `UnresolvedExternalSelector`.
 - **Composite values on the remote side**: unions, structs, and keyed collections are compiled but
   read back as "not returned", which blocks planning for a property the document manages.
 - **Secrets inside a union, struct, or collection** are refused at compile time.

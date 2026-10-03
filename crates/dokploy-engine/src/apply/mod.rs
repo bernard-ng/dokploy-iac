@@ -70,6 +70,12 @@ pub enum ApplyError {
         address: ResourceAddress,
         property: String,
     },
+    /// A selector the document sets does not resolve to exactly one resource now.
+    #[error("{address}: `{property}` does not name exactly one existing resource")]
+    UnresolvedSelector {
+        address: ResourceAddress,
+        property: String,
+    },
     /// The plan's checkpoint does not fit the resource.
     #[error("{address}: the planned checkpoint does not fit the resource")]
     InvalidCheckpoint { address: ResourceAddress },
@@ -196,7 +202,10 @@ impl<T: Transport> Engine<T> {
                         address,
                         checkpoint,
                         Some("preflight"),
-                        compiled,
+                        request::Inputs {
+                            compiled,
+                            selectors: None,
+                        },
                     )?;
                     // What the create cannot carry must be writable by a write group.
                     let deferred: Vec<&dokploy_core::PropertyPath> =

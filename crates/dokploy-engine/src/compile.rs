@@ -36,6 +36,8 @@ pub(crate) struct CompiledResource {
     pub(crate) spec_kind: String,
     /// The values of the kind's collision fields, in canonical form.
     pub(crate) collision: BTreeMap<String, serde_json::Value>,
+    /// The selectors the document sets (and does not ignore): `{ name }` or `{ local: true }`.
+    pub(crate) selectors: Vec<(PropertyPath, serde_json::Value)>,
 }
 
 impl std::fmt::Debug for Compiled {
@@ -237,6 +239,17 @@ impl Compiler<'_> {
                 .lifecycle
                 .protect
                 .map_or(ProtectionIntent::Unmanaged, ProtectionIntent::Set);
+            let selectors = resource
+                .fields
+                .iter()
+                .filter_map(|(name, field)| {
+                    let Value::Selector(selector) = &field.value else {
+                        return None;
+                    };
+                    let path = PropertyPath::from_spec(spec, name).ok()?;
+                    (!ignored.contains(&path)).then(|| (path, selector_json(selector)))
+                })
+                .collect();
             desired.insert(
                 address.clone(),
                 DesiredResource::new(properties)
@@ -250,6 +263,7 @@ impl Compiler<'_> {
                 CompiledResource {
                     spec_kind: resource.kind.clone(),
                     collision: collision_values(spec, resource),
+                    selectors,
                 },
             );
         }
@@ -374,6 +388,13 @@ impl Compiler<'_> {
             };
 
             match &field.value {
+                // No server is the Dokploy host, and the host is how a server selector is read.
+                Value::Null if matches!(&ty, FieldType::Selector(kind) if kind == "server") => {
+                    properties.insert(
+                        path(name)?,
+                        comparable(serde_json::json!({ "local": true })),
+                    );
+                }
                 Value::Null => {
                     properties.insert(path(name)?, OwnedValue::Null);
                 }
@@ -513,6 +534,13 @@ fn collision_values(spec: &KindSpec, resource: &Resource) -> BTreeMap<String, se
     }
 
     values
+}
+
+fn selector_json(selector: &dokploy_model::Selector) -> serde_json::Value {
+    match selector {
+        dokploy_model::Selector::Name(name) => serde_json::json!({ "name": name }),
+        dokploy_model::Selector::Local => serde_json::json!({ "local": true }),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {

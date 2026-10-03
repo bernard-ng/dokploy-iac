@@ -58,6 +58,10 @@ async fn an_application_conforms_with_a_follow_up_update_after_its_create() {
         "follow_up_rejected",
         "follow_up_lost_before",
         "follow_up_lost_after",
+        "update:registry",
+        "drift:build_registry",
+        "selector_unmatched",
+        "selector_ambiguous",
     ] {
         assert!(
             results

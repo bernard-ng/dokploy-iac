@@ -16,6 +16,7 @@ use super::{ApplyError, request};
 use crate::Engine;
 use crate::compile::Compiled;
 use crate::project::{item_id, project};
+use crate::selectors::SelectorIndex;
 
 /// What an apply did.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,11 +49,20 @@ pub(crate) async fn run<T: Transport>(
     state: StateFile,
     journal: OperationJournal<'_, '_>,
 ) -> Result<ApplySummary, ApplyError> {
+    // Selectors are resolved against what Dokploy holds now, once, before the first write.
+    let kinds: Vec<String> = plan
+        .changes()
+        .iter()
+        .map(|change| change.address().kind().as_str().to_owned())
+        .collect();
+    let targets = SelectorIndex::targets(&engine.specs, kinds.iter().map(String::as_str));
+    let selectors = SelectorIndex::load(&engine.transport, &engine.specs, &targets).await;
     let mut run = Run {
         engine,
         compiled,
         state,
         journal,
+        selectors,
         applied: 0,
     };
     for change in plan.changes() {
@@ -78,6 +88,7 @@ struct Run<'e, 'j, 's, T> {
     compiled: &'e Compiled,
     state: StateFile,
     journal: OperationJournal<'j, 's>,
+    selectors: SelectorIndex,
     applied: usize,
 }
 
@@ -93,6 +104,13 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 self.create(change).await
             }
             ChangeKind::Move => self.rename(change),
+        }
+    }
+
+    fn inputs(&self) -> request::Inputs<'_> {
+        request::Inputs {
+            compiled: self.compiled,
+            selectors: Some(&self.selectors),
         }
     }
 
@@ -126,7 +144,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             address,
             checkpoint,
             parent_id.as_deref(),
-            self.compiled,
+            self.inputs(),
         )?;
         let request = created.request;
         // What the create operation cannot carry is written by an update right after, as a
@@ -260,7 +278,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 group,
                 remote_id.as_str(),
                 fresh.as_ref(),
-                self.compiled,
+                self.inputs(),
             )?;
             bodies.push(OperationRequest::new(&group.operation).body(body));
         }
@@ -528,7 +546,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                     address: address.clone(),
                     code,
                 })?;
-        let observed = project(spec, &direct);
+        let observed = project(spec, &direct, &self.selectors);
         for path in paths {
             let matches = match (checkpoint.property(path), observed.get(*path)) {
                 (

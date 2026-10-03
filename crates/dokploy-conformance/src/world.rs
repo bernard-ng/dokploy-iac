@@ -41,6 +41,7 @@ impl<'c> World<'c> {
             parent_id: std::cell::RefCell::default(),
         };
         world.apply_ancestors();
+        world.seed_selector_targets();
 
         world
     }
@@ -108,6 +109,34 @@ impl<'c> World<'c> {
         session
             .checkpoint(dokploy_state::ExpectedState::absent(), &state)
             .expect("the ancestors are recorded");
+    }
+
+    /// Puts the resources the kind's selector fields point at in place, under the ids the
+    /// suite gave them.
+    fn seed_selector_targets(&self) {
+        for (kind, id, name) in self.case.selector_targets() {
+            self.seed_target(&kind, &id, &name);
+        }
+    }
+
+    /// Adds a resource a selector can point at, with the given id and name.
+    pub(crate) fn seed_target(&self, kind: &str, id: &str, name: &str) {
+        let Some(spec) = self.specs.get(kind) else {
+            return;
+        };
+        let Some(key) = spec.identity.key.as_deref() else {
+            return;
+        };
+        let Some(field) = spec.fields.get(key) else {
+            return;
+        };
+        let mut object = serde_json::Map::new();
+        object.insert(spec.api.id.clone(), Json::String(id.to_owned()));
+        object.insert(
+            field.request_name(key).to_owned(),
+            Json::String(name.to_owned()),
+        );
+        self.sim.seed(kind, &Json::Object(object));
     }
 
     /// Adds a resource of the kind that nobody manages, attached to the seeded parent.
@@ -354,6 +383,7 @@ impl Val {
         match self {
             Val::Json(json) => json.clone(),
             Val::Secret(secret) => Json::String(secret.clone()),
+            Val::Selector { id, .. } => Json::String(id.clone()),
         }
     }
 }

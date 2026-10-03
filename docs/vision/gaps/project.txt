@@ -3,7 +3,6 @@ DOKDOC004 project.env
 DOKDOC004 project.environments.production.compose
 DOKDOC004 project.environments.staging.applications.api.build
 DOKDOC004 project.environments.staging.applications.api.build_args
-DOKDOC004 project.environments.staging.applications.api.build_registry
 DOKDOC004 project.environments.staging.applications.api.build_secrets
 DOKDOC004 project.environments.staging.applications.api.build_server
 DOKDOC004 project.environments.staging.applications.api.create_env_file
@@ -17,9 +16,7 @@ DOKDOC004 project.environments.staging.applications.api.mounts
 DOKDOC004 project.environments.staging.applications.api.networks
 DOKDOC004 project.environments.staging.applications.api.patches
 DOKDOC004 project.environments.staging.applications.api.preview
-DOKDOC004 project.environments.staging.applications.api.registry
 DOKDOC004 project.environments.staging.applications.api.resources
-DOKDOC004 project.environments.staging.applications.api.rollback_registry
 DOKDOC004 project.environments.staging.applications.api.schedules
 DOKDOC004 project.environments.staging.applications.api.swarm
 DOKDOC004 project.environments.staging.applications.api.traefik_config
