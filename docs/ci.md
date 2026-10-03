@@ -73,6 +73,21 @@ name, runner label, workspace path, secret scope, and repository-specific
 configuration path. Configure required reviewers and deployment restrictions
 on the `production` GitHub Environment before enabling apply.
 
+## Live engine test
+
+`engine-live` runs `scripts/integration/test-engine-live.sh` for every Dokploy version in
+`specs/versions.yaml` that has fixtures (0.30.6 and 0.30.7): the v2 engine applies, converges,
+updates, detects drift, rotates a secret, recovers, and removes a `tag` and a `registry` against the
+digest-pinned image. It is the live half of what the simulator copies
+([ADR 0015](decisions/0015-testing-simulator-and-live-contracts.md)); the registry part starts a
+throwaway `registry:2` because Dokploy runs `docker login` on create. Locally:
+
+```bash
+scripts/integration/reset.sh && scripts/integration/up.sh
+export DOKPLOY_FINGERPRINT_KEY="0199a0c8-2351-7c31-8899-2c8f81983ea5:$(openssl rand -hex 32)"
+scripts/integration/test-engine-live.sh
+```
+
 ## Capturing fixtures
 
 Live fixtures are recorded by the manually dispatched **Capture fixtures** workflow

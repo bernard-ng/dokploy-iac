@@ -141,3 +141,41 @@ jobs:
       - name: Reset disposable Dokploy stack
         if: ${{ always() }}
         run: scripts/integration/reset.sh
+
+  engine-live:
+    name: Engine against Dokploy ${{ matrix.version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["0.30.6", "0.30.7"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Resolve the digest-pinned image
+        env:
+          VERSION: ${{ matrix.version }}
+        run: |
+          image="$(cargo xtask versions --image "$VERSION")"
+          {
+            echo "DOKPLOY_VERSION=v$VERSION"
+            echo "DOKPLOY_IMAGE=$image"
+          } >> "$GITHUB_ENV"
+
+      - name: Start the pinned Dokploy
+        run: scripts/integration/up.sh
+
+      - name: Create an ephemeral fingerprint key
+        shell: bash
+        run: |
+          printf 'DOKPLOY_FINGERPRINT_KEY=0199a0c8-2351-7c31-8899-2c8f81983ea5:%s\n' \
+            "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Run the engine against it
+        run: scripts/integration/test-engine-live.sh
+
+      - name: Reset disposable Dokploy stack
+        if: ${{ always() }}
+        run: scripts/integration/reset.sh

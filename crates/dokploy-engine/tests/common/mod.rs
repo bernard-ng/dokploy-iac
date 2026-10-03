@@ -144,3 +144,12 @@ pub fn empty_settings_state(engine: &Engine<impl Transport>) -> StateFile {
         dokploy_state::DocumentId::Settings,
     )
 }
+
+/// Like [`compile`], for an engine over any transport and a plain list of variables.
+pub fn compile_with<T: Transport>(
+    engine: &Engine<T>,
+    text: &str,
+    environment: &[(&str, &str)],
+) -> Compiled {
+    compile(engine, text, environment)
+}

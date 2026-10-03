@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- A live acceptance test of the engine (`crates/dokploy-engine/tests/live.rs`,
+  `scripts/integration/test-engine-live.sh`, CI job `engine-live`; milestone M2, ADR 0015). Against the
+  digest-pinned Dokploy it applies, converges, updates, detects drift, rotates a secret, recovers, and
+  removes a `tag` and a `registry`, including the quirk that a registry whose `docker login` is rejected
+  is still saved. It passes on **0.30.6 and 0.30.7**.
 - The golden ledger records what the v2 engine now covers (milestone M2, ADR 0016): of the 55
   legacy scenarios for `tag`, `registry`, and `redirect`, **37 are covered** (each names the
   conformance scenario or engine test that proves it), 1 is dropped with its reason, and 17 stay
