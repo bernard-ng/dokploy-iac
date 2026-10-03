@@ -1,5 +1,4 @@
 DOKDOC004 moves
-DOKDOC004 project.env
 DOKDOC004 project.environments.production.compose
 DOKDOC004 project.environments.staging.applications.api.build
 DOKDOC004 project.environments.staging.applications.api.build_server
@@ -19,7 +18,6 @@ DOKDOC004 project.environments.staging.applications.api.traefik_config
 DOKDOC004 project.environments.staging.applications.api.volume_backups
 DOKDOC004 project.environments.staging.applications.site-static.build
 DOKDOC004 project.environments.staging.compose
-DOKDOC004 project.environments.staging.env
 DOKDOC004 project.environments.staging.libsql
 DOKDOC004 project.environments.staging.postgres.main.backups
 DOKDOC004 project.environments.staging.postgres.main.detach_dokploy_network

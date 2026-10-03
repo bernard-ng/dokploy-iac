@@ -96,6 +96,14 @@ impl MutationContract {
         self
     }
 
+    /// Stops requiring a property at creation while still allowing it. The spec says a field has
+    /// no default; the create operation may still not need it.
+    #[must_use]
+    pub fn optional_on_create(mut self, path: &PropertyPath) -> Self {
+        self.required_on_create.remove(path);
+        self
+    }
+
     /// Allows a property to be supplied at creation without requiring it.
     #[must_use]
     pub fn allowing_on_create(mut self, path: PropertyPath) -> Self {

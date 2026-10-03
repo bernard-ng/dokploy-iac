@@ -12,6 +12,7 @@
 mod apply;
 mod canonical;
 mod compile;
+mod contract;
 mod discover;
 mod envtext;
 mod fingerprint;
@@ -32,6 +33,7 @@ use thiserror::Error;
 
 pub use apply::{ApplyError, ApplySummary};
 pub use compile::{AddressError, CompileError, Compiled};
+pub use contract::required_at_creation;
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
 pub use recover::{RecoverError, RecoveryAction, RecoveryPreview, RecoverySummary};
 pub use secrets::{MAX_SOURCE_BYTES, SecretError, SecretReader, WorkspaceSecrets};

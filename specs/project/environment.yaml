@@ -1,4 +1,4 @@
-# PROTOTYPE (coverage: partial). Completed in milestone M3.
+# PROTOTYPE (coverage: partial). The environment's `isDefault` and duplication are not configuration.
 kind: environment
 scope: project
 parent: project
@@ -29,10 +29,14 @@ fields:
     default: key
   description:
     type: text
-    nullable: true
+    doc: Dokploy takes a text here, not null.
+  env:
+    type: env
+    granularity: key
+    doc: Variables shared by everything below.
 write:
   - op: environment.update
-    fields: [name, description]
+    fields: [name, description, env]
     shape: partial
 children:
   - { kind: application, section: applications }

@@ -123,7 +123,7 @@ impl Case {
                 wire: info.request_key().to_owned(),
                 mutability: info.mutability,
                 secret,
-                required: info.is_required_on_create(),
+                required: dokploy_engine::required_at_creation(spec, &info),
                 default_key,
                 a,
                 b,
@@ -187,7 +187,7 @@ impl Case {
                 .get(&name)
                 .is_some_and(|field| field.default.as_deref() == Some("key"));
             let Some(a) = a else {
-                if info.is_required_on_create() {
+                if dokploy_engine::required_at_creation(spec, &info) {
                     return Err(format!(
                         "cannot make a sample value for required field `{name}`"
                     ));

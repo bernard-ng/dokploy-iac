@@ -1,5 +1,5 @@
-# PROTOTYPE (coverage: partial). The root of a project document; only enough
-# fields to exercise the hierarchy. Completed in milestone M3.
+# PROTOTYPE (coverage: partial). The root of a project document. Its tags are a relation
+# (a hook) and arrive with the tag membership work.
 kind: project
 scope: project
 section: project
@@ -28,9 +28,13 @@ fields:
   description:
     type: text
     nullable: true
+  env:
+    type: env
+    granularity: key
+    doc: Variables shared by everything below.
 write:
   - op: project.update
-    fields: [name, description]
+    fields: [name, description, env]
     shape: partial
 children:
   - { kind: environment, section: environments }

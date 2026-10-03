@@ -91,6 +91,7 @@ fields:
     api: env
     type: env
     granularity: key
+    nullable: true
     needs_deploy: true
   external_port:
     api: externalPort

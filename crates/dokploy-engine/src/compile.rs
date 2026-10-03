@@ -395,6 +395,10 @@ impl Compiler<'_> {
                         comparable(serde_json::json!({ "local": true })),
                     );
                 }
+                // An environment block Dokploy cannot hold as `null` is cleared by being empty.
+                Value::Null if matches!(ty, FieldType::Env) && !spec_field.nullable => {
+                    properties.insert(path(name)?, OwnedValue::EmptyCollection);
+                }
                 Value::Null => {
                     properties.insert(path(name)?, OwnedValue::Null);
                 }

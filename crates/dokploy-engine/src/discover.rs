@@ -610,7 +610,7 @@ fn build(
             .filter_map(|(address, (kind, _))| {
                 specs
                     .get(kind)
-                    .map(|spec| (address.clone(), MutationContract::from_spec(spec)))
+                    .map(|spec| (address.clone(), crate::contract::mutation_contract(spec)))
             })
             .collect();
         match RemoteState::try_new_with_contracts(instance.clone(), observations, contracts) {

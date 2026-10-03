@@ -56,6 +56,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The project and the environment gain `env` (their shared variables, milestone M3), the environment passes the
+  conformance suite for the fields it carries, and creation requirements follow the create operation
+  (`dokploy_engine::required_at_creation`, `MutationContract::optional_on_create`): a field the spec gives no
+  default is required to create only when the create operation requires it, so an image, a replica count, or
+  `create_env_file` can be left out and Dokploy's own default stands. An environment block that Dokploy cannot hold
+  as `null` is cleared by being empty.
+
 - Struct members and environment blocks in the executor (milestone M3, ADR 0004;
   [`docs/design/engine.md`](docs/design/engine.md#structs-and-environment-blocks)). A struct planned
   per member (`resources.memory_limit`) reads and writes each member under the key of its own, in
