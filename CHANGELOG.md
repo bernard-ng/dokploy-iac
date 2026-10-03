@@ -56,6 +56,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis` (milestone M3): five specs of about
+  60 lines, no Rust, each found in the collection `environment.one` embeds. They pass the conformance
+  suite for the fields they carry (39 to 44 scenarios each; the swarm settings, resource limits,
+  networks, and environment block wait for struct and env values in the executor, so they stay
+  `coverage: partial`), and 61 of their legacy ledger scenarios are classified. `libsql` waits for the
+  decision on unions (its `node`). Whether a password change reaches a running database through
+  `update` (as the spec says) or through `changePassword` is to be verified in the live suite.
+
 - Selectors in the executor (milestone M3, ADR 0007; [`docs/design/engine.md`](docs/design/engine.md#selectors)).
   Discovery reads the collection of each selector target kind once and uses it to read ids back as
   names, to resolve the names a document uses (a name that matches nothing or two resources blocks

@@ -72,3 +72,34 @@ async fn an_application_conforms_with_a_follow_up_update_after_its_create() {
         );
     }
 }
+
+/// Prototype kinds (partial coverage) that already conform for the fields they carry. They are
+/// run by name because the suite enrols full-coverage kinds on its own.
+#[tokio::test]
+async fn the_databases_conform_for_the_fields_they_carry() {
+    let specs = load_dir(&root().join("specs")).expect("repository specs are valid");
+    let suite = Suite::new(specs, root().join("fixtures/api/live/v0.30.6"));
+
+    let mut results = Vec::new();
+    for kind in ["postgres", "mysql", "mariadb", "mongo", "redis"] {
+        results.extend(suite.run(kind).await);
+    }
+
+    println!("{}", report(&results));
+    let failures: Vec<_> = results
+        .iter()
+        .filter(|r| matches!(r.outcome, Outcome::Fail(_)))
+        .collect();
+    assert!(failures.is_empty(), "{}", report(&results));
+    for kind in ["postgres", "mysql", "mariadb", "mongo", "redis"] {
+        let ran = results
+            .iter()
+            .filter(|r| r.kind == kind && r.outcome == Outcome::Pass)
+            .count();
+        assert!(
+            ran >= 30,
+            "`{kind}` ran only {ran} scenarios: {}",
+            report(&results)
+        );
+    }
+}

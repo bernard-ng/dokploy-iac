@@ -16,9 +16,9 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::direct_404_conflicting_with_a_renamed_search_identity_blocks_planning",
@@ -35,9 +35,9 @@
         "PROJECT"
       ],
       "category": "move",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::direct_404_conflicting_with_identity_in_another_environment_blocks_planning",
@@ -52,8 +52,8 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `foreign_collection_item`, `foreign_direct_read`",
       "reason": null
     },
     {
@@ -71,9 +71,9 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::direct_postgres_identity_must_match_the_requested_stored_id",
@@ -107,8 +107,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance postgres `foreign_collection_item`",
       "reason": null
     },
     {
@@ -124,8 +124,8 @@
         "PROJECT"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `ambiguous_collision`, `foreign_collection_item`",
       "reason": null
     },
     {
@@ -143,8 +143,8 @@
         "PROJECT"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `ambiguous_collision`, `foreign_collection_item`",
       "reason": null
     },
     {
@@ -202,9 +202,9 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::invalid_postgres_search_identity_is_rejected",
@@ -221,9 +221,9 @@
         "PROJECT"
       ],
       "category": "document",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::malformed_postgres_pagination_is_an_invalid_response",
@@ -240,9 +240,9 @@
         "PROJECT"
       ],
       "category": "document",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::managed_postgres_in_another_environment_fails_closed",
@@ -259,8 +259,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `foreign_collection_item`, `foreign_direct_read`",
       "reason": null
     },
     {
@@ -278,8 +278,8 @@
         "PROJECT"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -316,8 +316,8 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "core planner_properties `a_property_the_remote_did_not_return_makes_the_plan_incomplete`",
       "reason": null
     },
     {
@@ -335,8 +335,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
       "reason": null
     },
     {
@@ -396,8 +396,8 @@
         "PROJECT"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -451,9 +451,9 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-cli/tests/postgres_remote::state_backed_postgres_removal_is_observed_by_remote_id",
@@ -470,8 +470,8 @@
         "PROJECT"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `delete` (the removal is by the recorded remote id)",
       "reason": null
     },
     {
@@ -489,8 +489,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres `read_failure`",
       "reason": null
     },
     {
@@ -508,9 +508,9 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-sdk/tests/postgres::postgres_by_environment_rejects_unstable_or_incomplete_pagination",
@@ -523,9 +523,9 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-sdk/tests/postgres::postgres_details_expose_only_safe_reconciliation_fields",
@@ -540,8 +540,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -561,8 +561,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance postgres canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -576,9 +576,9 @@
       "fixtures": [],
       "data": [],
       "category": "noop",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     }
   ]
 }

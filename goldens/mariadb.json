@@ -16,8 +16,8 @@
       "fixtures": [],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -31,8 +31,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `ambiguous_collision`, `foreign_collection_item`",
       "reason": null
     },
     {
@@ -46,8 +46,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `ambiguous_collision`, `foreign_collection_item`",
       "reason": null
     },
     {
@@ -64,8 +64,8 @@
       ],
       "data": [],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
       "reason": null
     },
     {
@@ -79,8 +79,8 @@
       "fixtures": [],
       "data": [],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `update:*` (only the write group's fields are sent)",
       "reason": null
     },
     {
@@ -94,8 +94,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
       "reason": null
     },
     {
@@ -124,8 +124,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
       "reason": null
     },
     {
@@ -139,8 +139,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `read_failure`",
       "reason": null
     },
     {
@@ -158,9 +158,9 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-sdk/tests/mariadb::mariadb_by_environment_rejects_ambiguous_pagination",
@@ -173,9 +173,9 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-sdk/tests/mariadb::mariadb_create_supports_an_optional_root_password_without_leaking_secrets",
@@ -192,8 +192,8 @@
       ],
       "data": [],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -213,8 +213,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -228,8 +228,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -245,8 +245,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `rejected_create`, `unknown_{create,update,delete}_{before,after}` and the canary scan",
       "reason": null
     },
     {
@@ -262,8 +262,8 @@
       "fixtures": [],
       "data": [],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mariadb `update:*` (only the write group's fields are sent)",
       "reason": null
     }
   ]

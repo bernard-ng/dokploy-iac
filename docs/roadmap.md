@@ -82,7 +82,8 @@ so they do not move when a spec does.
 
 Started. Done: the vision ratchet (`docs/vision/gaps/`: what the parser still rejects of the two
 vision documents; both lists are to reach zero); follow-up writes after a create; the leaf kinds
-`redirect`, `port`, and `security` (specs only, full conformance). Next: the kinds that attach to
+`redirect`, `port`, and `security` (specs only, full conformance); selectors in the executor; the
+databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis` (specs only, partial coverage). Next: the kinds that attach to
 several parents (`mount`, `schedule`, `domain`, `backup`, `volume_backup`, `patch`), which need a
 decision on how a spec names more than one parent; the application `source` union, which needs a
 decision on how a union is planned (per member, so omitted members are unmanaged and secrets inside

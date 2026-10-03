@@ -20,8 +20,8 @@
         "PROJECT"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -39,8 +39,8 @@
         "PROJECT"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -58,8 +58,8 @@
         "PROJECT"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `update:*` (only the write group's fields are sent)",
       "reason": null
     },
     {
@@ -96,8 +96,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
       "reason": null
     },
     {
@@ -115,8 +115,8 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `read_failure`",
       "reason": null
     },
     {
@@ -134,9 +134,9 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-sdk/tests/mysql::mysql_by_environment_rejects_unstable_or_incomplete_pagination",
@@ -149,9 +149,9 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the collection is the array environment.one embeds; there is no paged search to read"
     },
     {
       "id": "dokploy-sdk/tests/mysql::mysql_create_requires_both_passwords_and_returns_its_identity",
@@ -170,8 +170,8 @@
       ],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -187,8 +187,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -208,8 +208,8 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql canary scan of every scenario; engine discovery_safety `fields_the_spec_does_not_know_are_ignored`",
       "reason": null
     },
     {
@@ -223,8 +223,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `create`, `create_minimal`; dokploy-model parse (types, ranges, required fields are checked before anything is sent)",
       "reason": null
     },
     {
@@ -240,8 +240,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `rejected_create`, `unknown_{create,update,delete}_{before,after}` and the canary scan",
       "reason": null
     },
     {
@@ -260,8 +260,8 @@
       "fixtures": [],
       "data": [],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance mysql `update:*` (only the write group's fields are sent)",
       "reason": null
     }
   ]

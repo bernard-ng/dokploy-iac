@@ -1,0 +1,98 @@
+# PROTOTYPE (coverage: partial). A database of an environment. The swarm settings, resource
+# limits, networks, and the environment block need struct and env values in the executor and
+# are still unclassified requests.
+#
+# Live facts (fixtures/api/live/*/mongo-*): create answers the whole object, update answers
+# `true`, remove answers the removed object, and the collection is the `mongo` array that
+# the environment's direct read embeds (assumed from `project.one`: to verify in the live suite).
+# Password changes after create go through `update` here; whether Dokploy applies them to a
+# running database (it also has `changePassword`) is to be verified in the live suite.
+kind: mongo
+scope: project
+parent: environment
+section: mongo
+title: Mongo database
+class: managed
+coverage: partial
+identity:
+  key: name
+  collision: [name]
+  address: "mongo.{key}"
+api:
+  id: mongoId
+  create:
+    op: mongo.create
+    attach: { environmentId: parent_id }
+  update: { op: mongo.update }
+  remove: { op: mongo.remove }
+  deploy: { op: mongo.deploy }
+  read:
+    list:
+      embedded_in: { parent_op: environment.one, pointer: /mongo }
+      authority: authoritative
+    one: { op: mongo.one, id_param: mongoId }
+  create_identity:
+    from_response: /mongoId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  app_name:
+    api: appName
+    type: text
+    mutability: create_only
+    nullable: true
+    doc: Dokploy's Docker-level name; generated when omitted.
+  description:
+    type: text
+    nullable: true
+  server:
+    api: serverId
+    type: selector(server)
+    mutability: create_only
+    nullable: true
+  image:
+    api: dockerImage
+    type: text
+    min_len: 1
+  command:
+    type: text
+    nullable: true
+    needs_deploy: true
+  args:
+    type: list<text>
+    nullable: true
+    needs_deploy: true
+  username:
+    api: databaseUser
+    type: text
+    min_len: 1
+  password:
+    api: databasePassword
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    needs_deploy: true
+  replica_sets:
+    api: replicaSets
+    type: bool
+    mutability: create_only
+    nullable: true
+  external_port:
+    api: externalPort
+    type: int
+    min: 1
+    max: 65535
+    nullable: true
+  replicas:
+    type: int
+    min: 0
+    needs_deploy: true
+write:
+  - op: mongo.update
+    fields: [name, description, image, command, args, username, password, external_port, replicas]
+    shape: partial
+ledger:
+  readonly: [createdAt, applicationStatus]

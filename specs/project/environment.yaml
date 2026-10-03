@@ -36,3 +36,8 @@ write:
     shape: partial
 children:
   - { kind: application, section: applications }
+  - { kind: postgres, section: postgres }
+  - { kind: mysql, section: mysql }
+  - { kind: mariadb, section: mariadb }
+  - { kind: mongo, section: mongo }
+  - { kind: redis, section: redis }
