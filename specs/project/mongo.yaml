@@ -107,9 +107,26 @@ fields:
     type: int
     min: 0
     needs_deploy: true
+  swarm:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    doc: Docker Swarm service settings, each member as Docker's own JSON. A member left out is unmanaged.
+    members:
+      health_check: { api: healthCheckSwarm, type: "blob(swarm-health-check)", nullable: true }
+      restart_policy: { api: restartPolicySwarm, type: "blob(swarm-restart-policy)", nullable: true }
+      placement: { api: placementSwarm, type: "blob(swarm-placement)", nullable: true }
+      update_config: { api: updateConfigSwarm, type: "blob(swarm-update-config)", nullable: true }
+      rollback_config: { api: rollbackConfigSwarm, type: "blob(swarm-rollback-config)", nullable: true }
+      mode: { api: modeSwarm, type: "blob(swarm-mode)", nullable: true }
+      labels: { api: labelsSwarm, type: "blob(swarm-labels)", nullable: true }
+      networks: { api: networkSwarm, type: "blob(swarm-networks)", nullable: true }
+      stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
+      endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
+      ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
 write:
   - op: mongo.update
-    fields: [name, description, image, command, args, username, password, resources, detach_dokploy_network, external_port, replicas]
+    fields: [name, description, image, command, args, username, password, resources, detach_dokploy_network, external_port, replicas, swarm]
     shape: partial
   - op: mongo.saveEnvironment
     fields: [environment]

@@ -166,7 +166,13 @@ fn observe_environment(info: &dokploy_spec::PropertyInfo, item: &Json) -> Proper
 
 /// One variable of an environment block: there, or not. Its value is secret and never read.
 fn observe_entry(info: &dokploy_spec::PropertyInfo, item: &Json) -> PropertyObservation {
-    let key = info.path.split_once('.').map_or("", |(_, key)| key);
+    // The entry is named below the path of its block, which may itself be a struct member.
+    let key = info
+        .root
+        .as_deref()
+        .and_then(|root| info.path.strip_prefix(root))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .unwrap_or_default();
     match lookup(item, &info.api) {
         None => PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
         Some(Json::Null) => PropertyObservation::KnownAbsent,

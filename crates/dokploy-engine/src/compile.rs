@@ -601,6 +601,36 @@ impl Compiler<'_> {
                                 properties.insert(path(&dotted)?, OwnedValue::Null);
                                 continue;
                             }
+                            Value::Source(source) => {
+                                let bytes = self.read(address, &dotted, source)?;
+                                properties
+                                    .insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
+                                secrets.insert((address.clone(), dotted), bytes);
+                                continue;
+                            }
+                            // An environment block that is a member of a struct is planned like
+                            // one of the kind's own, under the path of the member.
+                            Value::Env(variables) if variables.is_empty() => {
+                                properties.insert(path(&dotted)?, OwnedValue::EmptyCollection);
+                                continue;
+                            }
+                            Value::Env(variables) => {
+                                for (variable, value) in variables {
+                                    let entry = format!("{dotted}.{variable}");
+                                    let bytes = match value {
+                                        EnvValue::Public(text) => zeroizing(text.as_bytes()),
+                                        EnvValue::Secret(source) => {
+                                            self.read(address, &entry, source)?
+                                        }
+                                    };
+                                    properties.insert(
+                                        path(&entry)?,
+                                        self.receipt(address, &entry, &bytes),
+                                    );
+                                    secrets.insert((address.clone(), entry), bytes);
+                                }
+                                continue;
+                            }
                             other => {
                                 let member_type = spec_field
                                     .members

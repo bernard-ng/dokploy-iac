@@ -603,6 +603,27 @@ pub(crate) fn group_body(
                     reason: "is not a property of the kind",
                 })?;
             let wire = path.info().request_key().to_owned();
+            // An environment block that is a member of a struct is one text, like the kind's own.
+            if path.info().shape == PathShape::CollectionRoot
+                && matches!(path.info().ty, FieldType::Env)
+            {
+                let prefix = format!("{dotted}.");
+                let changed = group
+                    .written
+                    .iter()
+                    .any(|written| *written == dotted || written.starts_with(&prefix));
+                if changed {
+                    body.insert(
+                        wire.clone(),
+                        environment_text(spec, address, checkpoint, &dotted, &wire, fresh, inputs)?,
+                    );
+                } else if group.shape == Shape::Full
+                    && let Some(current) = fresh.and_then(|fresh| fresh.get(&wire))
+                {
+                    body.insert(wire, current.clone());
+                }
+                continue;
+            }
             if group.written.contains(&dotted) {
                 body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
                 continue;
@@ -668,7 +689,10 @@ fn environment_text(
             continue;
         }
         let dotted = path.to_string();
-        let key = dotted.split_once('.').map_or("", |(_, key)| key);
+        let key = dotted
+            .strip_prefix(name)
+            .and_then(|rest| rest.strip_prefix('.'))
+            .unwrap_or_default();
         let value = match secret_text(inputs.compiled, address, &dotted)? {
             Json::String(value) => value,
             _ => return Err(unsupported("has a variable that is not text")),

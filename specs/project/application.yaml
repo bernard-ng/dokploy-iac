@@ -81,6 +81,9 @@ fields:
       limit: { api: previewLimit, type: int, min: 1, nullable: true }
       require_collaborator_permissions: { api: previewRequireCollaboratorPermissions, type: bool, nullable: true }
       labels: { api: previewLabels, type: "list<text>", nullable: true }
+      environment: { api: previewEnv, type: env, granularity: key, nullable: true }
+      build_args: { api: previewBuildArgs, type: env, granularity: key, nullable: true }
+      build_secrets: { api: previewBuildSecrets, type: env, granularity: key, nullable: true }
   registry:
     api: registryId
     type: selector(registry)
@@ -219,9 +222,26 @@ fields:
           class: secret
           mutability: write_only
           nullable: true
+  swarm:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    doc: Docker Swarm service settings, each member as Docker's own JSON. A member left out is unmanaged.
+    members:
+      health_check: { api: healthCheckSwarm, type: "blob(swarm-health-check)", nullable: true }
+      restart_policy: { api: restartPolicySwarm, type: "blob(swarm-restart-policy)", nullable: true }
+      placement: { api: placementSwarm, type: "blob(swarm-placement)", nullable: true }
+      update_config: { api: updateConfigSwarm, type: "blob(swarm-update-config)", nullable: true }
+      rollback_config: { api: rollbackConfigSwarm, type: "blob(swarm-rollback-config)", nullable: true }
+      mode: { api: modeSwarm, type: "blob(swarm-mode)", nullable: true }
+      labels: { api: labelsSwarm, type: "blob(swarm-labels)", nullable: true }
+      networks: { api: networkSwarm, type: "blob(swarm-networks)", nullable: true }
+      stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
+      endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
+      ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
 write:
   - op: application.update
-    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache]
+    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache, swarm]
     shape: partial
   - op: application.saveEnvironment
     fields: [environment, build_args, build_secrets, create_env_file]

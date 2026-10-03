@@ -675,6 +675,8 @@ fn sample_type(
             Some(json!(value))
         }
         FieldType::Bool => Some(json!(variant == 0)),
+        // Any JSON object stands for a blob: it is compared whole.
+        FieldType::Blob(_) => Some(json!({ "Sample": format!("{name}-{}", ["a", "b"][variant]) })),
         FieldType::Enum(values) => values
             .get(variant)
             .or_else(|| values.first())
