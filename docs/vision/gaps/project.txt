@@ -19,7 +19,3 @@ DOKDOC004 project.environments.staging.postgres.main.schedules
 DOKDOC004 project.environments.staging.postgres.main.swarm
 DOKDOC004 project.environments.staging.postgres.main.volume_backups
 DOKDOC004 project.tags
-DOKDOC006 project.environments.staging.applications.admin-bitbucket.source.type
-DOKDOC006 project.environments.staging.applications.admin-git.source.type
-DOKDOC006 project.environments.staging.applications.admin-gitea.source.type
-DOKDOC006 project.environments.staging.applications.admin-gitlab.source.type

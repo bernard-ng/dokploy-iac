@@ -86,7 +86,7 @@ Started. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `
 `source` (91 to 101 scenarios per arm). Engine work the kinds needed: follow-up writes after a create, selectors, struct
 members and environment blocks, creation requirements that follow the create operation, and
 `moves` and `removed`. The vision ratchet (`docs/vision/gaps/`) counts what the parser still
-rejects of the two vision documents: 28 lines for the project document, 19 for the settings one.
+rejects of the two vision documents: 21 lines for the project document, 19 for the settings one.
 
 Both decisions that blocked the rest are made ([ADR 0018](decisions/0018-several-parents-and-per-member-unions.md)):
 a kind may have several parents (`mount`, `domain`), and a union is planned per member (the
