@@ -867,6 +867,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "dokploy-conformance"
+version = "0.1.0"
+dependencies = [
+ "dokploy-core",
+ "dokploy-engine",
+ "dokploy-sdk",
+ "dokploy-sim",
+ "dokploy-spec",
+ "dokploy-state",
+ "semver",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "dokploy-core"
 version = "0.1.0"
 dependencies = [

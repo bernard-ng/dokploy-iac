@@ -3,6 +3,7 @@ members = [
     "crates/dokploy-api",
     "crates/dokploy-cli",
     "crates/dokploy-config",
+    "crates/dokploy-conformance",
     "crates/dokploy-core",
     "crates/dokploy-engine",
     "crates/dokploy-model",
@@ -27,6 +28,7 @@ clap_complete = "4.6.11"
 directories = "6.0.0"
 dokploy-api = { path = "crates/dokploy-api", version = "0.1.0" }
 dokploy-config = { path = "crates/dokploy-config", version = "0.1.0" }
+dokploy-conformance = { path = "crates/dokploy-conformance", version = "0.1.0" }
 dokploy-core = { path = "crates/dokploy-core", version = "0.1.0" }
 dokploy-engine = { path = "crates/dokploy-engine", version = "0.1.0" }
 dokploy-model = { path = "crates/dokploy-model", version = "0.1.0" }

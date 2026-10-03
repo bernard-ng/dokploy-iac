@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The conformance suite (`dokploy-conformance`, milestone M2, ADR 0015;
+  [`docs/design/conformance.md`](docs/design/conformance.md)). It derives test scenarios from a kind's
+  spec and runs them through the real engine against the simulator: create, minimal create,
+  convergence, an update per field (exactly its write group is sent), a replacement per `create_only`
+  field, drift per field, delete and protected delete, an unmanaged and an ambiguous resource with the
+  same identity, an unreadable remote, a declined plan, a rejected create, and a mutation interrupted
+  before and after Dokploy applies it for create, update, and delete, each settled by recovery without
+  being repeated. Every scenario scans the workspace and its output for canary secrets. `registry`
+  and `tag` pass 45 scenarios between them with no per-kind test code, and a new flat kind is enrolled
+  by its spec alone. The suite is itself tested by breaking specs on purpose.
 - Recovery in `dokploy-engine` (milestone M2, ADR 0008; [`docs/design/engine.md`](docs/design/engine.md#recovery)).
   `Engine::recover` settles an apply that stopped between sending a mutation and recording its
   result, from fresh evidence and never by repeating the mutation: a lost create is adopted by finding

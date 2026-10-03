@@ -464,6 +464,10 @@
       "reason": "The v2 engine; not legacy."
     },
     {
+      "path": "crates/dokploy-conformance/",
+      "reason": "The v2 conformance suite (ADR 0015); not legacy."
+    },
+    {
       "path": "crates/dokploy-sim/",
       "reason": "The v2 simulator (ADR 0015); not legacy."
     },
