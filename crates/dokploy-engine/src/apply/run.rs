@@ -623,7 +623,14 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                     address: address.clone(),
                     code,
                 })?;
-        let observed = project(spec, &direct, &self.selectors, &[]);
+        // The members of a set of selectors are named by the document, so they are observed by
+        // name: the ones it keeps, and the ones it dropped.
+        let members: Vec<PropertyPath> = paths
+            .iter()
+            .filter(|path| path.info().root.is_some() && path.info().selector.is_some())
+            .map(|path| (*path).clone())
+            .collect();
+        let observed = project(spec, &direct, &self.selectors, &members);
         for path in paths {
             let matches = match (checkpoint.property(path), observed.get(*path)) {
                 (

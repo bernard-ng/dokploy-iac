@@ -293,6 +293,14 @@ pub(crate) fn materialize(
     sensitive: &mut Vec<(SensitivePropertyPath, SensitiveFingerprint)>,
 ) -> Result<(), CheckpointMaterializationError> {
     let invalid = || CheckpointMaterializationError::InvalidPropertyShape;
+    // A member of a set of selectors that was cleared is simply no longer a member: nothing of it
+    // is kept, so the next plan has nothing to relinquish.
+    if matches!(value, OwnedValue::Null)
+        && info.shape == PathShape::CollectionEntry
+        && info.selector.is_some()
+    {
+        return Ok(());
+    }
     let stored = match value {
         OwnedValue::Null => Value::Null,
         OwnedValue::EmptyCollection => Value::Object(serde_json::Map::new()),

@@ -239,9 +239,16 @@ fields:
       stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
       endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
       ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
+  networks:
+    api: networkIds
+    type: "set<selector(network)>"
+    granularity: key
+    nullable: true
+    needs_deploy: true
+    doc: The networks the service attaches to, each named by a `network` of the settings. Left out, the attachments are unmanaged; `[]` detaches from all of them.
 write:
   - op: application.update
-    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache, swarm]
+    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args, clean_cache, swarm, networks]
     shape: partial
   - op: application.saveEnvironment
     fields: [environment, build_args, build_secrets, create_env_file]

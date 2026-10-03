@@ -274,6 +274,26 @@ impl DesiredState {
         self
     }
 
+    /// Owns the given properties as cleared (`null`) where the document does not own them: the
+    /// members of a set the document dropped, which it now declares to be exactly what it names.
+    #[must_use]
+    pub fn with_cleared_properties(
+        mut self,
+        cleared: BTreeMap<ResourceAddress, Vec<PropertyPath>>,
+    ) -> Self {
+        for (address, paths) in cleared {
+            let Some(resource) = self.resources.get_mut(&address) else {
+                continue;
+            };
+            for path in paths {
+                if path.info().nullable {
+                    resource.properties.entry(path).or_insert(OwnedValue::Null);
+                }
+            }
+        }
+        self
+    }
+
     /// Orders removal directives canonically while preserving duplicates for validation.
     #[must_use]
     pub fn with_removals(mut self, mut removals: Vec<RemovalDirective>) -> Self {

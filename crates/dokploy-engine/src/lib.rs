@@ -176,7 +176,63 @@ impl<T: Transport> Engine<T> {
         .await?;
 
         let desired = compiled.desired_for(state)?;
+        let desired = desired.with_cleared_properties(self.dropped_set_members(compiled, state));
 
         Ok(dokploy_core::plan(&desired, &stored, &remote))
+    }
+
+    /// The members of a set of selectors that state last applied and the document, which now
+    /// declares the set, no longer names: they are cleared, so they are detached.
+    fn dropped_set_members(
+        &self,
+        compiled: &Compiled,
+        state: Option<&StateFile>,
+    ) -> std::collections::BTreeMap<dokploy_state::ResourceAddress, Vec<dokploy_core::PropertyPath>>
+    {
+        let mut cleared = std::collections::BTreeMap::new();
+        let Some(state) = state else {
+            return cleared;
+        };
+        for (address, resource) in &compiled.resources {
+            if resource.declared_sets.is_empty() {
+                continue;
+            }
+            let (Some(spec), Some(stored), Some(desired)) = (
+                self.specs.get(&resource.spec_kind),
+                state.resource(address),
+                compiled.desired.resources().get(address),
+            ) else {
+                continue;
+            };
+            let Some(applied) = stored.last_applied().as_json().as_object() else {
+                continue;
+            };
+            let mut dropped = Vec::new();
+            for field in &resource.declared_sets {
+                let Some(members) = applied.get(field).and_then(serde_json::Value::as_object)
+                else {
+                    continue;
+                };
+                for (member, value) in members {
+                    // A member already cleared has nothing left to clear.
+                    if value.is_null() {
+                        continue;
+                    }
+                    let Ok(path) =
+                        dokploy_core::PropertyPath::from_spec(spec, &format!("{field}.{member}"))
+                    else {
+                        continue;
+                    };
+                    if !desired.properties().contains_key(&path) {
+                        dropped.push(path);
+                    }
+                }
+            }
+            if !dropped.is_empty() {
+                cleared.insert(address.clone(), dropped);
+            }
+        }
+
+        cleared
     }
 }

@@ -64,7 +64,7 @@ pub(crate) fn project(
         observed.insert(PropertyPath::from_property_info(info), observation);
     }
     for path in entries {
-        observed.insert(path.clone(), observe_entry(path.info(), item));
+        observed.insert(path.clone(), observe_entry(path.info(), item, selectors));
     }
 
     observed
@@ -82,6 +82,9 @@ fn observe(
     match info.shape {
         PathShape::CollectionRoot if matches!(info.ty, FieldType::Env) => {
             return observe_environment(info, item);
+        }
+        PathShape::CollectionRoot if is_selector_set(&info.ty) => {
+            return observe_selector_set(info, item, selectors);
         }
         PathShape::CollectionRoot | PathShape::CollectionEntry => return not_returned,
         PathShape::Atomic => {}
@@ -164,8 +167,114 @@ fn observe_environment(info: &dokploy_spec::PropertyInfo, item: &Json) -> Proper
     }
 }
 
+/// Whether a type is a set of selectors, planned per member.
+fn is_selector_set(ty: &FieldType) -> bool {
+    matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
+}
+
+/// The kind a set of selectors selects.
+fn selector_set_kind(ty: &FieldType) -> Option<&str> {
+    match ty {
+        FieldType::Set(item) => match &**item {
+            FieldType::Selector(kind) => Some(kind),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// A set of selectors as a whole: the names of the resources Dokploy holds the ids of. An id the
+/// index cannot name is kept under its own id, so a set that holds something unknown is never
+/// taken for an empty one.
+fn observe_selector_set(
+    info: &dokploy_spec::PropertyInfo,
+    item: &Json,
+    selectors: &SelectorIndex,
+) -> PropertyObservation {
+    let not_returned = PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
+    let Some(kind) = selector_set_kind(&info.ty) else {
+        return not_returned;
+    };
+    match lookup(item, &info.api) {
+        None => not_returned,
+        Some(Json::Null) => PropertyObservation::KnownAbsent,
+        Some(Json::Array(ids)) => {
+            let mut names = serde_json::Map::new();
+            for id in ids {
+                let Some(id) = id.as_str() else {
+                    return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse);
+                };
+                let key = selectors
+                    .name_of(kind, id)
+                    .map_or_else(|| format!("?{id}"), str::to_owned);
+                names.insert(key, Json::Bool(true));
+            }
+            ComparableValue::try_from_json(Json::Object(names)).map_or(
+                PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+                PropertyObservation::Known,
+            )
+        }
+        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+    }
+}
+
+/// One member of a set of selectors: there, or not, by the name of the resource each id Dokploy
+/// holds belongs to. An id that cannot be named might be this member, so it is not an absence.
+fn observe_selector_entry(
+    info: &dokploy_spec::PropertyInfo,
+    item: &Json,
+    selectors: &SelectorIndex,
+    kind: &str,
+) -> PropertyObservation {
+    let not_returned = PropertyObservation::Unknown(PropertyUnknownReason::NotReturned);
+    let name = info
+        .root
+        .as_deref()
+        .and_then(|root| info.path.strip_prefix(root))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .unwrap_or_default();
+    match lookup(item, &info.api) {
+        None => not_returned,
+        Some(Json::Null) => PropertyObservation::KnownAbsent,
+        Some(Json::Array(ids)) => {
+            let mut unnamed = false;
+            for id in ids {
+                let Some(id) = id.as_str() else {
+                    return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse);
+                };
+                match selectors.name_of(kind, id) {
+                    Some(held) if held == name => {
+                        return ComparableValue::try_from_json(serde_json::json!({ "name": name }))
+                            .map_or(
+                                PropertyObservation::Unknown(
+                                    PropertyUnknownReason::InvalidResponse,
+                                ),
+                                PropertyObservation::Known,
+                            );
+                    }
+                    Some(_) => {}
+                    None => unnamed = true,
+                }
+            }
+            if unnamed {
+                not_returned
+            } else {
+                PropertyObservation::KnownAbsent
+            }
+        }
+        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+    }
+}
+
 /// One variable of an environment block: there, or not. Its value is secret and never read.
-fn observe_entry(info: &dokploy_spec::PropertyInfo, item: &Json) -> PropertyObservation {
+fn observe_entry(
+    info: &dokploy_spec::PropertyInfo,
+    item: &Json,
+    selectors: &SelectorIndex,
+) -> PropertyObservation {
+    if let Some(kind) = info.selector.as_deref() {
+        return observe_selector_entry(info, item, selectors, kind);
+    }
     // The entry is named below the path of its block, which may itself be a struct member.
     let key = info
         .root

@@ -583,12 +583,31 @@ fn stored_entries(
         return Vec::new();
     };
 
-    resource
+    let mut entries: Vec<PropertyPath> = resource
         .sensitive_inputs()
         .paths()
         .filter_map(|path| PropertyPath::from_spec(spec, path.as_str()).ok())
         .filter(|path| path.info().root.is_some())
-        .collect()
+        .collect();
+    // The members of a set of selectors are not secret: they are in the managed inputs, under the
+    // name of the field.
+    if let Some(applied) = resource.last_applied().as_json().as_object() {
+        for (field, value) in applied {
+            let Some(members) = value.as_object() else {
+                continue;
+            };
+            for member in members.keys() {
+                if let Ok(path) = PropertyPath::from_spec(spec, &format!("{field}.{member}"))
+                    && path.info().root.is_some()
+                    && path.info().selector.is_some()
+                {
+                    entries.push(path);
+                }
+            }
+        }
+    }
+
+    entries
 }
 
 /// Tells the planner what each selector the document sets means right now.

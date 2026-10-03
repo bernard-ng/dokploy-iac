@@ -44,7 +44,16 @@ impl SelectorIndex {
             .into_iter()
             .filter_map(|kind| specs.get(kind))
             .flat_map(|spec| spec.properties())
-            .filter_map(|info| info.selector)
+            .filter_map(|info| {
+                // A set of selectors names its target on the element type of its root.
+                info.selector.or_else(|| match info.ty {
+                    dokploy_spec::FieldType::Set(item) => match *item {
+                        dokploy_spec::FieldType::Selector(kind) => Some(kind),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+            })
             .collect()
     }
 

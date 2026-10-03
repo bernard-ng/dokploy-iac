@@ -6,23 +6,13 @@
 mod common;
 
 use std::path::Path;
-use std::sync::Arc;
 
-use common::{compile, engine, specs};
-use dokploy_engine::{ApplyError, Engine};
-use dokploy_sim::Sim;
-use dokploy_state::{
-    DocumentId, ExpectedState, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
-    ResourceName, ResourceState, SensitiveInputs, StateFile, StateStore,
-};
-use serde_json::{Map, Value};
+use common::project::{ProjectWorld, sim};
+use common::{compile, engine};
+use dokploy_engine::ApplyError;
+use serde_json::Value;
 
 const PASSWORD: &str = "docker-password-canary-1";
-
-fn sim() -> Sim {
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/api/live/v0.30.6");
-    Sim::new(Arc::new(specs())).with_fixtures(&fixtures)
-}
 
 fn document(source: &str) -> String {
     format!(
@@ -37,111 +27,19 @@ fn under_environment(section: &str, key: &str, fields: &str) -> String {
     )
 }
 
-struct World {
-    sim: Sim,
-    directory: tempfile::TempDir,
-}
+type World = ProjectWorld;
 
 impl World {
-    fn new() -> Self {
-        let world = Self {
-            sim: sim(),
-            directory: tempfile::tempdir().unwrap(),
-        };
-        world.seed_ancestors();
-        world
-    }
-
-    /// The project and its environment exist, remotely and in state, as if an earlier apply had
-    /// made them: these tests exercise the application's source, not the kinds above it.
-    fn seed_ancestors(&self) {
-        let engine = self.engine();
-        let specs = specs();
-        let mut resources = std::collections::BTreeMap::new();
-        let mut parent: Option<(ResourceAddress, String)> = None;
-        for (kind, key) in [("project", "shop"), ("environment", "production")] {
-            let spec = specs.get(kind).expect("a spec");
-            let mut remote = Map::new();
-            let mut managed = Map::new();
-            for (name, field) in &spec.fields {
-                if field.default.as_deref() == Some("key") {
-                    remote.insert(
-                        field.request_name(name).to_owned(),
-                        Value::String(key.to_owned()),
-                    );
-                    managed.insert(name.clone(), Value::String(key.to_owned()));
-                }
-            }
-            if let Some((_, parent_id)) = &parent {
-                let attach = spec
-                    .api
-                    .create
-                    .as_ref()
-                    .and_then(|op| op.parent_id_field(spec.parents.first().map(String::as_str)))
-                    .expect("an environment attaches to its project");
-                remote.insert(attach.to_owned(), Value::String(parent_id.clone()));
-            }
-            let id = self.sim.seed(kind, &Value::Object(remote));
-            let resource_kind: ResourceKind = kind.parse().unwrap();
-            let name = ResourceName::new(key).unwrap();
-            let address = match &parent {
-                Some((parent, _)) => parent.child(resource_kind, name).unwrap(),
-                None => ResourceAddress::new(resource_kind, name),
-            };
-            let resource = ResourceState::try_new(
-                resource_kind,
-                RemoteId::new(id.clone()).unwrap(),
-                false,
-                ManagedInputs::try_from_json(Value::Object(managed)).unwrap(),
-                SensitiveInputs::default(),
-                parent.as_ref().map(|(parent, _)| parent.clone()),
-                Vec::new(),
-            )
-            .unwrap();
-            resources.insert(address.clone(), resource);
-            parent = Some((address, id));
-        }
-        let state = StateFile::with_resources(
-            semver::Version::new(0, 1, 0),
-            engine.instance().clone(),
-            DocumentId::Project(ResourceName::new("shop").unwrap()),
-            resources,
-        )
-        .unwrap();
-        self.store(&engine)
-            .begin_write()
-            .unwrap()
-            .checkpoint(ExpectedState::absent(), &state)
-            .unwrap();
-    }
-
-    fn engine(&self) -> Engine<&Sim> {
-        engine(&self.sim)
-    }
-
-    fn store(&self, engine: &Engine<&Sim>) -> StateStore {
-        StateStore::for_document(
-            self.directory.path().canonicalize().unwrap(),
-            engine.instance().clone(),
-            DocumentId::Project(ResourceName::new("shop").unwrap()),
-        )
-        .unwrap()
-    }
-
     async fn apply(&self, source: &str) -> Result<dokploy_engine::ApplySummary, ApplyError> {
-        let engine = self.engine();
-        let store = self.store(&engine);
-        let compiled = compile(&engine, &document(source), &[("DOCKER_TOKEN", PASSWORD)]);
-        engine.apply(&compiled, &store, |_| true).await
+        self.apply_text(&document(source), &[("DOCKER_TOKEN", PASSWORD)])
+            .await
     }
 
     /// How many changes the next plan holds.
     async fn pending(&self, source: &str) -> usize {
-        let engine = self.engine();
-        let store = self.store(&engine);
-        let compiled = compile(&engine, &document(source), &[("DOCKER_TOKEN", PASSWORD)]);
-        let state = store.inspect().unwrap();
-        let plan = engine.plan(&compiled, state.as_ref()).await.unwrap();
+        let plan = self
+            .plan_text(&document(source), &[("DOCKER_TOKEN", PASSWORD)])
+            .await;
         assert!(plan.applyable(), "{:?}", plan.diagnostics());
         plan.changes().len()
     }

@@ -1,5 +1,4 @@
-# PROTOTYPE (coverage: partial). A database of an environment. The networks are still an
-# unclassified request.
+# PROTOTYPE (coverage: partial). A database of an environment.
 #
 # Live facts (fixtures/api/live/*/mongo-*): create answers the whole object, update answers
 # `true`, remove answers the removed object, and the collection is the `mongo` array that
@@ -124,9 +123,16 @@ fields:
       stop_grace_period: { api: stopGracePeriodSwarm, type: int, min: 0, nullable: true }
       endpoint_spec: { api: endpointSpecSwarm, type: "blob(swarm-endpoint-spec)", nullable: true }
       ulimits: { api: ulimitsSwarm, type: "blob(swarm-ulimits)", nullable: true }
+  networks:
+    api: networkIds
+    type: "set<selector(network)>"
+    granularity: key
+    nullable: true
+    needs_deploy: true
+    doc: The networks the service attaches to, each named by a `network` of the settings. Left out, the attachments are unmanaged; `[]` detaches from all of them.
 write:
   - op: mongo.update
-    fields: [name, description, image, command, args, username, password, resources, detach_dokploy_network, external_port, replicas, swarm]
+    fields: [name, description, image, command, args, username, password, resources, detach_dokploy_network, external_port, replicas, swarm, networks]
     shape: partial
   - op: mongo.saveEnvironment
     fields: [environment]

@@ -153,10 +153,26 @@ fn list_op(w: &World<'_>) -> String {
 fn holds(w: &World<'_>, values: &Values) -> Check {
     let object = w.only_object()?;
     for (wire, want) in w.case.expected_remote(values) {
-        ensure!(
-            object.get(&wire) == Some(&want),
-            "remote `{wire}` is not what the document says"
-        );
+        // The ids of a set of selectors are a set: the order Dokploy holds them in is not meaning.
+        let is_set = w
+            .case
+            .fields
+            .iter()
+            .any(|f| f.wire == wire && matches!(f.a, crate::case::Val::SelectorSet { .. }));
+        let same = if is_set {
+            let sorted = |value: Option<&Json>| {
+                let mut items: Vec<String> = value
+                    .and_then(Json::as_array)
+                    .map(|ids| ids.iter().map(Json::to_string).collect())
+                    .unwrap_or_default();
+                items.sort();
+                items
+            };
+            sorted(object.get(&wire)) == sorted(Some(&want))
+        } else {
+            object.get(&wire) == Some(&want)
+        };
+        ensure!(same, "remote `{wire}` is not what the document says");
     }
 
     Ok(())
@@ -348,10 +364,21 @@ pub(crate) async fn drift(w: &World<'_>, name: &str) -> Check<Verdict> {
         .as_str()
         .unwrap_or_default()
         .to_owned();
+    // A set of selectors drifts by losing a member; every other field by taking its other value.
+    let tampered = match &field.a {
+        crate::case::Val::SelectorSet { members, .. } => json!(
+            members
+                .iter()
+                .take(members.len().saturating_sub(1))
+                .map(|(_, id)| id)
+                .collect::<Vec<_>>()
+        ),
+        _ => other.json(),
+    };
     w.sim.patch(
         &w.case.spec.kind,
         &id,
-        &json!({ field.wire.clone(): other.json() }),
+        &json!({ field.wire.clone(): tampered }),
     );
 
     let plan = w.plan(&values).await?;
@@ -366,10 +393,10 @@ pub(crate) async fn drift(w: &World<'_>, name: &str) -> Check<Verdict> {
         plan.changes().len()
     );
     ensure!(
-        plan.changes()[0]
-            .fields()
-            .iter()
-            .any(|f| f.key().to_string() == name),
+        plan.changes()[0].fields().iter().any(|f| {
+            let key = f.key().to_string();
+            key == name || key.starts_with(&format!("{name}."))
+        }),
         "the plan does not name `{name}`"
     );
     w.apply_ok(&values).await?;

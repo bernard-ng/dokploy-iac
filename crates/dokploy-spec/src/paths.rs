@@ -246,7 +246,14 @@ impl SpecRegistry {
 }
 
 fn is_collection(parsed: &FieldType, granularity: Option<Granularity>) -> bool {
-    matches!(parsed, FieldType::Env | FieldType::Map(_)) && granularity == Some(Granularity::Key)
+    (matches!(parsed, FieldType::Env | FieldType::Map(_)) || is_selector_set(parsed))
+        && granularity == Some(Granularity::Key)
+}
+
+/// A set of selectors planned per member: each resource it names is an entry of its own, keyed by
+/// the name the document gives it (`networks.backend`).
+fn is_selector_set(parsed: &FieldType) -> bool {
+    matches!(parsed, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
 }
 
 fn is_per_member(parsed: &FieldType, granularity: Option<Granularity>) -> bool {
@@ -326,7 +333,7 @@ fn resolve_inside(
     if is_collection(parsed, granularity) {
         validate_key(parsed, rest, full)?;
         let element = match parsed {
-            FieldType::Map(inner) => (**inner).clone(),
+            FieldType::Map(inner) | FieldType::Set(inner) => (**inner).clone(),
             _ => FieldType::Env,
         };
         let name = prefix.rsplit('.').next().unwrap_or(&prefix).to_owned();

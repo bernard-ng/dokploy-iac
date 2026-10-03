@@ -27,6 +27,11 @@ pub(crate) struct Inputs<'a> {
     pub(crate) selectors: Option<&'a SelectorIndex>,
 }
 
+/// Whether a field type is a set of selectors, planned per member.
+fn is_selector_set(ty: &FieldType) -> bool {
+    matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
+}
+
 /// A property the executor can write.
 pub(crate) struct Writable {
     /// The document field the property belongs to (its first path segment): what a write group
@@ -56,6 +61,10 @@ pub(crate) fn writable(
         // The variables of an environment block are written as the block's one text.
         PathShape::CollectionRoot | PathShape::CollectionEntry
             if matches!(info.ty, FieldType::Env) => {}
+        // The members of a set of selectors are written as the array of the ids Dokploy holds.
+        PathShape::CollectionRoot | PathShape::CollectionEntry
+            if is_selector_set(&info.ty)
+                || (info.shape == PathShape::CollectionEntry && info.selector.is_some()) => {}
         PathShape::CollectionRoot | PathShape::CollectionEntry => {
             return Err(unsupported(
                 "is a keyed collection of plain values, which the executor does not write yet",
@@ -346,6 +355,12 @@ pub(crate) fn groups(
                     .and_then(|field| parse_type(&field.ty).ok())
                     .is_some_and(|ty| matches!(ty, FieldType::Env))
             });
+            let has_selector_set = fields.iter().any(|name| {
+                spec.fields
+                    .get(name)
+                    .and_then(|field| parse_type(&field.ty).ok())
+                    .is_some_and(|ty| is_selector_set(&ty))
+            });
             requests.push(GroupRequest {
                 operation: op.clone(),
                 variants: None,
@@ -357,7 +372,7 @@ pub(crate) fn groups(
                     .collect(),
                 changed,
                 fields: fields.clone(),
-                reads_fresh: *shape == Shape::Full || has_environment,
+                reads_fresh: *shape == Shape::Full || has_environment || has_selector_set,
             });
         }
     }
@@ -610,6 +625,22 @@ pub(crate) fn group_body(
             }
             continue;
         }
+        // A set of selectors is one array of ids: what Dokploy holds, less the members the
+        // document removed, plus the ones it names.
+        if is_selector_set(ty.as_ref().unwrap_or(&FieldType::Text)) {
+            let wire = field.request_name(name).to_owned();
+            if group.changed.contains(name) {
+                body.insert(
+                    wire.clone(),
+                    selector_ids(spec, address, checkpoint, group, name, &wire, fresh, inputs)?,
+                );
+            } else if group.shape == Shape::Full
+                && let Some(current) = fresh.and_then(|fresh| fresh.get(&wire))
+            {
+                body.insert(wire, current.clone());
+            }
+            continue;
+        }
         // The properties the field plans as: its members, or itself.
         let paths: Vec<String> = match &ty {
             Some(FieldType::Struct) => field
@@ -685,6 +716,89 @@ pub(crate) fn group_body(
     }
 
     Ok(Json::Object(body))
+}
+
+/// The ids of a set of selectors after the update. Dokploy holds one array; the document owns
+/// the members it names (and the ones it removed), so every other id stays where it is.
+#[allow(clippy::too_many_arguments)]
+fn selector_ids(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    group: &GroupRequest,
+    name: &str,
+    wire: &str,
+    fresh: Option<&Json>,
+    inputs: Inputs<'_>,
+) -> Result<Json, ApplyError> {
+    let unsupported = |reason: &'static str| ApplyError::Unsupported {
+        address: address.clone(),
+        property: Some(name.to_owned()),
+        reason,
+    };
+    let root = PropertyPath::from_spec(spec, name)
+        .map_err(|_| unsupported("is not a property of the kind"))?;
+    match checkpoint.property(&root) {
+        Some(CheckpointValueRef::Null) => return Ok(Json::Null),
+        Some(CheckpointValueRef::EmptyCollection) => return Ok(Json::Array(Vec::new())),
+        _ => {}
+    }
+    let Some(FieldType::Set(item)) = spec
+        .fields
+        .get(name)
+        .and_then(|field| parse_type(&field.ty).ok())
+    else {
+        return Err(unsupported("is not a set of selectors"));
+    };
+    let FieldType::Selector(kind) = *item else {
+        return Err(unsupported("is not a set of selectors"));
+    };
+
+    // The members the document names now, resolved to ids.
+    let mut owned = Vec::new();
+    for path in checkpoint.property_paths() {
+        if path.info().root.as_deref() == Some(name)
+            && !matches!(checkpoint.property(path), Some(CheckpointValueRef::Null))
+        {
+            owned.push(body_value(inputs, address, checkpoint, path)?);
+        }
+    }
+    // The members the document stopped naming are cleared: written, and `null` in the checkpoint.
+    let prefix = format!("{name}.");
+    let removed: Vec<&str> = group
+        .written
+        .iter()
+        .filter_map(|path| path.strip_prefix(prefix.as_str()))
+        .filter(|member| {
+            PropertyPath::from_spec(spec, &format!("{prefix}{member}"))
+                .ok()
+                .is_some_and(|path| {
+                    matches!(checkpoint.property(&path), Some(CheckpointValueRef::Null))
+                })
+        })
+        .collect();
+
+    let mut ids: Vec<Json> = Vec::new();
+    if let (Some(Json::Array(held)), Some(selectors)) =
+        (fresh.and_then(|fresh| fresh.get(wire)), inputs.selectors)
+    {
+        for id in held {
+            let named_removed = id
+                .as_str()
+                .and_then(|id| selectors.name_of(&kind, id))
+                .is_some_and(|held| removed.contains(&held));
+            if !named_removed && !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+    }
+    for id in owned {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+
+    Ok(Json::Array(ids))
 }
 
 /// The text of an environment block after the update: the fresh text with every variable the

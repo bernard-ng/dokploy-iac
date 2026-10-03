@@ -23,6 +23,12 @@ pub(crate) enum Val {
         name: String,
         id: String,
     },
+    /// A set of resources outside the document, each named by the document and held by id at
+    /// Dokploy: (name, id), in name order.
+    SelectorSet {
+        kind: String,
+        members: Vec<(String, String)>,
+    },
     /// An environment block: variables whose values are secrets read from the environment.
     Environment {
         /// The request and response key of the block.
@@ -192,6 +198,33 @@ impl Case {
                     id: format!("sel-{target}-{name}-{variant}"),
                 };
                 fields.push(field_case(selector("a"), Some(selector("b")), false, false));
+                continue;
+            }
+            // A set of selectors: two resources of the target kind, and two others for the change.
+            if info.shape == PathShape::CollectionRoot
+                && let FieldType::Set(item) = &info.ty
+                && let FieldType::Selector(target) = &**item
+            {
+                let seedable = specs.get(target).is_some_and(|spec| {
+                    spec.parents.is_empty()
+                        && spec.api.read.list.is_some()
+                        && spec.identity.key.is_some()
+                });
+                if !seedable {
+                    continue;
+                }
+                let set = |variant: &str| Val::SelectorSet {
+                    kind: target.clone(),
+                    members: (1..=2)
+                        .map(|n| {
+                            (
+                                format!("{name}-{variant}{n}"),
+                                format!("sel-{target}-{name}-{variant}{n}"),
+                            )
+                        })
+                        .collect(),
+                };
+                fields.push(field_case(set("a"), Some(set("b")), false, false));
                 continue;
             }
             // An environment block: two variables whose values are secret.
@@ -410,7 +443,7 @@ impl Case {
                         environment.insert(env_name(&format!("{name}.{key}")), secret.clone());
                     }
                 }
-                Val::Json(_) | Val::Selector { .. } => {}
+                Val::Json(_) | Val::Selector { .. } | Val::SelectorSet { .. } => {}
             }
         }
 
@@ -441,6 +474,14 @@ impl Case {
                 }
                 Val::Secret(_) => format!("{{ env: {} }}", env_name(name)),
                 Val::Selector { name, .. } => format!("{{ name: {name} }}"),
+                Val::SelectorSet { members, .. } => format!(
+                    "[{}]",
+                    members
+                        .iter()
+                        .map(|(name, _)| format!("{{ name: {name} }}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
                 Val::Environment { variables, .. } => format!(
                     "{{ {} }}",
                     variables
@@ -539,6 +580,12 @@ impl Case {
                 Some(Val::Selector { id, .. }) => {
                     expected.insert(field.wire.clone(), json!(id));
                 }
+                Some(Val::SelectorSet { members, .. }) => {
+                    expected.insert(
+                        field.wire.clone(),
+                        json!(members.iter().map(|(_, id)| id).collect::<Vec<_>>()),
+                    );
+                }
                 Some(Val::Environment { variables, .. }) => {
                     expected.insert(field.wire.clone(), json!(environment_text(variables)));
                 }
@@ -577,7 +624,7 @@ impl Case {
                 Val::Environment { variables, .. } => {
                     variables.iter().map(|(_, secret)| secret.clone()).collect()
                 }
-                Val::Json(_) | Val::Selector { .. } => Vec::new(),
+                Val::Json(_) | Val::Selector { .. } | Val::SelectorSet { .. } => Vec::new(),
             })
             .collect()
     }
@@ -589,9 +636,13 @@ impl Case {
             .iter()
             .flat_map(|f| [Some(&f.a), f.b.as_ref()])
             .flatten()
-            .filter_map(|value| match value {
-                Val::Selector { kind, name, id } => Some((kind.clone(), id.clone(), name.clone())),
-                _ => None,
+            .flat_map(|value| match value {
+                Val::Selector { kind, name, id } => vec![(kind.clone(), id.clone(), name.clone())],
+                Val::SelectorSet { kind, members } => members
+                    .iter()
+                    .map(|(name, id)| (kind.clone(), id.clone(), name.clone()))
+                    .collect(),
+                _ => Vec::new(),
             })
             .collect()
     }

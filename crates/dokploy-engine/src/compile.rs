@@ -50,6 +50,9 @@ pub(crate) struct CompiledResource {
     pub(crate) collision: BTreeMap<String, serde_json::Value>,
     /// The selectors the document sets (and does not ignore): `{ name }` or `{ local: true }`.
     pub(crate) selectors: Vec<(PropertyPath, serde_json::Value)>,
+    /// The fields the document declares as a non-empty set of selectors: the set is then exactly
+    /// what the document names, so a member it used to name and no longer does is cleared.
+    pub(crate) declared_sets: Vec<String>,
 }
 
 impl std::fmt::Debug for Compiled {
@@ -327,9 +330,30 @@ impl Compiler<'_> {
                 .protect
                 .map_or(ProtectionIntent::Unmanaged, ProtectionIntent::Set);
             let mut selectors = Vec::new();
+            let mut declared_sets = Vec::new();
             for (name, field) in &resource.fields {
+                if let Value::List(items) = &field.value
+                    && !items.is_empty()
+                    && spec
+                        .fields
+                        .get(name)
+                        .and_then(|spec_field| parse_type(&spec_field.ty).ok())
+                        .is_some_and(|ty| is_selector_set(&ty))
+                {
+                    declared_sets.push(name.clone());
+                }
                 let found: Vec<(String, &dokploy_model::Selector)> = match &field.value {
                     Value::Selector(selector) => vec![(name.clone(), selector)],
+                    // Each name of a set of selectors is an entry the planner resolves.
+                    Value::List(items) => items
+                        .iter()
+                        .filter_map(|item| match item {
+                            Value::Selector(selector @ dokploy_model::Selector::Name(entry)) => {
+                                Some((format!("{name}.{entry}"), selector))
+                            }
+                            _ => None,
+                        })
+                        .collect(),
                     // A selector can be a member of the union's arm.
                     Value::Union { tag, fields } => fields
                         .iter()
@@ -364,6 +388,7 @@ impl Compiler<'_> {
                     spec_kind: resource.kind.clone(),
                     collision: collision_values(spec, resource),
                     selectors,
+                    declared_sets,
                 },
             );
         }
@@ -531,6 +556,24 @@ impl Compiler<'_> {
                         };
                         properties.insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
                         secrets.insert((address.clone(), dotted), bytes);
+                    }
+                }
+                // A set of selectors planned per member: each resource it names is an entry of its
+                // own, keyed by the name the document gives it.
+                Value::List(items)
+                    if is_selector_set(&ty) && spec_field.granularity == Some(Granularity::Key) =>
+                {
+                    if items.is_empty() {
+                        properties.insert(path(name)?, OwnedValue::EmptyCollection);
+                    }
+                    for item in items {
+                        let Value::Selector(dokploy_model::Selector::Name(entry)) = item else {
+                            return Err(unsupported("holds a selector that is not a name"));
+                        };
+                        properties.insert(
+                            path(&format!("{name}.{entry}"))?,
+                            comparable(serde_json::json!({ "name": entry })),
+                        );
                     }
                 }
                 Value::Map(entries)
@@ -718,6 +761,11 @@ fn collision_values(spec: &KindSpec, resource: &Resource) -> BTreeMap<String, se
     }
 
     values
+}
+
+/// Whether a field type is a set of selectors.
+fn is_selector_set(ty: &FieldType) -> bool {
+    matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
 }
 
 fn selector_json(selector: &dokploy_model::Selector) -> serde_json::Value {

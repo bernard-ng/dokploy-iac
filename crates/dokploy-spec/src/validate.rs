@@ -438,15 +438,17 @@ fn check_type_rules(
             "class content and type file go together",
         );
     }
+    let selector_set =
+        matches!(&parsed, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)));
     if field.granularity.is_some()
-        && !matches!(
+        && !(matches!(
             parsed,
             FieldType::Map(_) | FieldType::Env | FieldType::Struct
-        )
+        ) || selector_set)
     {
         context.add(
             format!("{path}.granularity"),
-            "applies to map, env, and struct only",
+            "applies to map, env, struct, and a set of selectors only",
         );
     }
 
