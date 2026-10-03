@@ -50,6 +50,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The vision ratchet (milestone M3; `crates/dokploy-model/tests/vision.rs`,
+  [`docs/vision/README.md`](docs/vision/README.md)). The two vision documents are now version 2
+  files, parsed against the repository's specs on every test run; what the parser rejects is
+  recorded in `docs/vision/gaps/` and the test fails when it changes, so each spec that learns a
+  field shows up as a closed line. Today: 43 gaps in the project document, 19 in the settings one.
+
 - A live acceptance test of the engine (`crates/dokploy-engine/tests/live.rs`,
   `scripts/integration/test-engine-live.sh`, CI job `engine-live`; milestone M2, ADR 0015). Against the
   digest-pinned Dokploy it applies, converges, updates, detects drift, rotates a secret, recovers, and

@@ -20,7 +20,7 @@
 # confirm from the OpenAPI document alone.
 # =============================================================================
 
-version: 1                                   # ✔
+version: 2                                   # ✔
 
 project:
   slug: leganews-platform                    # ✎ logical address key (today `name` doubles as this)
