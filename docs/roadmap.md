@@ -80,15 +80,27 @@ so they do not move when a spec does.
 
 ## M3 status
 
-Started. Done: the vision ratchet (`docs/vision/gaps/`: what the parser still rejects of the two
-vision documents; both lists are to reach zero); follow-up writes after a create; the leaf kinds
-`redirect`, `port`, and `security` (specs only, full conformance); selectors in the executor; the
-databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis` (specs only, partial coverage). Next: the kinds that attach to
-several parents (`mount`, `schedule`, `domain`, `backup`, `volume_backup`, `patch`), which need a
-decision on how a spec names more than one parent; the application `source` union, which needs a
-decision on how a union is planned (per member, so omitted members are unmanaged and secrets inside
-an arm work); then struct, `env`, and selector values in the executor, the databases, Compose,
-`environment`, and `project`.
+Started. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `port`, and `security`
+(full conformance); the databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis`, and the
+`environment` (conformance for the fields they carry); the `application` without its union `source`
+(85 scenarios). Engine work the kinds needed: follow-up writes after a create, selectors, struct
+members and environment blocks, creation requirements that follow the create operation, and
+`moves` and `removed`. The vision ratchet (`docs/vision/gaps/`) counts what the parser still
+rejects of the two vision documents: 28 lines for the project document, 19 for the settings one.
+
+Two decisions block the rest, and both change the spec grammar or ADR 0004, so they are the owner's:
+
+1. **How a union is planned** (the application `source` and `build`, the Compose `source`, the
+   libsql `node`). Per member is recommended: the tag and each member of the active arm are
+   properties, so omitted members are unmanaged and a secret inside an arm (a registry password
+   for a Docker image) works. The alternative keeps a union atomic, which cannot hold secrets.
+2. **How a kind with several parents is modelled** (`mount`, `schedule`, `volume_backup`, `patch`
+   under an application, Compose, or a database; `domain` under an application or Compose;
+   `backup` under a database or Compose). A `parent:` list on one kind is recommended; the
+   alternative is one near-identical kind per parent.
+
+Still open, and not blocked: tag membership (a hook), `networks`, the swarm settings (blobs), and
+the Compose multi-service schedules hook.
 
 ## Cost gate (end of M2)
 
