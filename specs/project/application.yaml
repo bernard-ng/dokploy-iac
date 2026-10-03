@@ -47,6 +47,40 @@ fields:
     type: selector(server)
     mutability: create_only
     nullable: true
+  icon:
+    type: text
+    nullable: true
+  enabled:
+    type: bool
+    nullable: true
+  detach_dokploy_network:
+    api: detachDokployNetwork
+    type: bool
+  build_server:
+    api: buildServerId
+    type: selector(server)
+    nullable: true
+  deploy:
+    type: struct
+    granularity: field
+    members:
+      auto_deploy: { api: autoDeploy, type: bool, nullable: true }
+      rollback_active: { api: rollbackActive, type: bool, nullable: true }
+  preview:
+    type: struct
+    granularity: field
+    needs_deploy: true
+    members:
+      enabled: { api: isPreviewDeploymentsActive, type: bool, nullable: true }
+      wildcard: { api: previewWildcard, type: text, nullable: true }
+      port: { api: previewPort, type: int, min: 1, max: 65535, nullable: true }
+      https: { api: previewHttps, type: bool, nullable: true }
+      path: { api: previewPath, type: text, nullable: true }
+      certificate_type: { api: previewCertificateType, type: "enum[letsencrypt, none, custom]", nullable: true }
+      custom_cert_resolver: { api: previewCustomCertResolver, type: text, nullable: true }
+      limit: { api: previewLimit, type: int, min: 1, nullable: true }
+      require_collaborator_permissions: { api: previewRequireCollaboratorPermissions, type: bool, nullable: true }
+      labels: { api: previewLabels, type: "list<text>", nullable: true }
   registry:
     api: registryId
     type: selector(registry)
@@ -127,7 +161,7 @@ fields:
           nullable: true
 write:
   - op: application.update
-    fields: [name, description, registry, build_registry, rollback_registry, resources, replicas, command, args]
+    fields: [name, description, icon, enabled, detach_dokploy_network, build_server, deploy, preview, registry, build_registry, rollback_registry, resources, replicas, command, args]
     shape: partial
   - op: application.saveEnvironment
     fields: [environment, build_args, build_secrets, create_env_file]

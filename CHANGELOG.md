@@ -56,6 +56,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- More application and database fields (milestone M3): `icon`, `enabled`, `detach_dokploy_network`,
+  `build_server`, and the `deploy` and `preview` settings (per member) on the application, and
+  `detach_dokploy_network` on the databases. No Rust; the application now runs 85 conformance scenarios.
+
 - The project and the environment gain `env` (their shared variables, milestone M3), the environment passes the
   conformance suite for the fields it carries, and creation requirements follow the create operation
   (`dokploy_engine::required_at_creation`, `MutationContract::optional_on_create`): a field the spec gives no

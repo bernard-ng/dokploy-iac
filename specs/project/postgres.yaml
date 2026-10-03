@@ -93,6 +93,9 @@ fields:
     granularity: key
     nullable: true
     needs_deploy: true
+  detach_dokploy_network:
+    api: detachDokployNetwork
+    type: bool
   external_port:
     api: externalPort
     type: int
@@ -105,7 +108,7 @@ fields:
     needs_deploy: true
 write:
   - op: postgres.update
-    fields: [name, description, image, command, args, database, username, password, resources, external_port, replicas]
+    fields: [name, description, image, command, args, database, username, password, resources, detach_dokploy_network, external_port, replicas]
     shape: partial
   - op: postgres.saveEnvironment
     fields: [environment]
