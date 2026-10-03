@@ -48,7 +48,6 @@ fn change_kind(kind: ChangeKind) -> &'static str {
         ChangeKind::Create => "create",
         ChangeKind::Update => "update",
         ChangeKind::Replace => "replace",
-        ChangeKind::Reparent => "reparent",
         ChangeKind::Delete => "delete",
         ChangeKind::Move => "move",
         ChangeKind::Forget => "forget",

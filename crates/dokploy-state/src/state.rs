@@ -652,31 +652,9 @@ impl StateRevision {
 }
 
 impl StateFile {
-    /// Starts a new project-scope state lineage at serial zero.
-    #[must_use]
-    pub fn new(cli_version: Version, instance: InstanceIdentity) -> Self {
-        Self::new_in_scope(cli_version, instance, StateScope::Project)
-    }
-
-    /// Starts a new state lineage for one document scope at serial zero.
-    ///
-    /// The document is the one the first engine keeps for that scope in a workspace.
-    #[must_use]
-    pub fn new_in_scope(
-        cli_version: Version,
-        instance: InstanceIdentity,
-        scope: StateScope,
-    ) -> Self {
-        Self::new_for_document(cli_version, instance, DocumentId::for_scope(scope))
-    }
-
     /// Starts a new state lineage for one document at serial zero.
     #[must_use]
-    pub fn new_for_document(
-        cli_version: Version,
-        instance: InstanceIdentity,
-        document: DocumentId,
-    ) -> Self {
+    pub fn new(cli_version: Version, instance: InstanceIdentity, document: DocumentId) -> Self {
         Self {
             format_version: CURRENT_FORMAT_VERSION,
             cli_version,
@@ -688,32 +666,8 @@ impl StateFile {
         }
     }
 
-    /// Starts a new project-scope lineage with an atomically imported resource set.
-    pub fn new_with_resources(
-        cli_version: Version,
-        instance: InstanceIdentity,
-        resources: BTreeMap<ResourceAddress, ResourceState>,
-    ) -> Result<Self, StateError> {
-        Self::new_with_resources_in_scope(cli_version, instance, StateScope::Project, resources)
-    }
-
-    /// Starts a new lineage for one scope with an atomically imported resource set.
-    pub fn new_with_resources_in_scope(
-        cli_version: Version,
-        instance: InstanceIdentity,
-        scope: StateScope,
-        resources: BTreeMap<ResourceAddress, ResourceState>,
-    ) -> Result<Self, StateError> {
-        Self::new_with_resources_for_document(
-            cli_version,
-            instance,
-            DocumentId::for_scope(scope),
-            resources,
-        )
-    }
-
     /// Starts a new lineage for one document with an atomically imported resource set.
-    pub fn new_with_resources_for_document(
+    pub fn with_resources(
         cli_version: Version,
         instance: InstanceIdentity,
         document: DocumentId,
@@ -1082,7 +1036,7 @@ impl StateFile {
 }
 
 /// A nested address must be contained by the resource its path names, and that
-/// resource must exist. A one-segment address (the first engine's) has no path parent.
+/// resource must exist. A one-segment address has no path parent.
 fn validate_hierarchy(
     address: &ResourceAddress,
     resource: &ResourceState,

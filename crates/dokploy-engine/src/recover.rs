@@ -5,9 +5,7 @@
 //! compares it with the state the step was meant to produce, and either records the success,
 //! records that nothing changed, or says that a person must decide.
 
-use dokploy_core::{
-    RemoteObservation, ResourceObservationMatch, compare_resource_observation_with_specs,
-};
+use dokploy_core::{RemoteObservation, ResourceObservationMatch, compare_resource_observation};
 use dokploy_sdk::Transport;
 use dokploy_state::{
     JournalAction, RecoveryError, RecoveryStep, RecoveryStepOutcome, RemoteId, ResourceAddress,
@@ -225,7 +223,7 @@ impl<T: Transport> Engine<T> {
             .observation(step.address())
             .ok_or(RecoverError::ManualIntervention)?;
         let compare = |state: &StateFile| {
-            compare_resource_observation_with_specs(state, step.address(), observation, &self.specs)
+            compare_resource_observation(state, step.address(), observation, &self.specs)
         };
 
         match step.action() {

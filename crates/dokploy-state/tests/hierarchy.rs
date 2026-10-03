@@ -1,5 +1,9 @@
 //! Hierarchical addresses, registered kinds, and per-document stores (ADR 0006, 0009).
 
+mod support;
+
+use support::kinds;
+
 use std::fs;
 
 use dokploy_state::{
@@ -17,12 +21,14 @@ const APPLICATION: &str = "project.shop/environment.staging/application.api";
 const REDIRECT: &str = "project.shop/environment.staging/application.api/redirect.www";
 
 fn address(value: &str) -> ResourceAddress {
+    kinds();
     value
         .parse()
         .unwrap_or_else(|error| panic!("{value}: {error}"))
 }
 
 fn instance() -> InstanceIdentity {
+    kinds();
     InstanceIdentity::parse("https://deploy.example.com").expect("instance is valid")
 }
 
@@ -39,31 +45,26 @@ fn resource(kind: ResourceKind, id: &str, containment: Option<&str>) -> Resource
 
 /// A project document holding one environment, one application, and one redirect.
 fn tree() -> StateFile {
-    let mut state = StateFile::new_for_document(
+    let mut state = StateFile::new(
         Version::new(0, 1, 0),
         instance(),
         DocumentId::Project("shop".parse().unwrap()),
     );
     for (path, kind, id, parent) in [
-        (PROJECT, ResourceKind::Project, "project-1", None),
+        (PROJECT, kinds().project, "project-1", None),
         (
             ENVIRONMENT,
-            ResourceKind::Environment,
+            kinds().environment,
             "environment-1",
             Some(PROJECT),
         ),
         (
             APPLICATION,
-            ResourceKind::Application,
+            kinds().application,
             "application-1",
             Some(ENVIRONMENT),
         ),
-        (
-            REDIRECT,
-            ResourceKind::Redirect,
-            "redirect-1",
-            Some(APPLICATION),
-        ),
+        (REDIRECT, kinds().redirect, "redirect-1", Some(APPLICATION)),
     ] {
         state
             .upsert_resource(address(path), resource(kind, id, parent))
@@ -81,16 +82,13 @@ fn an_address_is_a_path_of_kind_key_segments() {
     let redirect = address(REDIRECT);
     assert_eq!(redirect.to_string(), REDIRECT);
     assert_eq!(redirect.depth(), 4);
-    assert_eq!(redirect.kind(), ResourceKind::Redirect);
+    assert_eq!(redirect.kind(), kinds().redirect);
     assert_eq!(redirect.name().as_str(), "www");
     assert_eq!(redirect.parent(), Some(address(APPLICATION)));
     assert_eq!(address(PROJECT).parent(), None);
 
     let built = address(PROJECT)
-        .child(
-            ResourceKind::Environment,
-            ResourceName::new("staging").unwrap(),
-        )
+        .child(kinds().environment, ResourceName::new("staging").unwrap())
         .unwrap();
     assert_eq!(built, address(ENVIRONMENT));
 
@@ -240,19 +238,14 @@ fn a_registered_kind_carries_its_containment() {
 #[test]
 fn the_first_engine_kinds_keep_their_built_in_facts() {
     assert_eq!(
-        ResourceKind::register(
-            "redirect",
-            StateScope::Project,
-            Some(ResourceKind::Application)
-        )
-        .unwrap(),
-        ResourceKind::Redirect
+        ResourceKind::register("redirect", StateScope::Project, Some(kinds().application)).unwrap(),
+        kinds().redirect
     );
     assert!(matches!(
         ResourceKind::register("redirect", StateScope::Settings, None),
         Err(KindRegistrationError::Conflict { .. })
     ));
-    assert_eq!(ResourceKind::Redirect.scope(), StateScope::Project);
+    assert_eq!(kinds().redirect.scope(), StateScope::Project);
 }
 
 #[test]
@@ -310,7 +303,7 @@ fn a_nested_address_must_be_contained_by_its_path_parent() {
     let mismatch = state.upsert_resource(
         address("project.shop/environment.staging/application.api/redirect.other"),
         resource(
-            ResourceKind::Redirect,
+            kinds().redirect,
             "redirect-2",
             Some("project.shop/environment.staging/application.web"),
         ),
@@ -324,7 +317,7 @@ fn a_nested_address_must_be_contained_by_its_path_parent() {
     let orphan = state.upsert_resource(
         address("project.shop/environment.staging/application.web/redirect.www"),
         resource(
-            ResourceKind::Redirect,
+            kinds().redirect,
             "redirect-3",
             Some("project.shop/environment.staging/application.web"),
         ),
@@ -394,7 +387,7 @@ fn a_service_can_be_moved_to_another_environment() {
     state
         .upsert_resource(
             address("project.shop/environment.production"),
-            resource(ResourceKind::Environment, "environment-2", Some(PROJECT)),
+            resource(kinds().environment, "environment-2", Some(PROJECT)),
         )
         .unwrap();
 
@@ -484,13 +477,12 @@ fn store(workspace: &std::path::Path, document: DocumentId) -> StateStore {
 fn every_document_has_its_own_directory() {
     let workspace = tempdir().unwrap();
     let cases = [
-        (DocumentId::Workspace, ".dokploy"),
         (DocumentId::Settings, ".dokploy/settings"),
         (project("shop"), ".dokploy/projects/shop"),
     ];
     for (document, directory) in cases {
         let store = store(workspace.path(), document.clone());
-        let state = StateFile::new_for_document(Version::new(0, 1, 0), instance(), document);
+        let state = StateFile::new(Version::new(0, 1, 0), instance(), document);
         store
             .begin_write()
             .unwrap()
@@ -528,7 +520,7 @@ fn two_project_documents_never_block_each_other() {
 fn a_store_refuses_state_recorded_for_another_document() {
     let workspace = tempdir().unwrap();
     let shop = store(workspace.path(), project("shop"));
-    let state = StateFile::new_for_document(Version::new(0, 1, 0), instance(), project("shop"));
+    let state = StateFile::new(Version::new(0, 1, 0), instance(), project("shop"));
     shop.begin_write()
         .unwrap()
         .checkpoint(ExpectedState::absent(), &state)
@@ -549,7 +541,7 @@ fn a_store_refuses_state_recorded_for_another_document() {
     ));
 
     // A write of the wrong document is refused before anything is written.
-    let other = StateFile::new_for_document(Version::new(0, 1, 0), instance(), project("shop"));
+    let other = StateFile::new(Version::new(0, 1, 0), instance(), project("shop"));
     let fresh = store(workspace.path(), project("news"));
     assert!(matches!(
         fresh
@@ -561,13 +553,7 @@ fn a_store_refuses_state_recorded_for_another_document() {
 }
 
 #[test]
-fn the_scope_constructors_pick_the_first_engine_documents() {
-    assert_eq!(
-        StateFile::new_in_scope(Version::new(0, 1, 0), instance(), StateScope::Settings).document(),
-        &DocumentId::Settings
-    );
-    assert_eq!(
-        StateFile::new(Version::new(0, 1, 0), instance()).document(),
-        &DocumentId::Workspace
-    );
+fn a_document_decides_the_scope_of_its_state() {
+    assert_eq!(DocumentId::Settings.scope(), StateScope::Settings);
+    assert_eq!(project("shop").scope(), StateScope::Project);
 }

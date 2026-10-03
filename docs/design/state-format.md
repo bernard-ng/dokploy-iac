@@ -27,8 +27,7 @@ change. Moving a service under another environment is the same operation.
 
 ## Kinds
 
-`ResourceKind` is a name. The first engine's kinds are constants (`ResourceKind::Application`),
-usable in patterns. Every other kind comes from a spec and is registered, with its scope and
+`ResourceKind` is a name. Every kind comes from a spec and is registered, with its scope and
 containment parent, before it can be parsed or deserialized
 (`dokploy_core::register_spec_kinds`), so state and journals can only name kinds the running tool
 knows. Registration is bounded and idempotent.
@@ -47,8 +46,7 @@ knows. Registration is bounded and idempotent.
 }
 ```
 
-`document` is `settings`, `project.<slug>`, or `project` (the first engine's single project
-document, deleted with the first engine). Only format 5 is read; older files are refused with a
+`document` is `settings` or `project.<slug>`. Only format 5 is read; older files are refused with a
 message to re-import, since there is no migration (ADR 0001). A store refuses a file recorded
 under another document, and refuses to write one.
 
@@ -61,7 +59,6 @@ crash while applying one project never blocks another:
 |----------|-----------|
 | `settings` | `.dokploy/settings/` |
 | `project.<slug>` | `.dokploy/projects/<slug>/` |
-| `project` (first engine) | `.dokploy/` |
 
 ## What state holds
 

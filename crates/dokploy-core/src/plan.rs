@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt};
 
 use dokploy_state::{
     ManagedInputs, ManagedInputsError, RemoteId, ResourceAddress, ResourceState,
-    ResourceStateError, SensitiveInputs, SensitiveInputsError, SensitivePropertyPath,
+    ResourceStateError, SensitiveInputs, SensitiveInputsError,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -23,8 +23,6 @@ pub enum ChangeKind {
     Update,
     /// Replace a resource in a later planner slice.
     Replace,
-    /// Change the physical containment of an existing resource.
-    Reparent,
     /// Delete a resource still present remotely.
     Delete,
     /// Preserve physical identity under a new logical address.
@@ -112,8 +110,6 @@ impl FieldChange {
 pub enum MetadataChangeKind {
     /// Durable protection changed.
     Protection,
-    /// The direct logical containment parent changed.
-    Containment,
     /// Canonical resource dependencies changed.
     Dependencies,
 }
@@ -258,11 +254,7 @@ impl PlannedChange {
         assert!(
             matches!(
                 self.kind,
-                ChangeKind::Update
-                    | ChangeKind::Replace
-                    | ChangeKind::Reparent
-                    | ChangeKind::NoOp
-                    | ChangeKind::Move
+                ChangeKind::Update | ChangeKind::Replace | ChangeKind::NoOp | ChangeKind::Move
             ),
             "only existing-resource actions can preserve ignored paths"
         );
@@ -418,145 +410,10 @@ impl ResourceCheckpoint {
         remote_id: RemoteId,
     ) -> Result<ResourceState, CheckpointMaterializationError> {
         let mut managed = serde_json::Map::new();
-        let mut source = serde_json::Map::new();
-        let mut environment = serde_json::Map::new();
-        let mut environment_root = None;
         let mut sensitive = Vec::new();
 
         for (path, value) in &self.properties {
-            match path {
-                PropertyPath::Source if matches!(value, OwnedValue::Null) => {
-                    managed.insert("source".to_owned(), serde_json::Value::Null);
-                }
-                PropertyPath::Source => {
-                    return Err(CheckpointMaterializationError::InvalidPropertyShape);
-                }
-                PropertyPath::SourceRepository => {
-                    source.insert("repository".to_owned(), materialize_value(value)?);
-                }
-                PropertyPath::SourceBranch => {
-                    source.insert("branch".to_owned(), materialize_value(value)?);
-                }
-                PropertyPath::Environment => {
-                    environment_root = Some(match value {
-                        OwnedValue::Null => serde_json::Value::Null,
-                        OwnedValue::EmptyCollection => {
-                            serde_json::Value::Object(serde_json::Map::new())
-                        }
-                        OwnedValue::Value(_) | OwnedValue::Sensitive(_) => {
-                            return Err(CheckpointMaterializationError::InvalidPropertyShape);
-                        }
-                    });
-                }
-                PropertyPath::EnvironmentVariable(name) => match value {
-                    OwnedValue::Null => {
-                        environment.insert(name.as_str().to_owned(), serde_json::Value::Null);
-                    }
-                    OwnedValue::Sensitive(intent) => sensitive.push((
-                        SensitivePropertyPath::parse(&path.to_string())
-                            .map_err(|_| CheckpointMaterializationError::InvalidPropertyShape)?,
-                        intent.fingerprint().clone(),
-                    )),
-                    OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
-                        return Err(CheckpointMaterializationError::InvalidPropertyShape);
-                    }
-                },
-                PropertyPath::FileContent | PropertyPath::Command | PropertyPath::Script => {
-                    match value {
-                        OwnedValue::Sensitive(intent) => sensitive.push((
-                            SensitivePropertyPath::parse(&path.to_string())
-                                .expect("write-only paths are canonical sensitive paths"),
-                            intent.fingerprint().clone(),
-                        )),
-                        OwnedValue::Null | OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
-                            return Err(CheckpointMaterializationError::InvalidPropertyShape);
-                        }
-                    }
-                }
-                PropertyPath::Password
-                | PropertyPath::RootPassword
-                | PropertyPath::ComposeDocument => match value {
-                    OwnedValue::Null => {
-                        managed.insert(path.to_string(), serde_json::Value::Null);
-                    }
-                    OwnedValue::Sensitive(intent) => sensitive.push((
-                        SensitivePropertyPath::parse(&path.to_string())
-                            .expect("write-only paths are canonical sensitive paths"),
-                        intent.fingerprint().clone(),
-                    )),
-                    OwnedValue::EmptyCollection | OwnedValue::Value(_) => {
-                        return Err(CheckpointMaterializationError::InvalidPropertyShape);
-                    }
-                },
-                PropertyPath::Description
-                | PropertyPath::Replicas
-                | PropertyPath::Database
-                | PropertyPath::Username
-                | PropertyPath::ReplicaSets
-                | PropertyPath::Node
-                | PropertyPath::Host
-                | PropertyPath::Application
-                | PropertyPath::PublishedPort
-                | PropertyPath::TargetPort
-                | PropertyPath::PublishMode
-                | PropertyPath::Protocol
-                | PropertyPath::Regex
-                | PropertyPath::Replacement
-                | PropertyPath::Permanent
-                | PropertyPath::Target
-                | PropertyPath::MountType
-                | PropertyPath::MountPath
-                | PropertyPath::HostPath
-                | PropertyPath::VolumeName
-                | PropertyPath::FilePath
-                | PropertyPath::ServiceName
-                | PropertyPath::Name
-                | PropertyPath::Color
-                | PropertyPath::Tags
-                | PropertyPath::CronExpression
-                | PropertyPath::ShellType
-                | PropertyPath::Enabled
-                | PropertyPath::Timezone
-                | PropertyPath::Server
-                | PropertyPath::BuildServer
-                | PropertyPath::Registry
-                | PropertyPath::BuildRegistry
-                | PropertyPath::RollbackRegistry
-                | PropertyPath::Destination
-                | PropertyPath::Schedule
-                | PropertyPath::Prefix
-                | PropertyPath::KeepLatest
-                | PropertyPath::IncludeEncryptionKey => {
-                    managed.insert(path.to_string(), materialize_value(value)?);
-                }
-                PropertyPath::DeploymentStatus => {
-                    return Err(CheckpointMaterializationError::InvalidPropertyShape);
-                }
-                PropertyPath::Spec(spec_path) => crate::spec_property::materialize(
-                    spec_path.info(),
-                    value,
-                    &mut managed,
-                    &mut sensitive,
-                )?,
-            }
-        }
-
-        if !source.is_empty() {
-            if managed.contains_key("source") {
-                return Err(CheckpointMaterializationError::InvalidPropertyShape);
-            }
-            managed.insert("source".to_owned(), serde_json::Value::Object(source));
-        }
-        if let Some(root) = environment_root {
-            if !environment.is_empty() {
-                return Err(CheckpointMaterializationError::InvalidPropertyShape);
-            }
-            managed.insert("environment".to_owned(), root);
-        } else if !environment.is_empty() {
-            managed.insert(
-                "environment".to_owned(),
-                serde_json::Value::Object(environment),
-            );
+            crate::spec_property::materialize(path.info(), value, &mut managed, &mut sensitive)?;
         }
 
         let managed = ManagedInputs::try_from_json(serde_json::Value::Object(managed))?;
@@ -572,18 +429,6 @@ impl ResourceCheckpoint {
             self.dependencies.clone(),
         )
         .map_err(CheckpointMaterializationError::ResourceState)
-    }
-}
-
-fn materialize_value(
-    value: &OwnedValue,
-) -> Result<serde_json::Value, CheckpointMaterializationError> {
-    match value {
-        OwnedValue::Null => Ok(serde_json::Value::Null),
-        OwnedValue::Value(value) => Ok(value.as_json().clone()),
-        OwnedValue::EmptyCollection | OwnedValue::Sensitive(_) => {
-            Err(CheckpointMaterializationError::InvalidPropertyShape)
-        }
     }
 }
 
@@ -719,8 +564,6 @@ pub enum PlanDiagnosticCode {
     MoveSourceMissing,
     /// A move target is already occupied in stored or remote state.
     MoveTargetCollision,
-    /// Applying ignore ownership would create an invalid durable property shape.
-    InvalidIgnoredCheckpoint,
     /// The adapter has no proven mutation for a required transition.
     UnsupportedMutation,
     /// A create is missing a property required by the adapter contract.
@@ -749,7 +592,6 @@ impl PlanDiagnosticCode {
             Self::InvalidRemovalDirective => "DOKPLAN013",
             Self::MoveSourceMissing => "DOKPLAN014",
             Self::MoveTargetCollision => "DOKPLAN015",
-            Self::InvalidIgnoredCheckpoint => "DOKPLAN016",
             Self::UnsupportedMutation => "DOKPLAN017",
             Self::MissingCreateProperty => "DOKPLAN018",
             Self::UnresolvedExternalSelector => "DOKPLAN019",

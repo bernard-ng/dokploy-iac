@@ -45,11 +45,11 @@ M0 is complete once the capture workflow has run once in GitHub Actions.
 
 ## M1 status
 
-Done: spec-validated property paths (`dokploy-spec` path catalog, `PropertyPath::Spec`,
+Done: spec-validated property paths (`dokploy-spec` path catalog, `PropertyPath`,
 `MutationContract::from_spec`; [`spec-format.md`](design/spec-format.md#property-paths)).
 State format 5 with hierarchical addresses, document ids, per-document directories, open kinds,
 and open sensitive paths ([`state-format.md`](design/state-format.md)); a `registry`, which has no
-first-engine code, plans and checkpoints from its spec alone (kernel test).
+per-kind code, plans and checkpoints from its spec alone (kernel test).
 The document model (`dokploy-model`: parse, validate with positions, canonical render, JSON
 Schema; [`document-format.md`](design/document-format.md)).
 The `Transport` trait (`dokploy-sdk`): the engine sends through it, over HTTP or in memory.
@@ -69,9 +69,14 @@ to the v2 engine with the whole first engine deleted (no support for version 1 d
 ([`cost-gate.md`](design/cost-gate.md)): met for the flat and leaf shapes, the union shape is the
 first thing to try in M3.
 
-Left from the plan's M2 row: nothing, except two things the gate records: the first engine's closed
-property vocabulary is still in `dokploy-core` and `dokploy-state` (the kernel tests are written
-against it), and `import`, saved plans, and `--parallelism` are removed until M6 and later.
+Left from the plan's M2 row: nothing. `import`, saved plans, and `--parallelism` are removed until M6
+and later.
+
+**Kernel vocabulary (after M2).** `dokploy-core` and `dokploy-state` no longer carry a closed list of
+properties or resource kinds: a `PropertyPath` is a handle on the spec's `PropertyInfo`, a
+`ResourceKind` is a registered name, and containment is the address path. The planner tests run on
+three synthetic kinds (`widget`, a nested `gadget`, `cache`) in `crates/dokploy-core/tests/support`,
+so they do not move when a spec does.
 
 ## Cost gate (end of M2)
 

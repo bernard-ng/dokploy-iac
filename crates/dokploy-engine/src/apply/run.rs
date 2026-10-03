@@ -93,11 +93,6 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 self.create(change).await
             }
             ChangeKind::Move => self.rename(change),
-            ChangeKind::Reparent => Err(ApplyError::Unsupported {
-                address: change.address().clone(),
-                property: None,
-                reason: "is moved to another parent, which the executor does not do yet",
-            }),
         }
     }
 
@@ -197,7 +192,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         let paths: Vec<&PropertyPath> = checkpoint
             .property_paths()
             .into_iter()
-            .filter(|path| path.spec_info().is_some_and(|info| !info.is_sensitive()))
+            .filter(|path| !path.info().is_sensitive())
             .collect();
         self.verify(spec, address, remote_id.as_str(), checkpoint, &paths)
             .await
@@ -264,7 +259,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
 
         let paths: Vec<&PropertyPath> = written
             .into_iter()
-            .filter(|path| path.spec_info().is_some_and(|info| !info.is_sensitive()))
+            .filter(|path| !path.info().is_sensitive())
             .collect();
         self.verify(spec, address, remote_id.as_str(), checkpoint, &paths)
             .await

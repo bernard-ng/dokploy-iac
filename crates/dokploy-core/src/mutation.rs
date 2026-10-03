@@ -52,10 +52,9 @@ pub struct MutationContract {
     allowed_on_create: BTreeSet<PropertyPath>,
     required_on_create: BTreeSet<PropertyPath>,
     properties: BTreeMap<PropertyPath, PropertyMutation>,
-    /// Spec collection roots, so each entry follows its root's rules.
+    /// Collection roots, so each entry follows its root's rules.
     roots: BTreeSet<PropertyPath>,
     default_property: PropertyMutation,
-    containment: MutationMode,
     replacement_order: ReplacementOrder,
 }
 
@@ -72,7 +71,6 @@ impl MutationContract {
                 MutationMode::Unsupported,
                 MutationMode::Unsupported,
             ),
-            containment: MutationMode::Unsupported,
             replacement_order,
         }
     }
@@ -86,7 +84,6 @@ impl MutationContract {
             properties: BTreeMap::new(),
             roots: BTreeSet::new(),
             default_property: PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace),
-            containment: MutationMode::InPlace,
             replacement_order: ReplacementOrder::DeleteBeforeCreate,
         }
     }
@@ -109,7 +106,7 @@ impl MutationContract {
     /// Defines mutation behavior for one property.
     #[must_use]
     pub fn with_property(mut self, path: PropertyPath, mutation: PropertyMutation) -> Self {
-        if path.spec_info().is_some() && path.is_collection_root() {
+        if path.is_collection_root() {
             self.roots.insert(path.clone());
         }
         self.properties.insert(path, mutation);
@@ -120,13 +117,6 @@ impl MutationContract {
     #[must_use]
     pub fn with_default_property(mut self, mutation: PropertyMutation) -> Self {
         self.default_property = mutation;
-        self
-    }
-
-    /// Defines physical containment-change behavior.
-    #[must_use]
-    pub fn with_containment(mut self, mode: MutationMode) -> Self {
-        self.containment = mode;
         self
     }
 
@@ -158,14 +148,9 @@ impl MutationContract {
             .mode(clear)
     }
 
-    /// The collection root whose rules govern `path`, when it is a spec entry.
+    /// The collection root whose rules govern `path`, when it is a collection entry.
     fn root_of(&self, path: &PropertyPath) -> Option<&PropertyPath> {
-        path.spec_info()?;
         self.roots.iter().find(|root| path.is_entry_of(root))
-    }
-
-    pub(crate) const fn containment_mode(&self) -> MutationMode {
-        self.containment
     }
 
     pub(crate) const fn replacement_order(&self) -> ReplacementOrder {

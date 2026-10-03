@@ -155,7 +155,7 @@ impl<T: Transport> Engine<T> {
                         document,
                     });
                 }
-                StoredState::try_from_state_with_specs(state, &self.specs)?
+                StoredState::try_from_state(state, &self.specs)?
             }
             None => StoredState::absent(self.instance.clone()),
         };

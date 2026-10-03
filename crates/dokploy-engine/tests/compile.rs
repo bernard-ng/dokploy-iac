@@ -38,9 +38,12 @@ fn compile_in(
 }
 
 #[test]
-fn the_fingerprint_matches_the_first_engines_canonical_vector() {
-    // The same inputs as the first engine's `fingerprinting_matches_the_canonical_hmac_sha256_vector`,
-    // so receipts written by either engine stay comparable.
+fn the_fingerprint_matches_an_independently_computed_hmac_vector() {
+    // Pinned against a separate HMAC-SHA-256 over the documented framing (the domain string,
+    // then length-prefixed `instance`, `resource`, `property`, `value`), so a change to the
+    // receipt format cannot pass by agreeing with itself. A receipt that changes format
+    // would make every stored secret look rotated.
+    let _kinds = engine(Canned::new());
     let fingerprinter = Fingerprinter::new(
         InstanceIdentity::parse("https://deploy.example.test").unwrap(),
         FingerprintKey::parse_explicit(
@@ -48,7 +51,7 @@ fn the_fingerprint_matches_the_first_engines_canonical_vector() {
         )
         .unwrap(),
     );
-    let address: ResourceAddress = "redis.cache".parse().unwrap();
+    let address: ResourceAddress = "registry.cache".parse().unwrap();
     let path = SensitivePropertyPath::parse("password").unwrap();
 
     let receipt =
@@ -57,19 +60,20 @@ fn the_fingerprint_matches_the_first_engines_canonical_vector() {
 
     assert_eq!(
         receipt["mac"],
-        "f87cd7689eaed1dceb4215946b8b6a245806ea34400f1464596549865e1c96a7"
+        "cb951ce5c24b48cd949f094ad014a23e69358bc95fdbffa83ce810727dc3f8b9"
     );
 }
 
 #[test]
 fn every_dimension_of_the_domain_changes_the_receipt() {
+    let _kinds = engine(Canned::new());
     let key = || FingerprintKey::parse_explicit(common::KEY).unwrap();
     let instance = InstanceIdentity::parse("https://deploy.example.test").unwrap();
     let other = InstanceIdentity::parse("https://other.example.test").unwrap();
-    let address: ResourceAddress = "application.api".parse().unwrap();
-    let other_address: ResourceAddress = "application.worker".parse().unwrap();
-    let path = SensitivePropertyPath::parse("environment.TOKEN").unwrap();
-    let other_path = SensitivePropertyPath::parse("environment.OTHER").unwrap();
+    let address: ResourceAddress = "registry.api".parse().unwrap();
+    let other_address: ResourceAddress = "registry.worker".parse().unwrap();
+    let path = SensitivePropertyPath::parse("password").unwrap();
+    let other_path = SensitivePropertyPath::parse("username").unwrap();
     let mac = |instance: &InstanceIdentity,
                address: &ResourceAddress,
                path: &SensitivePropertyPath,

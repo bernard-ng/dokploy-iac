@@ -11,7 +11,7 @@ ancestors), on 2026-10-03.
 **The targets are met for the flat and leaf shapes. The union shape is not measured yet**, so the
 gate is passed for what was tried and open for what was not (see "What this does not show").
 
-| Measure | Target | First engine | Measured |
+| Measure | Target | Before (hand-written kinds) | Measured |
 |---------|--------|--------------|----------|
 | Rust per flat kind | none | about 950 lines (Redirect and Security: 1,900 for two) | **0**: `tag` is a 42-line spec, `registry` 66, `redirect` 41 |
 | Test code per kind | none | about 1,575 lines | **0**: the conformance suite enrols a kind from its spec (21 to 26 scenarios each) |
@@ -64,6 +64,4 @@ every conformance scenario live is the M8 differential.
   the first thing to try in M3, with the decision to extend the grammar made by ADR if it needs more
   than `by_variant`.
 - **Follow-up updates after a create** (a field the create operation does not accept) are refused, and
-  every project kind will hit that: the first engine did it for applications.
-- **Planner and kernel tests** are still written against the first engine's closed property
-  vocabulary; they were not rewritten for spec paths.
+  every project kind will hit that (an application takes its source in a separate call).

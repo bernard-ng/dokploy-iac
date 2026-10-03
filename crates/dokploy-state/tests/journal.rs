@@ -1,14 +1,17 @@
+mod support;
+
 use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
 };
+use support::{kinds, project_document};
 
 use dokploy_state::{
     ExpectedCheckpoint, ExpectedState, FailureCode, InstanceIdentity, JournalAction, ManagedInputs,
     OperationJournal, PlanDigest, RecoveryError, RecoveryReason, RecoveryStatus,
-    RecoveryStepOutcome, RemoteId, ResourceAddress, ResourceKind, ResourceState, StateFile,
-    StateStore, StateStoreError,
+    RecoveryStepOutcome, RemoteId, ResourceAddress, ResourceState, StateFile, StateStore,
+    StateStoreError,
 };
 use semver::Version;
 use serde_json::json;
@@ -295,7 +298,7 @@ fn interrupted_state_only_move_reconstructs_the_atomic_checkpoint() {
         .upsert_resource(
             source.clone(),
             ResourceState::new(
-                ResourceKind::Project,
+                kinds().project,
                 remote_id("project-remote"),
                 true,
                 ManagedInputs::try_from_json(json!({ "description": "managed" })).unwrap(),
@@ -314,7 +317,7 @@ fn interrupted_state_only_move_reconstructs_the_atomic_checkpoint() {
         .upsert_resource(
             child.clone(),
             ResourceState::new(
-                ResourceKind::Environment,
+                kinds().environment,
                 remote_id("environment-remote"),
                 false,
                 ManagedInputs::try_from_json(json!({})).unwrap(),
@@ -363,44 +366,38 @@ fn interrupted_state_only_move_reconstructs_the_atomic_checkpoint() {
 }
 
 #[test]
-fn legacy_uncertain_evidence_fails_closed_but_safe_terminal_cases_resolve() {
-    let (workspace, store, _initial) = initialized_store();
+fn a_step_without_its_expected_checkpoint_fails_closed_but_safe_terminal_cases_resolve() {
+    let (_workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().unwrap();
     let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
-    let operation_id = journal.operation_id();
     journal
         .start_step(address("api"), JournalAction::Create)
         .unwrap();
     drop(journal);
     drop(session);
-    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
     assert!(matches!(
         store.begin_recovery(),
-        Err(RecoveryError::UnsafeLegacyEvidence)
+        Err(RecoveryError::IncompleteEvidence)
     ));
 
     let (workspace, store, _initial) = initialized_store();
-    let path = begin_and_drop(&store, &workspace);
-    rewrite_format_version(&path, 1);
+    begin_and_drop(&store, &workspace);
     store.begin_recovery().unwrap().resolve().unwrap();
 
-    let (workspace, store, _initial) = initialized_store();
+    let (_workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().unwrap();
     let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
-    let operation_id = journal.operation_id();
     let token = journal
         .start_step(address("api"), JournalAction::Create)
         .unwrap();
     journal.fail(token, FailureCode::RemoteRejected).unwrap();
     drop(journal);
     drop(session);
-    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
     store.begin_recovery().unwrap().resolve().unwrap();
 
-    let (workspace, store, _initial) = initialized_store();
+    let (_workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().unwrap();
     let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
-    let operation_id = journal.operation_id();
     let token = journal
         .start_step(address("api"), JournalAction::Create)
         .unwrap();
@@ -409,16 +406,14 @@ fn legacy_uncertain_evidence_fails_closed_but_safe_terminal_cases_resolve() {
         .unwrap();
     drop(journal);
     drop(session);
-    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
     assert!(matches!(
         store.begin_recovery(),
-        Err(RecoveryError::UnsafeLegacyEvidence)
+        Err(RecoveryError::IncompleteEvidence)
     ));
 
-    let (workspace, store, initial) = initialized_store();
+    let (_workspace, store, initial) = initialized_store();
     let mut session = store.begin_write().unwrap();
     let mut journal = OperationJournal::begin(&mut session, digest()).unwrap();
-    let operation_id = journal.operation_id();
     let token = journal
         .start_step(address("api"), JournalAction::Create)
         .unwrap();
@@ -431,7 +426,6 @@ fn legacy_uncertain_evidence_fails_closed_but_safe_terminal_cases_resolve() {
         .unwrap();
     drop(journal);
     drop(session);
-    rewrite_format_version(&journal_path(workspace.path(), operation_id), 1);
     store.begin_recovery().unwrap().resolve().unwrap();
 }
 
@@ -456,10 +450,14 @@ fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() 
     let recovery = store
         .begin_recovery()
         .expect("tail must be archived and trimmed");
-    let archives = fs::read_dir(workspace.path().join(".dokploy/journal/archive"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect::<Vec<_>>();
+    let archives = fs::read_dir(
+        workspace
+            .path()
+            .join(".dokploy/projects/shop/journal/archive"),
+    )
+    .unwrap()
+    .map(|entry| entry.unwrap().path())
+    .collect::<Vec<_>>();
     assert_eq!(archives.len(), 1);
     assert_eq!(fs::read(&archives[0]).unwrap(), original);
     assert!(fs::read(&path).unwrap().ends_with(b"\n"));
@@ -468,10 +466,14 @@ fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() 
         use std::os::unix::fs::PermissionsExt;
 
         assert_eq!(
-            fs::metadata(workspace.path().join(".dokploy/journal/archive"))
-                .unwrap()
-                .permissions()
-                .mode()
+            fs::metadata(
+                workspace
+                    .path()
+                    .join(".dokploy/projects/shop/journal/archive")
+            )
+            .unwrap()
+            .permissions()
+            .mode()
                 & 0o777,
             0o700
         );
@@ -503,7 +505,7 @@ fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() 
 #[test]
 fn durable_success_precedes_a_failed_checkpoint() {
     let (workspace, store, initial) = initialized_store();
-    let primary_path = workspace.path().join(".dokploy/state.json");
+    let primary_path = workspace.path().join(".dokploy/projects/shop/state.json");
     let primary_before = fs::read(&primary_path).expect("state must exist");
     let mut invalid = initial.clone();
     add_application(&mut invalid, "one", "one");
@@ -932,7 +934,7 @@ fn scanner_rejects_sequence_gap_duplicate_or_missing_begin() {
     assert_journal_corrupt(&store);
 
     let (workspace, store, _initial) = initialized_store();
-    let directory = workspace.path().join(".dokploy/journal");
+    let directory = workspace.path().join(".dokploy/projects/shop/journal");
     fs::create_dir(&directory).expect("journal directory must be created");
     fs::write(
         directory.join(format!("{}.jsonl", Uuid::new_v4())),
@@ -991,7 +993,10 @@ fn journal_directory_and_file_are_owner_only() {
     let (workspace, store, _initial) = initialized_store();
     let journal_path = begin_and_drop(&store, &workspace);
 
-    assert_eq!(mode(&workspace.path().join(".dokploy/journal")), 0o700);
+    assert_eq!(
+        mode(&workspace.path().join(".dokploy/projects/shop/journal")),
+        0o700
+    );
     assert_eq!(mode(&journal_path), 0o600);
 
     fn mode(path: &Path) -> u32 {
@@ -1001,8 +1006,9 @@ fn journal_directory_and_file_are_owner_only() {
 
 fn initialized_store() -> (TempDir, StateStore, StateFile) {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let store = StateStore::new(workspace.path(), instance()).expect("store must bind");
-    let state = StateFile::new(Version::new(0, 1, 0), instance());
+    let store = StateStore::for_document(workspace.path(), instance(), project_document())
+        .expect("store must bind");
+    let state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     store
         .begin_write()
         .expect("writer must start")
@@ -1040,6 +1046,7 @@ fn digest() -> PlanDigest {
 }
 
 fn instance() -> InstanceIdentity {
+    kinds();
     InstanceIdentity::parse("https://deploy.example.com").expect("instance must be valid")
 }
 
@@ -1070,7 +1077,7 @@ fn add_application(state: &mut StateFile, name: &str, description: &str) {
 
 fn application_state(remote: &str, description: &str) -> ResourceState {
     ResourceState::new(
-        ResourceKind::Application,
+        kinds().application,
         remote_id(remote),
         false,
         ManagedInputs::try_from_json(json!({ "description": description }))
@@ -1086,12 +1093,12 @@ fn application_state(remote: &str, description: &str) -> ResourceState {
 
 fn journal_path(workspace: &Path, operation_id: Uuid) -> PathBuf {
     workspace
-        .join(".dokploy/journal")
+        .join(".dokploy/projects/shop/journal")
         .join(format!("{operation_id}.jsonl"))
 }
 
 fn journal_bytes(workspace: &Path) -> String {
-    let path = fs::read_dir(workspace.join(".dokploy/journal"))
+    let path = fs::read_dir(workspace.join(".dokploy/projects/shop/journal"))
         .expect("journal directory must exist")
         .next()
         .expect("journal file must exist")
@@ -1109,22 +1116,9 @@ fn append(path: &Path, bytes: &[u8]) {
         .expect("journal bytes must append");
 }
 
-fn rewrite_format_version(path: &Path, version: u32) {
-    let bytes = fs::read_to_string(path).expect("journal must be readable");
-    fs::write(
-        path,
-        bytes.replacen(
-            "\"formatVersion\":2",
-            &format!("\"formatVersion\":{version}"),
-            1,
-        ),
-    )
-    .expect("journal format must be rewritten");
-}
-
 fn write_state_directly(workspace: &Path, state: &StateFile) {
     let mut bytes = serde_json::to_vec_pretty(state).expect("state must serialize");
     bytes.push(b'\n');
-    fs::write(workspace.join(".dokploy/state.json"), bytes)
+    fs::write(workspace.join(".dokploy/projects/shop/state.json"), bytes)
         .expect("non-cooperating writer must replace state");
 }

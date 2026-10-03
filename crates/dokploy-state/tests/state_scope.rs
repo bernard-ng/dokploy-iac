@@ -1,5 +1,9 @@
 //! Document scopes: independent project and settings state lineages.
 
+mod support;
+
+use support::{kinds, project_document};
+
 use std::{collections::BTreeMap, fs};
 
 use dokploy_state::{
@@ -11,15 +15,20 @@ use serde_json::json;
 use tempfile::tempdir;
 
 fn instance() -> InstanceIdentity {
+    kinds();
     InstanceIdentity::parse("https://deploy.example.com").expect("the instance must be valid")
 }
 
 fn project_state() -> StateFile {
-    StateFile::new(Version::new(0, 1, 0), instance())
+    StateFile::new(Version::new(0, 1, 0), instance(), project_document())
 }
 
 fn settings_state() -> StateFile {
-    StateFile::new_in_scope(Version::new(0, 1, 0), instance(), StateScope::Settings)
+    StateFile::new(
+        Version::new(0, 1, 0),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    )
 }
 
 fn project_resource(kind: ResourceKind, id: &str) -> ResourceState {
@@ -54,14 +63,14 @@ fn decode(value: &serde_json::Value) -> Result<StateFile, dokploy_state::StateDe
 // ---------------------------------------------------------------------------
 
 #[test]
-fn new_states_default_to_the_workspace_project_document_in_format_five() {
+fn a_new_project_state_is_a_format_five_project_document() {
     let state = project_state();
 
     assert_eq!(state.scope(), StateScope::Project);
-    assert_eq!(state.document(), &DocumentId::Workspace);
+    assert_eq!(state.document(), &project_document());
     assert_eq!(state.format_version(), 5);
     let encoded = serde_json::to_value(&state).expect("state must serialize");
-    assert_eq!(encoded["document"], "project");
+    assert_eq!(encoded["document"], "project.shop");
     assert_eq!(encoded["formatVersion"], 5);
     assert!(encoded.get("scope").is_none(), "the scope is derived");
 }
@@ -120,7 +129,7 @@ fn a_settings_lineage_rejects_project_resources() {
     let error = state
         .upsert_resource(
             address.clone(),
-            project_resource(ResourceKind::Project, "project-1"),
+            project_resource(kinds().project, "project-1"),
         )
         .expect_err("a project kind does not belong in settings state");
 
@@ -136,14 +145,11 @@ fn a_settings_lineage_rejects_project_resources() {
     );
     assert_eq!(state.serial(), 0, "a rejected upsert advances nothing");
 
-    let error = StateFile::new_with_resources_in_scope(
+    let error = StateFile::with_resources(
         Version::new(0, 1, 0),
         instance(),
-        StateScope::Settings,
-        BTreeMap::from([(
-            address,
-            project_resource(ResourceKind::Project, "project-1"),
-        )]),
+        DocumentId::Settings,
+        BTreeMap::from([(address, project_resource(kinds().project, "project-1"))]),
     )
     .expect_err("an imported project kind does not belong in settings state");
     assert!(
@@ -158,7 +164,7 @@ fn a_decoded_settings_file_with_a_project_resource_is_rejected() {
     project
         .upsert_resource(
             "project.main".parse().expect("address parses"),
-            project_resource(ResourceKind::Project, "project-1"),
+            project_resource(kinds().project, "project-1"),
         )
         .expect("a project resource belongs in project state");
     let mut encoded = serde_json::to_value(&project).expect("state must serialize");
@@ -170,10 +176,10 @@ fn a_decoded_settings_file_with_a_project_resource_is_rejected() {
 #[test]
 fn every_current_kind_belongs_to_the_project_scope() {
     for kind in [
-        ResourceKind::Project,
-        ResourceKind::Environment,
-        ResourceKind::Application,
-        ResourceKind::Backup,
+        kinds().project,
+        kinds().environment,
+        kinds().application,
+        kinds().backup,
     ] {
         assert_eq!(kind.scope(), StateScope::Project, "{kind}");
     }
@@ -183,23 +189,23 @@ fn every_current_kind_belongs_to_the_project_scope() {
 
 #[test]
 fn a_tag_is_a_settings_resource_with_no_containment_parent() {
-    assert_eq!(ResourceKind::Tag.scope(), StateScope::Settings);
+    assert_eq!(kinds().tag.scope(), StateScope::Settings);
     assert_eq!(
         "tag".parse::<ResourceKind>().expect("kind parses"),
-        ResourceKind::Tag
+        kinds().tag
     );
     let mut settings = settings_state();
     settings
         .upsert_resource(
             "tag.prod".parse().expect("address parses"),
-            project_resource(ResourceKind::Tag, "tag-1"),
+            project_resource(kinds().tag, "tag-1"),
         )
         .expect("a tag belongs in settings state");
 
     let error = project_state()
         .upsert_resource(
             "tag.prod".parse().expect("address parses"),
-            project_resource(ResourceKind::Tag, "tag-1"),
+            project_resource(kinds().tag, "tag-1"),
         )
         .expect_err("a tag does not belong in project state");
     assert!(
@@ -215,9 +221,14 @@ fn a_tag_is_a_settings_resource_with_no_containment_parent() {
 #[test]
 fn settings_state_lives_beside_project_state_and_never_blocks_it() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let project = StateStore::new(workspace.path(), instance()).expect("project store binds");
-    let settings = StateStore::with_scope(workspace.path(), instance(), StateScope::Settings)
-        .expect("settings store binds");
+    let project = StateStore::for_document(workspace.path(), instance(), project_document())
+        .expect("project store binds");
+    let settings = StateStore::for_document(
+        workspace.path(),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    )
+    .expect("settings store binds");
     assert_eq!(project.scope(), StateScope::Project);
     assert_eq!(settings.scope(), StateScope::Settings);
 
@@ -234,7 +245,12 @@ fn settings_state_lives_beside_project_state_and_never_blocks_it() {
         .expect("settings state initializes");
     drop((project_session, settings_session));
 
-    assert!(workspace.path().join(".dokploy/state.json").is_file());
+    assert!(
+        workspace
+            .path()
+            .join(".dokploy/projects/shop/state.json")
+            .is_file()
+    );
     assert!(
         workspace
             .path()
@@ -266,25 +282,39 @@ fn settings_state_lives_beside_project_state_and_never_blocks_it() {
 #[test]
 fn a_settings_store_alone_leaves_project_state_absent() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let settings = StateStore::with_scope(workspace.path(), instance(), StateScope::Settings)
-        .expect("settings store binds");
+    let settings = StateStore::for_document(
+        workspace.path(),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    )
+    .expect("settings store binds");
     settings
         .begin_write()
         .expect("settings lock is acquired")
         .checkpoint(ExpectedState::absent(), &settings_state())
         .expect("settings state initializes");
 
-    let project = StateStore::new(workspace.path(), instance()).expect("project store binds");
+    let project = StateStore::for_document(workspace.path(), instance(), project_document())
+        .expect("project store binds");
 
     assert_eq!(project.inspect().expect("project is readable"), None);
-    assert!(!workspace.path().join(".dokploy/state.json").exists());
+    assert!(
+        !workspace
+            .path()
+            .join(".dokploy/projects/shop/state.json")
+            .exists()
+    );
 }
 
 #[test]
 fn a_store_refuses_to_write_or_read_another_scope() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let settings = StateStore::with_scope(workspace.path(), instance(), StateScope::Settings)
-        .expect("settings store binds");
+    let settings = StateStore::for_document(
+        workspace.path(),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    )
+    .expect("settings store binds");
 
     let error = settings
         .begin_write()
@@ -308,12 +338,14 @@ fn a_store_refuses_to_write_or_read_another_scope() {
         .expect("lock is acquired")
         .checkpoint(ExpectedState::absent(), &settings_state())
         .expect("settings state initializes");
+    fs::create_dir_all(workspace.path().join(".dokploy/projects/shop")).expect("directory");
     fs::copy(
         workspace.path().join(".dokploy/settings/state.json"),
-        workspace.path().join(".dokploy/state.json"),
+        workspace.path().join(".dokploy/projects/shop/state.json"),
     )
     .expect("state file is copied");
-    let project = StateStore::new(workspace.path(), instance()).expect("project store binds");
+    let project = StateStore::for_document(workspace.path(), instance(), project_document())
+        .expect("project store binds");
 
     let error = project
         .inspect()
@@ -333,14 +365,15 @@ fn a_store_refuses_to_write_or_read_another_scope() {
 #[test]
 fn a_store_refuses_a_file_from_an_older_format_instead_of_upgrading_it() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let directory = workspace.path().join(".dokploy");
-    fs::create_dir(&directory).expect("state directory is created");
+    let directory = workspace.path().join(".dokploy/projects/shop");
+    fs::create_dir_all(&directory).expect("state directory is created");
     fs::write(
         directory.join("state.json"),
         serde_json::to_vec(&older_format_json(4)).expect("JSON serializes"),
     )
     .expect("old state is written");
-    let store = StateStore::new(workspace.path(), instance()).expect("project store binds");
+    let store = StateStore::for_document(workspace.path(), instance(), project_document())
+        .expect("project store binds");
 
     assert!(matches!(
         store.inspect(),
@@ -354,8 +387,12 @@ fn the_settings_directory_is_hardened_and_never_follows_a_symlinked_parent() {
     use std::os::unix::fs::{PermissionsExt, symlink};
 
     let workspace = tempdir().expect("temporary workspace must be created");
-    let settings = StateStore::with_scope(workspace.path(), instance(), StateScope::Settings)
-        .expect("settings store binds");
+    let settings = StateStore::for_document(
+        workspace.path(),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    )
+    .expect("settings store binds");
     settings
         .begin_write()
         .expect("lock is acquired")
@@ -374,8 +411,12 @@ fn the_settings_directory_is_hardened_and_never_follows_a_symlinked_parent() {
     let hostile = tempdir().expect("temporary workspace must be created");
     let target = tempdir().expect("redirect target must be created");
     symlink(target.path(), hostile.path().join(".dokploy")).expect("symlink is created");
-    let store = StateStore::with_scope(hostile.path(), instance(), StateScope::Settings)
-        .expect("binding does not touch the disk");
+    let store = StateStore::for_document(
+        hostile.path(),
+        instance(),
+        dokploy_state::DocumentId::Settings,
+    )
+    .expect("binding does not touch the disk");
 
     let error = store
         .begin_write()

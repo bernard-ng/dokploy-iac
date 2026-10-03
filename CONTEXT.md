@@ -60,9 +60,12 @@ An ordering requirement between resources. It implies neither ownership nor cont
 something outside the document (a server, a registry). Zero or several matches block
 planning.
 
-**Reparent**:
-A change of containment that keeps the remote identity.
-_Avoid_: move (a move is a rename of an address)
+**Move**:
+A change of address that keeps the remote identity. Containment is the address path, so
+placing a resource under another parent is a move too, and the kernel plans it as one (state-only,
+or with a remote update when a property changes). A spec marks a field `reparent` when Dokploy
+performs the move through an operation of its own.
+_Avoid_: rename, reparent (as a kernel concept)
 
 **Replacement**:
 Convergence by exchanging one remote identity for another.

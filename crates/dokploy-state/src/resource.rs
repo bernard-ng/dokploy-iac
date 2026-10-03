@@ -45,37 +45,13 @@ impl fmt::Display for StateScope {
 
 /// A resource kind: a lower snake case name such as `application` or `registry`.
 ///
-/// The kinds of the first engine are constants (`ResourceKind::Application`, usable in
-/// expressions and patterns). Every other kind comes from a kind spec and must be
-/// [registered](ResourceKind::register) with its scope and containment parent before
-/// it can be parsed or deserialized, so state and journals can only name kinds the
-/// running tool knows. The constants are deleted as kinds move onto specs (ADR 0016).
+/// Every kind comes from a kind spec and must be [registered](ResourceKind::register) with
+/// its scope and containment parent before it can be parsed or deserialized, so state and
+/// journals can only name kinds the running tool knows.
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct ResourceKind(&'static str);
 
-#[allow(non_upper_case_globals)]
-impl ResourceKind {
-    pub const Project: Self = Self("project");
-    pub const Environment: Self = Self("environment");
-    pub const Application: Self = Self("application");
-    pub const Compose: Self = Self("compose");
-    pub const Postgres: Self = Self("postgres");
-    pub const MySql: Self = Self("mysql");
-    pub const MariaDb: Self = Self("mariadb");
-    pub const Mongo: Self = Self("mongo");
-    pub const LibSql: Self = Self("libsql");
-    pub const Redis: Self = Self("redis");
-    pub const Domain: Self = Self("domain");
-    pub const Port: Self = Self("port");
-    pub const Redirect: Self = Self("redirect");
-    pub const Security: Self = Self("security");
-    pub const Mount: Self = Self("mount");
-    pub const Schedule: Self = Self("schedule");
-    pub const Backup: Self = Self("backup");
-    pub const Tag: Self = Self("tag");
-}
-
-/// What the state layer must know about a registered (non-legacy) kind.
+/// What the state layer must know about a registered kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct KindInfo {
     scope: StateScope,
@@ -91,30 +67,6 @@ fn registry() -> &'static RwLock<BTreeMap<&'static str, KindInfo>> {
     KINDS.get_or_init(|| RwLock::new(BTreeMap::new()))
 }
 
-fn legacy_kind(name: &str) -> Option<ResourceKind> {
-    Some(match name {
-        "project" => ResourceKind::Project,
-        "environment" => ResourceKind::Environment,
-        "application" => ResourceKind::Application,
-        "compose" => ResourceKind::Compose,
-        "postgres" => ResourceKind::Postgres,
-        "mysql" => ResourceKind::MySql,
-        "mariadb" => ResourceKind::MariaDb,
-        "mongo" => ResourceKind::Mongo,
-        "libsql" => ResourceKind::LibSql,
-        "redis" => ResourceKind::Redis,
-        "domain" => ResourceKind::Domain,
-        "port" => ResourceKind::Port,
-        "redirect" => ResourceKind::Redirect,
-        "security" => ResourceKind::Security,
-        "mount" => ResourceKind::Mount,
-        "schedule" => ResourceKind::Schedule,
-        "backup" => ResourceKind::Backup,
-        "tag" => ResourceKind::Tag,
-        _ => return None,
-    })
-}
-
 impl ResourceKind {
     /// Returns the canonical kind segment used in logical addresses.
     #[must_use]
@@ -126,8 +78,7 @@ impl ResourceKind {
     ///
     /// `parent` is the kind that contains it (`None` for a document root) and must
     /// already be known. Registering a kind again with the same facts returns the same
-    /// kind; different facts are refused. Registering a first-engine name returns its
-    /// constant, provided the facts agree with the built-in ones.
+    /// kind; different facts are refused.
     pub fn register(
         name: &str,
         scope: StateScope,
@@ -144,15 +95,6 @@ impl ResourceKind {
             });
         }
         let info = KindInfo { scope, parent };
-        if let Some(kind) = legacy_kind(name) {
-            return if kind.scope() == scope && kind.containment_parent_kind() == parent {
-                Ok(kind)
-            } else {
-                Err(KindRegistrationError::Conflict {
-                    name: name.to_owned(),
-                })
-            };
-        }
         let mut kinds = registry().write().expect("kind registry is not poisoned");
         if let Some((known, existing)) = kinds.get_key_value(name) {
             return if *existing == info {
@@ -182,92 +124,14 @@ impl ResourceKind {
     /// Returns the document scope this kind is declared and tracked in.
     #[must_use]
     pub fn scope(self) -> StateScope {
-        match self {
-            Self::Tag => StateScope::Settings,
-            Self::Project
-            | Self::Environment
-            | Self::Application
-            | Self::Compose
-            | Self::Postgres
-            | Self::MySql
-            | Self::MariaDb
-            | Self::Mongo
-            | Self::LibSql
-            | Self::Redis
-            | Self::Domain
-            | Self::Port
-            | Self::Redirect
-            | Self::Security
-            | Self::Mount
-            | Self::Schedule
-            | Self::Backup => StateScope::Project,
-            _ => self
-                .registered()
-                .map_or(StateScope::Project, |info| info.scope),
-        }
+        self.registered()
+            .map_or(StateScope::Project, |info| info.scope)
     }
 
     /// Returns the required containment parent kind, if the resource is nested.
     #[must_use]
     pub fn containment_parent_kind(self) -> Option<Self> {
-        match self {
-            Self::Project | Self::Tag => None,
-            Self::Environment => Some(Self::Project),
-            Self::Application
-            | Self::Compose
-            | Self::Postgres
-            | Self::MySql
-            | Self::MariaDb
-            | Self::Mongo
-            | Self::LibSql
-            | Self::Redis
-            | Self::Domain
-            | Self::Mount
-            | Self::Schedule
-            | Self::Backup => Some(Self::Environment),
-            Self::Port | Self::Redirect | Self::Security => Some(Self::Application),
-            _ => self.registered().and_then(|info| info.parent),
-        }
-    }
-
-    /// Returns whether a Mount may target resources of this kind.
-    ///
-    /// This is the closed target union shared by configuration, planner
-    /// snapshots, and the Dokploy adapter.
-    #[must_use]
-    pub fn is_mount_target(self) -> bool {
-        matches!(
-            self,
-            Self::Application
-                | Self::Compose
-                | Self::Postgres
-                | Self::MySql
-                | Self::MariaDb
-                | Self::Mongo
-                | Self::LibSql
-                | Self::Redis
-        )
-    }
-
-    /// Returns whether a Schedule may target resources of this kind.
-    ///
-    /// Dokploy host and Dokploy-server Schedule scopes are intentionally not
-    /// part of this closed union.
-    #[must_use]
-    pub fn is_schedule_target(self) -> bool {
-        matches!(self, Self::Application | Self::Compose)
-    }
-
-    /// Returns whether a Backup may target resources of this kind.
-    ///
-    /// Backups are supported for the five database kinds proven by the SDK
-    /// contract. Compose and web-server Backups remain unsupported.
-    #[must_use]
-    pub fn is_backup_target(self) -> bool {
-        matches!(
-            self,
-            Self::Postgres | Self::MySql | Self::MariaDb | Self::Mongo | Self::LibSql
-        )
+        self.registered().and_then(|info| info.parent)
     }
 }
 
@@ -299,9 +163,6 @@ impl FromStr for ResourceKind {
     type Err = ResourceKindParseError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        if let Some(kind) = legacy_kind(value) {
-            return Ok(kind);
-        }
         registry()
             .read()
             .expect("kind registry is not poisoned")
@@ -490,7 +351,7 @@ impl FromStr for AddressSegment {
 ///
 /// An address is a `/`-separated path of `kind.key` segments from the document root,
 /// such as `project.shop/environment.staging/application.api/redirect.www`. It is the
-/// path of keys through the containment tree (ADR 0006). A first-engine address like
+/// path of keys through the containment tree (ADR 0006). An address like
 /// `application.api` is a path of one segment.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ResourceAddress {

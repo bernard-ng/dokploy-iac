@@ -3,7 +3,7 @@
 //! A fingerprint is an HMAC-SHA-256 of a value under a per-instance key, bound to the
 //! instance, the resource address, and the property path, so the same secret has a
 //! different receipt anywhere else. State holds receipts, never values (invariant 18).
-//! The construction is the first engine's, so receipts stay comparable.
+//! The framing is pinned by an independently computed vector in `tests/compile.rs`.
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;

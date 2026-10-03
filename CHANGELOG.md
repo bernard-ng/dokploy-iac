@@ -26,6 +26,27 @@ All notable changes to this project will be documented in this file.
   `sensitive` layers and all their tests. The golden ledger now lets a scenario outlive its test:
   what the first engine asserted stays `pending` as the definition of done for porting its kind.
   `DOKPLOY_FINGERPRINT_KEY` and the per-instance key in the credential store work as before.
+- **Breaking: the kernel carries no closed vocabulary** (ADR 0002, ADR 0016). `dokploy-state` has no
+  built-in resource kinds, `DocumentId::Workspace`, or `StateFile::new_in_scope`/`StateStore::new`:
+  every kind is registered from a spec, `StateFile::new(version, instance, document)` is the one
+  constructor, and a journal that lacks evidence is `RecoveryError::IncompleteEvidence`.
+  `dokploy-core` has no per-kind property list: `PropertyPath` is a handle on a spec's
+  `PropertyInfo` (`from_spec`), `SpecPath`, `EnvironmentVariableName`, and `PropertyPath::FromStr`
+  are gone, and `StoredState::try_from_state` and `compare_resource_observation` take the spec
+  registry. **Containment is the address path**: `ChangeKind::Reparent`,
+  `MetadataChangeKind::Containment`, `PlanDiagnosticCode::InvalidIgnoredCheckpoint` (`DOKPLAN016`,
+  left unassigned), and the mutation contract's containment mode are removed; placing a resource
+  under another parent is a `Move`.
+- The planner tests are rewritten on three synthetic kinds (`widget`, a nested `gadget`, `cache`;
+  `crates/dokploy-core/tests/support`) instead of the first engine's kinds, so they no longer move
+  when a spec does. They keep the first engine's coverage of ownership and relinquishing, secret
+  receipts, the three-way comparison, protection, dependency order and cycles, moves and removals,
+  replacement and mutation contracts, `ignore_changes`, selector resolution, snapshot validation,
+  and checkpoint materialization. About 8,000 lines of per-kind tests (mount, schedule, backup,
+  tag, placement, redirect, security, and the value rules of ports and sources) are deleted; their
+  ledger scenarios stay `pending` until the kind is ported.
+- The fingerprint test no longer pins the first engine's vector: its vector is recomputed
+  independently (a separate HMAC over the documented framing) for a registry address.
 
 ### Added
 

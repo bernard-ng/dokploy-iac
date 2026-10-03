@@ -23,7 +23,6 @@ use crate::{
 const JOURNAL_DIRECTORY: &str = "journal";
 const JOURNAL_ARCHIVE_DIRECTORY: &str = "archive";
 const JOURNAL_FORMAT_VERSION: u32 = 2;
-const LEGACY_JOURNAL_FORMAT_VERSION: u32 = 1;
 
 /// A mutation action recorded before and after a remote operation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1129,7 +1128,7 @@ impl RecoverySession<'_> {
         let expected = step
             .expected_checkpoint
             .as_ref()
-            .ok_or(RecoveryError::UnsafeLegacyEvidence)?;
+            .ok_or(RecoveryError::IncompleteEvidence)?;
         expected
             .validate_for(&step.address, step.action, &self.current_state)
             .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?;
@@ -1201,7 +1200,7 @@ impl RecoverySession<'_> {
         let expected_checkpoint = step
             .expected_checkpoint
             .clone()
-            .ok_or(RecoveryError::UnsafeLegacyEvidence)?;
+            .ok_or(RecoveryError::IncompleteEvidence)?;
         validate_success_remote_id(step.action, remote_id.as_ref())
             .map_err(RecoveryError::journal)?;
         self.append_or_poison(&JournalRecord::StepSucceeded {
@@ -1242,7 +1241,7 @@ impl RecoverySession<'_> {
         let expected_checkpoint = step
             .expected_checkpoint
             .clone()
-            .ok_or(RecoveryError::UnsafeLegacyEvidence)?;
+            .ok_or(RecoveryError::IncompleteEvidence)?;
         self.checkpoint_step(&step, *expected_checkpoint, remote_id.as_ref(), proposed)
     }
 
@@ -1254,7 +1253,7 @@ impl RecoverySession<'_> {
             return Err(RecoveryError::StepAlreadyResolved);
         }
         if step.expected_checkpoint.is_none() {
-            return Err(RecoveryError::UnsafeLegacyEvidence);
+            return Err(RecoveryError::IncompleteEvidence);
         }
         self.append_or_poison(&JournalRecord::StepRecoveredNoChange {
             sequence,
@@ -1369,8 +1368,8 @@ impl RecoverySession<'_> {
 pub enum RecoveryError {
     #[error("there is no incomplete operation journal to recover")]
     NoRecoveryRequired,
-    #[error("legacy or incomplete evidence cannot safely determine the interrupted outcome")]
-    UnsafeLegacyEvidence,
+    #[error("incomplete evidence cannot safely determine the interrupted outcome")]
+    IncompleteEvidence,
     #[error("durable expected checkpoint evidence is inconsistent")]
     InvalidExpectedCheckpoint,
     #[error("the requested recovery step does not exist")]
@@ -1447,7 +1446,7 @@ fn validate_recovery_safety(summary: &RecoverySummary) -> Result<(), RecoveryErr
                     }
             )
     }) {
-        return Err(RecoveryError::UnsafeLegacyEvidence);
+        return Err(RecoveryError::IncompleteEvidence);
     }
     if summary.steps.iter().any(|step| {
         matches!(
@@ -1457,7 +1456,7 @@ fn validate_recovery_safety(summary: &RecoverySummary) -> Result<(), RecoveryErr
             )
         )
     }) {
-        return Err(RecoveryError::UnsafeLegacyEvidence);
+        return Err(RecoveryError::IncompleteEvidence);
     }
 
     Ok(())
@@ -1759,11 +1758,7 @@ fn validate_records(
             ),
             _ => return Err(RecoveryScanError::Corrupt),
         };
-    if !matches!(
-        format_version,
-        LEGACY_JOURNAL_FORMAT_VERSION | JOURNAL_FORMAT_VERSION
-    ) || operation_id != filename_operation_id
-    {
+    if format_version != JOURNAL_FORMAT_VERSION || operation_id != filename_operation_id {
         return Err(RecoveryScanError::Corrupt);
     }
     let state = state.ok_or(RecoveryScanError::Corrupt)?;
@@ -1792,10 +1787,6 @@ fn validate_records(
                 expected_checkpoint,
             } => {
                 if failed.is_some() || sequence != next_sequence {
-                    return Err(RecoveryScanError::Corrupt);
-                }
-                if format_version == LEGACY_JOURNAL_FORMAT_VERSION && expected_checkpoint.is_some()
-                {
                     return Err(RecoveryScanError::Corrupt);
                 }
                 if expected_checkpoint

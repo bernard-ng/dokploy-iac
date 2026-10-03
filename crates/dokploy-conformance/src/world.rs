@@ -96,7 +96,7 @@ impl<'c> World<'c> {
             *self.parent_id.borrow_mut() = Some(id.clone());
             parent = Some((address, id));
         }
-        let state = StateFile::new_with_resources_for_document(
+        let state = StateFile::with_resources(
             semver::Version::new(0, 1, 0),
             engine.instance().clone(),
             self.case.document_id(),

@@ -1,9 +1,8 @@
-//! Spec-driven behavior for [`PropertyPath::Spec`]: value validation, stored-state
-//! projection, checkpoint materialization, and the mutation contract.
+//! Spec-driven behavior for [`PropertyPath`]: value validation, stored-state projection,
+//! checkpoint materialization, and the mutation contract.
 //!
 //! Everything here is decided by the facts a kind spec attached to the path
-//! ([`PropertyInfo`]); nothing names a kind. The closed per-kind vocabulary in
-//! `property.rs` is deleted as kinds move onto this path (ADR 0016).
+//! ([`PropertyInfo`]); nothing names a kind (ADR 0002).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -309,9 +308,8 @@ fn insert_nested(
 
 /// Registers every kind of a spec registry with the state layer, parents first.
 ///
-/// State and journals can only name kinds registered here (or the first engine's).
-/// Registering is idempotent, and a spec that contradicts a kind already registered,
-/// or the first engine's built-in facts for it, is an error.
+/// State and journals can only name kinds registered here. Registering is idempotent, and a
+/// spec that contradicts a kind already registered is an error.
 pub fn register_spec_kinds(
     specs: &dokploy_spec::SpecRegistry,
 ) -> Result<(), dokploy_state::KindRegistrationError> {
@@ -362,7 +360,6 @@ impl MutationContract {
     #[must_use]
     pub fn from_spec(spec: &KindSpec) -> Self {
         let mut contract = Self::deny_all(ReplacementOrder::DeleteBeforeCreate);
-        let mut reparents = false;
         for info in spec.properties() {
             let clearable = info.nullable;
             let mutation = match info.mutability {
@@ -374,11 +371,9 @@ impl MutationContract {
                     MutationMode::Replace,
                     unsupported_unless(clearable, MutationMode::Replace),
                 ),
-                Mutability::Reparent => {
-                    reparents = true;
-                    PropertyMutation::new(MutationMode::Unsupported, MutationMode::Unsupported)
-                }
-                Mutability::Computed => {
+                // A resource moves between parents by changing its address (a move), never by
+                // writing a property.
+                Mutability::Reparent | Mutability::Computed => {
                     PropertyMutation::new(MutationMode::Unsupported, MutationMode::Unsupported)
                 }
             };
@@ -391,9 +386,6 @@ impl MutationContract {
             } else if creatable {
                 contract = contract.allowing_on_create(path);
             }
-        }
-        if reparents {
-            contract = contract.with_containment(MutationMode::InPlace);
         }
         contract
     }

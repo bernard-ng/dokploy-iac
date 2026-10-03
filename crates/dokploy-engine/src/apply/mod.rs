@@ -160,7 +160,7 @@ impl<T: Transport> Engine<T> {
         let state = match &durable {
             Some(state) => state.clone(),
             None => {
-                let fresh = StateFile::new_for_document(
+                let fresh = StateFile::new(
                     semver::Version::parse(env!("CARGO_PKG_VERSION"))
                         .expect("the crate version is semver"),
                     self.instance.clone(),
@@ -227,13 +227,6 @@ impl<T: Transport> Engine<T> {
                             reason: "is renamed and changed in one step, which the executor does not do yet",
                         });
                     }
-                }
-                ChangeKind::Reparent => {
-                    return Err(ApplyError::Unsupported {
-                        address: address.clone(),
-                        property: None,
-                        reason: "is moved to another parent, which the executor does not do yet",
-                    });
                 }
             }
         }

@@ -1,5 +1,8 @@
+mod support;
+
 use std::collections::BTreeMap;
 use std::str::FromStr;
+use support::{kinds, project_document};
 
 use dokploy_state::{
     FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
@@ -12,6 +15,7 @@ use uuid::Uuid;
 
 #[test]
 fn sensitive_fingerprint_has_one_canonical_receipt_format() {
+    kinds();
     let key_id = FingerprintKeyId::new(
         Uuid::parse_str("0199a0c8-2351-7c31-8899-2c8f81983ea5").expect("UUID must parse"),
     )
@@ -34,6 +38,7 @@ fn sensitive_fingerprint_has_one_canonical_receipt_format() {
 
 #[test]
 fn sensitive_fingerprint_rejects_noncanonical_or_malformed_receipts() {
+    kinds();
     let valid_key = "0199a0c8-2351-7c31-8899-2c8f81983ea5";
     let valid_mac = "abababababababababababababababababababababababababababababababab";
 
@@ -63,6 +68,7 @@ fn sensitive_fingerprint_rejects_noncanonical_or_malformed_receipts() {
 
 #[test]
 fn resource_addresses_have_one_canonical_text_form() {
+    kinds();
     let address = ResourceAddress::from_str("application.api-server")
         .expect("a valid logical address must parse");
 
@@ -74,36 +80,34 @@ fn resource_addresses_have_one_canonical_text_form() {
 
     let mysql =
         ResourceAddress::from_str("mysql.primary").expect("a MySQL logical address must parse");
-    assert_eq!(mysql.kind(), ResourceKind::MySql);
+    assert_eq!(mysql.kind(), kinds().mysql);
     assert_eq!(mysql.to_string(), "mysql.primary");
 
     for (value, kind) in [
-        ("compose.web", ResourceKind::Compose),
-        ("mariadb.primary", ResourceKind::MariaDb),
-        ("mongo.documents", ResourceKind::Mongo),
-        ("libsql.edge", ResourceKind::LibSql),
+        ("compose.web", kinds().compose),
+        ("mariadb.primary", kinds().mariadb),
+        ("mongo.documents", kinds().mongo),
+        ("libsql.edge", kinds().libsql),
     ] {
         let address = ResourceAddress::from_str(value).expect("database address must parse");
         assert_eq!(address.kind(), kind);
         assert_eq!(address.to_string(), value);
-        assert_eq!(
-            kind.containment_parent_kind(),
-            Some(ResourceKind::Environment)
-        );
+        assert_eq!(kind.containment_parent_kind(), Some(kinds().environment));
     }
 }
 
 #[test]
 fn remaining_database_state_requires_environment_containment() {
+    kinds();
     let environment: ResourceAddress = "environment.production"
         .parse()
         .expect("environment address must parse");
 
     for kind in [
-        ResourceKind::Compose,
-        ResourceKind::MariaDb,
-        ResourceKind::Mongo,
-        ResourceKind::LibSql,
+        kinds().compose,
+        kinds().mariadb,
+        kinds().mongo,
+        kinds().libsql,
     ] {
         assert!(
             ResourceState::try_new(
@@ -134,11 +138,12 @@ fn remaining_database_state_requires_environment_containment() {
 
 #[test]
 fn port_state_requires_application_containment() {
+    kinds();
     let application: ResourceAddress = "application.api".parse().unwrap();
     let environment: ResourceAddress = "environment.production".parse().unwrap();
     let new_state = |containment| {
         ResourceState::try_new(
-            ResourceKind::Port,
+            kinds().port,
             RemoteId::new("port-1").unwrap(),
             false,
             ManagedInputs::try_from_json(json!({
@@ -161,15 +166,16 @@ fn port_state_requires_application_containment() {
 
 #[test]
 fn redirect_and_security_state_require_application_containment() {
+    kinds();
     let application: ResourceAddress = "application.api".parse().unwrap();
     let environment: ResourceAddress = "environment.production".parse().unwrap();
 
     for (kind, managed) in [
         (
-            ResourceKind::Redirect,
+            kinds().redirect,
             json!({"regex": "^/old", "replacement": "/new", "permanent": true}),
         ),
-        (ResourceKind::Security, json!({"username": "admin"})),
+        (kinds().security, json!({"username": "admin"})),
     ] {
         let new_state = |containment| {
             ResourceState::try_new(
@@ -187,15 +193,13 @@ fn redirect_and_security_state_require_application_containment() {
         assert!(new_state(Some(environment.clone())).is_err());
         assert!(new_state(None).is_err());
         assert_eq!(kind.as_str().parse::<ResourceKind>().unwrap(), kind);
-        assert_eq!(
-            kind.containment_parent_kind(),
-            Some(ResourceKind::Application)
-        );
+        assert_eq!(kind.containment_parent_kind(), Some(kinds().application));
     }
 }
 
 #[test]
 fn instance_identity_compares_normalized_base_urls() {
+    kinds();
     let first = InstanceIdentity::parse("HTTPS://Deploy.Example.com:443/")
         .expect("a valid Dokploy URL must normalize");
     let second = InstanceIdentity::parse("https://deploy.example.com")
@@ -226,6 +230,7 @@ fn instance_identity_compares_normalized_base_urls() {
 
 #[test]
 fn managed_inputs_accept_objects_and_reject_secret_bearing_fields() {
+    kinds();
     let inputs = ManagedInputs::try_from_json(json!({
         "description": "public",
         "source": { "branch": "main" }
@@ -253,6 +258,7 @@ fn managed_inputs_accept_objects_and_reject_secret_bearing_fields() {
 
 #[test]
 fn managed_inputs_store_only_canonical_sensitive_clears() {
+    kinds();
     for allowed in [
         json!({ "password": null }),
         json!({ "root_password": null }),
@@ -293,6 +299,7 @@ fn managed_inputs_store_only_canonical_sensitive_clears() {
 
 #[test]
 fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap() {
+    kinds();
     let receipt = fingerprint(0x5a);
     let password = SensitivePropertyPath::parse("password").expect("password path must parse");
     let root_password =
@@ -353,7 +360,7 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
         json!({ "environment": { "API_TOKEN": null } }),
     ] {
         let error = ResourceState::try_new(
-            ResourceKind::Application,
+            kinds().application,
             RemoteId::new("application-1").expect("remote ID must be valid"),
             false,
             ManagedInputs::try_from_json(managed).expect("clear must be valid"),
@@ -370,7 +377,7 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
     }
 
     ResourceState::try_new(
-        ResourceKind::Application,
+        kinds().application,
         RemoteId::new("application-1").expect("remote ID must be valid"),
         false,
         ManagedInputs::try_from_json(json!({ "environment": { "FEATURE_FLAG": null } }))
@@ -390,7 +397,7 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
     .expect("different environment paths may own clear and receipt intents");
 
     ResourceState::try_new(
-        ResourceKind::MySql,
+        kinds().mysql,
         RemoteId::new("mysql-1").expect("remote ID must be valid"),
         false,
         ManagedInputs::try_from_json(json!({ "password": null }))
@@ -412,8 +419,9 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
 
 #[test]
 fn mysql_state_requires_environment_containment_and_round_trips() {
+    kinds();
     let mysql = ResourceState::try_new(
-        ResourceKind::MySql,
+        kinds().mysql,
         RemoteId::new("mysql-1").expect("remote ID must be valid"),
         true,
         ManagedInputs::try_from_json(json!({ "database": "app", "username": "app" }))
@@ -450,7 +458,7 @@ fn mysql_state_requires_environment_containment_and_round_trips() {
     assert_eq!(decoded, mysql);
     assert!(
         ResourceState::try_new(
-            ResourceKind::MySql,
+            kinds().mysql,
             RemoteId::new("mysql-2").expect("remote ID must be valid"),
             false,
             ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
@@ -464,6 +472,7 @@ fn mysql_state_requires_environment_containment_and_round_trips() {
 
 #[test]
 fn sensitive_receipts_and_state_debug_output_are_redacted() {
+    kinds();
     let fingerprint = fingerprint(0xcd);
     let inputs = SensitiveInputs::try_from_entries([(
         SensitivePropertyPath::parse("password").expect("path must parse"),
@@ -471,7 +480,7 @@ fn sensitive_receipts_and_state_debug_output_are_redacted() {
     )])
     .expect("sensitive input must be valid");
     let resource = ResourceState::try_new(
-        ResourceKind::Postgres,
+        kinds().postgres,
         RemoteId::new("remote-sensitive-canary").expect("remote ID must be valid"),
         false,
         ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
@@ -484,7 +493,7 @@ fn sensitive_receipts_and_state_debug_output_are_redacted() {
         Vec::new(),
     )
     .expect("disjoint inputs must be valid");
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     state
         .upsert_resource(
             "postgres.main".parse().expect("address must parse"),
@@ -520,6 +529,7 @@ fn sensitive_receipts_and_state_debug_output_are_redacted() {
 
 #[test]
 fn remote_ids_are_non_empty_opaque_values() {
+    kinds();
     let id = RemoteId::new("server-generated-id").expect("a remote identifier must be accepted");
 
     assert_eq!(id.as_str(), "server-generated-id");
@@ -529,12 +539,13 @@ fn remote_ids_are_non_empty_opaque_values() {
 
 #[test]
 fn state_mutations_advance_one_lineage_serial() {
+    kinds();
     let instance =
         InstanceIdentity::parse("https://deploy.example.com").expect("the instance must be valid");
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance);
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance, project_document());
     let lineage = state.lineage();
     let address: ResourceAddress = "application.api".parse().expect("address must parse");
-    let resource = resource_state(ResourceKind::Application, "application-1");
+    let resource = resource_state(kinds().application, "application-1");
 
     assert_eq!(state.format_version(), 5);
     assert_eq!(state.serial(), 0);
@@ -570,14 +581,15 @@ fn state_mutations_advance_one_lineage_serial() {
 
 #[test]
 fn state_move_is_atomic_and_rewrites_all_logical_references() {
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    kinds();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     let source: ResourceAddress = "project.legacy".parse().unwrap();
     let target: ResourceAddress = "project.main".parse().unwrap();
     let environment: ResourceAddress = "environment.production".parse().unwrap();
     let application: ResourceAddress = "application.api".parse().unwrap();
-    let project = resource_state(ResourceKind::Project, "project-remote");
+    let project = resource_state(kinds().project, "project-remote");
     let environment_state = ResourceState::new(
-        ResourceKind::Environment,
+        kinds().environment,
         RemoteId::new("environment-remote").unwrap(),
         false,
         ManagedInputs::try_from_json(json!({})).unwrap(),
@@ -585,7 +597,7 @@ fn state_move_is_atomic_and_rewrites_all_logical_references() {
         vec![source.clone(), target.clone()],
     );
     let application_state = ResourceState::new(
-        ResourceKind::Application,
+        kinds().application,
         RemoteId::new("application-remote").unwrap(),
         false,
         ManagedInputs::try_from_json(json!({})).unwrap(),
@@ -626,19 +638,20 @@ fn state_move_is_atomic_and_rewrites_all_logical_references() {
 
 #[test]
 fn state_move_rejects_missing_cross_kind_and_occupied_targets_without_mutation() {
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    kinds();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     let source: ResourceAddress = "project.legacy".parse().unwrap();
     let occupied: ResourceAddress = "project.main".parse().unwrap();
     state
         .upsert_resource(
             source.clone(),
-            resource_state(ResourceKind::Project, "legacy-remote"),
+            resource_state(kinds().project, "legacy-remote"),
         )
         .unwrap();
     state
         .upsert_resource(
             occupied.clone(),
-            resource_state(ResourceKind::Project, "main-remote"),
+            resource_state(kinds().project, "main-remote"),
         )
         .unwrap();
     let original = state.clone();
@@ -667,12 +680,13 @@ fn state_move_rejects_missing_cross_kind_and_occupied_targets_without_mutation()
 
 #[test]
 fn protection_changes_advance_once_and_identical_values_are_noops() {
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    kinds();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     let address: ResourceAddress = "postgres.main".parse().unwrap();
     state
         .upsert_resource(
             address.clone(),
-            resource_state(ResourceKind::Postgres, "postgres-remote"),
+            resource_state(kinds().postgres, "postgres-remote"),
         )
         .unwrap();
     let serial = state.serial();
@@ -690,27 +704,28 @@ fn protection_changes_advance_once_and_identical_values_are_noops() {
 
 #[test]
 fn forget_is_state_only_idempotent_and_refuses_managed_dependents() {
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    kinds();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     let project: ResourceAddress = "project.main".parse().unwrap();
     let environment: ResourceAddress = "environment.production".parse().unwrap();
     let application: ResourceAddress = "application.api".parse().unwrap();
     state
         .upsert_resource(
             project.clone(),
-            resource_state(ResourceKind::Project, "project-remote"),
+            resource_state(kinds().project, "project-remote"),
         )
         .unwrap();
     state
         .upsert_resource(
             environment.clone(),
-            resource_state(ResourceKind::Environment, "environment-remote"),
+            resource_state(kinds().environment, "environment-remote"),
         )
         .unwrap();
     state
         .upsert_resource(
             application.clone(),
             ResourceState::new(
-                ResourceKind::Application,
+                kinds().application,
                 RemoteId::new("application-remote").unwrap(),
                 false,
                 ManagedInputs::try_from_json(json!({})).unwrap(),
@@ -745,12 +760,13 @@ fn forget_is_state_only_idempotent_and_refuses_managed_dependents() {
 
 #[test]
 fn state_only_mutations_are_atomic_at_serial_overflow() {
+    kinds();
     let address: ResourceAddress = "project.main".parse().unwrap();
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     state
         .upsert_resource(
             address.clone(),
-            resource_state(ResourceKind::Project, "project-remote"),
+            resource_state(kinds().project, "project-remote"),
         )
         .unwrap();
     let mut encoded = serde_json::to_value(&state).unwrap();
@@ -781,16 +797,17 @@ fn state_only_mutations_are_atomic_at_serial_overflow() {
 
 #[test]
 fn state_rejects_resource_kind_and_instance_mismatches() {
+    kinds();
     let instance =
         InstanceIdentity::parse("https://deploy.example.com").expect("the instance must be valid");
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone());
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance.clone(), project_document());
     let address: ResourceAddress = "postgres.main".parse().expect("address must parse");
 
     assert!(
         state
             .upsert_resource(
                 address,
-                resource_state(ResourceKind::Application, "application-1"),
+                resource_state(kinds().application, "application-1"),
             )
             .is_err()
     );
@@ -806,22 +823,23 @@ fn state_rejects_resource_kind_and_instance_mismatches() {
 
 #[test]
 fn state_serialization_is_deterministic_and_round_trips_invariants() {
+    kinds();
     let instance = InstanceIdentity::parse("https://deploy.example.com/base/")
         .expect("the instance must be valid");
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance);
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance, project_document());
     let later: ResourceAddress = "application.zeta".parse().expect("address must parse");
     let earlier: ResourceAddress = "application.alpha".parse().expect("address must parse");
 
     state
         .upsert_resource(
             later.clone(),
-            resource_state(ResourceKind::Application, "application-zeta"),
+            resource_state(kinds().application, "application-zeta"),
         )
         .expect("the first resource must be inserted");
     state
         .upsert_resource(
             earlier.clone(),
-            resource_state(ResourceKind::Application, "application-alpha"),
+            resource_state(kinds().application, "application-alpha"),
         )
         .expect("the second resource must be inserted");
 
@@ -843,7 +861,7 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
             .resource(&earlier)
             .expect("resource must exist")
             .kind(),
-        ResourceKind::Application
+        kinds().application
     );
 
     let mut unsupported = serde_json::to_value(&state).expect("state must serialize");
@@ -859,9 +877,10 @@ fn state_serialization_is_deterministic_and_round_trips_invariants() {
 
 #[test]
 fn state_deserialization_rejects_unknown_fields_and_nil_lineage() {
+    kinds();
     let instance =
         InstanceIdentity::parse("https://deploy.example.com").expect("the instance must be valid");
-    let state = StateFile::new(Version::new(0, 1, 0), instance);
+    let state = StateFile::new(Version::new(0, 1, 0), instance, project_document());
 
     let mut unknown = serde_json::to_value(&state).expect("state must serialize");
     unknown["unexpected"] = json!(true);
@@ -876,12 +895,13 @@ fn state_deserialization_rejects_unknown_fields_and_nil_lineage() {
 
 #[test]
 fn state_deserialization_rejects_raw_sensitive_canaries() {
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    kinds();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     state
         .upsert_resource(
             "postgres.main".parse().expect("address must parse"),
             ResourceState::new(
-                ResourceKind::Postgres,
+                kinds().postgres,
                 RemoteId::new("postgres-1").expect("remote ID must be valid"),
                 false,
                 ManagedInputs::try_from_json(json!({})).expect("managed inputs must be valid"),
@@ -907,7 +927,8 @@ fn state_deserialization_rejects_raw_sensitive_canaries() {
 
 #[test]
 fn resource_state_deserialization_rejects_unknown_fields() {
-    let resource = resource_state(ResourceKind::Application, "application-1");
+    kinds();
+    let resource = resource_state(kinds().application, "application-1");
     let mut encoded = serde_json::to_value(resource).expect("resource state must serialize");
     encoded["unexpected"] = json!(true);
 
@@ -916,7 +937,8 @@ fn resource_state_deserialization_rejects_unknown_fields() {
 
 #[test]
 fn resource_state_deserialization_requires_explicit_containment() {
-    let resource = resource_state(ResourceKind::Application, "application-1");
+    kinds();
+    let resource = resource_state(kinds().application, "application-1");
     let mut encoded = serde_json::to_value(resource).expect("resource state must serialize");
     encoded
         .as_object_mut()
@@ -925,7 +947,7 @@ fn resource_state_deserialization_requires_explicit_containment() {
 
     assert!(serde_json::from_value::<ResourceState>(encoded).is_err());
 
-    let project = resource_state(ResourceKind::Project, "project-1");
+    let project = resource_state(kinds().project, "project-1");
     let encoded = serde_json::to_value(&project).expect("project state must serialize");
     assert_eq!(encoded["containment"], serde_json::Value::Null);
     assert_eq!(
@@ -937,12 +959,13 @@ fn resource_state_deserialization_requires_explicit_containment() {
 
 #[test]
 fn resource_state_canonicalizes_dependencies() {
+    kinds();
     let first: ResourceAddress = "environment.production"
         .parse()
         .expect("address must parse");
     let second: ResourceAddress = "project.main".parse().expect("address must parse");
     let resource = ResourceState::new(
-        ResourceKind::Application,
+        kinds().application,
         RemoteId::new("application-1").expect("remote ID must be valid"),
         true,
         ManagedInputs::try_from_json(json!({})).expect("inputs must be safe"),
@@ -956,13 +979,14 @@ fn resource_state_canonicalizes_dependencies() {
 
 #[test]
 fn resource_state_requires_kind_correct_containment() {
+    kinds();
     let environment: ResourceAddress = "environment.production"
         .parse()
         .expect("address must parse");
     let project: ResourceAddress = "project.main".parse().expect("address must parse");
 
     let application = ResourceState::try_new(
-        ResourceKind::Application,
+        kinds().application,
         RemoteId::new("application-1").expect("remote ID must be valid"),
         false,
         ManagedInputs::try_from_json(json!({})).expect("inputs must be safe"),
@@ -975,7 +999,7 @@ fn resource_state_requires_kind_correct_containment() {
     assert_eq!(application.containment(), Some(&environment));
     assert!(
         ResourceState::try_new(
-            ResourceKind::Application,
+            kinds().application,
             RemoteId::new("application-2").expect("remote ID must be valid"),
             false,
             ManagedInputs::try_from_json(json!({})).expect("inputs must be safe"),
@@ -989,12 +1013,13 @@ fn resource_state_requires_kind_correct_containment() {
 
 #[test]
 fn state_debug_output_does_not_expose_managed_values_or_remote_ids() {
+    kinds();
     let inputs = ManagedInputs::try_from_json(json!({
         "description": "managed-input-canary"
     }))
     .expect("inputs must be safe");
     let resource = ResourceState::new(
-        ResourceKind::Application,
+        kinds().application,
         RemoteId::new("remote-id-canary").expect("remote ID must be valid"),
         false,
         inputs.clone(),
@@ -1005,7 +1030,7 @@ fn state_debug_output_does_not_expose_managed_values_or_remote_ids() {
         ),
         Vec::new(),
     );
-    let mut state = StateFile::new(Version::new(0, 1, 0), instance());
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
     state
         .upsert_resource(
             "application.api".parse().expect("address must parse"),
@@ -1024,21 +1049,22 @@ fn state_debug_output_does_not_expose_managed_values_or_remote_ids() {
 }
 
 fn instance() -> InstanceIdentity {
+    kinds();
     InstanceIdentity::parse("https://deploy.example.com").expect("instance must be valid")
 }
 
 fn resource_state(kind: ResourceKind, remote_id: &str) -> ResourceState {
     let containment = match kind.containment_parent_kind() {
         None => None,
-        Some(ResourceKind::Project) => {
+        Some(parent) if parent == kinds().project => {
             Some("project.main".parse().expect("containment must parse"))
         }
-        Some(ResourceKind::Environment) => Some(
+        Some(parent) if parent == kinds().environment => Some(
             "environment.production"
                 .parse()
                 .expect("containment must parse"),
         ),
-        Some(_) => unreachable!("the current model has only two containment parent kinds"),
+        Some(_) => unreachable!("the test model has only two containment parent kinds"),
     };
     ResourceState::new(
         kind,
@@ -1053,21 +1079,27 @@ fn resource_state(kind: ResourceKind, remote_id: &str) -> ResourceState {
 
 #[test]
 fn imported_state_starts_at_serial_zero_with_a_fresh_lineage() {
+    kinds();
     let project: ResourceAddress = "project.main".parse().unwrap();
     let environment: ResourceAddress = "environment.production".parse().unwrap();
     let resources = BTreeMap::from([
         (
             project.clone(),
-            resource_state(ResourceKind::Project, "project-1"),
+            resource_state(kinds().project, "project-1"),
         ),
         (
             environment,
-            resource_state(ResourceKind::Environment, "environment-1"),
+            resource_state(kinds().environment, "environment-1"),
         ),
     ]);
 
-    let state = StateFile::new_with_resources(Version::new(0, 1, 0), instance(), resources)
-        .expect("complete imported state is valid");
+    let state = StateFile::with_resources(
+        Version::new(0, 1, 0),
+        instance(),
+        project_document(),
+        resources,
+    )
+    .expect("complete imported state is valid");
 
     assert_eq!(state.serial(), 0);
     assert!(!state.lineage().is_nil());
@@ -1076,19 +1108,25 @@ fn imported_state_starts_at_serial_zero_with_a_fresh_lineage() {
 
 #[test]
 fn imported_state_rejects_missing_containment_and_dependencies() {
+    kinds();
     let environment: ResourceAddress = "environment.production".parse().unwrap();
     let missing_parent = BTreeMap::from([(
         environment.clone(),
-        resource_state(ResourceKind::Environment, "environment-1"),
+        resource_state(kinds().environment, "environment-1"),
     )]);
     assert!(matches!(
-        StateFile::new_with_resources(Version::new(0, 1, 0), instance(), missing_parent),
+        StateFile::with_resources(
+            Version::new(0, 1, 0),
+            instance(),
+            project_document(),
+            missing_parent
+        ),
         Err(StateError::MissingResourceReference { .. })
     ));
 
     let project: ResourceAddress = "project.main".parse().unwrap();
     let project_state = ResourceState::new(
-        ResourceKind::Project,
+        kinds().project,
         RemoteId::new("project-1").unwrap(),
         false,
         ManagedInputs::try_from_json(json!({})).unwrap(),
@@ -1096,9 +1134,10 @@ fn imported_state_rejects_missing_containment_and_dependencies() {
         vec!["redis.missing".parse().unwrap()],
     );
     assert!(matches!(
-        StateFile::new_with_resources(
+        StateFile::with_resources(
             Version::new(0, 1, 0),
             instance(),
+            project_document(),
             BTreeMap::from([(project, project_state)])
         ),
         Err(StateError::MissingResourceReference { .. })
@@ -1107,19 +1146,25 @@ fn imported_state_rejects_missing_containment_and_dependencies() {
 
 #[test]
 fn imported_state_rejects_duplicate_physical_identities() {
+    kinds();
     let resources = BTreeMap::from([
         (
             "project.first".parse().unwrap(),
-            resource_state(ResourceKind::Project, "shared-id"),
+            resource_state(kinds().project, "shared-id"),
         ),
         (
             "project.second".parse().unwrap(),
-            resource_state(ResourceKind::Project, "shared-id"),
+            resource_state(kinds().project, "shared-id"),
         ),
     ]);
 
     assert!(matches!(
-        StateFile::new_with_resources(Version::new(0, 1, 0), instance(), resources),
+        StateFile::with_resources(
+            Version::new(0, 1, 0),
+            instance(),
+            project_document(),
+            resources
+        ),
         Err(StateError::DuplicateRemoteIdentity { .. })
     ));
 }

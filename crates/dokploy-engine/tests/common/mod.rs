@@ -138,7 +138,7 @@ pub fn checkpointed(plan: &Plan, ids: &[(&str, &str)], mut state: StateFile) -> 
 }
 
 pub fn empty_settings_state(engine: &Engine<impl Transport>) -> StateFile {
-    StateFile::new_for_document(
+    StateFile::new(
         Version::new(0, 1, 0),
         engine.instance().clone(),
         dokploy_state::DocumentId::Settings,

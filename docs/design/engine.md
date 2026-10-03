@@ -24,8 +24,8 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 | **plan** | The planner, unchanged: deterministic, value-free |
 | **apply** | Executes the plan under the writer lock, one journaled step per change (below) |
 
-Fingerprints use the first engine's construction (HMAC-SHA-256 over instance, address, path, and
-value), checked against its canonical test vector, so receipts stay comparable.
+Fingerprints are an HMAC-SHA-256 over instance, address, path, and value, checked against an
+independently computed vector, so a change to the framing cannot pass by agreeing with itself.
 
 ## Apply
 
@@ -94,7 +94,6 @@ A secret cannot be read back, so an update that rotates one is never proven by o
 - **Composite values on the remote side**: unions, structs, and keyed collections are compiled but
   read back as "not returned", which blocks planning for a property the document manages.
 - **Secrets inside a union, struct, or collection** are refused at compile time.
-- **The CLI.** The thin shell keeps using the first engine until its kinds are ported (ADR 0016).
 
 ## Cost
 

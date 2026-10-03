@@ -16,9 +16,6 @@ pub enum DocumentId {
     Settings,
     /// One project document, named by its slug.
     Project(ResourceName),
-    /// The first engine's single project document, whose state lives at the
-    /// workspace root. Deleted together with the first engine (ADR 0016).
-    Workspace,
 }
 
 impl DocumentId {
@@ -27,23 +24,13 @@ impl DocumentId {
     pub const fn scope(&self) -> StateScope {
         match self {
             Self::Settings => StateScope::Settings,
-            Self::Project(_) | Self::Workspace => StateScope::Project,
-        }
-    }
-
-    /// Returns the document that holds a scope in a first-engine workspace.
-    #[must_use]
-    pub const fn for_scope(scope: StateScope) -> Self {
-        match scope {
-            StateScope::Settings => Self::Settings,
-            StateScope::Project => Self::Workspace,
+            Self::Project(_) => StateScope::Project,
         }
     }
 
     /// Returns the directories below `.dokploy/` that hold this document's state.
     pub(crate) fn directories(&self) -> Vec<String> {
         match self {
-            Self::Workspace => Vec::new(),
             Self::Settings => vec!["settings".to_owned()],
             Self::Project(slug) => vec!["projects".to_owned(), slug.as_str().to_owned()],
         }
@@ -55,7 +42,6 @@ impl fmt::Display for DocumentId {
         match self {
             Self::Settings => formatter.write_str("settings"),
             Self::Project(slug) => write!(formatter, "project.{slug}"),
-            Self::Workspace => formatter.write_str("project"),
         }
     }
 }
@@ -66,7 +52,6 @@ impl FromStr for DocumentId {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
             "settings" => Ok(Self::Settings),
-            "project" => Ok(Self::Workspace),
             _ => {
                 let slug = value
                     .strip_prefix("project.")

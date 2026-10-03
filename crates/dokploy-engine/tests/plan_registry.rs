@@ -375,7 +375,7 @@ async fn a_child_collection_is_read_once_per_parent_scoped_by_it() {
 }
 
 fn empty_project_state(engine: &dokploy_engine::Engine<Canned>) -> dokploy_state::StateFile {
-    dokploy_state::StateFile::new_for_document(
+    dokploy_state::StateFile::new(
         semver::Version::new(0, 1, 0),
         engine.instance().clone(),
         dokploy_state::DocumentId::Project(dokploy_state::ResourceName::new("shop").unwrap()),
@@ -426,7 +426,7 @@ async fn state_for_another_document_or_instance_is_refused() {
     let engine = engine(transport);
     let compiled = compile(&engine, DOCUMENT, &[("GHCR_TOKEN", TOKEN)]);
 
-    let project_state = dokploy_state::StateFile::new_for_document(
+    let project_state = dokploy_state::StateFile::new(
         semver::Version::new(0, 1, 0),
         engine.instance().clone(),
         dokploy_state::DocumentId::Project("shop".parse().unwrap()),
@@ -436,7 +436,7 @@ async fn state_for_another_document_or_instance_is_refused() {
         Err(EngineError::WrongDocument { .. })
     ));
 
-    let other_instance = dokploy_state::StateFile::new_for_document(
+    let other_instance = dokploy_state::StateFile::new(
         semver::Version::new(0, 1, 0),
         dokploy_state::InstanceIdentity::parse("https://elsewhere.example.com").unwrap(),
         dokploy_state::DocumentId::Settings,

@@ -43,7 +43,7 @@ acceptance test. The field-level target is the pair of annotated maps in
   secrets, mutability, endpoints, write groups. The engine is generic over them, so
   parsing, planning, applying, importing, schema, docs, and tests all come from one
   source. A CI ledger checks that every API field is classified.
-- **A safe kernel** (kept from the first engine): a pure three-way planner, durable
+- **A safe kernel**: a pure three-way planner, durable
   state with journals and recovery, fingerprinted secrets, and stale-state and
   instance-binding protection.
 - **Honest about secrets**: configuration holds references; state holds fingerprints;

@@ -70,27 +70,6 @@ pub struct StateStore {
 }
 
 impl StateStore {
-    /// Binds the first engine's project state below an existing canonical workspace to
-    /// one instance.
-    pub fn new(
-        workspace: impl AsRef<Path>,
-        instance: InstanceIdentity,
-    ) -> Result<Self, StateStoreError> {
-        Self::with_scope(workspace, instance, StateScope::Project)
-    }
-
-    /// Binds the state of one document scope below an existing workspace.
-    ///
-    /// The scope's first-engine document is used: project state lives in
-    /// `<workspace>/.dokploy/` and settings state in `<workspace>/.dokploy/settings/`.
-    pub fn with_scope(
-        workspace: impl AsRef<Path>,
-        instance: InstanceIdentity,
-        scope: StateScope,
-    ) -> Result<Self, StateStoreError> {
-        Self::for_document(workspace, instance, DocumentId::for_scope(scope))
-    }
-
     /// Binds the state of one document below an existing workspace (ADR 0009).
     ///
     /// Each document has its own directory with its own lock, journal, and backup, so
@@ -104,13 +83,14 @@ impl StateStore {
         Self::build(workspace, instance, document, DEFAULT_MAX_STATE_BYTES)
     }
 
-    /// Binds project-scope state with an explicit defensive read limit.
+    /// Binds the state of one document with an explicit defensive read limit.
     pub fn with_max_state_bytes(
         workspace: impl AsRef<Path>,
         instance: InstanceIdentity,
+        document: DocumentId,
         max_state_bytes: u64,
     ) -> Result<Self, StateStoreError> {
-        Self::build(workspace, instance, DocumentId::Workspace, max_state_bytes)
+        Self::build(workspace, instance, document, max_state_bytes)
     }
 
     fn build(
@@ -931,6 +911,7 @@ mod tests {
         let revision = StateFile::new(
             Version::new(0, 1, 0),
             InstanceIdentity::parse("https://deploy.example.com").expect("instance must be valid"),
+            crate::DocumentId::Settings,
         )
         .revision();
         assert!(matches!(

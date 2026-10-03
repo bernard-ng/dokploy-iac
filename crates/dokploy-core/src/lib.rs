@@ -21,14 +21,13 @@ pub use plan::{
 };
 pub use planner::plan;
 pub use property::{
-    ComparableValue, ComparableValueError, EnvironmentVariableName, EnvironmentVariableNameError,
-    OwnedValue, PropertyPath, PropertyPathError, SensitiveIntent, SpecPath,
+    ComparableValue, ComparableValueError, OwnedValue, PropertyPath, SensitiveIntent,
 };
 pub use snapshot::{
     ConfigDigest, ConfigDigestError, DesiredResource, DesiredState, DesiredStateError,
     ExternalResolution, MoveDirective, PropertyObservation, PropertyUnknownReason,
     ProtectionIntent, RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState,
     RemoteStateError, RemovalDirective, ResourceObservationMatch, StoredState, StoredStateError,
-    compare_resource_observation, compare_resource_observation_with_specs,
+    compare_resource_observation,
 };
 pub use spec_property::register_spec_kinds;

@@ -36,9 +36,7 @@ pub(crate) fn writable<'s>(
         property: Some(path.to_string()),
         reason,
     };
-    let info = path
-        .spec_info()
-        .ok_or_else(|| unsupported("is not a property of a spec kind"))?;
+    let info = path.info();
     if info.shape != PathShape::Atomic {
         return Err(unsupported(
             "is a keyed collection, which the executor does not write yet",
