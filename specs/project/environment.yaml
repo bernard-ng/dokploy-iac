@@ -1,11 +1,11 @@
-# PROTOTYPE (coverage: partial). The environment's `isDefault` and duplication are not configuration.
+# An environment of a project. Its `isDefault` and its duplication are not configuration.
 kind: environment
 scope: project
 parent: project
 section: environments
 title: Environment
 class: managed
-coverage: partial
+coverage: full
 identity:
   key: name
   collision: [name]

@@ -1,4 +1,4 @@
-# PROTOTYPE (coverage: partial). A database of an environment.
+# A database of an environment.
 #
 # Live facts (fixtures/api/live/*/postgres-*): create answers the whole object, update answers
 # `true`, remove answers the removed object, and the collection is the `postgres` array that
@@ -11,7 +11,7 @@ parent: environment
 section: postgres
 title: Postgres database
 class: managed
-coverage: partial
+coverage: full
 identity:
   key: name
   collision: [name]

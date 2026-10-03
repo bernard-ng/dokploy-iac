@@ -1,5 +1,7 @@
-# PROTOTYPE (coverage: partial). The root of a project document. Its tags are a relation: Dokploy
-# assigns and removes one tag at a time, and the direct read holds them as `projectTags`.
+# The root of a project document. Not enrolled in the generic conformance suite (coverage stays
+# partial) because the suite cannot yet write a project root document; the engine tests cover its
+# tags. Its tags are a relation: Dokploy assigns and removes one tag at a time, and the direct
+# read holds them as `projectTags`.
 #
 # Live facts: `projectTags` is on `project.one` and `project.all` and has always been captured
 # empty (`[]`), so the shape of one assigned tag has not been observed. The spec reads the id from

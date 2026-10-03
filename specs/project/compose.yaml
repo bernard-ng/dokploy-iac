@@ -1,6 +1,5 @@
-# PROTOTYPE (coverage: partial). A Docker Compose stack of an environment. The swarm-free settings
-# are here; `service_networks` is still an unclassified request until the networks exist (M5), and
-# the schedules of its services wait for the schedule kind.
+# A Docker Compose stack of an environment. `service_networks` (per-service network attachment)
+# is the one request field not modeled yet, which keeps the coverage partial.
 #
 # Live facts (fixtures/api/live/*/compose-*): create answers the whole object, update answers the
 # object, delete takes `deleteVolumes` and answers the removed object, and the collection is the
@@ -159,6 +158,8 @@ ledger:
   readonly: [createdAt, composeStatus, refreshToken]
   ignored:
     - { field: pullImages, reason: "accepted by compose.update but never returned by compose.one on 0.30.6 or 0.30.7, so it cannot be read back" }
+    - { field: title, reason: "the title of the deployment record a deploy writes: an action input, not configuration" }
+    - { field: freshVolumes, reason: "a deploy option that recreates the volumes: an action input, not configuration" }
 children:
   - { kind: domain, section: domains }
   - { kind: mount, section: mounts }

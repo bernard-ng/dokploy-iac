@@ -369,7 +369,12 @@ async fn a_child_collection_is_read_once_per_parent_scoped_by_it() {
     assert_eq!(created, ["project.shop/environment.staging"]);
     assert_eq!(
         transport.calls(),
-        ["tag.all", "project.all", "project.one", "environment.byProjectId"],
+        [
+            "tag.all",
+            "project.all",
+            "project.one",
+            "environment.byProjectId"
+        ],
         "the child collection is read once, after its parent"
     );
 }
