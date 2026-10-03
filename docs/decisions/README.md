@@ -30,3 +30,4 @@ and are confirmed by the milestone that first implements them.
 | [0016](0016-replace-the-engine-keep-the-kernel.md) | Replace the engine, keep the kernel |
 | [0017](0017-cli-surface.md) | CLI surface |
 | [0018](0018-several-parents-and-per-member-unions.md) | Kinds with several parents, and unions planned per member |
+| [0019](0019-sets-of-selectors-relations-and-per-parent-operations.md) | Sets of selectors, relations, and per-parent operations |

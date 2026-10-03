@@ -56,8 +56,8 @@
         "PROJECTS"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `read_failure`, `foreign_direct_read`",
       "reason": null
     },
     {
@@ -98,9 +98,9 @@
         "PROJECTS"
       ],
       "category": "delete",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the node is a union planned per member and `sqldNode` changes in place through `libsql.update` (ADR 0018), where the first engine replaced the database; engine unions test `a_union_written_by_the_plain_update_switches_arm_with_the_new_members`"
     },
     {
       "id": "dokploy-cli/tests/libsql_remote::partial_project_topology_cannot_prove_libsql_absence",
@@ -118,8 +118,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`; engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
       "reason": null
     },
     {
@@ -175,8 +175,8 @@
         "POPULATED_TOPOLOGY"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `foreign_collection_item`, `foreign_direct_read` (a row that names another parent is not this parent's child)",
       "reason": null
     },
     {
@@ -280,9 +280,9 @@
         "LIBSQL_RESPONSE"
       ],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the SDK has no per-kind model: ids are `RemoteId`s the engine validates, and credentials are covered by the canary scan of every conformance scenario"
     },
     {
       "id": "dokploy-sdk/tests/libsql::libsql_invalid_inputs_are_rejected_before_transport",

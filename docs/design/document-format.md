@@ -53,6 +53,11 @@ inside their parent (`environments:` → `applications:` → `redirects:`).
   (`source: { type: docker, image: acme/shop, password: { env: DOCKER_TOKEN } }`). Changing `type`
   switches the arm. Plans and `ignore_changes` name the members by path: `source.type`,
   `source.github.owner`.
+- A **set of selectors** is a list of names: `networks: [{ name: backend }, { name: data }]`, or
+  `tags: [{ name: prod }]` on a project. The document owns the members it names and the ones it used to
+  name, so a member removed from the list is detached; `[]` detaches all of them, and leaving the field
+  out leaves the attachments unmanaged. A Compose stack's `service_networks` is a map from a service
+  name (without a dot) to such a list.
 - Every resource may also carry `lifecycle: { protect, ignore_changes }` (each path must be a
   legal property of the kind) and `depends_on: [address]`.
 

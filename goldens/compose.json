@@ -80,8 +80,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine unions `a_compose_source_is_switched_from_the_compose_file_to_a_repository`: the compose file is a member of the `raw` arm only, so another arm owns no document (ADR 0018)",
       "reason": null
     },
     {
@@ -99,9 +99,9 @@
       "fixtures": [],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "compose is read from the environment's direct read, which is complete; the paged `compose.search` the first engine used is not read (docs/design/engine.md, paged collections)"
     },
     {
       "id": "dokploy-sdk/tests/compose::compose_by_environment_rejects_ambiguous_pagination",
@@ -114,9 +114,9 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "compose is read from the environment's direct read, which is complete; the paged `compose.search` the first engine used is not read (docs/design/engine.md, paged collections)"
     },
     {
       "id": "dokploy-sdk/tests/compose::compose_create_redacts_content_and_validates_the_returned_identity",
@@ -165,9 +165,9 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "there are no per-kind response models: the engine reads the fields a spec names, and generated response types are not read models (dokploy-api docs)"
     },
     {
       "id": "dokploy-sdk/tests/compose::compose_get_uses_a_strong_id_and_safe_tolerant_model",
@@ -186,9 +186,9 @@
       ],
       "data": [],
       "category": "uncategorized",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "there are no per-kind response models: the engine reads the fields a spec names, and ids are `RemoteId`s it validates"
     },
     {
       "id": "dokploy-sdk/tests/compose::compose_rejects_invalid_inputs_before_transport",

@@ -56,6 +56,25 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The rest of the project kinds' fields (milestone M3, [ADR 0019](docs/decisions/0019-sets-of-selectors-relations-and-per-parent-operations.md)).
+  `networks` on the application and the six databases, project `tags`, and Compose `service_networks`
+  are written by name and held by id: a `set<selector(kind)>` with `granularity: key` is planned per
+  member (each member a selector the planner resolves, observed by name, written as one array of ids
+  that keeps every attachment the document does not own, a dropped member cleared), `membership`
+  makes it a relation Dokploy changes one member at a time (`tag.assignToProject`,
+  `tag.removeFromProject`), and a `map<text, set<selector(kind)>>` reads and writes a keyed array
+  (`/serviceNetworks/*[serviceName=$key]/networkIds`). New spec only: the settings kind `network`
+  (create and remove; every field is create-only) and the application's `traefik_config` (file
+  content written by `application.updateTraefikConfig`). The application, the environment, the five
+  databases, LibSQL, and Compose have no unclassified request field and are `full`, so the generic
+  conformance suite runs them; `xtask specs` names what is unclassified. The simulator answers a
+  nested response object (`project.create` answers `{ project, environment }`) and holds a relation as
+  an array, so creating and destroying a project is exercised. **Breaking:** `Field` gains
+  `membership`, `FieldType` gains `selector_set_kind` and `is_map_of_selector_sets`,
+  `DesiredState::with_cleared_properties` exists, and the engine reads `tag.all` on every project
+  plan. The shape of an assigned tag in `projectTags` has never been captured, so it is read as a
+  `tagId` per element and anything else blocks planning for the tags alone.
+
 - More project kinds (milestone M3, [ADR 0018](docs/decisions/0018-several-parents-and-per-member-unions.md)),
   all with specs and no per-kind Rust: `libsql` (a union `node` written by its own update; the create
   answers a boolean, so its identity is a collection diff), `compose` (a six-arm `source` written by

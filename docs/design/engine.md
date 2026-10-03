@@ -96,6 +96,29 @@ Fixed fields: an operation may state what every call sends as written (`send: { 
 on a remove or a create) and, for the update, what the parent's kind fixes (`databaseType: postgres`
 on `backup.update`), through the same `attach_by_parent` the create uses.
 
+## Sets of selectors and relations
+
+A `set<selector(kind)>` with `granularity: key` ([ADR 0019](../decisions/0019-sets-of-selectors-relations-and-per-parent-operations.md))
+is planned like an `env` block, with a selector for each entry: `networks.backend`. Dokploy holds one
+array of ids; discovery names each id through the collection of the target kind and observes each
+member by name, so a member the document names that is not there is a change, a member the planner
+cannot resolve blocks the plan, and an id nothing can name keeps the set from ever being taken for
+empty.
+
+The document owns the members it names and the ones it used to name. A member it stops naming is
+cleared (state keeps nothing of it) and is detached by the write; an attachment made elsewhere stays;
+`[]` detaches them all. The write is one array: what Dokploy holds now, less the cleared, plus the named.
+
+A **relation** (`membership`) is changed one member at a time: each added member is a request, each
+removed one another, in the same journaled step, and `[]` removes every member Dokploy holds. The
+project's `tags` are one: `tag.assignToProject` and `tag.removeFromProject`, read from `projectTags`.
+An element that does not hold a `tagId` is an invalid response and blocks planning for the field.
+
+A **map from a key to a set** (`service_networks`) reads and writes a keyed array: the pointer
+`/serviceNetworks/*[serviceName=api]/networkIds` addresses the element whose `serviceName` is `api`.
+Elements the document does not own, and the other keys of an element it does (a per-service flag), are
+sent back as Dokploy holds them.
+
 ## Selectors
 
 A `selector(kind)` field holds `{ name }`, or `{ local: true }` for a server, and Dokploy holds the

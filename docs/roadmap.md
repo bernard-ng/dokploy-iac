@@ -80,26 +80,27 @@ so they do not move when a spec does.
 
 ## M3 status
 
-Nearly done. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `port`, `security`,
-`mount`, `domain`, `schedule`, `patch`, `backup`, and `volume_backup` (full conformance, under every
-parent they have); the databases `postgres`, `mysql`, `mariadb`, `mongo`, `redis`, and `libsql`, `compose`,
-and the `environment` (conformance for the fields they carry); the `application` with its six-arm
-`source` and six-arm `build` unions, `swarm`, and the preview settings; and the settings kind
-`destination`, which the backups needed. Engine and grammar work the kinds needed: follow-up writes
-after a create, selectors, struct members and environment blocks (also inside a struct), unions planned
-per member, several parents, typed fixed fields on an operation, and a list read per parent with a
-type. The vision ratchet (`docs/vision/gaps/`) counts what the parser still rejects of the two vision
-documents: 7 lines for the project document, 18 for the settings one.
+Done. Every project kind has a spec and no per-kind Rust: `project`, `environment`, `application`,
+`compose`, the six databases (`postgres`, `mysql`, `mariadb`, `mongo`, `redis`, `libsql`), and the leaves
+`mount`, `domain`, `port`, `redirect`, `security`, `schedule`, `patch`, `backup`, and `volume_backup`,
+with the settings kinds the project kinds select (`tag`, `registry`, `destination`, `network`). All of
+them are `full` coverage, so the generic conformance suite runs them under every parent they have, and
+the application's `source` and `build`, the Compose `source`, and the LibSQL `node` are also run through
+each arm. The hooks the roadmap named are specs: a Compose schedule names its `service_name`, and tag
+membership is a relation ([ADR 0019](decisions/0019-sets-of-selectors-relations-and-per-parent-operations.md)).
 
-What stays open before M3 exits:
+Exceptions and what the exit leaves to later:
 
-1. **A set of selectors**: project `tags` (membership through `tag.bulkAssign`) and `networks`
-   (`networkIds` of the application and the databases, `serviceNetworks` of Compose). Each member is an
-   id Dokploy holds; the planner resolves one selector per property, so a set needs its own planning
-   (and a `network` spec, which is a settings kind).
-2. **A field read by a side operation**: `traefik_config` (`application.updateTraefikConfig`, read
-   through `application.readTraefikConfig`, which no `one` embeds).
-3. **`env_file`** is M4 (it belongs to the environment sources).
+- The `project` root stays `partial`: the generic suite cannot yet write a project root document, so
+  its lifecycle (create with variables and tags, update, destroy) is covered by engine tests.
+- Not verified against a real Dokploy: the live jobs still cover `tag` and `registry` only. The specs
+  of `destination`, `network`, `patch`, `volume_backup`, and the tags relation say which facts come from
+  the API schema, not from a capture, and the first live capture of the project kinds is M8's.
+- The vision ratchet (`docs/vision/gaps/`) counts 2 lines for the project document (`env_file` of the
+  application and of the Compose, which is M4's) and the settings document's remaining kinds (M5).
+- Not modeled, on purpose: database schedules (Dokploy runs schedules in applications and Compose
+  only), Compose backups (ADR 0039), Compose `pullImages` (never returned), and the per-service
+  `detachDokployNetwork` flag (kept as Dokploy holds it).
 
 ## Cost gate (end of M2)
 
