@@ -9,7 +9,7 @@ use dokploy_spec::{
 };
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
-use crate::document::{Document, Lifecycle, Resource, Root, Sections};
+use crate::document::{Document, Lifecycle, Move, Removal, Resource, Root, Sections};
 use crate::raw::{Key, Node, Raw};
 use crate::value::{EnvValue, Selector, Source, Value};
 use crate::{Field, Span};
@@ -80,17 +80,21 @@ impl<'a> Reader<'a> {
         let mut version_ok = false;
         let mut project = None;
         let mut settings = None;
+        let mut moves = Vec::new();
+        let mut removed = Vec::new();
         for (key, node) in entries {
             match key.name.as_str() {
                 "version" => version_ok = self.version(node),
                 "project" => project = Some((key, node)),
                 "settings" => settings = Some((key, node)),
+                "moves" => moves = self.moves(node),
+                "removed" => removed = self.removed(node),
                 other => self.error(
                     DiagnosticCode::UnknownField,
                     other,
                     key.span,
                     format!(
-                        "unknown top-level key `{other}`; a document has `version` and one of `project` or `settings`"
+                        "unknown top-level key `{other}`; a document has `version`, one of `project` or `settings`, and optionally `moves` and `removed`"
                     ),
                 ),
             }
@@ -129,6 +133,147 @@ impl<'a> Reader<'a> {
         (version_ok && self.diagnostics.is_empty())
             .then_some(document)
             .flatten()
+            .map(|document| Document {
+                moves,
+                removed,
+                ..document
+            })
+    }
+
+    /// `moves: [{ from, to }]`.
+    fn moves(&mut self, node: &Node) -> Vec<Move> {
+        let mut moves = Vec::new();
+        for (entry, path) in self.directive_entries(node, "moves") {
+            let fields = self.directive_fields(entry, &path, &["from", "to"], &["from", "to"]);
+            if let (Some(from), Some(to)) = (fields.text("from"), fields.text("to")) {
+                if from == to {
+                    self.error(
+                        DiagnosticCode::Directive,
+                        &path,
+                        entry.span,
+                        "a move names two different addresses",
+                    );
+                    continue;
+                }
+                moves.push(Move {
+                    from,
+                    to,
+                    span: entry.span,
+                });
+            }
+        }
+
+        moves
+    }
+
+    /// `removed: [{ from, destroy }]`; `destroy` defaults to `false`: stop managing, keep it.
+    fn removed(&mut self, node: &Node) -> Vec<Removal> {
+        let mut removed = Vec::new();
+        for (entry, path) in self.directive_entries(node, "removed") {
+            let fields = self.directive_fields(entry, &path, &["from", "destroy"], &["from"]);
+            let destroy = match fields.get("destroy").map(|node| &node.value) {
+                None => Some(false),
+                Some(Raw::Bool(flag)) => Some(*flag),
+                Some(other) => {
+                    self.error(
+                        DiagnosticCode::Directive,
+                        &format!("{path}.destroy"),
+                        fields.get("destroy").map_or(entry.span, |node| node.span),
+                        format!("`destroy` is true or false, found {}", other.describe()),
+                    );
+                    None
+                }
+            };
+            if let (Some(from), Some(destroy)) = (fields.text("from"), destroy) {
+                removed.push(Removal {
+                    from,
+                    destroy,
+                    span: entry.span,
+                });
+            }
+        }
+
+        removed
+    }
+
+    /// The entries of a directive list, with the path each is reported under.
+    fn directive_entries<'n>(&mut self, node: &'n Node, name: &str) -> Vec<(&'n Node, String)> {
+        let Raw::Seq(items) = &node.value else {
+            self.error(
+                DiagnosticCode::Directive,
+                name,
+                node.span,
+                format!("`{name}` is a list, found {}", node.value.describe()),
+            );
+            return Vec::new();
+        };
+
+        items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| (item, format!("{name}[{index}]")))
+            .collect()
+    }
+
+    /// The fields of one directive entry, checked against the names it may have.
+    fn directive_fields<'n>(
+        &mut self,
+        entry: &'n Node,
+        path: &str,
+        allowed: &[&str],
+        required: &[&str],
+    ) -> DirectiveFields<'n> {
+        let mut found = DirectiveFields::default();
+        let Raw::Map(entries) = &entry.value else {
+            self.error(
+                DiagnosticCode::Directive,
+                path,
+                entry.span,
+                format!("an entry is a mapping with {}", allowed.join(" and ")),
+            );
+            return found;
+        };
+        for (key, value) in entries {
+            if allowed.contains(&key.name.as_str()) {
+                found.0.push((key.name.as_str(), value));
+            } else {
+                self.error(
+                    DiagnosticCode::UnknownField,
+                    &format!("{path}.{}", key.name),
+                    key.span,
+                    format!(
+                        "unknown field `{}`; an entry has {}",
+                        key.name,
+                        allowed.join(" and ")
+                    ),
+                );
+            }
+        }
+        for name in required {
+            match found.get(name).map(|node| &node.value) {
+                None => self.error(
+                    DiagnosticCode::Directive,
+                    path,
+                    entry.span,
+                    format!("an entry needs `{name}`"),
+                ),
+                Some(Raw::Text(text)) if address_like(text) => {}
+                Some(Raw::Text(_)) => self.error(
+                    DiagnosticCode::Directive,
+                    &format!("{path}.{name}"),
+                    found.get(name).map_or(entry.span, |node| node.span),
+                    format!("`{name}` is an address such as `application.web`"),
+                ),
+                Some(other) => self.error(
+                    DiagnosticCode::Directive,
+                    &format!("{path}.{name}"),
+                    found.get(name).map_or(entry.span, |node| node.span),
+                    format!("`{name}` is an address, found {}", other.describe()),
+                ),
+            }
+        }
+
+        found
     }
 
     fn version(&mut self, node: &Node) -> bool {
@@ -184,6 +329,8 @@ impl<'a> Reader<'a> {
         Some(Document {
             scope: Scope::Settings,
             root: Root::Settings(document),
+            moves: Vec::new(),
+            removed: Vec::new(),
         })
     }
 
@@ -225,6 +372,8 @@ impl<'a> Reader<'a> {
         Some(Document {
             scope: Scope::Project,
             root: Root::Project(Box::new(resource)),
+            moves: Vec::new(),
+            removed: Vec::new(),
         })
     }
 
@@ -1157,4 +1306,35 @@ fn to_json(raw: &Raw) -> Option<serde_json::Value> {
                 .collect::<Option<_>>()?,
         ),
     })
+}
+
+/// The fields of one `moves` or `removed` entry.
+#[derive(Default)]
+struct DirectiveFields<'n>(Vec<(&'n str, &'n Node)>);
+
+impl<'n> DirectiveFields<'n> {
+    fn get(&self, name: &str) -> Option<&'n Node> {
+        self.0
+            .iter()
+            .find(|(field, _)| *field == name)
+            .map(|(_, node)| *node)
+    }
+
+    fn text(&self, name: &str) -> Option<String> {
+        match self.get(name).map(|node| &node.value) {
+            Some(Raw::Text(text)) if address_like(text) => Some(text.clone()),
+            _ => None,
+        }
+    }
+}
+
+/// An address as a person writes it: `kind.key`, or several of them joined with `/`.
+fn address_like(text: &str) -> bool {
+    !text.is_empty()
+        && text.split('/').all(|segment| {
+            segment
+                .split_once('.')
+                .is_some_and(|(kind, key)| !kind.is_empty() && !key.is_empty())
+                && !segment.contains(char::is_whitespace)
+        })
 }

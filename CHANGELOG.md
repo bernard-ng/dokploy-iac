@@ -56,6 +56,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `moves` and `removed` (milestone M3, ADR 0005; [`docs/design/document-format.md`](docs/design/document-format.md)).
+  A document can say that a resource has a new address (`moves: [{ from, to }]`) or is no longer
+  managed (`removed: [{ from, destroy }]`, `destroy` defaulting to `false`). The model reads, renders,
+  and describes them; the engine resolves the address suffixes against the declared and tracked
+  addresses when it plans (`Compiled::desired_for`), discovery no longer takes the resource being
+  moved for a collision, and the executor makes a rename that also changes properties as a move and
+  then an update. `DesiredState` and `DesiredResource` are `Clone`.
+
 - More application and database fields (milestone M3): `icon`, `enabled`, `detach_dokploy_network`,
   `build_server`, and the `deploy` and `preview` settings (per member) on the application, and
   `detach_dokploy_network` on the databases. No Rust; the application now runs 85 conformance scenarios.

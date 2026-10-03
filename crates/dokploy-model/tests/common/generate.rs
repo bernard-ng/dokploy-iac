@@ -340,5 +340,10 @@ pub fn document(seed: u64, registry: &SpecRegistry, scope: Scope) -> Document {
         }
     };
 
-    Document { scope, root }
+    Document {
+        scope,
+        root,
+        moves: Vec::new(),
+        removed: Vec::new(),
+    }
 }

@@ -28,6 +28,18 @@ pub struct Compiled {
     /// Secret values by address and dotted property path, kept only so an apply can send
     /// them. They are zeroed when the compiled document is dropped and never printed.
     pub(crate) secrets: BTreeMap<(ResourceAddress, String), zeroize::Zeroizing<Vec<u8>>>,
+    /// The document's `moves` and `removed`, as written: they name addresses by suffix, and
+    /// what a suffix means depends on what state tracks.
+    pub(crate) directives: Directives,
+}
+
+/// `moves` and `removed` of a document, unresolved.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Directives {
+    /// (from, to)
+    pub(crate) moves: Vec<(String, String)>,
+    /// (from, destroy)
+    pub(crate) removed: Vec<(String, bool)>,
 }
 
 /// What discovery needs to know about one desired resource.
@@ -52,10 +64,75 @@ impl std::fmt::Debug for Compiled {
 }
 
 impl Compiled {
-    /// The planner's input.
+    /// The planner's input, without the document's `moves` and `removed`.
     #[must_use]
     pub fn desired(&self) -> &DesiredState {
         &self.desired
+    }
+
+    /// The planner's input with `moves` and `removed` resolved against what `state` tracks.
+    ///
+    /// The address a move leaves is looked up among the tracked and declared addresses; once the
+    /// move has happened it no longer exists, and a bare `kind.key` then means a sibling of the
+    /// address it moved to, which is how a move declaration stays harmless after it is applied.
+    /// A removal of something nothing tracks has nothing to do.
+    pub fn desired_for(
+        &self,
+        state: Option<&dokploy_state::StateFile>,
+    ) -> Result<DesiredState, DirectiveError> {
+        use dokploy_core::{MoveDirective, RemovalDirective};
+
+        let declared: Vec<&ResourceAddress> = self.resources.keys().collect();
+        let tracked: Vec<&ResourceAddress> = state
+            .map(|state| state.resources().keys().collect())
+            .unwrap_or_default();
+        let known = || declared.iter().chain(tracked.iter()).copied();
+        let err = |directive: &'static str, source| DirectiveError { directive, source };
+
+        let mut moves = Vec::new();
+        for (from, to) in &self.directives.moves {
+            let target = ResourceAddress::resolve_suffix(declared.iter().copied(), to)
+                .map_err(|source| err("moves", source))?;
+            let source = match ResourceAddress::resolve_suffix(known(), from) {
+                Ok(found) => found.clone(),
+                Err(AddressSuffixError::NotFound { .. }) if !from.contains('/') => from
+                    .parse::<ResourceAddress>()
+                    .ok()
+                    .and_then(|bare| {
+                        let kind = bare.kind();
+                        let name = ResourceName::new(bare.name().as_str()).ok()?;
+                        match target.parent() {
+                            Some(parent) => parent.child(kind, name).ok(),
+                            None => Some(ResourceAddress::new(kind, name)),
+                        }
+                    })
+                    .ok_or_else(|| {
+                        err(
+                            "moves",
+                            AddressSuffixError::NotFound {
+                                suffix: from.clone(),
+                            },
+                        )
+                    })?,
+                Err(source) => return Err(err("moves", source)),
+            };
+            moves.push(MoveDirective::new(source, target.clone()));
+        }
+        let mut removals = Vec::new();
+        for (from, destroy) in &self.directives.removed {
+            match ResourceAddress::resolve_suffix(known(), from) {
+                Ok(found) => removals.push(RemovalDirective::new(found.clone(), *destroy)),
+                // Nothing tracks it, so there is nothing to forget or delete.
+                Err(AddressSuffixError::NotFound { .. }) => {}
+                Err(source) => return Err(err("removed", source)),
+            }
+        }
+
+        Ok(self
+            .desired
+            .clone()
+            .with_moves(moves)
+            .with_removals(removals))
     }
 
     /// Whether this is a project or the settings document.
@@ -87,6 +164,7 @@ impl Compiled {
             desired: DesiredState::try_new(digest, BTreeMap::new())?,
             resources: BTreeMap::new(),
             secrets: BTreeMap::new(),
+            directives: Directives::default(),
         })
     }
 
@@ -108,6 +186,7 @@ impl Compiled {
                 .expect("an empty desired state is valid"),
             resources: BTreeMap::new(),
             secrets: BTreeMap::new(),
+            directives: Directives::default(),
         }
     }
 
@@ -121,6 +200,14 @@ impl Compiled {
     pub fn addresses(&self) -> impl Iterator<Item = &ResourceAddress> {
         self.resources.keys()
     }
+}
+
+/// A `moves` or `removed` entry that does not name exactly one address.
+#[derive(Debug, Error)]
+#[error("`{directive}`: {source}")]
+pub struct DirectiveError {
+    directive: &'static str,
+    source: AddressSuffixError,
 }
 
 /// A document that cannot be compiled.
@@ -287,6 +374,18 @@ impl Compiler<'_> {
             desired: DesiredState::try_new(digest, desired)?,
             resources,
             secrets,
+            directives: Directives {
+                moves: document
+                    .moves
+                    .iter()
+                    .map(|m| (m.from.clone(), m.to.clone()))
+                    .collect(),
+                removed: document
+                    .removed
+                    .iter()
+                    .map(|r| (r.from.clone(), r.destroy))
+                    .collect(),
+            },
         })
     }
 

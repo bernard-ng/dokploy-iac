@@ -27,6 +27,16 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 Fingerprints are an HMAC-SHA-256 over instance, address, path, and value, checked against an
 independently computed vector, so a change to the framing cannot pass by agreeing with itself.
 
+## Moves and removals
+
+`moves` and `removed` (see [`document-format.md`](document-format.md)) are resolved when the plan is
+made, because what an address suffix means depends on state: `Compiled::desired_for(state)` turns
+them into the planner's directives. Discovery treats the resource being moved as the one it is:
+the new address is not a collision with the identity it came from. A move that changes nothing else
+is a state-only step; one that also changes properties is a state-only move first (the resource as
+state has it, at its new address) and then an update of that resource, each journaled. A resource
+that holds a secret re-sends it after a move, because its receipt is bound to the address.
+
 ## Structs and environment blocks
 
 A `struct` with `granularity: field` is a grouping in the document only: each member is a property

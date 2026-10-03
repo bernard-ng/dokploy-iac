@@ -233,12 +233,11 @@ impl<T: Transport> Engine<T> {
                 }
                 ChangeKind::NoOp | ChangeKind::Forget => {}
                 ChangeKind::Move => {
-                    if change.move_action() != Some(dokploy_core::MoveAction::StateOnly) {
-                        return Err(ApplyError::Unsupported {
-                            address: address.clone(),
-                            property: None,
-                            reason: "is renamed and changed in one step, which the executor does not do yet",
-                        });
+                    // A rename that also changes properties is a move and then an update, so
+                    // the update must be one the executor can make.
+                    if change.move_action() == Some(dokploy_core::MoveAction::Update) {
+                        let written = run::written(change);
+                        request::groups(spec, address, &written)?;
                     }
                 }
             }

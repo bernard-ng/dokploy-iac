@@ -231,8 +231,8 @@ fn a_document_has_exactly_one_known_root() {
         [(DiagnosticCode::Root, String::new())]
     );
     assert_eq!(
-        codes(parse("version: 2\nsettings: {}\nmoves: []\n")),
-        [(DiagnosticCode::UnknownField, "moves".into())]
+        codes(parse("version: 2\nsettings: {}\nnonsense: []\n")),
+        [(DiagnosticCode::UnknownField, "nonsense".into())]
     );
     assert_eq!(
         codes(parse("version: 2\nproject:\n  name: shop\n")),
@@ -617,4 +617,76 @@ project:
             "project.environments.staging.applications.api.redirects.www.regex".into()
         )]
     );
+}
+
+const PROJECT_WITH_DIRECTIVES: &str = "\
+version: 2
+project:
+  slug: shop
+  environments:
+    production:
+      applications:
+        api: {}
+moves:
+  - { from: application.web, to: application.api }
+removed:
+  - { from: redis.legacy }
+  - { from: environment.staging/postgres.old, destroy: true }
+";
+
+#[test]
+fn moves_and_removed_are_read_with_their_defaults() {
+    let document = parse(PROJECT_WITH_DIRECTIVES).expect("a valid document");
+
+    assert_eq!(document.moves.len(), 1);
+    assert_eq!(document.moves[0].from, "application.web");
+    assert_eq!(document.moves[0].to, "application.api");
+    assert_eq!(document.removed.len(), 2);
+    assert!(!document.removed[0].destroy, "stop managing is the default");
+    assert_eq!(document.removed[1].from, "environment.staging/postgres.old");
+    assert!(document.removed[1].destroy);
+}
+
+#[test]
+fn directives_render_canonically_and_read_back_the_same() {
+    let document = parse(PROJECT_WITH_DIRECTIVES).expect("a valid document");
+    let text = document.render();
+
+    assert!(text.contains("moves:\n  -\n    from: application.web\n    to: application.api"));
+    assert!(text.contains("removed:\n"));
+    let again = parse(&text).expect("the canonical text is valid");
+    assert_eq!(again.moves.len(), 1);
+    assert_eq!(again.removed.len(), 2);
+    assert_eq!(again.render(), text);
+}
+
+#[test]
+fn malformed_directives_are_reported_where_they_are() {
+    let found = codes(parse(
+        "\
+version: 2
+project:
+  slug: shop
+moves:
+  - { from: application.web }
+  - { from: nowhere, to: application.api }
+  - { from: application.a, to: application.a }
+  - { from: application.a, to: application.b, extra: 1 }
+removed:
+  - { from: redis.legacy, destroy: maybe }
+  - not-a-mapping
+",
+    ));
+
+    let paths: Vec<&str> = found.iter().map(|(_, path)| path.as_str()).collect();
+    assert!(paths.contains(&"moves[0]"), "{paths:?}");
+    assert!(paths.contains(&"moves[1].from"), "{paths:?}");
+    assert!(paths.contains(&"moves[2]"), "{paths:?}");
+    assert!(paths.contains(&"moves[3].extra"), "{paths:?}");
+    assert!(paths.contains(&"removed[0].destroy"), "{paths:?}");
+    assert!(paths.contains(&"removed[1]"), "{paths:?}");
+    assert!(found.iter().all(|(code, _)| matches!(
+        code,
+        DiagnosticCode::Directive | DiagnosticCode::UnknownField
+    )));
 }

@@ -61,6 +61,7 @@ pub enum ProtectionIntent {
 }
 
 /// Desired properties and lifecycle metadata for one resource.
+#[derive(Clone)]
 pub struct DesiredResource {
     pub(crate) properties: BTreeMap<PropertyPath, OwnedValue>,
     pub(crate) protection: ProtectionIntent,
@@ -225,6 +226,7 @@ impl RemovalDirective {
 }
 
 /// Desired resources and lifecycle directives indexed by logical address.
+#[derive(Clone)]
 pub struct DesiredState {
     pub(crate) digest: ConfigDigest,
     pub(crate) resources: BTreeMap<ResourceAddress, DesiredResource>,

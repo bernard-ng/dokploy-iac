@@ -16,6 +16,32 @@ pub struct Document {
     pub scope: Scope,
     /// The document's content.
     pub root: Root,
+    /// Addresses that were renamed: the resource keeps its remote identity.
+    pub moves: Vec<Move>,
+    /// Resources the document stops managing, or deletes.
+    pub removed: Vec<Removal>,
+}
+
+/// `moves`: a resource now has another address, and is still the same resource.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Move {
+    /// The address it had, as the user wrote it (a suffix of the full address).
+    pub from: String,
+    /// The address it has now, which the document declares.
+    pub to: String,
+    /// Where the entry is written.
+    pub span: Span,
+}
+
+/// `removed`: a resource that is no longer in the document.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Removal {
+    /// The address it had, as the user wrote it (a suffix of the full address).
+    pub from: String,
+    /// Whether to delete it at Dokploy (`true`) or only stop managing it (`false`).
+    pub destroy: bool,
+    /// Where the entry is written.
+    pub span: Span,
 }
 
 /// What a document holds.

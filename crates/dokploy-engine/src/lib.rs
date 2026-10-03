@@ -32,7 +32,7 @@ use dokploy_state::{
 use thiserror::Error;
 
 pub use apply::{ApplyError, ApplySummary};
-pub use compile::{AddressError, CompileError, Compiled};
+pub use compile::{AddressError, CompileError, Compiled, DirectiveError};
 pub use contract::required_at_creation;
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
 pub use recover::{RecoverError, RecoveryAction, RecoveryPreview, RecoverySummary};
@@ -68,6 +68,9 @@ pub enum EngineError {
     /// The remote snapshot could not be assembled.
     #[error(transparent)]
     Remote(RemoteStateError),
+    /// A `moves` or `removed` entry does not name exactly one address.
+    #[error(transparent)]
+    Directive(#[from] DirectiveError),
 }
 
 /// Compiles documents and plans them against a Dokploy reached through a transport.
@@ -172,6 +175,8 @@ impl<T: Transport> Engine<T> {
         )
         .await?;
 
-        Ok(dokploy_core::plan(compiled.desired(), &stored, &remote))
+        let desired = compiled.desired_for(state)?;
+
+        Ok(dokploy_core::plan(&desired, &stored, &remote))
     }
 }

@@ -1,4 +1,3 @@
-DOKDOC004 moves
 DOKDOC004 project.environments.production.compose
 DOKDOC004 project.environments.staging.applications.api.build
 DOKDOC004 project.environments.staging.applications.api.domains
@@ -23,7 +22,6 @@ DOKDOC004 project.environments.staging.postgres.main.schedules
 DOKDOC004 project.environments.staging.postgres.main.swarm
 DOKDOC004 project.environments.staging.postgres.main.volume_backups
 DOKDOC004 project.tags
-DOKDOC004 removed
 DOKDOC006 project.environments.staging.applications.admin-bitbucket.source.type
 DOKDOC006 project.environments.staging.applications.admin-git.source.type
 DOKDOC006 project.environments.staging.applications.admin-gitea.source.type

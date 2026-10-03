@@ -49,9 +49,32 @@ pub fn json_schema(registry: &SpecRegistry, scope: Scope) -> Value {
         "properties": {
             "version": { "const": FORMAT_VERSION },
             name: root,
+            "moves": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["from", "to"],
+                    "properties": { "from": address(), "to": address() },
+                },
+            },
+            "removed": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["from"],
+                    "properties": { "from": address(), "destroy": { "type": "boolean" } },
+                },
+            },
         },
         "$defs": definitions,
     })
+}
+
+/// An address as a person writes it: `kind.key`, joined with `/` for each level.
+fn address() -> Value {
+    json!({ "type": "string", "pattern": "^[^./\\s]+\\.[^./\\s]+(/[^./\\s]+\\.[^./\\s]+)*$" })
 }
 
 fn reference(name: &str) -> Value {

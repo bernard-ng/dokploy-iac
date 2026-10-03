@@ -50,9 +50,24 @@ inside their parent (`environments:` → `applications:` → `redirects:`).
 - Every resource may also carry `lifecycle: { protect, ignore_changes }` (each path must be a
   legal property of the kind) and `depends_on: [address]`.
 
-Not read yet: `moves`/`removed`, `lifecycle.deploy`, `env_file`, shared types, and checking that a
-`file` exists or that a `depends_on` address resolves. Those belong to the workspace and the
-engine.
+Two top-level lists record changes of address, in either kind of document:
+
+```yaml
+moves:
+  - { from: application.web, to: application.api }   # the same resource, a new address
+removed:
+  - { from: redis.legacy }                            # stop managing it, leave it at Dokploy
+  - { from: postgres.old, destroy: true }             # delete it
+```
+
+An address is a suffix of the full one (`application.web`, or `environment.staging/application.web`),
+resolved by the engine against what the document declares and what state tracks, so it names the
+directive when it matches nothing or several. `to` must be declared in the document. Once a move
+has happened `from` is gone from state, and a bare `kind.key` then means a sibling of `to`, which
+keeps the declaration harmless to leave in. A removal of something nothing tracks does nothing.
+
+Not read yet: `lifecycle.deploy`, `env_file`, shared types, and checking that a `file` exists or
+that a `depends_on` address resolves. Those belong to the workspace and the engine.
 
 ## Diagnostics
 

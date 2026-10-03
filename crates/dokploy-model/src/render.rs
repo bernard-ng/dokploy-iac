@@ -31,13 +31,50 @@ impl Document {
             }
             Root::Settings(sections) => ("settings", Out::Map(section_entries(sections))),
         };
-        let document = Out::Map(vec![
+        let mut top = vec![
             (
                 "version".to_owned(),
                 Out::Scalar(FORMAT_VERSION.to_string()),
             ),
             (name.to_owned(), root),
-        ]);
+        ];
+        if !self.moves.is_empty() {
+            let mut moves: Vec<_> = self.moves.iter().collect();
+            moves.sort_by(|a, b| (&a.to, &a.from).cmp(&(&b.to, &b.from)));
+            top.push((
+                "moves".to_owned(),
+                Out::Seq(
+                    moves
+                        .into_iter()
+                        .map(|m| {
+                            Out::Map(vec![
+                                ("from".to_owned(), Out::Scalar(scalar(&m.from))),
+                                ("to".to_owned(), Out::Scalar(scalar(&m.to))),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ));
+        }
+        if !self.removed.is_empty() {
+            let mut removed: Vec<_> = self.removed.iter().collect();
+            removed.sort_by(|a, b| a.from.cmp(&b.from));
+            top.push((
+                "removed".to_owned(),
+                Out::Seq(
+                    removed
+                        .into_iter()
+                        .map(|r| {
+                            Out::Map(vec![
+                                ("from".to_owned(), Out::Scalar(scalar(&r.from))),
+                                ("destroy".to_owned(), Out::Scalar(r.destroy.to_string())),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ));
+        }
+        let document = Out::Map(top);
         let mut text = String::new();
         emit(&document, 0, &mut text);
 

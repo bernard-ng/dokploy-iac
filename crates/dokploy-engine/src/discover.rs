@@ -41,6 +41,9 @@ struct Subject<'a> {
     parent: Option<ResourceAddress>,
     collision: Option<&'a BTreeMap<String, Json>>,
     stored: Option<RemoteId>,
+    /// The identity of the resource this address is being moved from. It is not a collision:
+    /// the same resource found under the new address is the one that is moving.
+    moved_from: Option<RemoteId>,
     /// The entries of keyed collections the document or state owns, which are observed one by
     /// one because the spec cannot name them.
     entries: Vec<PropertyPath>,
@@ -64,6 +67,7 @@ pub(crate) async fn discover<T: Transport>(
                     parent: address.parent(),
                     collision: Some(&resource.collision),
                     stored: None,
+                    moved_from: None,
                     entries: owned_entries(compiled, address),
                 },
             ),
@@ -81,6 +85,7 @@ pub(crate) async fn discover<T: Transport>(
                             parent: address.parent(),
                             collision: None,
                             stored: None,
+                            moved_from: None,
                             entries: Vec::new(),
                         },
                     )
@@ -108,6 +113,17 @@ pub(crate) async fn discover<T: Transport>(
                         subject.entries.push(path);
                     }
                 }
+            }
+        }
+    }
+
+    if let Some(state) = state {
+        for directive in compiled.desired_for(Some(state))?.moves() {
+            let source = state
+                .resource(directive.from())
+                .map(|resource| resource.remote_id().clone());
+            if let Some((_, subject)) = subjects.get_mut(directive.to()) {
+                subject.moved_from = source;
             }
         }
     }
@@ -456,9 +472,13 @@ fn find<'a>(
         return Found::Nothing;
     };
     let mut matches = listing.iter().filter(|item| {
-        wanted
-            .iter()
-            .all(|(name, value)| field_value(spec, name, item).as_ref() == Some(value))
+        subject
+            .moved_from
+            .as_ref()
+            .is_none_or(|source| item_id(spec, item) != Some(source.as_str()))
+            && wanted
+                .iter()
+                .all(|(name, value)| field_value(spec, name, item).as_ref() == Some(value))
     });
     match (matches.next(), matches.next()) {
         (None, _) => Found::Nothing,

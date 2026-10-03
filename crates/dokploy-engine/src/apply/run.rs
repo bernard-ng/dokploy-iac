@@ -8,7 +8,7 @@ use dokploy_sdk::{Error as SdkError, OperationRequest, Transport};
 use dokploy_spec::{CreateIdentity, KindSpec};
 use dokploy_state::{
     ExpectedCheckpoint, FailureCode, JournalAction, OperationJournal, RemoteId, ResourceAddress,
-    StateFile, StepToken,
+    ResourceState, StateFile, StepToken,
 };
 use serde_json::Value as Json;
 
@@ -103,7 +103,13 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 self.remove(change).await?;
                 self.create(change).await
             }
-            ChangeKind::Move => self.rename(change),
+            ChangeKind::Move => {
+                if change.move_action() == Some(dokploy_core::MoveAction::Update) {
+                    self.rename_then_write(change).await
+                } else {
+                    self.rename(change)
+                }
+            }
         }
     }
 
@@ -388,6 +394,73 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         };
         let request = OperationRequest::new(&one.op).query(one.id_param.clone(), remote_id);
         matches!(self.engine.transport.call(request).await, Ok(response) if response.is_object())
+    }
+
+    /// A rename that also changes properties: the address moves first, with the resource as state
+    /// has it, and then the properties are written as an update of the resource at its new address.
+    async fn rename_then_write(&mut self, change: &PlannedChange) -> Result<(), ApplyError> {
+        let address = change.address();
+        let invalid = || ApplyError::InvalidCheckpoint {
+            address: address.clone(),
+        };
+        let source = change.previous_address().ok_or_else(invalid)?;
+        let target = change.checkpoint().move_target().ok_or_else(invalid)?;
+        let before = self.state.resource(source).ok_or_else(invalid)?.clone();
+        if self.state.resource(address).is_some() {
+            return Err(invalid());
+        }
+        let moved = ResourceState::try_new(
+            before.kind(),
+            before.remote_id().clone(),
+            before.is_protected(),
+            before.last_applied().clone(),
+            before.sensitive_inputs().clone(),
+            target.containment().cloned(),
+            before.dependencies().to_vec(),
+        )
+        .map_err(|_| invalid())?;
+        let token = self.journal.start_recoverable_step(
+            address.clone(),
+            JournalAction::Move,
+            ExpectedCheckpoint::move_resource(source.clone(), before, moved)
+                .map_err(|_| invalid())?,
+        )?;
+        self.state.move_resource(source, address.clone())?;
+        self.journal.succeed(token, None, &self.state)?;
+
+        let written = written(change);
+        if written.is_empty() {
+            return self.adopt_target(address, target);
+        }
+        self.write(address, target, &written).await
+    }
+
+    /// The target of a rename that writes nothing, recorded as it is.
+    fn adopt_target(
+        &mut self,
+        address: &ResourceAddress,
+        target: &ResourceCheckpoint,
+    ) -> Result<(), ApplyError> {
+        let invalid = || ApplyError::InvalidCheckpoint {
+            address: address.clone(),
+        };
+        let before = self.state.resource(address).ok_or_else(invalid)?.clone();
+        let remote_id = before.remote_id().clone();
+        let resource = target
+            .materialize(address, remote_id.clone())
+            .map_err(|_| invalid())?;
+        if resource == before {
+            return Ok(());
+        }
+        let token = self.journal.start_recoverable_step(
+            address.clone(),
+            JournalAction::Update,
+            ExpectedCheckpoint::update(before, resource.clone()).map_err(|_| invalid())?,
+        )?;
+        self.state.upsert_resource(address.clone(), resource)?;
+        self.journal.succeed(token, Some(remote_id), &self.state)?;
+
+        Ok(())
     }
 
     /// A rename: only the logical address changes.
