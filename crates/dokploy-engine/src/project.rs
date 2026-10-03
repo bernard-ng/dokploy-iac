@@ -297,9 +297,12 @@ fn observe_selector_set(
     )
 }
 
+/// The ids each element of a keyed array holds, with its key.
+type KeyedIds = Vec<(String, Vec<String>)>;
+
 /// The ids every element of a keyed array holds, by key, for the root of a map of sets
 /// (`/serviceNetworks/*[serviceName=$key]/networkIds`). `None` when the array is not returned.
-fn held_keyed_ids(item: &Json, api: &str) -> Option<Result<Vec<(String, Vec<String>)>, ()>> {
+fn held_keyed_ids(item: &Json, api: &str) -> Option<Result<KeyedIds, ()>> {
     let (base, rest) = api.split_once("/*[")?;
     let (condition, member) = rest.split_once("]/")?;
     let (key_name, _) = condition.split_once('=')?;

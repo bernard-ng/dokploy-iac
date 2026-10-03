@@ -223,7 +223,10 @@ async fn the_networks_of_each_compose_service_are_written_as_one_element_per_ser
 
     let held = elements(&world);
     assert_eq!(held.len(), 2, "{held:?}");
-    assert_eq!(ids_of(element(&held, "api")), [backend.clone()]);
+    assert_eq!(
+        ids_of(element(&held, "api")),
+        std::slice::from_ref(&backend)
+    );
     let mut both = vec![backend, data];
     both.sort();
     assert_eq!(ids_of(element(&held, "worker")), both);
