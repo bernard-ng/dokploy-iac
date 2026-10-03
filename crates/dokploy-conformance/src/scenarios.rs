@@ -269,6 +269,23 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
             allowed.extend(w.case.group_wires(&group_fields));
         }
     }
+    // What the spec fixes for the update operation rides along with every group it writes.
+    if let Some(update) = w
+        .case
+        .spec
+        .api
+        .update
+        .as_ref()
+        .filter(|update| update.op == operation)
+    {
+        allowed.extend(
+            update
+                .attachments(w.case.parent_kind.as_deref())
+                .keys()
+                .map(|key| (*key).to_owned()),
+        );
+        allowed.extend(update.send.keys().cloned());
+    }
     for key in body
         .as_object()
         .map(|o| o.keys().cloned().collect::<Vec<_>>())

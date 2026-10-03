@@ -284,7 +284,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             } else {
                 None
             };
-            let body = request::group_body(
+            let mut body = request::group_body(
                 spec,
                 address,
                 checkpoint,
@@ -294,6 +294,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
                 self.inputs(),
             )?;
             let operation = request::group_operation(spec, address, checkpoint, group)?;
+            request::fix_update_body(spec, checkpoint, &operation, &mut body);
             bodies.push(OperationRequest::new(&operation).body(body));
         }
 

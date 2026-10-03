@@ -377,6 +377,39 @@ pub(crate) fn groups(
     Ok(requests)
 }
 
+/// Adds to the body of a write the fields the spec fixes for the kind's update operation: what it
+/// `send`s as written, and the values it attaches for the kind of the parent that are not the
+/// parent's id (`databaseType: postgres`), which the update requires and the document does not own.
+pub(crate) fn fix_update_body(
+    spec: &KindSpec,
+    checkpoint: &ResourceCheckpoint,
+    operation: &str,
+    body: &mut Json,
+) {
+    let Some(update) = spec
+        .api
+        .update
+        .as_ref()
+        .filter(|update| update.op == operation)
+    else {
+        return;
+    };
+    let Json::Object(body) = body else {
+        return;
+    };
+    let parent_kind = checkpoint
+        .containment()
+        .map(|parent| parent.kind().as_str());
+    for (field, source) in update.attachments(parent_kind) {
+        if source != "parent_id" {
+            body.insert(field.to_owned(), Json::String(source.to_owned()));
+        }
+    }
+    for (field, value) in &update.send {
+        body.insert(field.clone(), value.clone());
+    }
+}
+
 /// The operation of a group: its own, or the one for the arm of the union the checkpoint names.
 pub(crate) fn group_operation(
     spec: &KindSpec,

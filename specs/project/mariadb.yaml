@@ -141,3 +141,4 @@ ledger:
   readonly: [createdAt, applicationStatus]
 children:
   - { kind: mount, section: mounts }
+  - { kind: backup, section: backups }
