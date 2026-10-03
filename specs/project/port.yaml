@@ -1,0 +1,48 @@
+# A published port of an application. A leaf kind: the collection is the `ports` the parent's
+# direct read embeds, and the update takes all four fields every time.
+#
+# Live facts (fixtures/api/live/*/port-*): create answers the whole object; `port.one`
+# answers 400 for an unknown id; the pair (published port, protocol) is unique per application.
+kind: port
+scope: project
+parent: application
+section: ports
+title: Application port
+class: managed
+identity:
+  key: null
+  collision: [published_port, protocol]
+  address: "port.{key}"
+api:
+  id: portId
+  create:
+    op: port.create
+    attach: { applicationId: parent_id }
+  update: { op: port.update }
+  remove: { op: port.delete }
+  read:
+    list:
+      embedded_in: { parent_op: application.one, pointer: /ports }
+    one: { op: port.one, id_param: portId, agree: true }
+  create_identity:
+    from_response: /portId
+fields:
+  published_port:
+    api: publishedPort
+    type: int
+    min: 1
+    max: 65535
+  target_port:
+    api: targetPort
+    type: int
+    min: 1
+    max: 65535
+  publish_mode:
+    api: publishMode
+    type: enum[ingress, host]
+  protocol:
+    type: enum[tcp, udp]
+write:
+  - op: port.update
+    fields: [published_port, target_port, publish_mode, protocol]
+    shape: full

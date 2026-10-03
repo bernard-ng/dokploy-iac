@@ -78,6 +78,17 @@ properties or resource kinds: a `PropertyPath` is a handle on the spec's `Proper
 three synthetic kinds (`widget`, a nested `gadget`, `cache`) in `crates/dokploy-core/tests/support`,
 so they do not move when a spec does.
 
+## M3 status
+
+Started. Done: the vision ratchet (`docs/vision/gaps/`: what the parser still rejects of the two
+vision documents; both lists are to reach zero); follow-up writes after a create; the leaf kinds
+`redirect`, `port`, and `security` (specs only, full conformance). Next: the kinds that attach to
+several parents (`mount`, `schedule`, `domain`, `backup`, `volume_backup`, `patch`), which need a
+decision on how a spec names more than one parent; the application `source` union, which needs a
+decision on how a union is planned (per member, so omitted members are unmanaged and secrets inside
+an arm work); then struct, `env`, and selector values in the executor, the databases, Compose,
+`environment`, and `project`.
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured

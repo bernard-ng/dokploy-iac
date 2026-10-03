@@ -1,0 +1,45 @@
+# HTTP basic auth on an application. A leaf kind: the collection is the `security` the parent's
+# direct read embeds, and the update takes the username and the password every time.
+#
+# Live facts (fixtures/api/live/*/security-*): create answers `true`, so the identity is learned
+# by listing the parent before and after; the username is unique per application.
+kind: security
+scope: project
+parent: application
+section: security
+title: Application basic auth
+class: managed
+identity:
+  key: null
+  collision: [username]
+  address: "security.{key}"
+api:
+  id: securityId
+  create:
+    op: security.create
+    attach: { applicationId: parent_id }
+  update: { op: security.update }
+  remove: { op: security.delete }
+  read:
+    list:
+      embedded_in: { parent_op: application.one, pointer: /security }
+    one: { op: security.one, id_param: securityId, agree: true }
+  create_identity:
+    diff_collection: { key: [username] }
+fields:
+  username:
+    type: text
+    min_len: 1
+  password:
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    resend_on_update: true
+    doc: Dokploy needs it on every update, so the document always declares its source.
+write:
+  - op: security.update
+    fields: [username, password]
+    shape: full
+ledger:
+  readonly: [createdAt]

@@ -19,8 +19,8 @@
         "PROJECTS"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `create`",
       "reason": null
     },
     {
@@ -42,8 +42,8 @@
         "PROJECTS"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `update:*`",
       "reason": null
     },
     {
@@ -64,8 +64,8 @@
         "PROJECTS"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `ambiguous_collision`",
       "reason": null
     },
     {
@@ -87,8 +87,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance port `foreign_direct_read`",
       "reason": null
     },
     {
@@ -109,8 +109,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
       "reason": null
     },
     {
@@ -145,8 +145,8 @@
         "PORT_RESPONSE"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `create` (embedded collection), `ambiguous_collision`; engine discovery_safety bound",
       "reason": null
     },
     {
@@ -164,8 +164,8 @@
         "PORT_RESPONSE"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `create`",
       "reason": null
     },
     {
@@ -185,8 +185,8 @@
         "PORT_RESPONSE"
       ],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `update:*` (a full group re-sends every field of the group), `delete`",
       "reason": null
     },
     {
@@ -200,8 +200,8 @@
       "fixtures": [],
       "data": [],
       "category": "wire",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `create` (the simulator validates the request against the contract)",
       "reason": null
     },
     {
@@ -215,8 +215,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `unknown_{create,update,delete}_{before,after}` (the mutation is sent once; the canary scan covers the secret)",
       "reason": null
     },
     {
@@ -230,8 +230,8 @@
       "fixtures": [],
       "data": [],
       "category": "noop",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse `empty_text_breaks_a_length_rule_so_nothing_is_ever_sent`",
       "reason": null
     },
     {
@@ -249,8 +249,8 @@
         "PORT_RESPONSE"
       ],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `fields_the_spec_does_not_know_are_ignored`; plan_registry `a_remote_value_outside_the_spec_blocks_that_registry_only`",
       "reason": null
     },
     {
@@ -266,8 +266,8 @@
       "fixtures": [],
       "data": [],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance port `update:*` (a full group re-sends every field of the group), `delete`",
       "reason": null
     }
   ]

@@ -16,13 +16,11 @@ DOKDOC004 project.environments.staging.applications.api.icon
 DOKDOC004 project.environments.staging.applications.api.mounts
 DOKDOC004 project.environments.staging.applications.api.networks
 DOKDOC004 project.environments.staging.applications.api.patches
-DOKDOC004 project.environments.staging.applications.api.ports
 DOKDOC004 project.environments.staging.applications.api.preview
 DOKDOC004 project.environments.staging.applications.api.registry
 DOKDOC004 project.environments.staging.applications.api.resources
 DOKDOC004 project.environments.staging.applications.api.rollback_registry
 DOKDOC004 project.environments.staging.applications.api.schedules
-DOKDOC004 project.environments.staging.applications.api.security
 DOKDOC004 project.environments.staging.applications.api.swarm
 DOKDOC004 project.environments.staging.applications.api.traefik_config
 DOKDOC004 project.environments.staging.applications.api.volume_backups

@@ -99,6 +99,8 @@ write:
       docker: application.saveDockerProvider
 children:
   - { kind: redirect, section: redirects }
+  - { kind: port, section: ports }
+  - { kind: security, section: security }
 ledger:
   derived: [sourceType]
   readonly: [createdAt]

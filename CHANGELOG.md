@@ -56,6 +56,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- The leaf kinds `port` and `security` (milestone M3): two specs of 48 and 44 lines, no Rust. Both pass
+  the full conformance suite (26 and 22 scenarios) as children of an application, the vision's
+  `ports:` and `security:` blocks now validate (two lines closed in `docs/vision/gaps/project.txt`),
+  and 38 of their 39 legacy ledger scenarios are classified `covered` (the other is the live suite).
+
 - Follow-up writes after a create (milestone M3, ADR 0008). A property the create operation does not
   accept (a project kind's create takes a name and little else) is no longer refused: the create is
   a journaled step that expects exactly what it writes, and the spec's write groups write the rest

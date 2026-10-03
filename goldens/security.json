@@ -19,8 +19,8 @@
         "PROJECTS"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `create`",
       "reason": null
     },
     {
@@ -40,8 +40,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `foreign_collection_item`",
       "reason": null
     },
     {
@@ -62,8 +62,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `foreign_direct_read`",
       "reason": null
     },
     {
@@ -84,8 +84,8 @@
         "PROJECTS"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `ambiguous_collision`",
       "reason": null
     },
     {
@@ -107,8 +107,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance security `foreign_direct_read`",
       "reason": null
     },
     {
@@ -129,8 +129,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`",
       "reason": null
     },
     {
@@ -152,8 +152,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
       "reason": null
     },
     {
@@ -175,8 +175,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `a_direct_404_while_the_collection_lists_the_identity_is_not_absence`",
       "reason": null
     },
     {
@@ -197,8 +197,8 @@
         "PROJECTS"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `unmanaged_collision`",
       "reason": null
     },
     {
@@ -220,8 +220,8 @@
         "PROJECTS"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `update:*`",
       "reason": null
     },
     {
@@ -254,8 +254,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `ambiguous_collision`",
       "reason": null
     },
     {
@@ -273,8 +273,8 @@
         "REQUEST_PASSWORD_CANARY"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `unknown_{create,update,delete}_{before,after}` (the mutation is sent once; the canary scan covers the secret)",
       "reason": null
     },
     {
@@ -295,8 +295,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `create`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -315,8 +315,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     },
     {
@@ -334,8 +334,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `fields_the_spec_does_not_know_are_ignored`; plan_registry `a_remote_value_outside_the_spec_blocks_that_registry_only`",
       "reason": null
     },
     {
@@ -359,8 +359,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; conformance security `foreign_direct_read`",
       "reason": null
     },
     {
@@ -379,8 +379,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance canary scan of every scenario (state, journal, and output are searched for the secret)",
       "reason": null
     },
     {
@@ -399,8 +399,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `unknown_{create,update,delete}_{before,after}` (the mutation is sent once; the canary scan covers the secret)",
       "reason": null
     },
     {
@@ -417,8 +417,8 @@
         "REQUEST_PASSWORD_CANARY"
       ],
       "category": "noop",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse `empty_text_breaks_a_length_rule_so_nothing_is_ever_sent`",
       "reason": null
     },
     {
@@ -438,8 +438,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "uncategorized",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine discovery_safety `fields_the_spec_does_not_know_are_ignored`; plan_registry `a_remote_value_outside_the_spec_blocks_that_registry_only`",
       "reason": null
     },
     {
@@ -458,8 +458,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `read_failure`",
       "reason": null
     },
     {
@@ -483,8 +483,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `removal_not_applied`; engine apply read-back test",
       "reason": null
     },
     {
@@ -505,8 +505,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `update:*` (a full group re-sends every field of the group), `delete`",
       "reason": null
     },
     {
@@ -524,8 +524,8 @@
         "SECURITY_RESPONSE"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance security `unmanaged_collision`, `ambiguous_collision`",
       "reason": null
     }
   ]
