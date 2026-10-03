@@ -1,5 +1,10 @@
-# PROTOTYPE (coverage: partial). The root of a project document. Its tags are a relation
-# (a hook) and arrive with the tag membership work.
+# PROTOTYPE (coverage: partial). The root of a project document. Its tags are a relation: Dokploy
+# assigns and removes one tag at a time, and the direct read holds them as `projectTags`.
+#
+# Live facts: `projectTags` is on `project.one` and `project.all` and has always been captured
+# empty (`[]`), so the shape of one assigned tag has not been observed. The spec reads the id from
+# a `tagId` key of each element; any other shape is an invalid response and blocks planning for
+# the tags alone, so nothing is written on a guess. The live suite verifies it.
 kind: project
 scope: project
 section: project
@@ -32,6 +37,15 @@ fields:
     type: env
     granularity: key
     doc: Variables shared by everything below.
+  tags:
+    api: /projectTags/*/tagId
+    type: "set<selector(tag)>"
+    granularity: key
+    nullable: true
+    membership:
+      add: { op: tag.assignToProject, member: tagId }
+      remove: { op: tag.removeFromProject, member: tagId }
+    doc: The tags of the project, each named by a `tag` of the settings. A tag is added or removed one request at a time; a tag assigned elsewhere is not the document's to remove, and `[]` removes them all.
 write:
   - op: project.update
     fields: [name, description, env]

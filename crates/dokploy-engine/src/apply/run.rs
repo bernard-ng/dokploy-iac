@@ -298,6 +298,29 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             bodies.push(OperationRequest::new(&operation).body(body));
         }
 
+        // The members of a relation are added and removed one request each, in the same step.
+        let held = if request::relation_needs_read(spec, written, checkpoint) {
+            Some(
+                self.direct_read(spec, remote_id.as_str())
+                    .await
+                    .map_err(|code| ApplyError::Preparation {
+                        address: address.clone(),
+                        code,
+                    })?,
+            )
+        } else {
+            None
+        };
+        bodies.extend(request::membership_requests(
+            spec,
+            address,
+            checkpoint,
+            written,
+            remote_id.as_str(),
+            held.as_ref(),
+            self.inputs(),
+        )?);
+
         let resource = checkpoint
             .materialize(address, remote_id.clone())
             .map_err(|_| invalid())?;

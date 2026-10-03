@@ -84,7 +84,11 @@ pub(crate) fn writable(
             }
         }
     }
-    if info.api.trim_start_matches('/').contains('/') {
+    let relation = spec
+        .fields
+        .get(info.field_name())
+        .is_some_and(|field| field.membership.is_some());
+    if !relation && info.api.trim_start_matches('/').contains('/') {
         return Err(unsupported(
             "maps to a nested request key, which the executor does not write yet",
         ));
@@ -377,6 +381,14 @@ pub(crate) fn groups(
         }
     }
     for name in &names {
+        // A relation is written by its own requests, one per member.
+        if spec
+            .fields
+            .get(name)
+            .is_some_and(|field| field.membership.is_some())
+        {
+            continue;
+        }
         if !requests
             .iter()
             .any(|request| request.changed.contains(name))
@@ -390,6 +402,115 @@ pub(crate) fn groups(
     }
 
     Ok(requests)
+}
+
+/// Whether a write declares a relation empty or clears it, which needs the members Dokploy holds.
+pub(crate) fn relation_needs_read(
+    spec: &KindSpec,
+    written: &[&PropertyPath],
+    checkpoint: &ResourceCheckpoint,
+) -> bool {
+    written.iter().any(|path| {
+        path.info().shape == PathShape::CollectionRoot
+            && spec
+                .fields
+                .get(path.info().field_name())
+                .is_some_and(|field| field.membership.is_some())
+            && matches!(
+                checkpoint.property(path),
+                Some(CheckpointValueRef::EmptyCollection | CheckpointValueRef::Null)
+            )
+    })
+}
+
+/// The requests that change a relation: one removal for each member the document stopped naming
+/// and one addition for each it now names, resolved to the ids Dokploy holds. A member whose
+/// resource is gone has nothing left to remove.
+pub(crate) fn membership_requests(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    written: &[&PropertyPath],
+    remote_id: &str,
+    fresh: Option<&Json>,
+    inputs: Inputs<'_>,
+) -> Result<Vec<OperationRequest>, ApplyError> {
+    let mut removals = Vec::new();
+    let mut additions = Vec::new();
+    for path in written {
+        let info = path.info();
+        let Some(membership) = spec
+            .fields
+            .get(info.field_name())
+            .and_then(|field| field.membership.as_ref())
+        else {
+            continue;
+        };
+        let request = |operation: &str, member: &str, id: String| {
+            let mut body = Map::new();
+            body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
+            body.insert(member.to_owned(), Json::String(id));
+            OperationRequest::new(operation).body(Json::Object(body))
+        };
+        // The whole relation declared empty or cleared: every member Dokploy holds is removed.
+        if info.shape == PathShape::CollectionRoot {
+            if matches!(
+                checkpoint.property(path),
+                Some(CheckpointValueRef::EmptyCollection | CheckpointValueRef::Null)
+            ) {
+                let api = spec
+                    .fields
+                    .get(info.field_name())
+                    .and_then(|field| field.api.as_deref())
+                    .unwrap_or_default();
+                let held = fresh.and_then(|fresh| crate::project::held_member_ids(fresh, api));
+                for id in held.unwrap_or_default() {
+                    removals.push(request(
+                        &membership.remove.op,
+                        &membership.remove.member,
+                        id,
+                    ));
+                }
+            }
+            continue;
+        }
+        match checkpoint.property(path) {
+            Some(CheckpointValueRef::Null) => {
+                let Some(name) = info
+                    .root
+                    .as_deref()
+                    .and_then(|root| info.path.strip_prefix(root))
+                    .and_then(|rest| rest.strip_prefix('.'))
+                else {
+                    continue;
+                };
+                let kind = info.selector.as_deref().unwrap_or_default();
+                let resolved = inputs.selectors.and_then(|selectors| {
+                    selectors.resolve(kind, &serde_json::json!({ "name": name }))
+                });
+                if let Some(ExternalResolution::Resolved(id)) = resolved {
+                    removals.push(request(
+                        &membership.remove.op,
+                        &membership.remove.member,
+                        id.as_str().to_owned(),
+                    ));
+                }
+            }
+            Some(CheckpointValueRef::NonSensitive(_)) => {
+                let Json::String(id) = body_value(inputs, address, checkpoint, path)? else {
+                    return Err(ApplyError::UnresolvedSelector {
+                        address: address.clone(),
+                        property: path.to_string(),
+                    });
+                };
+                additions.push(request(&membership.add.op, &membership.add.member, id));
+            }
+            _ => {}
+        }
+    }
+    removals.extend(additions);
+
+    Ok(removals)
 }
 
 /// Adds to the body of a write the fields the spec fixes for the kind's update operation: what it

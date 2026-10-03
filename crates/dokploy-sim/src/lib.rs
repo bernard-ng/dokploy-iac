@@ -46,6 +46,8 @@ enum Action {
     Remove,
     List,
     One,
+    /// Adds or removes one member of a relation the kind holds.
+    Member,
 }
 
 #[derive(Clone, Debug)]
@@ -151,6 +153,12 @@ impl Sim {
             }
             if let Some(op) = &spec.api.update {
                 add(&op.op, kind, Action::Update);
+            }
+            for field in spec.fields.values() {
+                if let Some(membership) = &field.membership {
+                    add(&membership.add.op, kind, Action::Member);
+                    add(&membership.remove.op, kind, Action::Member);
+                }
             }
             for group in &spec.write {
                 match group {
@@ -441,6 +449,7 @@ impl Sim {
                 Action::Remove => self.remove(inner, spec, request),
                 Action::List => Ok(self.list(inner, spec, request)),
                 Action::One => self.one(inner, spec, request),
+                Action::Member => self.member(inner, spec, request),
             };
             if last.is_ok() {
                 break;
@@ -502,6 +511,20 @@ impl Sim {
                 if matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_)) {
                     object.entry(key).or_insert(value);
                 }
+            }
+        }
+        // A relation the kind holds is an array, empty until a member is added.
+        for field in spec.fields.values() {
+            let base = field
+                .membership
+                .as_ref()
+                .and(field.api.as_deref())
+                .and_then(|api| api.trim_start_matches('/').split_once("/*/"))
+                .map(|(base, _)| base.to_owned());
+            if let Some(base) = base
+                && object.get(&base).is_none_or(Value::is_null)
+            {
+                object.insert(base, Value::Array(Vec::new()));
             }
         }
         // The columns of every arm of a union exist, and hold nothing until the arm is saved.
@@ -587,6 +610,80 @@ impl Sim {
                 None => Value::Bool(true),
             },
         )
+    }
+
+    /// One member added to or removed from a relation: the array the field reads from holds one
+    /// object per member, with the member's id under the key the field names.
+    fn member(
+        &self,
+        inner: &mut Inner,
+        spec: &KindSpec,
+        request: &OperationRequest,
+    ) -> Result<Value, DokployError> {
+        let body = body_object(request)?;
+        let id = body
+            .get(&spec.api.id)
+            .and_then(Value::as_str)
+            .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{} is required", spec.api.id)))?
+            .to_owned();
+        let operation = request.operation();
+        let Some((field, membership)) = spec.fields.values().find_map(|field| {
+            let membership = field.membership.as_ref()?;
+            (membership.add.op == operation || membership.remove.op == operation)
+                .then_some((field, membership))
+        }) else {
+            return Err(api_error(
+                404,
+                "NOT_FOUND",
+                format!("no route for {operation}"),
+            ));
+        };
+        let adding = membership.add.op == operation;
+        let member_key = if adding {
+            &membership.add.member
+        } else {
+            &membership.remove.member
+        };
+        let member = body
+            .get(member_key)
+            .and_then(Value::as_str)
+            .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{member_key} is required")))?
+            .to_owned();
+        // `/projectTags/*/tagId`: the array, and the key of the id in each of its objects.
+        let api = field.api.as_deref().unwrap_or_default();
+        let Some((base, item_key)) = api
+            .trim_start_matches('/')
+            .split_once("/*/")
+            .map(|(base, item)| (base.to_owned(), item.to_owned()))
+        else {
+            return Err(api_error(
+                400,
+                "BAD_REQUEST",
+                "a relation reads from an array".to_owned(),
+            ));
+        };
+        let object = inner
+            .objects
+            .get_mut(&spec.kind)
+            .and_then(|all| {
+                all.iter_mut()
+                    .find(|o| id_of(spec, o).as_deref() == Some(&id))
+            })
+            .ok_or_else(|| not_found(spec))?;
+        let held = object
+            .entry(base)
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if held.is_null() {
+            *held = Value::Array(Vec::new());
+        }
+        if let Value::Array(items) = held {
+            items.retain(|item| item.get(&item_key).and_then(Value::as_str) != Some(&member));
+            if adding {
+                items.push(serde_json::json!({ item_key: member }));
+            }
+        }
+
+        Ok(Value::Bool(true))
     }
 
     fn remove(

@@ -167,6 +167,54 @@ fn observe_environment(info: &dokploy_spec::PropertyInfo, item: &Json) -> Proper
     }
 }
 
+/// The ids Dokploy holds for a set of selectors.
+enum Held {
+    NotReturned,
+    Null,
+    Ids(Vec<String>),
+    Invalid,
+}
+
+/// Reads the ids a set of selectors holds: an array of ids under a key, or, for a relation, the
+/// ids inside the objects of an array (`/projectTags/*/tagId`). An element that does not hold an
+/// id is not guessed at: the whole read is invalid.
+fn held_ids(item: &Json, api: &str) -> Held {
+    let ids = |items: &[Json], member: Option<&str>| -> Held {
+        let mut ids = Vec::new();
+        for element in items {
+            let id = match member {
+                Some(member) => element.get(member).and_then(Json::as_str),
+                None => element.as_str(),
+            };
+            match id {
+                Some(id) => ids.push(id.to_owned()),
+                None => return Held::Invalid,
+            }
+        }
+
+        Held::Ids(ids)
+    };
+    let (base, member) = match api.split_once("/*/") {
+        Some((base, member)) => (base, Some(member)),
+        None => (api, None),
+    };
+    match lookup(item, base) {
+        None => Held::NotReturned,
+        Some(Json::Null) => Held::Null,
+        Some(Json::Array(items)) => ids(items, member),
+        Some(_) => Held::Invalid,
+    }
+}
+
+/// The ids a set of selectors holds in `item`, when the read says so.
+pub(crate) fn held_member_ids(item: &Json, api: &str) -> Option<Vec<String>> {
+    match held_ids(item, api) {
+        Held::Ids(ids) => Some(ids),
+        Held::Null => Some(Vec::new()),
+        Held::NotReturned | Held::Invalid => None,
+    }
+}
+
 /// Whether a type is a set of selectors, planned per member.
 fn is_selector_set(ty: &FieldType) -> bool {
     matches!(ty, FieldType::Set(item) if matches!(**item, FieldType::Selector(_)))
@@ -195,15 +243,12 @@ fn observe_selector_set(
     let Some(kind) = selector_set_kind(&info.ty) else {
         return not_returned;
     };
-    match lookup(item, &info.api) {
-        None => not_returned,
-        Some(Json::Null) => PropertyObservation::KnownAbsent,
-        Some(Json::Array(ids)) => {
+    match held_ids(item, &info.api) {
+        Held::NotReturned => not_returned,
+        Held::Null => PropertyObservation::KnownAbsent,
+        Held::Ids(ids) => {
             let mut names = serde_json::Map::new();
-            for id in ids {
-                let Some(id) = id.as_str() else {
-                    return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse);
-                };
+            for id in &ids {
                 let key = selectors
                     .name_of(kind, id)
                     .map_or_else(|| format!("?{id}"), str::to_owned);
@@ -214,7 +259,7 @@ fn observe_selector_set(
                 PropertyObservation::Known,
             )
         }
-        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+        Held::Invalid => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
     }
 }
 
@@ -233,15 +278,12 @@ fn observe_selector_entry(
         .and_then(|root| info.path.strip_prefix(root))
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or_default();
-    match lookup(item, &info.api) {
-        None => not_returned,
-        Some(Json::Null) => PropertyObservation::KnownAbsent,
-        Some(Json::Array(ids)) => {
+    match held_ids(item, &info.api) {
+        Held::NotReturned => not_returned,
+        Held::Null => PropertyObservation::KnownAbsent,
+        Held::Ids(ids) => {
             let mut unnamed = false;
-            for id in ids {
-                let Some(id) = id.as_str() else {
-                    return PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse);
-                };
+            for id in &ids {
                 match selectors.name_of(kind, id) {
                     Some(held) if held == name => {
                         return ComparableValue::try_from_json(serde_json::json!({ "name": name }))
@@ -262,7 +304,7 @@ fn observe_selector_entry(
                 PropertyObservation::KnownAbsent
             }
         }
-        Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+        Held::Invalid => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
     }
 }
 

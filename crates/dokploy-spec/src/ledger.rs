@@ -175,6 +175,12 @@ fn operations_of(spec: &KindSpec) -> Vec<(String, String)> {
             }
         }
     }
+    for field in spec.fields.values() {
+        if let Some(membership) = &field.membership {
+            add("membership", &membership.add.op);
+            add("membership", &membership.remove.op);
+        }
+    }
     found.sort();
     found.dedup();
     found
@@ -214,6 +220,13 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
         }
     }
     names.insert(spec.api.id.clone());
+    // The body of a relation's requests: the kind's id and the member's.
+    for field in spec.fields.values() {
+        if let Some(membership) = &field.membership {
+            names.insert(membership.add.member.clone());
+            names.insert(membership.remove.member.clone());
+        }
+    }
     for operation in [&spec.api.create, &spec.api.update, &spec.api.remove]
         .into_iter()
         .flatten()

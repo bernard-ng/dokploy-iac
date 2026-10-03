@@ -558,6 +558,26 @@ fn check_write_groups(context: &mut Context<'_>, spec: &KindSpec) {
     }
 
     for (name, field) in &spec.fields {
+        // A relation is changed one member at a time, by the operations it names.
+        if let Some(membership) = &field.membership {
+            let path = format!("fields.{name}.membership");
+            check_operation(context, &format!("{path}.add.op"), &membership.add.op);
+            check_operation(context, &format!("{path}.remove.op"), &membership.remove.op);
+            let keyed_selector_set = matches!(
+                parse_type(&field.ty),
+                Ok(FieldType::Set(item)) if matches!(*item, FieldType::Selector(_))
+            ) && field.granularity == Some(crate::model::Granularity::Key);
+            if !keyed_selector_set {
+                context.add(
+                    path.clone(),
+                    "applies to a set of selectors planned per member (`granularity: key`)",
+                );
+            }
+            if carried.contains_key(name.as_str()) {
+                context.add(path, "a relation is in no write group");
+            }
+            continue;
+        }
         let writable = matches!(
             field.mutability,
             Mutability::InPlace | Mutability::Reparent | Mutability::WriteOnly
