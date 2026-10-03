@@ -5,12 +5,12 @@ repository, and rebuild it from that description instead of re-creating it throu
 the dashboard: Docker Compose, but for Dokploy itself.
 
 > [!IMPORTANT]
-> **Pre-release, mid re-engineering.** The first engine reconciles eleven resource
-> kinds but covers about a quarter of the fields and almost none of the instance
-> settings. It is being replaced by a spec-driven engine that targets the whole
-> dashboard. The design is written and under review; the build has not started.
-> Start at [`docs/roadmap.md`](docs/roadmap.md). The first engine is preserved at
-> commit `96cab73` (a reference point in history, not a release).
+> **Pre-release, mid re-engineering.** The first engine has been deleted (it is preserved at
+> commit `96cab73`, a reference point in history, not a release) and the spec-driven engine that
+> replaces it is being built kind by kind. Today `dokploy validate`, `schema`, `plan`, `apply`,
+> `recover`, and `destroy` work on version 2 documents for `tag`, `registry`, and `redirect`
+> (`dokploy init` writes a starter). The rest of the dashboard arrives with the milestones in
+> [`docs/roadmap.md`](docs/roadmap.md); `import` returns in M6.
 
 ## Where this is going
 
@@ -67,9 +67,9 @@ cargo build --release -p dokploy-cli
 target/release/dokploy --help
 ```
 
-The imperative commands (`dokploy api <resource> <operation>`, generated from the
-Dokploy OpenAPI document; the `api` prefix is being introduced, ADR 0017) and the current declarative commands work with the
-first engine's `version: 1` documents until the replacement lands.
+The imperative commands (`dokploy api <resource> <operation>`, generated from the Dokploy
+OpenAPI document) act on Dokploy directly. The declarative commands read `version: 2`
+documents; a first-engine `version: 1` document is refused with a message to rewrite it.
 
 Before committing:
 
@@ -82,5 +82,5 @@ cargo xtask codegen --check
 
 ## Status of the design
 
-Every ADR is **Proposed**; review them before implementation starts. The product is
+ADRs 0001, 0005, 0006, and 0016 are Accepted; the rest are **Proposed** and awaiting review. The product is
 unreleased, so any of this can change without migration (ADR 0001).

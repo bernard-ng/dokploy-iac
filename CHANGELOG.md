@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- **Breaking: the CLI runs on the v2 engine and the first engine is deleted** (milestone M2,
+  ADR 0016; no support for first-engine documents, as the product is unreleased).
+  `validate`, `schema`, `plan`, `apply`, `recover`, `destroy`, `state`, and `init` read
+  `version: 2` documents (`dokploy.yaml` for a project, `dokploy.settings.yaml` for settings), with
+  the kind specs compiled into the binary; they cover `tag`, `registry`, and `redirect` until M3
+  ports the rest. **Removed:** `import` (returns in M6), saved plans (`plan --out`, `apply PLAN`),
+  and `--parallelism` (returns when the executor runs steps concurrently). Deleted: the CLI's
+  `remote`, `executor`, `desired`, `import`, `external`, `recovery`, `planning`, `saved_plan`, and
+  `sensitive` layers and all their tests. The golden ledger now lets a scenario outlive its test:
+  what the first engine asserted stays `pending` as the definition of done for porting its kind.
+  `DOKPLOY_FINGERPRINT_KEY` and the per-instance key in the credential store work as before.
+
 ### Added
 
 - A live acceptance test of the engine (`crates/dokploy-engine/tests/live.rs`,

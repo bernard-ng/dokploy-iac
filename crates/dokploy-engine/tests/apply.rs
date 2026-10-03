@@ -546,7 +546,10 @@ async fn a_cleared_document_removes_everything_the_state_tracks() {
     apply(&engine, &store, DOCUMENT, PASSWORD).await.unwrap();
     let compiled = compile(&engine, DOCUMENT, &[("GHCR_TOKEN", PASSWORD)]);
 
-    let summary = engine.apply(&compiled.cleared(), &store, |_| true).await.expect("destroys");
+    let summary = engine
+        .apply(&compiled.cleared(), &store, |_| true)
+        .await
+        .expect("destroys");
 
     assert_eq!(summary.applied(), 1);
     assert!(sim.objects("registry").is_empty());

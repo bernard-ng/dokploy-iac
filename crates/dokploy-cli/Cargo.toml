@@ -13,9 +13,11 @@ path = "src/main.rs"
 clap.workspace = true
 clap_complete.workspace = true
 directories.workspace = true
-dokploy-config.workspace = true
 dokploy-core.workspace = true
+dokploy-engine.workspace = true
+dokploy-model.workspace = true
 dokploy-sdk.workspace = true
+dokploy-spec.workspace = true
 dokploy-state.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
@@ -39,4 +41,5 @@ zeroize.workspace = true
 rustix.workspace = true
 
 [dev-dependencies]
+dokploy-sim.workspace = true
 semver.workspace = true

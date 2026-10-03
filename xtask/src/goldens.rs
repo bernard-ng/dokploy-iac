@@ -9,9 +9,10 @@
 //! - `covered`: reproduced, with `covered_by` naming the conformance scenario;
 //! - `dropped`: intentionally not carried over, with a `reason`.
 //!
-//! `--check` fails when a legacy test is not in the ledger, when a ledger entry
-//! drifted from its source, and when a `pending` scenario's test was deleted, so
-//! legacy code cannot be removed before its behavior is covered or dropped.
+//! `--check` fails when a legacy test is not in the ledger and when a ledger entry
+//! drifted from its source. The first engine is deleted, so most scenarios no longer have a
+//! test: they stay in the ledger, `pending`, until the kind is ported and its conformance
+//! scenarios take over.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -154,8 +155,9 @@ pub struct GoldensReport {
 }
 
 /// Mines the sources listed in `goldens/sources.json` into `goldens/<bucket>.json`,
-/// keeping every human classification. Scenarios whose test no longer exists are
-/// kept when classified and are an error while `pending`.
+/// keeping every human classification. A scenario whose test no longer exists is kept as
+/// it is: the first engine's tests were deleted with it, and a `pending` scenario is the
+/// definition of done for porting its kind.
 pub fn run_goldens_extract(
     root: &Path,
 ) -> Result<GoldensExtractReport, Box<dyn std::error::Error>> {
@@ -187,20 +189,6 @@ pub fn run_goldens_extract(
                 by_id.insert(mined.id.clone(), (bucket, mined));
             }
         }
-    }
-
-    let orphaned: Vec<&str> = by_id
-        .iter()
-        .filter(|(id, (_, scenario))| !seen.contains(*id) && scenario.status == "pending")
-        .map(|(id, _)| id.as_str())
-        .collect();
-    if !orphaned.is_empty() {
-        return Err(format!(
-            "{} pending scenario(s) lost their test; restore it or classify the scenario as dropped first: {}",
-            orphaned.len(),
-            orphaned.join(", ")
-        )
-        .into());
     }
 
     let mut buckets: BTreeMap<String, Vec<Scenario>> = BTreeMap::new();
@@ -287,9 +275,8 @@ pub fn run_goldens_check(root: &Path) -> Result<GoldensReport, Box<dyn std::erro
                 "{id}: out of date with its test; run `cargo xtask goldens`"
             )),
             Some(_) => {}
-            None if scenario.status == "pending" => failures.push(format!(
-                "{id}: its test is gone but the scenario is still pending; port it or classify it as dropped"
-            )),
+            // The first engine's tests are gone; what they asserted stays here, pending, as the
+            // definition of done for the port.
             None => {}
         }
     }

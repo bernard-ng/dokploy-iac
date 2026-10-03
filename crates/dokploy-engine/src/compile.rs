@@ -62,6 +62,32 @@ impl Compiled {
         self.scope
     }
 
+    /// A document with nothing declared, for destroying what its state tracks. Unlike
+    /// [`Compiled::cleared`], it needs no compiled document and reads no secret.
+    pub fn empty_for(document: &Document) -> Result<Self, CompileError> {
+        let document_id = match &document.root {
+            Root::Settings(_) => DocumentId::Settings,
+            Root::Project(project) => {
+                DocumentId::Project(ResourceName::new(project.key.clone()).map_err(|error| {
+                    CompileError::Address {
+                        key: project.key.clone(),
+                        source: error.into(),
+                    }
+                })?)
+            }
+        };
+        let digest = ConfigDigest::parse(hex(&Sha256::digest(b"dokploy-iac\0destroy")))
+            .expect("a SHA-256 digest is a valid configuration digest");
+
+        Ok(Self {
+            scope: document.scope,
+            document: document_id,
+            desired: DesiredState::try_new(digest, BTreeMap::new())?,
+            resources: BTreeMap::new(),
+            secrets: BTreeMap::new(),
+        })
+    }
+
     /// The same document with nothing declared: applying it removes every resource its state
     /// tracks (protected ones are refused by the planner), which is what destroy is.
     ///

@@ -96,10 +96,18 @@ fn the_embedded_specs_are_the_specs_on_disk() {
     let embedded = dokploy_spec::embedded().expect("embedded specs load");
 
     let names = |registry: &dokploy_spec::SpecRegistry| {
-        registry.kinds().map(|spec| spec.kind.clone()).collect::<Vec<_>>()
+        registry
+            .kinds()
+            .map(|spec| spec.kind.clone())
+            .collect::<Vec<_>>()
     };
     assert_eq!(names(&on_disk), names(&embedded));
     for spec in on_disk.kinds() {
-        assert_eq!(Some(spec), embedded.get(&spec.kind), "{} differs", spec.kind);
+        assert_eq!(
+            Some(spec),
+            embedded.get(&spec.kind),
+            "{} differs",
+            spec.kind
+        );
     }
 }

@@ -128,6 +128,11 @@ impl<T: Transport> Engine<T> {
         .compile(document)
     }
 
+    /// A document with nothing declared, to destroy what its state tracks. No secret is read.
+    pub fn compile_empty(&self, document: &Document) -> Result<Compiled, CompileError> {
+        Compiled::empty_for(document)
+    }
+
     /// Plans a compiled document against fresh remote state.
     ///
     /// `state` is the document's durable state, or `None` before the first apply. Nothing is

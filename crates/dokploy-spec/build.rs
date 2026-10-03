@@ -14,7 +14,9 @@ fn collect(directory: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             collect(&path, files);
-        } else if path.extension().is_some_and(|extension| extension == "yaml")
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension == "yaml")
             && !path
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -26,8 +28,9 @@ fn collect(directory: &Path, files: &mut Vec<PathBuf>) {
 }
 
 fn main() {
-    let root = Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets the manifest dir"))
-        .join("../../specs");
+    let root =
+        Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets the manifest dir"))
+            .join("../../specs");
     println!("cargo:rerun-if-changed={}", root.display());
     let mut files = Vec::new();
     collect(&root, &mut files);
@@ -44,6 +47,7 @@ fn main() {
         );
     }
     source.push_str("];\n");
-    let out = Path::new(&std::env::var("OUT_DIR").expect("cargo sets the out dir")).join("embedded.rs");
+    let out =
+        Path::new(&std::env::var("OUT_DIR").expect("cargo sets the out dir")).join("embedded.rs");
     std::fs::write(out, source).expect("the generated file is written");
 }

@@ -227,7 +227,7 @@ fn a_test_file_nobody_mapped_fails() {
 }
 
 #[test]
-fn deleting_a_pending_test_is_refused_until_it_is_classified() {
+fn a_deleted_test_leaves_its_scenario_pending_as_a_port_target() {
     let root = tree();
     run_goldens_extract(root.path()).unwrap();
     fs::remove_file(
@@ -236,30 +236,18 @@ fn deleting_a_pending_test_is_refused_until_it_is_classified() {
     )
     .unwrap();
 
-    let failures = problems(root.path());
-    assert_eq!(failures.len(), 3, "{failures:?}");
-    assert!(failures.iter().all(|f| f.contains("still pending")));
-    assert!(run_goldens_extract(root.path()).is_err());
-
-    let path = root.path().join("goldens/redirect.json");
-    let mut value = ledger(root.path(), "redirect");
-    for (index, scenario) in value["scenarios"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .enumerate()
-    {
-        if index == 0 {
-            scenario["status"] = json!("covered");
-            scenario["covered_by"] = json!("conformance.redirect.create");
-        } else {
-            scenario["status"] = json!("dropped");
-            scenario["reason"] = json!("live-only wiring the simulator replaces");
-        }
-    }
-    fs::write(&path, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+    // The first engine's tests are deleted wholesale; nothing is lost, because each scenario
+    // stays in the ledger until its kind is ported.
     assert!(problems(root.path()).is_empty());
     assert_eq!(run_goldens_extract(root.path()).unwrap().scenarios, 3);
+    let value = ledger(root.path(), "redirect");
+    assert!(
+        value["scenarios"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|scenario| scenario["status"] == "pending")
+    );
 }
 
 #[test]

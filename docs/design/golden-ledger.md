@@ -3,8 +3,8 @@
 The first engine's tests define what "done" means for a ported kind
 ([ADR 0016](../decisions/0016-replace-the-engine-keep-the-kernel.md), the parity
 oracle). The ledger turns that into a checked list: every legacy test is one
-**scenario** in `goldens/<bucket>.json`, and a layer of legacy code may be deleted only
-when every scenario that came from its tests is `covered` or `dropped`.
+**scenario** in `goldens/<bucket>.json`. The first engine and its tests are deleted; the ledger
+keeps what they asserted, as the definition of done for porting each kind.
 
 ```bash
 cargo xtask goldens           # mine the tests, keep every classification
@@ -52,7 +52,9 @@ A scenario's bucket is the file it sits in: move the entry to another file to re
    (otherwise: run `cargo xtask goldens`).
 2. Every test-bearing file is listed or excluded.
 3. `covered` has `covered_by`, `dropped` has `reason`, categories and layers are known.
-4. A scenario whose test is gone must be `covered` or `dropped`. This is how a layer can be
-   deleted in the same change that ports it, and not before.
 
-When a legacy file is deleted, remove its entry from `sources.json` in the same change.
+A scenario whose test is gone is kept as it is. The first engine's tests were deleted with it, so
+most scenarios are `pending` with no test behind them: each is a port target, carrying the
+operations, request literals, fixtures, and data the old test used. When a kind is ported, classify
+its scenarios `covered` (naming the conformance scenario or engine test that proves it) or
+`dropped` (with the reason). Remove a source entry from `sources.json` when its file is deleted.

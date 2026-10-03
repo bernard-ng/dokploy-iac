@@ -156,7 +156,11 @@ async fn a_partial_collection_is_not_proof_of_absence() {
     let partial = tag_like().replace("authority: authoritative", "authority: partial");
     let results = run(&partial, "gadget").await;
 
-    assert!(passed(&results, "partial_authority"), "{}", report(&results));
+    assert!(
+        passed(&results, "partial_authority"),
+        "{}",
+        report(&results)
+    );
     // Absence can never be proven, so nothing can be created: the apply is blocked, which is
     // the correct outcome and exactly what fails the scenarios that need a create to start.
     let reason = failed(&results, "create").expect("a create cannot be proven necessary");
