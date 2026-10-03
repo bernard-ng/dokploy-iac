@@ -18,7 +18,7 @@ api:
   update: { op: environment.update }
   remove: { op: environment.remove }
   read:
-    list: { op: environment.byProjectId, authority: authoritative }
+    list: { op: environment.byProjectId, authority: authoritative, scope: { param: projectId } }
     one: { op: environment.one, id_param: environmentId, agree: true }
   create_identity:
     from_response: /environmentId

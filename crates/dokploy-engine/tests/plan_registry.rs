@@ -289,30 +289,97 @@ async fn nothing_is_read_for_a_kind_nobody_mentions() {
     assert!(transport.calls().is_empty(), "{:?}", transport.calls());
 }
 
-#[tokio::test]
-async fn kinds_that_need_nested_discovery_say_so_instead_of_guessing() {
-    let engine = engine(Canned::new());
-    let compiled = compile(&engine, "version: 2\nproject:\n  slug: shop\n", &[]);
-
-    // The project kind lists through its own collection, which a settings-only skeleton can.
-    // Its children (environments) cannot yet.
-    let with_child = "\
+const NESTED: &str = "\
 version: 2
 project:
   slug: shop
   environments:
     staging: {}
 ";
-    let nested = compile(&engine, with_child, &[]);
-    let error = engine
-        .plan(&nested, None)
-        .await
-        .expect_err("nested discovery is not implemented");
-    assert!(
-        matches!(error, EngineError::UnsupportedDiscovery { .. }),
-        "{error}"
+
+#[tokio::test]
+async fn a_child_of_a_missing_parent_is_missing_without_reading_for_it() {
+    let transport = Canned::new().serving("project.all", json!([]));
+    let engine = engine(transport.clone());
+    let compiled = compile(&engine, NESTED, &[]);
+
+    let plan = engine.plan(&compiled, None).await.expect("plans");
+
+    assert!(plan.applyable(), "{plan:?}");
+    let created: Vec<String> = plan
+        .changes()
+        .iter()
+        .map(|c| c.address().to_string())
+        .collect();
+    assert_eq!(
+        created,
+        ["project.shop", "project.shop/environment.staging"]
     );
-    drop(compiled);
+    assert_eq!(
+        transport.calls(),
+        ["project.all"],
+        "no read for a child of nothing"
+    );
+}
+
+#[tokio::test]
+async fn a_child_collection_is_read_once_per_parent_scoped_by_it() {
+    let project = json!({"projectId": "p-1", "name": "shop", "description": null});
+    let transport = Canned::new()
+        .serving("project.all", json!([project.clone()]))
+        .serving("project.one", project)
+        .on("environment.byProjectId", |request| {
+            assert_eq!(
+                request.query_parameters().get("projectId"),
+                Some(&json!("p-1"))
+            );
+            Ok(json!([]))
+        });
+    let engine = engine(transport.clone());
+    let compiled = compile(&engine, NESTED, &[]);
+    // Record the project in state (as if it were applied) so the environment is planned
+    // beneath it.
+    let mut state = empty_project_state(&engine);
+    let first = compile(&engine, "version: 2\nproject:\n  slug: shop\n", &[]);
+    let seed = Canned::new().serving("project.all", json!([]));
+    let seeded = common::engine(seed).plan(&first, None).await.unwrap();
+    for change in seeded.changes() {
+        let resource = change
+            .checkpoint()
+            .present()
+            .unwrap()
+            .materialize(
+                change.address(),
+                dokploy_state::RemoteId::new("p-1").unwrap(),
+            )
+            .unwrap();
+        state
+            .upsert_resource(change.address().clone(), resource)
+            .unwrap();
+    }
+
+    let plan = engine.plan(&compiled, Some(&state)).await.expect("plans");
+
+    assert!(plan.applyable(), "{plan:?}");
+    let created: Vec<String> = plan
+        .changes()
+        .iter()
+        .map(|c| c.address().to_string())
+        .collect();
+    assert_eq!(created, ["project.shop/environment.staging"]);
+    assert_eq!(
+        transport.calls(),
+        ["project.all", "project.one", "environment.byProjectId"],
+        "the child collection is read once, after its parent"
+    );
+}
+
+fn empty_project_state(engine: &dokploy_engine::Engine<Canned>) -> dokploy_state::StateFile {
+    dokploy_state::StateFile::new_for_document(
+        semver::Version::new(0, 1, 0),
+        engine.instance().clone(),
+        dokploy_state::DocumentId::Project(dokploy_state::ResourceName::new("shop").unwrap()),
+    )
 }
 
 #[tokio::test]

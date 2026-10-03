@@ -172,6 +172,17 @@ pub struct ListRead {
     /// A collection embedded in the parent's response instead.
     #[serde(default)]
     pub embedded_in: Option<Embedded>,
+    /// The query parameter that names the parent, for a collection read per parent.
+    #[serde(default)]
+    pub scope: Option<ListScope>,
+}
+
+/// A collection that is read once per parent (`environment.byProjectId`).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ListScope {
+    /// The query parameter carrying the parent's id.
+    pub param: String,
 }
 
 /// A collection that arrives inside another operation's response.

@@ -59,6 +59,14 @@ the secret scan has a test that it can fail.
 
 The same scenarios must run against a real Dokploy (the live contract suite, ADR 0015), because
 the simulator is only as true as the fixtures it copies: a scenario whose result differs between the
-two is a bug in the simulator or the spec. Nested kinds, whose ancestors the suite has to seed, and
-the scenarios that need two resources (dependency ordering) or an importer (import then plan is
-empty) are not generated yet.
+two is a bug in the simulator or the spec. The scenarios that need two resources (dependency
+ordering) or an importer (import then plan is empty) are not generated yet.
+
+## Nested kinds
+
+A kind under a parent (`redirect` under `application`) is exercised with its ancestors seeded: the
+suite puts a project, environment, and application in the simulator and records them in state as
+if an earlier apply had made them, then runs the same scenarios on the kind. It exercises the kind,
+not the kinds above it, which have their own specs and arrive with the project kinds. The document
+is a project document with the kind nested under them, and a scenario that removes the kind keeps
+the ancestors.

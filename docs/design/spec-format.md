@@ -67,7 +67,10 @@ A collection embedded in a parent's response is declared on the child:
     list: { embedded_in: { parent_op: application.one, pointer: "/redirects" } }
 ```
 
-A collection scoped to a parent says so: `scope: { param: environmentId }`.
+A collection read once per parent says so: `list: { op: environment.byProjectId, scope: { param: projectId } }`
+(the parent's id is sent as that query parameter). A kind can instead be found in a collection
+embedded in its parent's direct read (`embedded_in`), and a kind with neither is found by its
+recorded identity only.
 
 ## Fields
 

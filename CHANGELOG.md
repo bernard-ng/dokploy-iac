@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Nested kinds in the engine (milestone M2, ADR 0007; [`docs/design/engine.md`](docs/design/engine.md)).
+  Discovery reads parents before children and reads a child's collection once per parent, scoped by
+  it (`list: { op, scope: { param } }`, now implemented in the spec grammar as documented) or embedded
+  in the parent's direct read, which costs no extra request. A child of a missing parent is missing
+  and of an unavailable parent is unavailable; a kind with no collection read is found by its
+  recorded identity only. Apply attaches a child to its parent and learns a nested create's identity
+  by diffing the parent's collection. `redirect` now passes the full conformance suite (21
+  scenarios) with its ancestors seeded; an apply that is blocked names the diagnostics.
+  The prototype `application` spec drops its collection read (`application.search` is paged; M3).
 - The conformance suite (`dokploy-conformance`, milestone M2, ADR 0015;
   [`docs/design/conformance.md`](docs/design/conformance.md)). It derives test scenarios from a kind's
   spec and runs them through the real engine against the simulator: create, minimal create,

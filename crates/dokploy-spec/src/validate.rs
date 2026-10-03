@@ -184,6 +184,20 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
                 }
             }
         }
+        if let Some(scope) = &list.scope {
+            if list.op.is_none() {
+                context.add(
+                    "api.read.list.scope",
+                    "applies to a list `op`, not an embedded one",
+                );
+            }
+            if spec.parent.is_none() {
+                context.add("api.read.list.scope", "needs a parent kind to scope by");
+            }
+            if scope.param.trim().is_empty() {
+                context.add("api.read.list.scope.param", "must name a query parameter");
+            }
+        }
         if list.authority == Authority::Partial && api.read.one.is_none() {
             context.add(
                 "api.read",

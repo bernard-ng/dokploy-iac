@@ -30,8 +30,11 @@ pub enum ApplyError {
     #[error(transparent)]
     Plan(#[from] EngineError),
     /// The plan is not complete or has a blocking diagnostic; nothing was changed.
-    #[error("the plan cannot be applied: {diagnostics} diagnostic(s); nothing was changed")]
-    Blocked { diagnostics: usize },
+    #[error("the plan cannot be applied: {}; nothing was changed", diagnostics.join(", "))]
+    Blocked {
+        /// Each blocking diagnostic as `CODE` or `CODE at <address>`; never a value.
+        diagnostics: Vec<String>,
+    },
     /// The caller declined the plan; nothing was changed.
     #[error("the plan was declined; nothing was changed")]
     Declined,
@@ -129,7 +132,20 @@ impl<T: Transport> Engine<T> {
         }
         if !plan.complete() || !plan.applyable() {
             return Err(ApplyError::Blocked {
-                diagnostics: plan.diagnostics().len(),
+                diagnostics: plan
+                    .diagnostics()
+                    .iter()
+                    .map(|diagnostic| {
+                        let mut text = diagnostic.code().as_str().to_owned();
+                        if let Some(address) = diagnostic.address() {
+                            text.push_str(&format!(" at {address}"));
+                        }
+                        if let Some(failure) = diagnostic.remote_failure() {
+                            text.push_str(&format!(" ({failure:?})"));
+                        }
+                        text
+                    })
+                    .collect(),
             });
         }
         self.preflight(compiled, &plan)?;

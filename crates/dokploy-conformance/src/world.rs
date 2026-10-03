@@ -11,7 +11,7 @@ use dokploy_engine::{
 };
 use dokploy_sim::Sim;
 use dokploy_spec::SpecRegistry;
-use dokploy_state::{DocumentId, RecoveryStatus, StateStore};
+use dokploy_state::{RecoveryStatus, StateStore};
 use serde_json::Value as Json;
 
 use crate::case::{Case, Val, Values};
@@ -24,19 +24,108 @@ pub(crate) struct World<'c> {
     specs: Arc<SpecRegistry>,
     dir: tempfile::TempDir,
     notes: std::cell::RefCell<Vec<String>>,
+    /// The remote identity of the kind's parent, when it has one.
+    parent_id: std::cell::RefCell<Option<String>>,
 }
 
 pub(crate) type Check<T = ()> = Result<T, String>;
 
 impl<'c> World<'c> {
     pub(crate) fn new(case: &'c Case, specs: &Arc<SpecRegistry>, fixtures: &Path) -> Self {
-        Self {
+        let world = Self {
             case,
             sim: Sim::new(specs.clone()).with_fixtures(fixtures),
             specs: specs.clone(),
             dir: tempfile::tempdir().expect("a temporary workspace"),
             notes: std::cell::RefCell::default(),
+            parent_id: std::cell::RefCell::default(),
+        };
+        world.apply_ancestors();
+
+        world
+    }
+
+    /// Puts the resources above the kind in place, remotely and in state, as if an earlier
+    /// apply had made them: the suite exercises the kind, not the kinds above it.
+    fn apply_ancestors(&self) {
+        use dokploy_state::{
+            ManagedInputs, RemoteId, ResourceAddress, ResourceKind, ResourceName, ResourceState,
+            SensitiveInputs, StateFile,
+        };
+
+        if self.case.ancestors.is_empty() {
+            return;
         }
+        let engine = self.engine();
+        let mut resources = std::collections::BTreeMap::new();
+        let mut parent: Option<(ResourceAddress, String)> = None;
+        for ancestor in &self.case.ancestors {
+            let mut remote = serde_json::Map::new();
+            let mut managed = serde_json::Map::new();
+            for (name, field) in &ancestor.spec.fields {
+                if field.default.as_deref() == Some("key") {
+                    remote.insert(
+                        field.request_name(name).to_owned(),
+                        Json::String(ancestor.key.clone()),
+                    );
+                    managed.insert(name.clone(), Json::String(ancestor.key.clone()));
+                }
+            }
+            if let (Some(attach), Some((_, parent_id))) = (&ancestor.attach, &parent) {
+                remote.insert(attach.clone(), Json::String(parent_id.clone()));
+            }
+            let id = self.sim.seed(&ancestor.spec.kind, &Json::Object(remote));
+
+            let kind: ResourceKind = ancestor.spec.kind.parse().expect("a registered kind");
+            let name = ResourceName::new(ancestor.key.clone()).expect("a valid key");
+            let address = match &parent {
+                Some((parent, _)) => parent.child(kind, name).expect("a valid address"),
+                None => ResourceAddress::new(kind, name),
+            };
+            let resource = ResourceState::try_new(
+                kind,
+                RemoteId::new(id.clone()).expect("a valid identity"),
+                false,
+                ManagedInputs::try_from_json(Json::Object(managed)).expect("valid inputs"),
+                SensitiveInputs::default(),
+                parent.as_ref().map(|(parent, _)| parent.clone()),
+                Vec::new(),
+            )
+            .expect("a valid resource");
+            resources.insert(address.clone(), resource);
+            *self.parent_id.borrow_mut() = Some(id.clone());
+            parent = Some((address, id));
+        }
+        let state = StateFile::new_with_resources_for_document(
+            semver::Version::new(0, 1, 0),
+            engine.instance().clone(),
+            self.case.document_id(),
+            resources,
+        )
+        .expect("a valid hierarchy");
+        let store = self.store(&engine);
+        let mut session = store.begin_write().expect("the writer lock");
+        session
+            .checkpoint(dokploy_state::ExpectedState::absent(), &state)
+            .expect("the ancestors are recorded");
+    }
+
+    /// Adds a resource of the kind that nobody manages, attached to the seeded parent.
+    pub(crate) fn seed_child(&self, fields: &Json) -> String {
+        let mut object = fields.as_object().cloned().unwrap_or_default();
+        let attach = self
+            .case
+            .spec
+            .api
+            .create
+            .as_ref()
+            .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
+            .map(|(field, _)| field.clone());
+        if let (Some(field), Some(parent)) = (attach, self.parent_id.borrow().clone()) {
+            object.insert(field, Json::String(parent));
+        }
+
+        self.sim.seed(&self.case.spec.kind, &Json::Object(object))
     }
 
     pub(crate) fn engine(&self) -> Engine<&Sim> {
@@ -50,7 +139,7 @@ impl<'c> World<'c> {
                 .canonicalize()
                 .expect("the workspace exists"),
             engine.instance().clone(),
-            DocumentId::Settings,
+            self.case.document_id(),
         )
         .expect("a state store")
     }
@@ -183,13 +272,20 @@ impl<'c> World<'c> {
         Ok(result.map(|_| action.expect("approval is asked before anything is recorded")))
     }
 
+    /// How many resources of the kind state records (its ancestors are not counted).
     pub(crate) fn state_resources(&self) -> usize {
         let engine = self.engine();
         self.store(&engine)
             .inspect()
             .ok()
             .flatten()
-            .map_or(0, |state| state.resources().len())
+            .map_or(0, |state| {
+                state
+                    .resources()
+                    .keys()
+                    .filter(|address| address.kind().as_str() == self.case.spec.kind)
+                    .count()
+            })
     }
 
     pub(crate) fn recovery_clean(&self) -> bool {
@@ -269,7 +365,8 @@ mod tests {
     fn world_for_registry() -> (Case, Arc<SpecRegistry>) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let specs = Arc::new(dokploy_spec::load_dir(&root.join("specs")).expect("specs load"));
-        let case = Case::new(specs.get("registry").expect("a registry spec")).expect("a case");
+        let case =
+            Case::new(specs.get("registry").expect("a registry spec"), &specs).expect("a case");
 
         (case, specs)
     }

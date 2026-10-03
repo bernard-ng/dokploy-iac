@@ -61,9 +61,10 @@ impl Shapes {
 pub(crate) fn fill(template: &Value, stored: &Map<String, Value>) -> Value {
     match template {
         Value::Object(keys) if keys.contains_key("success") && keys.len() == 1 => template.clone(),
+        // A key the stored object does not have is not returned, rather than returned as null.
         Value::Object(keys) => Value::Object(
             keys.keys()
-                .map(|key| (key.clone(), stored.get(key).cloned().unwrap_or(Value::Null)))
+                .filter_map(|key| stored.get(key).map(|value| (key.clone(), value.clone())))
                 .collect(),
         ),
         other => other.clone(),

@@ -4,8 +4,10 @@
 use std::collections::BTreeMap;
 
 use dokploy_spec::{
-    Field, FieldType, KindSpec, Mutability, PathShape, ValueClass, WriteGroup, parse_type,
+    Field, FieldType, KindSpec, Mutability, PathShape, Scope, SpecRegistry, ValueClass, WriteGroup,
+    parse_type,
 };
+use dokploy_state::{DocumentId, ResourceName};
 use serde_json::{Value as Json, json};
 
 /// A value a document gives a field.
@@ -36,21 +38,55 @@ pub(crate) struct FieldCase {
     pub(crate) group: Option<(String, dokploy_spec::Shape, Vec<String>)>,
 }
 
+/// A resource the kind lives under. The suite seeds these as already applied: it exercises
+/// the kind, not the kinds above it.
+#[derive(Clone, Debug)]
+pub(crate) struct Ancestor {
+    pub(crate) spec: KindSpec,
+    /// The key in the document (the project's slug).
+    pub(crate) key: String,
+    /// The section of the parent's mapping this kind is written in (`environments`).
+    pub(crate) section: String,
+    /// The request field that attaches it to its parent (`projectId`).
+    pub(crate) attach: Option<String>,
+}
+
 /// Everything a scenario needs to know about one kind.
 pub(crate) struct Case {
     pub(crate) spec: KindSpec,
     pub(crate) key: String,
     pub(crate) fields: Vec<FieldCase>,
+    /// The resources above the kind, outermost first; empty for a settings kind.
+    pub(crate) ancestors: Vec<Ancestor>,
 }
 
 impl Case {
     /// Builds the case, or says why this kind cannot be exercised yet.
-    pub(crate) fn new(spec: &KindSpec) -> Result<Self, String> {
-        if spec.parent.is_some() {
-            return Err(
-                "a nested kind needs its ancestors, which the suite seeds in a later step"
-                    .to_owned(),
-            );
+    pub(crate) fn new(spec: &KindSpec, specs: &SpecRegistry) -> Result<Self, String> {
+        let mut ancestors = Vec::new();
+        let mut current = spec;
+        while let Some(parent) = &current.parent {
+            let parent_spec = specs
+                .get(parent)
+                .ok_or_else(|| format!("the parent kind `{parent}` has no spec"))?;
+            // How this ancestor attaches to *its* parent, and where it is written.
+            let attach = parent_spec
+                .api
+                .create
+                .as_ref()
+                .and_then(|op| op.attach.iter().find(|(_, source)| *source == "parent_id"))
+                .map(|(field, _)| field.clone());
+            ancestors.push(Ancestor {
+                spec: parent_spec.clone(),
+                key: format!("conf-{parent}"),
+                section: parent_spec.section.clone(),
+                attach,
+            });
+            current = parent_spec;
+        }
+        ancestors.reverse();
+        if spec.scope == Scope::Project && ancestors.is_empty() {
+            return Err("a project-scoped kind without a parent is the project itself".to_owned());
         }
         let key = "conf-key".to_owned();
         let mut fields = Vec::new();
@@ -114,6 +150,7 @@ impl Case {
             spec: spec.clone(),
             key,
             fields,
+            ancestors,
         })
     }
 
@@ -165,31 +202,80 @@ impl Case {
             .collect()
     }
 
-    /// The settings document that carries `values`.
-    pub(crate) fn document(&self, values: &Values, protect: bool) -> String {
-        let mut text = format!(
-            "version: 2\nsettings:\n  {}:\n    {}:\n",
-            self.spec.section, self.key
-        );
-        if values.is_empty() && !protect {
-            text.push_str("      {}\n");
+    /// Which state the kind's documents are tracked in.
+    pub(crate) fn document_id(&self) -> DocumentId {
+        match self.ancestors.first() {
+            Some(root) => {
+                DocumentId::Project(ResourceName::new(root.key.clone()).expect("a valid slug"))
+            }
+            None => DocumentId::Settings,
         }
+    }
+
+    /// The document that carries `values`: a settings document for a settings kind, a project
+    /// document with the kind nested under its ancestors otherwise.
+    pub(crate) fn document(&self, values: &Values, protect: bool) -> String {
+        let mut fields = Vec::new();
         for (name, value) in values {
             let rendered = match value {
                 Val::Json(json) => json.to_string(),
                 Val::Secret(_) => format!("{{ env: {} }}", env_name(name)),
             };
-            text.push_str(&format!("      {name}: {rendered}\n"));
+            fields.push(format!("{name}: {rendered}"));
         }
         if protect {
-            text.push_str("      lifecycle: { protect: true }\n");
+            fields.push("lifecycle: { protect: true }".to_owned());
         }
 
-        text
+        self.render(Some(fields))
     }
 
-    pub(crate) fn empty_document() -> &'static str {
-        "version: 2\nsettings: {}\n"
+    /// The document with the kind removed and its ancestors kept.
+    pub(crate) fn without_child(&self) -> String {
+        self.render(None)
+    }
+
+    /// `child` is the kind's field lines, or `None` for a document without it.
+    fn render(&self, child: Option<Vec<String>>) -> String {
+        let at = |indent: usize, text: String| format!("{}{text}", " ".repeat(indent));
+        let mut lines = vec!["version: 2".to_owned()];
+
+        let Some(root) = self.ancestors.first() else {
+            match child {
+                None => lines.push("settings: {}".to_owned()),
+                Some(fields) => {
+                    lines.push("settings:".to_owned());
+                    lines.push(at(2, format!("{}:", self.spec.section)));
+                    lines.push(at(4, format!("{}:", self.key)));
+                    push_fields(&mut lines, 6, &fields);
+                }
+            }
+
+            return lines.join("\n") + "\n";
+        };
+        lines.push("project:".to_owned());
+        lines.push(at(2, format!("slug: {}", root.key)));
+        let mut indent = 2;
+        for (index, ancestor) in self.ancestors.iter().enumerate().skip(1) {
+            lines.push(at(indent, format!("{}:", ancestor.section)));
+            let last_without_child = child.is_none() && index + 1 == self.ancestors.len();
+            lines.push(at(
+                indent + 2,
+                format!(
+                    "{}:{}",
+                    ancestor.key,
+                    if last_without_child { " {}" } else { "" }
+                ),
+            ));
+            indent += 4;
+        }
+        if let Some(fields) = child {
+            lines.push(at(indent, format!("{}:", self.spec.section)));
+            lines.push(at(indent + 2, format!("{}:", self.key)));
+            push_fields(&mut lines, indent + 4, &fields);
+        }
+
+        lines.join("\n") + "\n"
     }
 
     /// What the remote holds for `values` after a create: wire key to value, with the
@@ -239,6 +325,18 @@ impl Case {
                 Val::Json(_) => None,
             })
             .collect()
+    }
+}
+
+fn push_fields(lines: &mut Vec<String>, indent: usize, fields: &[String]) {
+    if fields.is_empty() {
+        if let Some(last) = lines.last_mut() {
+            last.push_str(" {}");
+        }
+        return;
+    }
+    for field in fields {
+        lines.push(format!("{}{field}", " ".repeat(indent)));
     }
 }
 

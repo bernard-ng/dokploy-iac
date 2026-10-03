@@ -71,12 +71,12 @@ impl Suite {
         }
     }
 
-    /// The kinds the suite can exercise now: top-level kinds with full coverage.
+    /// The kinds the suite can exercise: those with full coverage.
     #[must_use]
     pub fn kinds(&self) -> Vec<String> {
         self.specs
             .kinds()
-            .filter(|spec| spec.coverage == dokploy_spec::Coverage::Full && spec.parent.is_none())
+            .filter(|spec| spec.coverage == dokploy_spec::Coverage::Full)
             .map(|spec| spec.kind.clone())
             .collect()
     }
@@ -88,7 +88,7 @@ impl Suite {
     /// When `kind` has no spec.
     pub async fn run(&self, kind: &str) -> Vec<ScenarioResult> {
         let spec = self.specs.get(kind).expect("a kind with a spec");
-        let case = match Case::new(spec) {
+        let case = match Case::new(spec, &self.specs) {
             Ok(case) => case,
             Err(reason) => {
                 return vec![ScenarioResult {

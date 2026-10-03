@@ -19,7 +19,7 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 | Stage | Does |
 |-------|------|
 | **compile** | Gives every resource its hierarchical address and containment; turns field values into canonical comparable values; reads each secret source once, fingerprints it, and forgets it (`SecretReader`, `Fingerprinter`); applies `default: key`; resolves `depends_on` by address suffix; computes the digest of the canonical text |
-| **discover** | Reads the minimum: one list per kind, and a direct read only for a resource that matched. A kind nobody mentions is not read. A failed read makes exactly its addresses unavailable. A direct read that disagrees with the collection is unavailable, not guessed |
+| **discover** | Reads the minimum: one list per kind, and a direct read only for a resource that matched. A kind nobody mentions is not read. A failed read makes exactly its addresses unavailable. A direct read that disagrees with the collection is unavailable, not guessed. Parents are read before children; a child's collection is read once per parent, either **scoped** by it (`environment.byProjectId?projectId=…`) or **embedded** in the parent's direct read (`application.one` carries `redirects`), which costs no extra request. A child of a missing parent is missing, and of an unavailable parent is unavailable |
 | **project** | Tolerant and presence-aware: a field not returned is "not returned", `null` is a value, a value outside its type or enum is "invalid response" for that property, and secret and write-only values are dropped at the boundary |
 | **plan** | The planner, unchanged: deterministic, value-free |
 | **apply** | Executes the plan under the writer lock, one journaled step per change (below) |
@@ -85,8 +85,10 @@ A secret cannot be read back, so an update that rotates one is never proven by o
   in the preflight for now.
 - **Create-before-delete replacement**, moving to another parent, and a rename combined with a
   change: refused in the preflight.
-- **Nested kinds** (M3). Discovery of a kind with a parent, an embedded collection, or a scoped
-  list returns `UnsupportedDiscovery` instead of guessing.
+- **Paged collections.** `application.search` answers `{items, total}`; reading pages arrives
+  with the project kinds (M3). Until then the prototype `application` spec has no collection read,
+  so an application is found by its recorded identity only and one that is not recorded is
+  unavailable, never guessed to be absent.
 - **Selectors** (`server`, `registry`): compiled, but not resolved, so a desired selector blocks the
   plan with `UnresolvedExternalSelector`.
 - **Composite values on the remote side**: unions, structs, and keyed collections are compiled but

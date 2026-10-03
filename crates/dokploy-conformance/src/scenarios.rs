@@ -49,15 +49,22 @@ fn remove_op(w: &World<'_>) -> String {
         .clone()
 }
 
+/// The operation whose failure makes the kind's collection unreadable: its list, or the
+/// parent's direct read when the collection is embedded in it.
 fn list_op(w: &World<'_>) -> String {
-    w.case
+    let list = w
+        .case
         .spec
         .api
         .read
         .list
         .as_ref()
-        .and_then(|list| list.op.clone())
-        .expect("a kind with a collection read")
+        .expect("a kind with a collection read");
+    match (&list.op, &list.embedded_in) {
+        (Some(op), _) => op.clone(),
+        (None, Some(embedded)) => embedded.parent_op.clone(),
+        (None, None) => unreachable!("a list has an op or is embedded"),
+    }
 }
 
 /// The remote object holds what the values say.
@@ -271,7 +278,7 @@ pub(crate) async fn delete(w: &World<'_>) -> Check<Verdict> {
     w.sim.clear_requests();
 
     let summary = w
-        .apply_text(crate::case::Case::empty_document(), Default::default())
+        .apply_text(&w.case.without_child(), Default::default())
         .await?
         .map_err(|error| format!("delete failed: {error}"))?;
 
@@ -300,7 +307,7 @@ pub(crate) async fn protected_delete(w: &World<'_>) -> Check<Verdict> {
     w.sim.clear_requests();
 
     let plan = w
-        .plan_text(crate::case::Case::empty_document(), Default::default())
+        .plan_text(&w.case.without_child(), Default::default())
         .await?;
     ensure!(
         plan.diagnostics()
@@ -309,7 +316,7 @@ pub(crate) async fn protected_delete(w: &World<'_>) -> Check<Verdict> {
         "removing a protected resource is not refused"
     );
     let result = w
-        .apply_text(crate::case::Case::empty_document(), Default::default())
+        .apply_text(&w.case.without_child(), Default::default())
         .await?;
     ensure!(
         matches!(result, Err(ApplyError::Blocked { .. })),
@@ -334,7 +341,7 @@ pub(crate) async fn unmanaged_collision(w: &World<'_>, copies: usize) -> Check<V
         return skip("no collision field has a value");
     }
     for _ in 0..copies {
-        w.sim.seed(&w.case.spec.kind, &existing);
+        w.seed_child(&existing);
     }
 
     let plan = w.plan(&values).await?;
@@ -492,7 +499,7 @@ pub(crate) async fn interrupted(w: &World<'_>, step: Step, after: bool) -> Check
     w.sim.clear_requests();
 
     let result = if matches!(step, Step::Delete) {
-        w.apply_text(crate::case::Case::empty_document(), Default::default())
+        w.apply_text(&w.case.without_child(), Default::default())
             .await?
     } else {
         w.apply(&document_values).await?
@@ -507,7 +514,7 @@ pub(crate) async fn interrupted(w: &World<'_>, step: Step, after: bool) -> Check
 
     let recovered = if matches!(step, Step::Delete) {
         // Recovery needs the document that was being applied: the empty one.
-        w.recover_text(crate::case::Case::empty_document(), Default::default())
+        w.recover_text(&w.case.without_child(), Default::default())
             .await?
     } else {
         w.recover(&document_values).await?
@@ -524,7 +531,7 @@ pub(crate) async fn interrupted(w: &World<'_>, step: Step, after: bool) -> Check
 
     // Whatever recovery decided, one more apply brings the remote to the document.
     if matches!(step, Step::Delete) {
-        w.apply_text(crate::case::Case::empty_document(), Default::default())
+        w.apply_text(&w.case.without_child(), Default::default())
             .await?
             .map_err(|error| format!("the apply after recovery failed: {error}"))?;
         ensure!(w.objects().is_empty(), "the object survived");

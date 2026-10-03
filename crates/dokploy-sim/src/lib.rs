@@ -230,7 +230,7 @@ impl Sim {
     }
 
     /// Adds an object as if it had always been there, without a request. Returns its id.
-    /// Missing fields are `null`, the id and server-owned fields are filled in.
+    /// Missing nullable fields are `null`, the id and server-owned fields are filled in.
     ///
     /// # Panics
     ///
@@ -692,8 +692,12 @@ fn check_contract(operation: &str, request: &OperationRequest) -> Result<(), Dok
 
 fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
     let mut object = Object::new();
+    // A nullable column that was not given is null; the simulator cannot invent a default for
+    // a column that must have a value, so it leaves it unreturned rather than wrong.
     for (name, field) in &spec.fields {
-        object.insert(field.request_name(name).to_owned(), Value::Null);
+        if field.nullable {
+            object.insert(field.request_name(name).to_owned(), Value::Null);
+        }
     }
     for name in &spec.ledger.readonly {
         let value = if name == "createdAt" {
