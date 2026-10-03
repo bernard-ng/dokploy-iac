@@ -75,8 +75,8 @@
       "fixtures": [],
       "data": [],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "engine compile `a_secret_that_cannot_be_read_fails_the_compile_naming_the_source_and_never_a_value` (a file source is read at compile time and never echoed)",
       "reason": null
     },
     {
@@ -113,8 +113,8 @@
         "COMMAND_CANARY"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -314,8 +314,8 @@
         "COMMAND_CANARY"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `create`, `create_minimal`, `rejected_create`",
       "reason": null
     },
     {
@@ -411,8 +411,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `update:*` and `drift:*` (a full group re-sends every field of the group)",
       "reason": null
     },
     {
@@ -449,8 +449,8 @@
         "COMMAND_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -697,8 +697,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind (a mismatch or a rotation that cannot be proven is `a person decides`)",
       "reason": null
     },
     {
@@ -729,8 +729,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -761,8 +761,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind (a mismatch or a rotation that cannot be proven is `a person decides`)",
       "reason": null
     },
     {
@@ -793,8 +793,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -827,8 +827,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -861,8 +861,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -895,8 +895,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind (a mismatch or a rotation that cannot be proven is `a person decides`)",
       "reason": null
     },
     {
@@ -1071,8 +1071,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -1174,8 +1174,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "drift",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `update:*` and `drift:*` (a full group re-sends every field of the group)",
       "reason": null
     },
     {
@@ -1209,8 +1209,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -1309,8 +1309,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`; engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
       "reason": null
     },
     {
@@ -1655,8 +1655,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -1676,8 +1676,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -1696,8 +1696,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -1740,8 +1740,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -1824,8 +1824,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule canary scan (a secret is read once, fingerprinted, never stored or printed)",
       "reason": null
     },
     {
@@ -1880,8 +1880,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); the simulator validates every request against the contract",
       "reason": null
     },
     {
@@ -1906,8 +1906,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `delete`, `protected_delete`, `removal_not_applied`, `unknown_delete_*`",
       "reason": null
     },
     {
@@ -1945,8 +1945,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `update:*` and `drift:*` (a full group re-sends every field of the group)",
       "reason": null
     },
     {
@@ -1966,8 +1966,8 @@
         "SCRIPT_CANARY"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance schedule `update:*` and `drift:*` (a full group re-sends every field of the group)",
       "reason": null
     }
   ]

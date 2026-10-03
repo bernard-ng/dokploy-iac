@@ -77,7 +77,24 @@ carries every member the arm's operation takes, `full`:
    with the secret's name.
 
 The tag is implied by the operation, not sent in it (`derived` in the ledger): the simulator makes
-the saved arm the held one, as Dokploy does.
+the saved arm the held one, as Dokploy does. Two other shapes exist:
+
+- **An operation shared by several arms** (`application.saveBuildType` writes every build type): the
+  tag is sent in the body, and the columns of the other arms that the operation takes anyway keep
+  what Dokploy holds, or their `fallback`, or `null` where the operation allows it.
+- **A union written by the kind's own update** (`libsql.update` takes `sqldNode` and
+  `sqldPrimaryUrl`; `compose.update` takes the whole `source`): the union is a field of an ordinary
+  write group, expanded into its tag and the members of every arm like a struct, each under the key
+  of its own. A member of an arm that a create requires and the document does not give is sent
+  empty (`sqldPrimaryUrl: null` for a primary).
+
+A struct member can itself be an environment block (`preview.environment`, `preview.build_args`,
+`preview.build_secrets`): it is planned and written like the kind's own, under the path of the
+member, and the entries are named below that path.
+
+Fixed fields: an operation may state what every call sends as written (`send: { deleteVolumes: false }`
+on a remove or a create) and, for the update, what the parent's kind fixes (`databaseType: postgres`
+on `backup.update`), through the same `attach_by_parent` the create uses.
 
 ## Selectors
 

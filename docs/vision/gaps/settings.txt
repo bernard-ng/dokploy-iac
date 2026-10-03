@@ -2,7 +2,6 @@ DOKDOC004 settings.ai_providers
 DOKDOC004 settings.certificates
 DOKDOC004 settings.cluster
 DOKDOC004 settings.custom_roles
-DOKDOC004 settings.destinations
 DOKDOC004 settings.dns_providers
 DOKDOC004 settings.git_providers
 DOKDOC004 settings.license

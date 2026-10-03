@@ -17,8 +17,8 @@
         "PROJECTS"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `create`, `create_minimal`, `rejected_create`",
       "reason": null
     },
     {
@@ -36,8 +36,8 @@
         "PROJECTS"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -77,8 +77,8 @@
         "PROJECTS"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -139,8 +139,8 @@
         "PROJECTS"
       ],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `update:*` and `drift:*` (a full group re-sends every field of the group)",
       "reason": null
     },
     {
@@ -154,8 +154,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`; engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
       "reason": null
     },
     {
@@ -193,8 +193,8 @@
         "POPULATED_TOPOLOGY"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -215,8 +215,8 @@
         "EMPTY_TOPOLOGY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -238,8 +238,8 @@
         "POPULATED_TOPOLOGY"
       ],
       "category": "recovery",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -259,8 +259,8 @@
         "EMPTY_TOPOLOGY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -295,8 +295,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); the simulator validates every request against the contract",
       "reason": null
     },
     {
@@ -310,8 +310,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -327,8 +327,8 @@
       "fixtures": [],
       "data": [],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance libsql canary scan (a secret is read once, fingerprinted, never stored or printed)",
       "reason": null
     }
   ]

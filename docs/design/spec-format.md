@@ -156,9 +156,26 @@ write:
   - { op: compose.saveEnvironment, fields: [environment, create_env_file], shape: partial }
 ```
 
+A write group may name a union field (`source`, `node`) and then writes its tag and the members of
+every arm; `by_variant` is for a union whose arms are written by different operations, and an
+operation may be listed for several arms (`build`: one `saveBuildType` for all).
+
 `shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation by a
 union tag, `ops: { arm: operation }`: one request per apply, to the operation of the arm the
 document names, carrying the members of that arm (see [`engine.md`](engine.md#unions)).
+
+## Operations
+
+An operation (`api.create`, `update`, `remove`) is `op` plus, as needed: `id_param` (the parameter
+that carries the identity), `attach` and `attach_by_parent` (request fields filled from context;
+`parent_id` is the id of the parent, any other value is sent as written, and each applies to the
+create and, other than `parent_id`, to the update), and `send` (typed fields sent as written on every
+call of a create, an update, or a remove: `send: { deleteVolumes: false }`).
+
+A collection read per parent is `read.list: { op, scope: { param, query_by_parent } }`: `param`
+carries the parent's id, and `query_by_parent` adds the parameters that tell the list which kind of
+parent the id names, so one list serves several parents (`scheduleType: application`,
+`volumeBackupType: postgres`, `type: compose`).
 
 ## Children
 

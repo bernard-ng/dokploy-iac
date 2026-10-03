@@ -56,6 +56,25 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- More project kinds (milestone M3, [ADR 0018](docs/decisions/0018-several-parents-and-per-member-unions.md)),
+  all with specs and no per-kind Rust: `libsql` (a union `node` written by its own update; the create
+  answers a boolean, so its identity is a collection diff), `compose` (a six-arm `source` written by
+  `compose.update`, `saveEnvironment` as a full group, a remove that keeps the volumes), `destination` (a
+  settings kind; the S3 keys are secrets), `backup` (the five databases), `schedule` and `patch`
+  (application and Compose), and `volume_backup` (every service). `domain` and `mount` gain Compose, and
+  `mount` gains LibSQL, as parents. The application gains a `build` union (`application.saveBuildType`
+  is shared by every arm), `clean_cache`, the `swarm` settings (a struct whose members are Docker's own
+  JSON, here and on the six databases), and `preview.environment`, `build_args`, and `build_secrets`.
+  Not modeled: `pullImages` (Compose; never returned by Dokploy 0.30.x), database schedules (Dokploy
+  runs schedules in applications and Compose only) and Compose backups (ADR 0039). Grammar and engine:
+  an operation `send`s typed fixed fields and, for the update, attaches the parent's kind
+  (`databaseType`); a scoped list read carries `query_by_parent` so one list serves several parents;
+  a union is written by an ordinary write group, and an environment block may be a struct member.
+  **Breaking:** `ListScope` gains `query_by_parent`, `Operation` gains `send`, and the conformance
+  suite is told an arm with `Suite::exercising(field, arm)` instead of a spec cut down to one arm. The
+  simulator validates and reads such lists by the parent's id column. 73 more golden scenarios are
+  `covered` or `dropped` with the test that proves them.
+
 - Unions planned per member (milestone M3, [ADR 0018](docs/decisions/0018-several-parents-and-per-member-unions.md);
   [`engine.md`](docs/design/engine.md#unions)). A `union(tag)` is the tag plus the members of each
   arm (`source.type`, `source.github.owner`, `source.docker.password`), so an omitted member is

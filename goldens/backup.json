@@ -118,8 +118,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -173,8 +173,8 @@
       "fixtures": [],
       "data": [],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `delete`, `protected_delete`, `removal_not_applied`, `unknown_delete_*`",
       "reason": null
     },
     {
@@ -192,8 +192,8 @@
       "fixtures": [],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `create`, `create_minimal`, `rejected_create`",
       "reason": null
     },
     {
@@ -258,8 +258,8 @@
       "fixtures": [],
       "data": [],
       "category": "update",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `update:*` and `drift:*` (a full group re-sends every field of the group)",
       "reason": null
     },
     {
@@ -315,8 +315,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -334,8 +334,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -414,8 +414,8 @@
       "fixtures": [],
       "data": [],
       "category": "recovery",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -448,8 +448,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -463,8 +463,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind (a mismatch or a rotation that cannot be proven is `a person decides`)",
       "reason": null
     },
     {
@@ -480,8 +480,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -497,8 +497,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -514,8 +514,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -531,8 +531,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -548,8 +548,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -563,8 +563,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind (a mismatch or a rotation that cannot be proven is `a person decides`)",
       "reason": null
     },
     {
@@ -659,8 +659,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -762,8 +762,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -889,8 +889,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance meta `a_partial_collection_is_not_proof_of_absence`; engine discovery_safety `absence_from_an_authoritative_collection_is_proof`",
       "reason": null
     },
     {
@@ -1060,8 +1060,8 @@
         "VALID"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup canary scan (a secret is read once, fingerprinted, never stored or printed)",
       "reason": null
     },
     {
@@ -1214,8 +1214,8 @@
         "SECRET_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -1252,8 +1252,8 @@
         "SECRET_CANARY"
       ],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -1274,8 +1274,8 @@
         "SECRET_CANARY"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -1332,8 +1332,8 @@
         "SECRET_CANARY"
       ],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance backup `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {

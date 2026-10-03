@@ -80,23 +80,26 @@ so they do not move when a spec does.
 
 ## M3 status
 
-Started. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `port`, and `security`
-(full conformance); the databases `postgres`, `mysql`, `mariadb`, `mongo`, and `redis`, and the
-`environment` (conformance for the fields they carry); the `application` with its six-arm union
-`source` (91 to 101 scenarios per arm). Engine work the kinds needed: follow-up writes after a create, selectors, struct
-members and environment blocks, creation requirements that follow the create operation, and
-`moves` and `removed`. The vision ratchet (`docs/vision/gaps/`) counts what the parser still
-rejects of the two vision documents: 21 lines for the project document, 19 for the settings one.
+Nearly done. Done, all with specs and no per-kind Rust: the leaf kinds `redirect`, `port`, `security`,
+`mount`, `domain`, `schedule`, `patch`, `backup`, and `volume_backup` (full conformance, under every
+parent they have); the databases `postgres`, `mysql`, `mariadb`, `mongo`, `redis`, and `libsql`, `compose`,
+and the `environment` (conformance for the fields they carry); the `application` with its six-arm
+`source` and six-arm `build` unions, `swarm`, and the preview settings; and the settings kind
+`destination`, which the backups needed. Engine and grammar work the kinds needed: follow-up writes
+after a create, selectors, struct members and environment blocks (also inside a struct), unions planned
+per member, several parents, typed fixed fields on an operation, and a list read per parent with a
+type. The vision ratchet (`docs/vision/gaps/`) counts what the parser still rejects of the two vision
+documents: 7 lines for the project document, 18 for the settings one.
 
-Both decisions that blocked the rest are made ([ADR 0018](decisions/0018-several-parents-and-per-member-unions.md)):
-a kind may have several parents (`mount`, `domain`), and a union is planned per member (the
-application `source`).
+What stays open before M3 exits:
 
-Still open, and not blocked: the `libsql` `node` (can now be a union), `compose` (a union source),
-`build` (a union), the swarm settings, `networks`, and tag membership (a hook); the Compose
-multi-service schedules hook. Needs destinations (M5): backups and volume backups, which need a
-`destination` spec. Needs a grammar addition: schedules and patches, whose list reads take two
-parameters.
+1. **A set of selectors**: project `tags` (membership through `tag.bulkAssign`) and `networks`
+   (`networkIds` of the application and the databases, `serviceNetworks` of Compose). Each member is an
+   id Dokploy holds; the planner resolves one selector per property, so a set needs its own planning
+   (and a `network` spec, which is a settings kind).
+2. **A field read by a side operation**: `traefik_config` (`application.updateTraefikConfig`, read
+   through `application.readTraefikConfig`, which no `one` embeds).
+3. **`env_file`** is M4 (it belongs to the environment sources).
 
 ## Cost gate (end of M2)
 

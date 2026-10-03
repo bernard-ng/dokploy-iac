@@ -16,8 +16,8 @@
       "fixtures": [],
       "data": [],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose `create`, `create_minimal`, `rejected_create`",
       "reason": null
     },
     {
@@ -31,8 +31,8 @@
       "fixtures": [],
       "data": [],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -46,8 +46,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -65,8 +65,8 @@
       "fixtures": [],
       "data": [],
       "category": "read-model",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose `foreign_direct_read`, `read_failure`; engine plan_registry `a_direct_read_that_disagrees_with_the_collection_is_not_trusted`; discovery_safety",
       "reason": null
     },
     {
@@ -133,8 +133,8 @@
         "COMPOSE_WITH_SERVER_RESPONSE"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose canary scan (a secret is read once, fingerprinted, never stored or printed)",
       "reason": null
     },
     {
@@ -148,8 +148,8 @@
       "fixtures": [],
       "data": [],
       "category": "outcome-unknown",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose `unknown_{create,update,delete}_{before,after}`, `follow_up_*` and the recovery decision table (engine recover tests); the same table serves every kind",
       "reason": null
     },
     {
@@ -201,8 +201,8 @@
       "fixtures": [],
       "data": [],
       "category": "document",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "dokploy-model parse and schema tests (types, enums, required fields are checked before anything is sent); the simulator validates every request against the contract",
       "reason": null
     },
     {
@@ -218,8 +218,8 @@
       "fixtures": [],
       "data": [],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance compose `delete`, `protected_delete`, `removal_not_applied`, `unknown_delete_*`",
       "reason": null
     }
   ]

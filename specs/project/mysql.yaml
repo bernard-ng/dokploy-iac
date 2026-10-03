@@ -1,5 +1,5 @@
-# PROTOTYPE (coverage: partial). A database of an environment. The swarm settings and the
-# networks are still unclassified requests.
+# PROTOTYPE (coverage: partial). A database of an environment. The networks are still an
+# unclassified request.
 #
 # Live facts (fixtures/api/live/*/mysql-*): create answers the whole object, update answers
 # `true`, remove answers the removed object, and the collection is the `mysql` array that

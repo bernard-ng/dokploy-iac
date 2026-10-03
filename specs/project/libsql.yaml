@@ -1,5 +1,5 @@
-# PROTOTYPE (coverage: partial). A LibSQL (sqld) database of an environment. The swarm settings and
-# the networks are still unclassified requests.
+# PROTOTYPE (coverage: partial). A LibSQL (sqld) database of an environment. The networks are still
+# an unclassified request.
 #
 # Live facts (fixtures/api/live/*/libsql-*): create answers a boolean, so the identity is the one
 # new item of the collection by name; update answers `true`; and the collection is the `libsql`

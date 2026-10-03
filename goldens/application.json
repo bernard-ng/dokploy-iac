@@ -79,8 +79,8 @@
         "PROJECT"
       ],
       "category": "create",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance application `create`, `create_minimal`, `rejected_create`",
       "reason": null
     },
     {
@@ -115,8 +115,8 @@
         "PROJECT"
       ],
       "category": "selector",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance application `unmanaged_collision`, `ambiguous_collision`, `identity_ambiguous`",
       "reason": null
     },
     {
@@ -267,8 +267,8 @@
         "PROJECT"
       ],
       "category": "canary",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance application canary scan (a secret is read once, fingerprinted, never stored or printed)",
       "reason": null
     },
     {
@@ -381,9 +381,9 @@
         "PROJECT"
       ],
       "category": "read-model",
-      "status": "pending",
+      "status": "dropped",
       "covered_by": null,
-      "reason": null
+      "reason": "the application is read from the environment's direct read, which is complete; the paged `application.search` the first engine used is not read (docs/design/engine.md, paged collections)"
     },
     {
       "id": "dokploy-cli/tests/application_remote::persisted_application_move_observes_source_and_managed_target_idempotently",
@@ -470,8 +470,8 @@
         "PROJECT"
       ],
       "category": "delete",
-      "status": "pending",
-      "covered_by": null,
+      "status": "covered",
+      "covered_by": "conformance application `delete`, `protected_delete`, `removal_not_applied`, `unknown_delete_*`",
       "reason": null
     }
   ]
