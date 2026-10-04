@@ -57,6 +57,10 @@ pub(crate) fn project(
         .filter_map(|path| path.info().root.as_deref())
         .collect();
     for info in spec.properties() {
+        // A computed property is read, never owned: it is not observed as a property.
+        if info.is_lifecycle_only() {
+            continue;
+        }
         if info.shape == PathShape::CollectionRoot && entered.contains(&info.path.as_str()) {
             continue;
         }

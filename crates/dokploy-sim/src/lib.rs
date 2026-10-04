@@ -543,6 +543,7 @@ impl Sim {
             .entry(spec.kind.clone())
             .or_default()
             .push(object.clone());
+        self.make_with_parent(inner, spec, &object);
 
         let operation = request.operation();
         if let Some(template) = self.shapes.template(operation, Role::Mutation) {
@@ -553,6 +554,51 @@ impl Sim {
             Some(CreateIdentity::FromResponse(pointer)) => nest(pointer, stored),
             _ => Value::Bool(true),
         })
+    }
+
+    /// What Dokploy makes by itself when it makes a row (a project's default environment): a
+    /// child of a kind whose spec says `made_with_parent`, with the name the spec gives it and its
+    /// marker true.
+    fn make_with_parent(&self, inner: &mut Inner, parent: &KindSpec, parent_object: &Object) {
+        let Some(parent_id) = id_of(parent, parent_object) else {
+            return;
+        };
+        for child in self.specs.kinds() {
+            let (Some(made), true) = (
+                &child.made_with_parent,
+                child.parents.contains(&parent.kind),
+            ) else {
+                continue;
+            };
+            let (Some(column), Some(name_field), Some(marker_field)) = (
+                child.parent_column(&parent.kind),
+                child
+                    .identity
+                    .key
+                    .as_ref()
+                    .and_then(|key| child.fields.get(key)),
+                child.fields.get(&made.marker),
+            ) else {
+                continue;
+            };
+            let mut fields = Object::new();
+            fields.insert(column.to_owned(), Value::String(parent_id.clone()));
+            let key = child.identity.key.as_deref().unwrap_or_default();
+            fields.insert(
+                name_field.request_name(key).to_owned(),
+                Value::String(made.name.clone()),
+            );
+            fields.insert(
+                marker_field.request_name(&made.marker).to_owned(),
+                Value::Bool(true),
+            );
+            let object = new_object(child, &fields, inner);
+            inner
+                .objects
+                .entry(child.kind.clone())
+                .or_default()
+                .push(object);
+        }
     }
 
     fn update(
@@ -575,6 +621,18 @@ impl Sim {
                     .find(|o| id_of(spec, o).as_deref() == Some(&id))
             })
             .ok_or_else(|| not_found(spec))?;
+        // Nor can it be renamed: a body that names it is refused, even with the same name.
+        if is_made_with_parent(spec, object)
+            && let Some(key) = spec.identity.key.as_deref()
+            && let Some(field) = spec.fields.get(key)
+            && body.contains_key(field.request_name(key))
+        {
+            return Err(api_error(
+                400,
+                "BAD_REQUEST",
+                "You cannot rename the default one".to_owned(),
+            ));
+        }
         for (key, value) in &body {
             if *key != spec.api.id {
                 object.insert(key.clone(), value.clone());
@@ -701,6 +759,14 @@ impl Sim {
         let removed = find(inner, spec, &id)
             .cloned()
             .ok_or_else(|| not_found(spec))?;
+        // What Dokploy made with the parent goes with the parent and cannot be removed alone.
+        if is_made_with_parent(spec, &removed) {
+            return Err(api_error(
+                400,
+                "BAD_REQUEST",
+                "You cannot delete the default one".to_owned(),
+            ));
+        }
         cascade_remove(&self.specs, inner, &spec.kind, &id);
 
         Ok(
@@ -974,6 +1040,15 @@ fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
     }
 
     object
+}
+
+/// Whether `object` is the row Dokploy made with its parent (the spec's marker is true).
+fn is_made_with_parent(spec: &KindSpec, object: &Object) -> bool {
+    spec.made_with_parent.as_ref().is_some_and(|made| {
+        spec.fields.get(&made.marker).is_some_and(|field| {
+            object.get(field.request_name(&made.marker)) == Some(&Value::Bool(true))
+        })
+    })
 }
 
 fn id_of(spec: &KindSpec, object: &Object) -> Option<String> {

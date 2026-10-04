@@ -128,12 +128,13 @@ the repair is exact, and the newline Dokploy adds to a patch is not a difference
 Left to later: the vault provider check (M5, with the `vault_provider` kind) and the importer that
 calls `SecretsWriter` (M6).
 
-The live test also found two M3 gaps the simulator hides. `project.create` makes a default
-`production` environment, so a document that declares `production` under a new project is rejected
-when the engine creates it (the test declares `staging`); fixing it means adopting what the project
-create returns, which is a spec-grammar and executor change. And an environment made without a
-description reads `null` while `environment.update` takes only text, so `description` is now
-nullable (written as an empty text to clear).
+The live test also found two M3 gaps the simulator hid. `project.create` makes a default `production`
+environment, which `environment.create` then refuses to duplicate, `environment.update` refuses to
+rename (any body with a `name`), and `environment.remove` refuses to delete: the `made_with_parent`
+spec attribute now takes it, never writes its name, and forgets it instead of deleting it, and the
+simulator reproduces all three refusals. And an environment made without a description reads `null`
+while `environment.update` takes only text, so `description` is nullable (written as an empty text to
+clear).
 The fingerprint already binds the instance, the address, and the property path, so no separate
 fingerprint of paths is needed.
 

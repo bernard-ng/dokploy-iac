@@ -157,6 +157,17 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             self.inputs(),
         )?;
         let request = created.request;
+        // Dokploy made this one with its parent: take it, and write the rest with an update.
+        if let Some(id) = self
+            .made_with_parent(spec, parent.as_ref(), checkpoint)
+            .await
+            .map_err(|code| ApplyError::Preparation {
+                address: address.clone(),
+                code,
+            })?
+        {
+            return self.take_made_with_parent(change, spec, id).await;
+        }
         // What the create operation cannot carry is written by an update right after, as a
         // step of its own: the create step expects only what the create writes.
         let deferred = created.deferred;
@@ -233,6 +244,101 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         self.verify(spec, address, remote_id.as_str(), &at_creation, &paths)
             .await?;
 
+        if deferred.is_empty() {
+            return Ok(());
+        }
+        let deferred: Vec<&PropertyPath> = deferred.iter().collect();
+        self.write(address, checkpoint, &deferred).await
+    }
+
+    /// The row Dokploy made with the parent when it is the one this create names: the key fields of
+    /// the checkpoint match a row the kind's marker flags.
+    async fn made_with_parent(
+        &self,
+        spec: &KindSpec,
+        parent: Option<&(String, String)>,
+        checkpoint: &ResourceCheckpoint,
+    ) -> Result<Option<String>, FailureCode> {
+        if spec.made_with_parent.is_none() {
+            return Ok(None);
+        }
+        let wanted: Option<Vec<(String, Json)>> = spec
+            .identity
+            .collision
+            .iter()
+            .map(|name| {
+                let path = PropertyPath::from_spec(spec, name).ok()?;
+                match checkpoint.property(&path)? {
+                    dokploy_core::CheckpointValueRef::NonSensitive(value) => {
+                        Some((name.clone(), value.clone()))
+                    }
+                    _ => None,
+                }
+            })
+            .collect();
+        let Some(wanted) = wanted else {
+            return Ok(None);
+        };
+        let items = self
+            .listing(spec, parent.map(|(k, id)| (k.as_str(), id.as_str())))
+            .await?;
+        let mut found = items.iter().filter(|item| {
+            crate::discover::is_made_with_parent(spec, item)
+                && wanted.iter().all(|(name, value)| {
+                    crate::project::field_value(spec, name, item).as_ref() == Some(value)
+                })
+        });
+
+        Ok(match (found.next(), found.next()) {
+            (Some(item), None) => item_id(spec, item).map(str::to_owned),
+            _ => None,
+        })
+    }
+
+    /// A create that takes the row Dokploy made instead of making one: the step is journaled as a
+    /// create of what names it, and everything else is written by an update right after.
+    async fn take_made_with_parent(
+        &mut self,
+        change: &PlannedChange,
+        spec: &KindSpec,
+        id: String,
+    ) -> Result<(), ApplyError> {
+        let address = change.address();
+        let invalid = || ApplyError::InvalidCheckpoint {
+            address: address.clone(),
+        };
+        let checkpoint = change.checkpoint().present().ok_or_else(invalid)?;
+        let remote_id = RemoteId::new(id).map_err(|_| invalid())?;
+        let deferred: Vec<PropertyPath> = checkpoint
+            .property_paths()
+            .into_iter()
+            .filter(|path| {
+                !spec
+                    .identity
+                    .collision
+                    .iter()
+                    .any(|name| name == path.info().field_name())
+            })
+            .cloned()
+            .collect();
+        let at_creation = checkpoint.without(&deferred);
+        let placeholder = RemoteId::new("recovery-pending").expect("a constant identity");
+        let token = self.journal.start_recoverable_step(
+            address.clone(),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(
+                at_creation
+                    .materialize(address, placeholder)
+                    .map_err(|_| invalid())?,
+            )
+            .map_err(|_| invalid())?,
+        )?;
+        let resource = at_creation
+            .materialize(address, remote_id.clone())
+            .map_err(|_| invalid())?;
+        self.state.upsert_resource(address.clone(), resource)?;
+        self.journal
+            .succeed(token, Some(remote_id.clone()), &self.state)?;
         if deferred.is_empty() {
             return Ok(());
         }
@@ -377,7 +483,15 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             address: address.clone(),
         };
         let before = self.state.resource(address).ok_or_else(invalid)?.clone();
-        let action = if change.kind() == ChangeKind::Forget {
+        // Dokploy refuses to delete what it made with the parent (a project's default
+        // environment) and removes it with the parent, so the document stops managing it.
+        let made_with_parent = change.kind() != ChangeKind::Forget
+            && spec.made_with_parent.is_some()
+            && self
+                .direct_read(spec, before.remote_id().as_str())
+                .await
+                .is_ok_and(|item| crate::discover::is_made_with_parent(spec, &item));
+        let action = if change.kind() == ChangeKind::Forget || made_with_parent {
             JournalAction::Forget
         } else {
             JournalAction::Delete

@@ -427,3 +427,30 @@ fn a_file_key_names_a_free_document_key_of_a_top_level_env_field() {
         issues(&twice)
     );
 }
+
+#[test]
+fn a_kind_made_with_its_parent_names_a_computed_bool_marker_and_has_one_parent() {
+    let nowhere = with(
+        "ledger:\n  readonly: [createdAt]",
+        "made_with_parent: { name: default, marker: nothing }\nledger:\n  readonly: [createdAt]",
+    );
+    let found = issues(&nowhere);
+    for fragment in ["exactly one parent", "`nothing` is not a field"] {
+        assert!(
+            found.iter().any(|issue| issue.contains(fragment)),
+            "{fragment}: {found:?}"
+        );
+    }
+
+    let not_computed = with(
+        "ledger:\n  readonly: [createdAt]",
+        "made_with_parent: { name: default, marker: color }\nledger:\n  readonly: [createdAt]",
+    );
+    assert!(
+        issues(&not_computed)
+            .iter()
+            .any(|issue| issue.contains("a computed bool field")),
+        "{:?}",
+        issues(&not_computed)
+    );
+}

@@ -1,4 +1,9 @@
-# An environment of a project. Its `isDefault` and its duplication are not configuration.
+# An environment of a project. Its duplication is not configuration.
+#
+# Live facts (0.30.6 and 0.30.7): `project.create` makes an environment of its own, `production`,
+# with `isDefault: true` and the description "Production environment", and `environment.create` of
+# a second `production` is refused. A document that declares `production` therefore takes that one
+# (`made_with_parent`) and writes what it says with an update.
 kind: environment
 scope: project
 parent: project
@@ -6,6 +11,7 @@ section: environments
 title: Environment
 class: managed
 coverage: full
+made_with_parent: { name: production, marker: is_default }
 identity:
   key: name
   collision: [name]
@@ -35,6 +41,11 @@ fields:
     type: env
     granularity: key
     doc: Variables shared by everything below.
+  is_default:
+    api: isDefault
+    type: bool
+    mutability: computed
+    doc: True for the environment Dokploy made with the project; read, never written.
 write:
   - op: environment.update
     fields: [name, description, env]

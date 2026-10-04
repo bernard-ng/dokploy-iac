@@ -374,7 +374,7 @@ async fn a_destination_lives_its_whole_life_through_the_engine() {
     );
 }
 
-const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    staging:\n      applications:\n        api:\n          source: { type: docker, image: \"nginx:alpine\", username: ci, password: { env: LIVE_DOCKER_PASSWORD } }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
+const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    production:\n      applications:\n        api:\n          source: { type: docker, image: \"nginx:alpine\", username: ci, password: { env: LIVE_DOCKER_PASSWORD } }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
 
 /// A project document applied through the engine, its workspace holding the files it names.
 struct LiveProject {

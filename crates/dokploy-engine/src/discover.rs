@@ -482,10 +482,13 @@ fn find<'a>(
         return Found::Nothing;
     };
     let mut matches = listing.iter().filter(|item| {
-        subject
-            .moved_from
-            .as_ref()
-            .is_none_or(|source| item_id(spec, item) != Some(source.as_str()))
+        // What Dokploy made with the parent is not an unmanaged collision: a document that names
+        // it takes it when it is created (ADR 0006).
+        !is_made_with_parent(spec, item)
+            && subject
+                .moved_from
+                .as_ref()
+                .is_none_or(|source| item_id(spec, item) != Some(source.as_str()))
             && wanted
                 .iter()
                 .all(|(name, value)| field_value(spec, name, item).as_ref() == Some(value))
@@ -495,6 +498,13 @@ fn find<'a>(
         (Some(item), None) => Found::Item(item),
         (Some(_), Some(_)) => Found::Ambiguous,
     }
+}
+
+/// Whether `item` is the row Dokploy made with the parent of this kind.
+pub(crate) fn is_made_with_parent(spec: &KindSpec, item: &Json) -> bool {
+    spec.made_with_parent
+        .as_ref()
+        .is_some_and(|made| field_value(spec, &made.marker, item) == Some(Json::Bool(true)))
 }
 
 /// Turns a matched list item into an outcome, reading and cross-checking the resource

@@ -75,12 +75,30 @@ pub struct KindSpec {
     /// Kinds nested under this one.
     #[serde(default)]
     pub children: Vec<Child>,
+    /// For a kind Dokploy makes one of itself when it makes the parent (a project's default
+    /// environment): the name it has, and the computed field that says a row is that one.
+    #[serde(default)]
+    pub made_with_parent: Option<MadeWithParent>,
     /// The Rust hook this kind needs, if any.
     #[serde(default)]
     pub hook: Option<Hook>,
     /// Deliberately unmapped API fields.
     #[serde(default)]
     pub ledger: Ledger,
+}
+
+/// A resource Dokploy creates by itself with its parent.
+///
+/// A document that declares one does not create it a second time (Dokploy refuses): it takes the
+/// one that is there, which is the row `marker` flags, and writes what the document says about it
+/// with an update. Such a row never counts as an unmanaged collision.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct MadeWithParent {
+    /// The name Dokploy gives it (`production`).
+    pub name: String,
+    /// The computed boolean field that is true for the row Dokploy made (`is_default`).
+    pub marker: String,
 }
 
 /// Identity rules (ADR 0006).

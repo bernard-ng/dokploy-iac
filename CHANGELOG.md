@@ -21,6 +21,12 @@ All notable changes to this project will be documented in this file.
   document never named is left alone. A live engine test applies a project to a real Dokploy (0.30.6 and
   0.30.7), edits an environment variable and a patch behind the engine's back, and checks both are
   seen and repaired.
+- **Spec grammar: `made_with_parent`.** A kind Dokploy makes by itself with its parent (a project's
+  default `production` environment, flagged by the computed `is_default`) is taken, not created, when a
+  document declares it, is never written with its name (Dokploy refuses a rename, even to the same name),
+  is not an unmanaged collision, and is forgotten, not deleted, when the document drops it. Before, a
+  document declaring `production` under a new project could not be applied to a real Dokploy. The
+  simulator now makes the default environment with every project and refuses to rename or delete it.
 - Fixed from that live test: an environment's `description` is nullable (Dokploy reads `null` for
   one made without a description; clear it by writing an empty text).
 - `SecretsWriter` (milestone M4): writes secrets below the workspace with mode 0600, atomically,

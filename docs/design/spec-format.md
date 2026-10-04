@@ -102,6 +102,13 @@ Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
 `since`, `until`, `doc` (one line for the generated reference), `example`.
 
+`made_with_parent: { name, marker }` (on a kind, not a field) says Dokploy makes one of this kind
+by itself when it makes the parent: a project's `production` environment, flagged by the computed bool
+`is_default`. A document that declares it takes that one instead of creating a second (Dokploy refuses),
+writes what the document says with an update that never carries the key (Dokploy refuses a rename, even
+to the same name), never counts it as an unmanaged collision, and forgets it instead of deleting it when
+the document drops it (Dokploy refuses that too; it goes with the project).
+
 `file_key` is for a top-level `type: env` field only: it names a document key (`env_file`) that
 takes a dotenv file whose variables are added to the field's map (ADR 0010). It is an input of the
 document, not a property of Dokploy, so it has no `api`, takes no part in a write group, and must

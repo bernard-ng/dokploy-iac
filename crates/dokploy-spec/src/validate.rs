@@ -84,6 +84,7 @@ pub fn validate_spec(spec: &KindSpec, shared_types: &BTreeSet<String>) -> Vec<Is
         );
     }
     check_file_keys(&mut context, spec);
+    check_made_with_parent(&mut context, spec);
     check_write_groups(&mut context, spec);
     check_children(&mut context, spec);
     if let Some(hook) = &spec.hook
@@ -114,6 +115,42 @@ fn check_file_keys(context: &mut Context<'_>, spec: &KindSpec) {
         if !seen.insert(key.as_str()) {
             context.add(&path, format!("`{key}` is the file key of another field"));
         }
+    }
+}
+
+fn check_made_with_parent(context: &mut Context<'_>, spec: &KindSpec) {
+    let Some(made) = &spec.made_with_parent else {
+        return;
+    };
+    if spec.parents.len() != 1 {
+        context.add(
+            "made_with_parent",
+            "a kind made with its parent has exactly one parent kind",
+        );
+    }
+    if made.name.trim().is_empty() {
+        context.add("made_with_parent.name", "must not be empty");
+    }
+    match spec.fields.get(&made.marker) {
+        None => context.add(
+            "made_with_parent.marker",
+            format!("`{}` is not a field", made.marker),
+        ),
+        Some(field) => {
+            let is_bool = matches!(parse_type(&field.ty), Ok(FieldType::Bool));
+            if !is_bool || field.mutability != Mutability::Computed {
+                context.add(
+                    "made_with_parent.marker",
+                    "the marker is a computed bool field",
+                );
+            }
+        }
+    }
+    if spec.identity.key.is_none() || spec.identity.collision.is_empty() {
+        context.add(
+            "made_with_parent",
+            "a kind made with its parent is found by its key, so it has `identity.key` and `identity.collision`",
+        );
     }
 }
 
