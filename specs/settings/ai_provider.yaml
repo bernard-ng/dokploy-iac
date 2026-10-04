@@ -1,0 +1,54 @@
+# An AI provider Dokploy can send logs to for analysis (an OpenAI-compatible endpoint).
+#
+# Live facts (0.30.6): create and delete answer an empty list, so the identity is the one new item
+# of `ai.getAll` by name; update is an upsert that fails (HTTP 500) unless every column is sent, so
+# its write group is `full` and the document declares the key; `getAll` and `one` return the key in
+# clear; names are not unique.
+kind: ai_provider
+scope: settings
+section: ai_providers
+title: AI provider
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "ai_provider.{key}"
+api:
+  id: aiId
+  create: { op: ai.create }
+  update: { op: ai.update }
+  remove: { op: ai.delete }
+  read:
+    list: { op: ai.getAll, authority: authoritative }
+    one: { op: ai.one, id_param: aiId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  api_url:
+    api: apiUrl
+    type: text
+    min_len: 1
+    doc: The base URL of the OpenAI-compatible API.
+  api_key:
+    api: apiKey
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+    resend_on_update: true
+  model:
+    type: text
+    min_len: 1
+  enabled:
+    api: isEnabled
+    type: bool
+write:
+  - op: ai.update
+    fields: [name, api_url, api_key, model, enabled]
+    shape: full
+ledger:
+  readonly: [createdAt, organizationId]

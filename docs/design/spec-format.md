@@ -219,7 +219,8 @@ and each parent lists it under `children`. What differs by parent is in the spec
 api:
   create:
     op: mounts.create
-    attach: { serviceId: parent_id }          # for every parent
+    attach: { serviceId: parent_id }          # for every parent (`organization_id` is the organization the
+                                              # API key acts in, read once from `organization.active`)
     attach_by_parent:                         # laid over `attach` for one parent kind
       application: { serviceType: application }
       postgres: { serviceType: postgres }

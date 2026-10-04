@@ -1,0 +1,61 @@
+# A TLS certificate Dokploy serves for a domain with `certificate_type: custom`.
+#
+# Live facts (0.30.6): create answers the whole object (with the private key), and so do `all` and
+# `one`; update takes the name, the certificate, and the key (the path, auto-renew, and server are
+# fixed at creation); names are not unique; remove answers `true`.
+kind: certificate
+scope: settings
+section: certificates
+title: Certificate
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "certificate.{key}"
+api:
+  id: certificateId
+  create: { op: certificates.create, attach: { organizationId: organization_id } }
+  update: { op: certificates.update }
+  remove: { op: certificates.remove }
+  read:
+    list: { op: certificates.all, authority: authoritative }
+    one: { op: certificates.one, id_param: certificateId, agree: true }
+  create_identity:
+    from_response: /certificateId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  certificate_data:
+    api: certificateData
+    type: file
+    class: content
+    doc: The PEM certificate chain, read from a file of the workspace.
+  private_key:
+    api: privateKey
+    type: text
+    min_len: 1
+    class: secret
+    mutability: write_only
+  certificate_path:
+    api: certificatePath
+    type: text
+    nullable: true
+    mutability: create_only
+  auto_renew:
+    api: autoRenew
+    type: bool
+    nullable: true
+    mutability: create_only
+  server:
+    api: serverId
+    type: selector(server)
+    nullable: true
+    mutability: create_only
+write:
+  - op: certificates.update
+    fields: [name, certificate_data, private_key]
+    shape: partial
+ledger:
+  readonly: [createdAt]

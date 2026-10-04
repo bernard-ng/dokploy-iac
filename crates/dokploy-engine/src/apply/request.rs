@@ -25,6 +25,9 @@ use crate::selectors::SelectorIndex;
 pub(crate) struct Inputs<'a> {
     pub(crate) compiled: &'a Compiled,
     pub(crate) selectors: Option<&'a SelectorIndex>,
+    /// The organization the API key acts in, for a create that is attached to it
+    /// (`organization_id`); the preflight has a placeholder.
+    pub(crate) organization: Option<&'a str>,
 }
 
 /// Whether a field type is a set of selectors, or a map from a key to such sets: the types planned
@@ -116,6 +119,7 @@ fn body_value(
     let Inputs {
         compiled,
         selectors,
+        ..
     } = inputs;
     match checkpoint.property(path) {
         Some(CheckpointValueRef::Null) => Ok(Json::Null),
@@ -230,7 +234,14 @@ pub(crate) fn create_request(
         .containment()
         .map(|parent| parent.kind().as_str());
     for (field, source) in operation.attachments(parent_kind) {
-        if source == "parent_id" {
+        if source == "organization_id" {
+            let id = inputs.organization.ok_or_else(|| ApplyError::Unsupported {
+                address: address.clone(),
+                property: None,
+                reason: "needs the organization the API key acts in",
+            })?;
+            body.insert(field.to_owned(), Json::String(id.to_owned()));
+        } else if source == "parent_id" {
             let id = parent_id.ok_or_else(|| ApplyError::Unsupported {
                 address: address.clone(),
                 property: None,

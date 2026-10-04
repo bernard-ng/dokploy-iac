@@ -1,0 +1,10 @@
+{
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "description": "capture",
+  "lastUsedAt": null,
+  "name": "sshKey-contract-renamed",
+  "organizationId": "organization-1",
+  "privateKey": "<redacted>",
+  "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA2XFTzQuNDM4a48DJp1x6bpjHPi03ArwMseOekMxmyJ dokploy",
+  "sshKeyId": "ssh-key-1"
+}

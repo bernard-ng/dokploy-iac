@@ -1,0 +1,10 @@
+{
+  "aiId": "ai-1",
+  "apiKey": "<redacted>",
+  "apiUrl": "https://api.openai.invalid/v1",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "isEnabled": true,
+  "model": "gpt-4.1",
+  "name": "ai-contract",
+  "organizationId": "organization-1"
+}

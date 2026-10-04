@@ -1768,6 +1768,46 @@ if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_ima
     exit 1
 fi
 
+# The settings kinds captured by the recipe runner (capture-recipe-lib.sh): each one's metadata names
+# the fixtures it produced, and in full mode every recipe kind must have been captured.
+required_recipe_kinds=(
+    sshKey
+    ai
+    certificates
+)
+
+for recipe_kind in "${required_recipe_kinds[@]}"; do
+    if fixture_missing "$recipe_kind-recipe.metadata.json"; then
+        echo "Missing recipe contract fixture: $recipe_kind-recipe.metadata.json" >&2
+        exit 1
+    fi
+done
+
+for recipe_metadata in "$versioned_fixture_directory"/*-recipe.metadata.json; do
+    [[ -e "$recipe_metadata" ]] || continue
+    if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+        .version == $version and .image == $image and .sanitized == true
+        and (.createReturns | type) == "string" and (.updateReturns | type) == "string"
+        and (.removeReturns | type) == "string"
+        and (.updateIsPatch | type) == "boolean" and (.duplicateNamesAllowed | type) == "boolean"
+        and .removedOneStatus == 404
+        and (.fixtures | type) == "array" and (.fixtures | length) >= 5
+    ' "$recipe_metadata" >/dev/null; then
+        echo "Recipe metadata does not prove the captured contract: $recipe_metadata" >&2
+        exit 1
+    fi
+    while IFS= read -r recipe_fixture_name; do
+        if [[ ! -s "$versioned_fixture_directory/$recipe_fixture_name" ]]; then
+            echo "Recipe fixture $recipe_fixture_name (named by $(basename "$recipe_metadata")) is missing or empty." >&2
+            exit 1
+        fi
+        if ! jq --exit-status . "$versioned_fixture_directory/$recipe_fixture_name" >/dev/null; then
+            echo "Recipe fixture $recipe_fixture_name is not JSON." >&2
+            exit 1
+        fi
+    done < <(jq -r '.fixtures[]' "$recipe_metadata")
+done
+
 if grep -R -E -q 'redirect-sdk-contract-[0-9]' "$fixture_directory"; then
     echo "Live fixtures contain an unsanitized disposable Redirect project name." >&2
     exit 1

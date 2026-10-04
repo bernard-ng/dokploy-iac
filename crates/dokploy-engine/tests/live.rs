@@ -39,7 +39,7 @@ async fn call(client: &Dokploy, request: OperationRequest) -> Value {
 struct Live {
     engine: Engine<Dokploy>,
     store: StateStore,
-    _directory: tempfile::TempDir,
+    directory: tempfile::TempDir,
 }
 
 impl Live {
@@ -56,12 +56,19 @@ impl Live {
         Self {
             engine,
             store,
-            _directory: directory,
+            directory,
         }
     }
 
+    /// A file of the workspace, which a `file` source names.
+    fn write(&self, path: &str, text: &str) {
+        let path = self.directory.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
     async fn apply(&self, text: &str, env: &[(&str, &str)]) -> Result<usize, ApplyError> {
-        let compiled = compile_with(&self.engine, text, env);
+        let compiled = compile_in(&self.engine, self.directory.path(), text, env);
         self.engine
             .apply(&compiled, &self.store, |_| true)
             .await
@@ -69,7 +76,7 @@ impl Live {
     }
 
     async fn changes(&self, text: &str, env: &[(&str, &str)]) -> usize {
-        let compiled = compile_with(&self.engine, text, env);
+        let compiled = compile_in(&self.engine, self.directory.path(), text, env);
         let state = self.store.inspect().unwrap();
         let plan = self
             .engine
@@ -557,4 +564,139 @@ async fn an_environment_value_and_a_content_edited_at_dokploy_are_drift_the_engi
     // The project goes away with its application.
     let empty = "version: 2\nproject:\n  slug: iac-live\n";
     live.apply(empty, &env).await;
+}
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
+async fn an_ssh_key_certificate_and_ai_provider_live_through_the_engine() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+
+    // An SSH key: created with the organization the API key acts in, renamed in place, and
+    // replaced when its private half changes.
+    let generate = async || {
+        call(
+            &raw,
+            OperationRequest::new("sshKey.generate").body(json!({ "type": "ed25519" })),
+        )
+        .await
+    };
+    let first = generate().await;
+    let second = generate().await;
+    let ssh = |description: &str| {
+        format!(
+            "version: 2\nsettings:\n  ssh_keys:\n    deploy:\n      description: {description}\n      public_key: \"{{PUBLIC}}\"\n      private_key:\n        env: LIVE_SSH_PRIVATE\n"
+        )
+    };
+    let document = |description: &str, key: &Value| {
+        ssh(description).replace("{PUBLIC}", key["publicKey"].as_str().unwrap())
+    };
+    fn env_of(key: &Value) -> [(&str, &str); 1] {
+        [("LIVE_SSH_PRIVATE", key["privateKey"].as_str().unwrap())]
+    }
+    assert_eq!(
+        live.apply(&document("ci", &first), &env_of(&first))
+            .await
+            .unwrap(),
+        1
+    );
+    let keys = call(&raw, OperationRequest::new("sshKey.all")).await;
+    assert_eq!(keys[0]["name"], "deploy");
+    assert_eq!(keys[0]["description"], "ci");
+    let first_id = keys[0]["sshKeyId"].clone();
+    assert_eq!(
+        live.changes(&document("ci", &first), &env_of(&first)).await,
+        0
+    );
+    assert_eq!(
+        live.apply(&document("renamed", &first), &env_of(&first))
+            .await
+            .unwrap(),
+        1
+    );
+    let keys = call(&raw, OperationRequest::new("sshKey.all")).await;
+    assert_eq!(
+        keys[0]["sshKeyId"], first_id,
+        "a description change is in place"
+    );
+    live.apply(&document("renamed", &second), &env_of(&second))
+        .await
+        .unwrap();
+    let keys = call(&raw, OperationRequest::new("sshKey.all")).await;
+    assert_eq!(keys.as_array().unwrap().len(), 1);
+    assert_ne!(
+        keys[0]["sshKeyId"], first_id,
+        "a new key replaces the old one"
+    );
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("sshKey.all")).await,
+        json!([])
+    );
+
+    // A certificate: its content is compared with what Dokploy holds.
+    let certificate = std::process::Command::new("openssl")
+        .args([
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            "/dev/stdout",
+            "-days",
+            "30",
+            "-subj",
+            "/CN=live.invalid",
+        ])
+        .output()
+        .expect("openssl runs");
+    let pem = String::from_utf8(certificate.stdout).unwrap();
+    let (key_part, cert_part) = pem.split_once("-----BEGIN CERTIFICATE-----").unwrap();
+    let cert_text = format!("-----BEGIN CERTIFICATE-----{cert_part}");
+    live.write("certs/wildcard.pem", &cert_text);
+    let cert_document = "version: 2\nsettings:\n  certificates:\n    wildcard:\n      certificate_data: { file: certs/wildcard.pem }\n      private_key: { env: LIVE_CERT_KEY }\n";
+    let cert_env = [("LIVE_CERT_KEY", key_part.trim())];
+    assert_eq!(live.apply(cert_document, &cert_env).await.unwrap(), 1);
+    assert_eq!(live.changes(cert_document, &cert_env).await, 0, "converged");
+    let certificates = call(&raw, OperationRequest::new("certificates.all")).await;
+    let certificate_id = certificates[0]["certificateId"].clone();
+    call(
+        &raw,
+        OperationRequest::new("certificates.update").body(json!({
+            "certificateId": certificate_id, "certificateData": "edited in the dashboard"
+        })),
+    )
+    .await;
+    assert_eq!(
+        live.changes(cert_document, &cert_env).await,
+        1,
+        "an edit at Dokploy is seen"
+    );
+    live.apply(cert_document, &cert_env).await.unwrap();
+    assert_eq!(live.changes(cert_document, &cert_env).await, 0);
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+
+    // An AI provider: its update is a full write that resends the key.
+    let ai = |model: &str| {
+        format!(
+            "version: 2\nsettings:\n  ai_providers:\n    openai:\n      api_url: https://api.openai.invalid/v1\n      api_key:\n        env: LIVE_AI_KEY\n      model: {model}\n      enabled: true\n"
+        )
+    };
+    let ai_env = [("LIVE_AI_KEY", "live-ai-canary-1")];
+    assert_eq!(live.apply(&ai("gpt-4.1"), &ai_env).await.unwrap(), 1);
+    assert_eq!(live.changes(&ai("gpt-4.1"), &ai_env).await, 0);
+    assert_eq!(live.apply(&ai("gpt-5"), &ai_env).await.unwrap(), 1);
+    let providers = call(&raw, OperationRequest::new("ai.getAll")).await;
+    assert_eq!(providers[0]["model"], "gpt-5");
+    assert_eq!(
+        providers[0]["apiKey"], "live-ai-canary-1",
+        "the update resent the key"
+    );
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("ai.getAll")).await,
+        json!([])
+    );
 }

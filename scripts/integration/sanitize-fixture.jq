@@ -1,5 +1,14 @@
+# Ids the recipe-driven captures name: CAPTURE_ID_KEYS="sshKeyId:ssh-key-1,..." (key:label).
+def recipe_ids:
+  ($ENV.CAPTURE_ID_KEYS // "")
+  | split(",")
+  | map(select(. != "") | split(":") | {(.[0]): .[1]})
+  | add // {};
+
 def normalized_scalar:
-  if .key == "projectId" then
+  if (.key as $key | recipe_ids | has($key)) then
+    (.key as $key | .value = (if .value == null then null else (recipe_ids[$key]) end))
+  elif .key == "projectId" then
     if .value == null then . else .value = "project-1" end
   elif .key == "environmentId" then
     if .value == null then . else .value = "environment-1" end
@@ -85,7 +94,7 @@ def normalized_scalar:
     or .key == "script"
   then
     if .value == null or .value == "" then . else .value = "<redacted>" end
-  elif (.key | test("(?i)(password|secret|token|privatekey|accesskey)")) then
+  elif (.key | test("(?i)(password|secret|token|privatekey|accesskey|apikey)")) then
     if .value == null then . else .value = "<redacted>" end
   else
     .

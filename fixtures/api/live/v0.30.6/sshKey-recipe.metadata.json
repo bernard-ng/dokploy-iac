@@ -1,0 +1,32 @@
+{
+  "capturedAt": "2026-10-04",
+  "createReturns": "empty",
+  "createStatus": 200,
+  "detailExposesCredentials": true,
+  "duplicateNamesAllowed": true,
+  "duplicateStatus": 200,
+  "fixtures": [
+    "sshKey-all.created.owner.json",
+    "sshKey-one.created.owner.json",
+    "sshKey-update.partial.owner.json",
+    "sshKey-one.partial-updated.owner.json",
+    "sshKey-update.owner.json",
+    "sshKey-one.updated.owner.json",
+    "sshKey-remove.owner.json",
+    "sshKey-one.removed.owner.json",
+    "sshKey-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "ssh_key",
+  "listingExposesCredentials": true,
+  "listingMasksCredentials": false,
+  "partialUpdateStatus": 200,
+  "removeReturns": "object",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": true,
+  "updateReturns": "object",
+  "version": "v0.30.6"
+}

@@ -1,0 +1,13 @@
+[
+  {
+    "autoRenew": null,
+    "certificateData": "-----BEGIN CERTIFICATE-----\nMIIDFTCCAf2gAwIBAgIUbxHNYAqkRF+d3p1tsfCzrgCm3SwwDQYJKoZIhvcNAQEL\nBQAwGjEYMBYGA1UEAwwPY2FwdHVyZS5pbnZhbGlkMB4XDTI2MTAwNDE4MjIzMFoX\nDTI2MTEwMzE4MjIzMFowGjEYMBYGA1UEAwwPY2FwdHVyZS5pbnZhbGlkMIIBIjAN\nBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwPFh+F4JO/EV9PQ5h8fal8z4grPi\nZGo1qQWXQrW6w90BBn4WsFwNkI6ADUlhQ0csRAkkKPW8n3DFikYcGUsxz+RjjvOc\n3BvbC4suM3eN8CS39EhmSPnYrjwBES/MfKj2ZdtFKazdmSa+vw6DNLNCs+VBPUra\nMQRGGeniHvLEsoXF8ORS7929FXBhWDEkraA1tkJ9VI+Wfxbb1uuLSJ5iKCBMqjrM\nS4cOZrndgt++C6nQhRZoXy8Vuo/rIW7H8TF7w+TqajJrTHhUZDQ84XPxZuiaij2h\nWyvZBepbdTW2ObdrPly4t1SzgibvnVyhX0ysE0hjPA6ey0nTwYCBvJLVgQIDAQAB\no1MwUTAdBgNVHQ4EFgQU0hql3+LiKCkeymrEEJRH29efk4IwHwYDVR0jBBgwFoAU\n0hql3+LiKCkeymrEEJRH29efk4IwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0B\nAQsFAAOCAQEAHsX1bcAnf6zqE1mckAbLn7oxSSGJzin7WO0VyOvrpyIajoE1lznk\ngZB3tv0hDQkMA0iDfRR5DzQsFIcEnHn9+roB6/w4m8H04y93PEwKGmQYR7G40GRQ\nEi3geWwPmA19pGMej9d0FO1jhcVPGadBluLm067CSngXz8VvLPHPSCrnuywI1khW\n41ajPr5PUDbaLIdSDR1q7Cpcz3CfZvRh3qI6nJEP9g5InYV9/4ccnYxKJGfajI9b\ngAgZZlEOCsNCgsvTeGEOF2wohzrDTQehTOGgvXSG/LHy1v0gKOHTre2SDU04cVxp\npFIrvi9aVHZt1mc6dypoC/nh5IuWDV1MrQ==\n-----END CERTIFICATE-----\n",
+    "certificateId": "certificate-1",
+    "certificatePath": "certificate-copy-bluetooth-monitor-onu3uy",
+    "name": "certificates-contract",
+    "organizationId": "organization-1",
+    "privateKey": "<redacted>",
+    "server": null,
+    "serverId": null
+  }
+]

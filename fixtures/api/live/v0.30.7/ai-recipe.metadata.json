@@ -1,0 +1,31 @@
+{
+  "capturedAt": "2026-10-04",
+  "createReturns": "array",
+  "createStatus": 200,
+  "detailExposesCredentials": true,
+  "duplicateNamesAllowed": true,
+  "duplicateStatus": 200,
+  "fixtures": [
+    "ai-all.created.owner.json",
+    "ai-one.created.owner.json",
+    "ai-update.partial-rejected.owner.json",
+    "ai-update.owner.json",
+    "ai-one.updated.owner.json",
+    "ai-delete.owner.json",
+    "ai-one.removed.owner.json",
+    "ai-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "kind": "ai_provider",
+  "listingExposesCredentials": true,
+  "listingMasksCredentials": false,
+  "partialUpdateStatus": 500,
+  "removeReturns": "array",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": false,
+  "updateReturns": "array",
+  "version": "v0.30.7"
+}

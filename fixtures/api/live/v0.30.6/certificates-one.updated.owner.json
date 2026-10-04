@@ -1,0 +1,10 @@
+{
+  "autoRenew": null,
+  "certificateData": "-----BEGIN CERTIFICATE-----\nMIIDFTCCAf2gAwIBAgIUbKnaenopjoO5iWBBn8rz+d433eEwDQYJKoZIhvcNAQEL\nBQAwGjEYMBYGA1UEAwwPY2FwdHVyZS5pbnZhbGlkMB4XDTI2MTAwNDE4MTcwOFoX\nDTI2MTEwMzE4MTcwOFowGjEYMBYGA1UEAwwPY2FwdHVyZS5pbnZhbGlkMIIBIjAN\nBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA91GmtPRISadtB3SN5CY6rnrl06l2\n1BwJkCScDM2BjUhqJUSED2Px70/CemilJ8A4P8e3dYRyDAL2tFG6sC3FRTZuyven\nsArsp3DsdJkBs9YDWgRBnRM0jxG8Q0q/18dCKu7hgru6oZkWudBOHKDqii0ksU21\n0p/Dk318BipLfQSbMb+fLMJu6rwP4g4H89fx7FzBBj2OvEh2b6iEyvw+a/eMzoDU\noAXbEjZKrsWM8vw4fCQPvtqlb1uDTLiMzrOfWzbikTcWDVrPu0akL9rc3fVTbMjB\nN+l8e9IDBEKVEiAi5cGIEgSbFTr5k8ciEafJB/cuz+gyXE2U2FYbyJ9vNQIDAQAB\no1MwUTAdBgNVHQ4EFgQUcKd8yE5ZUAcX8HinQyGafzWlKTswHwYDVR0jBBgwFoAU\ncKd8yE5ZUAcX8HinQyGafzWlKTswDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0B\nAQsFAAOCAQEAxy4yYEjSchm4T6/7KhvjEBaGcAJ+FpaQSScVVVRQtaBMMS1uF/3j\ncXgk6h933p9Ey9ByW5uyV3o911UV+fBBtPpYcMHanSSY47AfTuhghZrLm1f9yqDF\n3FN0Y6v9OCGM6XfLo7ZH3hm3bvIj4PtD9KOx7ie+Duld/G2xnfxpZLNlTS1GC4ro\nrFojvDcap1S1wLY8688P8CVCL+rVsRdPS3MVnm4OR5z04+tNU34IJTru2JJZ95+F\nKYBfC8bGNSY7+M+vaFjVMjR3cbxE4JsXnzUcuSyC59C5T/69E/proPeh5seMA0Qa\nfzqqBDbYazQq+jL88dLlXwe9ylKePdlAOg==\n-----END CERTIFICATE-----\n",
+  "certificateId": "certificate-1",
+  "certificatePath": "certificate-generate-virtual-alarm-qo5a9s",
+  "name": "certificates-contract-renamed",
+  "organizationId": "organization-1",
+  "privateKey": "<redacted>",
+  "serverId": null
+}

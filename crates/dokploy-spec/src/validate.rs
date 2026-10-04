@@ -379,10 +379,14 @@ fn check_field(
     }
 
     match (field.class, field.mutability) {
-        (ValueClass::Secret, mutability) if mutability != Mutability::WriteOnly => {
+        // A secret is never read back; one Dokploy cannot update at all is create-only, and a
+        // change of it replaces the resource.
+        (ValueClass::Secret, mutability)
+            if !matches!(mutability, Mutability::WriteOnly | Mutability::CreateOnly) =>
+        {
             context.add(
                 format!("{path}.mutability"),
-                "a secret field must be write_only (it cannot be read back)",
+                "a secret field must be write_only (it cannot be read back) or create_only",
             );
         }
         (class, Mutability::WriteOnly) if class != ValueClass::Secret => {

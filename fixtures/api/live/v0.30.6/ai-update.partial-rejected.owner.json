@@ -1,0 +1,10 @@
+{
+  "code": "INTERNAL_SERVER_ERROR",
+  "data": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "httpStatus": 500,
+    "path": "ai.update",
+    "zodError": null
+  },
+  "message": "Failed query: insert into \"ai\" (\"aiId\", \"name\", \"apiUrl\", \"apiKey\", \"model\", \"isEnabled\", \"organizationId\", \"createdAt\") values ($1, $2, default, default, default, default, $3, $4) on conflict (\"aiId\") do update set \"aiId\" = $5, \"name\" = $6\nparams: fjEIizs-vXhiTEI4aP3Il,ai-contract-renamed,R8vJ352QeH3bu_B1omB4P,2026-10-04T18:17:07.663Z,fjEIizs-vXhiTEI4aP3Il,ai-contract-renamed"
+}

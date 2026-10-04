@@ -1,0 +1,33 @@
+{
+  "capturedAt": "2026-10-04",
+  "createReturns": "object",
+  "createStatus": 200,
+  "detailExposesCredentials": true,
+  "duplicateNamesAllowed": true,
+  "duplicateStatus": 200,
+  "fixtures": [
+    "certificates-create.owner.json",
+    "certificates-all.created.owner.json",
+    "certificates-one.created.owner.json",
+    "certificates-update.partial.owner.json",
+    "certificates-one.partial-updated.owner.json",
+    "certificates-update.owner.json",
+    "certificates-one.updated.owner.json",
+    "certificates-remove.owner.json",
+    "certificates-one.removed.owner.json",
+    "certificates-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "certificate",
+  "listingExposesCredentials": true,
+  "listingMasksCredentials": false,
+  "partialUpdateStatus": 200,
+  "removeReturns": "boolean",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": true,
+  "updateReturns": "object",
+  "version": "v0.30.6"
+}

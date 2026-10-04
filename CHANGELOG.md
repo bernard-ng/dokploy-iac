@@ -41,6 +41,12 @@ All notable changes to this project will be documented in this file.
   longer names, and leaves alone the ones it never named; before, they were only forgotten and
   stayed at Dokploy. A block declared empty is still cleared as a whole.
 
+- Settings kinds `ssh_key`, `ai_provider`, and `certificate` (milestone M5), with live captures on 0.30.6
+  and 0.30.7 and a live engine test. Spec grammar: `attach: { organizationId: organization_id }` fills a
+  create field with the organization the API key acts in (read once from `organization.active`), and a
+  secret may be `create_only` (an SSH key's private half cannot be changed, so a change replaces the key).
+  The captures use a recipe-driven runner (`capture-recipe-lib.sh`, `recipes/*.sh`), so a kind of the
+  common shape is a recipe and not a script.
 - Live captures of `destination`, `network`, `patch`, `volume_backup`, and the tags of a project
   (`scripts/integration/capture-{destination,network,patch,volume-backup,project-tag}-contract.sh`) on
   Dokploy 0.30.6 and 0.30.7, with fixture checks and a shared `capture_project_setup` helper. They

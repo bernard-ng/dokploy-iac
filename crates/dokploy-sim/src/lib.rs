@@ -364,7 +364,9 @@ impl Sim {
             | None => {}
         }
 
-        let mut outcome = if fault == Some(FaultKind::Swallow) {
+        let mut outcome = if operation == "organization.active" {
+            Ok(serde_json::json!({ "id": "sim-organization", "name": "Simulated" }))
+        } else if fault == Some(FaultKind::Swallow) {
             Ok(Value::Bool(true))
         } else {
             self.execute(&mut inner, request)

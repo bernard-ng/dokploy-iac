@@ -57,12 +57,36 @@ pub(crate) async fn run<T: Transport>(
         .collect();
     let targets = SelectorIndex::targets(&engine.specs, kinds.iter().map(String::as_str));
     let selectors = SelectorIndex::load(&engine.transport, &engine.specs, &targets).await;
+    // The organization is read once, and only when a create is attached to it.
+    let attached_to_organization = plan.changes().iter().any(|change| {
+        engine
+            .specs
+            .get(change.address().kind().as_str())
+            .and_then(|spec| spec.api.create.as_ref())
+            .is_some_and(|create| {
+                create
+                    .attach
+                    .values()
+                    .any(|source| source == "organization_id")
+            })
+    });
+    let organization = if attached_to_organization {
+        engine
+            .transport
+            .call(OperationRequest::new("organization.active"))
+            .await
+            .ok()
+            .and_then(|active| active.get("id").and_then(Json::as_str).map(str::to_owned))
+    } else {
+        None
+    };
     let mut run = Run {
         engine,
         compiled,
         state,
         journal,
         selectors,
+        organization,
         applied: 0,
     };
     for change in plan.changes() {
@@ -89,6 +113,7 @@ struct Run<'e, 'j, 's, T> {
     state: StateFile,
     journal: OperationJournal<'j, 's>,
     selectors: SelectorIndex,
+    organization: Option<String>,
     applied: usize,
 }
 
@@ -117,6 +142,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         request::Inputs {
             compiled: self.compiled,
             selectors: Some(&self.selectors),
+            organization: self.organization.as_deref(),
         }
     }
 

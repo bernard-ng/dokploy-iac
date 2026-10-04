@@ -1,0 +1,53 @@
+# An SSH key pair Dokploy uses to reach remote servers and private Git repositories.
+#
+# Live facts (0.30.6): `sshKey.create` needs the organization id in its body and answers an empty
+# 200, so the identity is the one new item of `sshKey.all` by name; `all` and `one` return the
+# private key in clear; update takes only the name and the description (a key cannot be changed, so
+# both key fields are create-only and rotating one replaces the key); names are not unique; remove
+# answers the removed object.
+kind: ssh_key
+scope: settings
+section: ssh_keys
+title: SSH key
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "ssh_key.{key}"
+api:
+  id: sshKeyId
+  create: { op: sshKey.create, attach: { organizationId: organization_id } }
+  update: { op: sshKey.update }
+  remove: { op: sshKey.remove }
+  read:
+    list: { op: sshKey.all, authority: authoritative }
+    one: { op: sshKey.one, id_param: sshKeyId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+    doc: Display name; defaults to the document key.
+  description:
+    type: text
+    nullable: true
+  public_key:
+    api: publicKey
+    type: text
+    min_len: 1
+    mutability: create_only
+  private_key:
+    api: privateKey
+    type: text
+    min_len: 1
+    class: secret
+    mutability: create_only
+    doc: The private half, read from a file or the environment; changing it replaces the key.
+write:
+  - op: sshKey.update
+    fields: [name, description]
+    shape: partial
+ledger:
+  readonly: [createdAt, lastUsedAt]
