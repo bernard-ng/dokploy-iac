@@ -1,0 +1,58 @@
+# A DNS provider Dokploy uses for DNS-01 (wildcard) certificates.
+#
+# Live facts (0.30.6): the provider's settings are one `config` object whose `providerType` picks
+# the arm and whose secrets Dokploy answers as `********`; create answers the whole object; update
+# needs the name and the whole config (HTTP 400 without it) and can change the arm; names are
+# unique (a second one is an HTTP 500); remove answers `true`.
+kind: dns_provider
+scope: settings
+section: dns_providers
+title: DNS provider
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "dns_provider.{key}"
+api:
+  id: dnsProviderId
+  create: { op: dnsProvider.create }
+  update: { op: dnsProvider.update }
+  remove: { op: dnsProvider.remove }
+  read:
+    list: { op: dnsProvider.all, authority: authoritative }
+    one: { op: dnsProvider.one, id_param: dnsProviderId, agree: true }
+  create_identity:
+    from_response: /dnsProviderId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+    pattern: "^[a-zA-Z0-9_-]{1,64}$"
+    doc: Letters, digits, underscores, and hyphens; defaults to the document key.
+  config:
+    api: /config/providerType
+    nest: config
+    type: union(type)
+    arms:
+      cloudflare:
+        api_token: { api: apiToken, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+      route53:
+        access_key_id: { api: accessKeyId, type: text, min_len: 1 }
+        secret_access_key: { api: secretAccessKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+      porkbun:
+        api_key: { api: apiKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        secret_api_key: { api: secretApiKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+      infomaniak:
+        api_token: { api: apiToken, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+      ovh:
+        endpoint: { type: text, fallback: ovh-eu, doc: "ovh-eu, ovh-ca, ovh-us, kimsufi-eu, kimsufi-ca, soyoustart-eu, or soyoustart-ca." }
+        application_key: { api: applicationKey, type: text, min_len: 1 }
+        application_secret: { api: applicationSecret, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        consumer_key: { api: consumerKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+write:
+  - op: dnsProvider.update
+    fields: [name, config]
+    shape: full
+ledger:
+  readonly: [createdAt, organizationId, providerType]

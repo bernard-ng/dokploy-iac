@@ -66,6 +66,9 @@ pub struct PropertyInfo {
     pub rules: ValueRules,
     /// Whether the document supplies a default (`default: key`).
     pub has_default: bool,
+    /// Whether this is the tag or a member of a union kept in a nested object (`nest`): the
+    /// create operation takes it, and so needs the tag.
+    pub nested: bool,
     /// The regular expression a text value must match, when the spec gives one.
     pub pattern: Option<String>,
     /// For a member of a union, the arm it belongs to (`github` for `source.github.owner`).
@@ -127,9 +130,9 @@ impl PropertyInfo {
     /// Whether the property must be supplied when the resource is created.
     #[must_use]
     pub fn is_required_on_create(&self) -> bool {
+        // The tag of a nested union goes in the create, which takes the whole object.
         self.shape == PathShape::Atomic
-            && self.arm.is_none()
-            && !self.union_tag
+            && (self.nested && self.union_tag || self.arm.is_none() && !self.union_tag)
             && !self.nullable
             && !self.has_default
             && matches!(
@@ -291,6 +294,7 @@ fn base(
             max: field.max,
         },
         has_default: field.default.is_some(),
+        nested: false,
         pattern: field.pattern.clone(),
         arm: None,
         union_tag: false,
@@ -438,7 +442,11 @@ fn resolve_union(
     Ok(union_member_info(
         spec,
         prefix,
-        (arm, field.api.as_deref().unwrap_or(name)),
+        (
+            arm,
+            field.api.as_deref().unwrap_or(name),
+            field.nest.as_deref(),
+        ),
         member,
         member_field,
         &member_type,
@@ -464,6 +472,7 @@ fn union_tag_info(
         inherited,
     );
     info.union_tag = true;
+    info.nested = field.nest.is_some();
     info.nullable = false;
     info.has_default = false;
     info.rules = ValueRules::default();
@@ -475,7 +484,7 @@ fn union_tag_info(
 fn union_member_info(
     spec: &KindSpec,
     prefix: &str,
-    (arm, tag_api): (&str, &str),
+    (arm, tag_api, nest): (&str, &str, Option<&str>),
     member: &str,
     member_field: &crate::model::Field,
     member_type: &FieldType,
@@ -491,6 +500,11 @@ fn union_member_info(
     );
     info.arm = Some(arm.to_owned());
     info.tag_api = Some(tag_api.to_owned());
+    // The members of a nested union are read from inside the object they are written in.
+    if let Some(nest) = nest {
+        info.api = format!("/{nest}/{}", info.api);
+        info.nested = true;
+    }
 
     info
 }
@@ -546,7 +560,11 @@ fn collect(
                     found.push(union_member_info(
                         spec,
                         path,
-                        (arm, field.api.as_deref().unwrap_or(name)),
+                        (
+                            arm,
+                            field.api.as_deref().unwrap_or(name),
+                            field.nest.as_deref(),
+                        ),
                         member,
                         member_field,
                         &member_type,

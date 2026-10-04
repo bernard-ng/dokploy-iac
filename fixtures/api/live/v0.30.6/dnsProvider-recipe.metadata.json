@@ -1,0 +1,32 @@
+{
+  "capturedAt": "2026-10-04",
+  "createReturns": "object",
+  "createStatus": 200,
+  "detailExposesCredentials": false,
+  "duplicateNamesAllowed": false,
+  "duplicateStatus": 500,
+  "fixtures": [
+    "dnsProvider-create.owner.json",
+    "dnsProvider-all.created.owner.json",
+    "dnsProvider-one.created.owner.json",
+    "dnsProvider-update.partial-rejected.owner.json",
+    "dnsProvider-update.owner.json",
+    "dnsProvider-one.updated.owner.json",
+    "dnsProvider-remove.owner.json",
+    "dnsProvider-one.removed.owner.json",
+    "dnsProvider-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "dns_provider",
+  "listingExposesCredentials": false,
+  "listingMasksCredentials": true,
+  "partialUpdateStatus": 400,
+  "removeReturns": "boolean",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": false,
+  "updateReturns": "object",
+  "version": "v0.30.6"
+}

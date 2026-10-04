@@ -425,6 +425,12 @@ pub struct Field {
     /// Whether surrounding whitespace is ignored when comparing text.
     #[serde(default)]
     pub trim: bool,
+    /// For a union whose arms Dokploy keeps under one nested object (`dnsProvider.create` takes
+    /// `config: { providerType, apiToken }`): the key of that object. The members keep their plain
+    /// names; the engine writes them inside the object and reads them through `/<nest>/<name>`, and
+    /// the union's own `api` is the pointer to the tag (`/config/providerType`).
+    #[serde(default)]
+    pub nest: Option<String>,
     /// For a top-level `env` field, the document key that names a dotenv file to expand into it
     /// (`env_file`, ADR 0010). It is an input of the document, not a property of Dokploy.
     #[serde(default)]

@@ -146,8 +146,14 @@ fn typed(rng: &mut Rng, ty: &FieldType, field: Option<&SpecField>) -> Value {
         FieldType::Text | FieldType::Ref(_) => {
             let min_len = field.and_then(|f| f.min_len).unwrap_or(0);
             if let Some(pattern) = field.and_then(|f| f.pattern.as_deref()) {
-                assert_eq!(pattern, "^[A-Z]{3}$", "the generator knows one pattern");
-                return Value::Text("ABC".into());
+                return Value::Text(
+                    match pattern {
+                        "^[A-Z]{3}$" => "ABC",
+                        "^[a-zA-Z0-9_-]{1,64}$" => "name_1-x",
+                        other => panic!("the generator does not know the pattern {other}"),
+                    }
+                    .into(),
+                );
             }
             let min_len = if matches!(ty, FieldType::Ref(_)) {
                 min_len.max(1)

@@ -213,9 +213,12 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
         for (member, member_field) in &field.members {
             walk(member, member_field, &mut names);
         }
-        for arm in field.arms.values() {
-            for (member, member_field) in arm {
-                walk(member, member_field, &mut names);
+        // The members of a union nested in an object are keys of that object, not of the request.
+        if field.nest.is_none() {
+            for arm in field.arms.values() {
+                for (member, member_field) in arm {
+                    walk(member, member_field, &mut names);
+                }
             }
         }
     }
@@ -402,6 +405,10 @@ fn check_mapped_fields_exist(
                         continue;
                     };
                     match parse_type(&field.ty) {
+                        // A nested union is one request field: the object that holds it.
+                        Ok(FieldType::Union { .. }) if field.nest.is_some() => {
+                            require(op, name, field, name);
+                        }
                         Ok(FieldType::Union { .. }) => {
                             for arm in field.arms.values() {
                                 for (member, member_field) in arm {

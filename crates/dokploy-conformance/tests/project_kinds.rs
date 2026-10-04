@@ -53,6 +53,21 @@ async fn a_libsql_conforms_through_each_arm_of_its_node() {
     conforms_through("libsql", "node", "replica", &replica).await;
 }
 
+#[tokio::test]
+async fn a_dns_provider_conforms_through_each_arm_of_its_config() {
+    for arm in ["cloudflare", "route53", "porkbun", "infomaniak", "ovh"] {
+        conforms_through("dns_provider", "config", arm, &DNS_SCENARIOS).await;
+    }
+}
+
+const DNS_SCENARIOS: [&str; 5] = [
+    "create",
+    "converges",
+    "delete",
+    "secrets_from_files",
+    "unknown_create_after",
+];
+
 const APPLICATION_SCENARIOS: [&str; 8] = [
     "create",
     "follow_up_rejected",

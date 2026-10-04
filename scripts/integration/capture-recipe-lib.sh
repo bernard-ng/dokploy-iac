@@ -13,7 +13,7 @@
 #   recipe_list / recipe_one / recipe_create / recipe_update / recipe_remove   operation ids
 #   recipe_one_param   the query parameter of the direct read (default: the id key)
 #   recipe_remove_action   the fixture suffix of the remove (default: the operation's action)
-#   recipe_secrets     space-separated keys of the object that carry a secret
+#   recipe_secrets     space-separated jq paths of the object that carry a secret (.privateKey)
 # and these functions:
 #   recipe_setup                       optional; prepares anything the bodies need
 #   recipe_teardown                    optional; removes what setup made
@@ -89,14 +89,14 @@ capture_recipe() {
     masked_secrets=false
     local key value
     for key in $recipe_secrets; do
-        value="$(jq -r --arg key "$key" '.[0][$key] // empty' "$workspace/all-created.json")"
+        value="$(jq -r ".[0]$key // empty" "$workspace/all-created.json")"
         if [[ -n "$value" ]]; then
             if [[ "$value" =~ ^\*+$ ]]; then masked_secrets=true; else lists_secrets=true; fi
         fi
     done
     detail_secrets=false
     for key in $recipe_secrets; do
-        value="$(jq -r --arg key "$key" '.[$key] // empty' "$workspace/one-created.json")"
+        value="$(jq -r "$key // empty" "$workspace/one-created.json")"
         if [[ -n "$value" && ! "$value" =~ ^\*+$ ]]; then detail_secrets=true; fi
     done
 

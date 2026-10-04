@@ -41,6 +41,11 @@ All notable changes to this project will be documented in this file.
   longer names, and leaves alone the ones it never named; before, they were only forgotten and
   stayed at Dokploy. A block declared empty is still cleared as a whole.
 
+- Settings kind `dns_provider` (M5) and a spec-grammar addition for it: `nest` on a union field, for an
+  arm Dokploy keeps inside a nested object (`config: { providerType, apiToken }`). Live on 0.30.6 and
+  0.30.7 through all five arms, switching arms in place; the conformance suite understands pointer
+  wires and runs the kind through each arm. `vault_provider` follows (hyphenated arm names and an
+  `assignments` list).
 - Settings kinds `ssh_key`, `ai_provider`, and `certificate` (milestone M5), with live captures on 0.30.6
   and 0.30.7 and a live engine test. Spec grammar: `attach: { organizationId: organization_id }` fills a
   create field with the organization the API key acts in (read once from `organization.active`), and a

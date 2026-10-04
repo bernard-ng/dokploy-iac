@@ -8,7 +8,7 @@ recipe_one=sshKey.one
 recipe_create=sshKey.create
 recipe_update=sshKey.update
 recipe_remove=sshKey.remove
-recipe_secrets="privateKey"
+recipe_secrets=".privateKey"
 
 recipe_setup() {
     api_request POST sshKey.generate "$workspace/generated.json" <(printf '{"type":"ed25519"}') >/dev/null

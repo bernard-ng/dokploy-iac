@@ -171,11 +171,24 @@ impl Case {
             let field_case = |a: Val, b: Option<Val>, secret: bool, default_key: bool| FieldCase {
                 name: name.clone(),
                 doc: doc.clone(),
-                wire: info.request_key().to_owned(),
+                // A member of a union nested in an object is addressed by its pointer
+                // (`/config/apiToken`), which finds it in a request body and in the remote row.
+                wire: if nested_member(spec, &info) {
+                    info.api.clone()
+                } else {
+                    info.request_key().to_owned()
+                },
                 mutability: info.mutability,
                 secret,
                 content: info.class == ValueClass::Content,
-                required: dokploy_engine::required_at_creation(spec, &info),
+                // An arm of a nested union is created whole: what it requires goes in the minimal
+                // document too.
+                required: dokploy_engine::required_at_creation(spec, &info)
+                    || (nested_member(spec, &info)
+                        && info.arm.is_some()
+                        && !info.nullable
+                        && !info.has_default
+                        && info.fallback.is_none()),
                 default_key,
                 a,
                 b,
@@ -272,13 +285,19 @@ impl Case {
                 .is_some_and(|field| field.default.as_deref() == Some("key"));
             // The arm cannot be switched by a second value: its members would have to change too.
             let b = if info.union_tag { None } else { b };
-            let Some(a) = a else {
-                if dokploy_engine::required_at_creation(spec, &info) {
-                    return Err(format!(
-                        "cannot make a sample value for required field `{name}`"
-                    ));
+            // A field with a pattern the suite cannot satisfy by sampling still takes the key
+            // when the kind defaults it to the key (the key is a plain name).
+            let a = match (a, default_key) {
+                (Some(a), _) => a,
+                (None, true) => Val::Json(json!(key)),
+                (None, false) => {
+                    if dokploy_engine::required_at_creation(spec, &info) {
+                        return Err(format!(
+                            "cannot make a sample value for required field `{name}`"
+                        ));
+                    }
+                    continue;
                 }
-                continue;
             };
             let b = b.filter(|b| *b != a);
             fields.push(field_case(a, b, secret, default_key));
@@ -305,9 +324,12 @@ impl Case {
             for (member, member_field) in &field.members {
                 wires.push(member_field.request_name(member).to_owned());
             }
-            for members in field.arms.values() {
-                for (member, member_field) in members {
-                    wires.push(member_field.request_name(member).to_owned());
+            // The members of a nested union are keys of the object that holds them.
+            if field.nest.is_none() {
+                for members in field.arms.values() {
+                    for (member, member_field) in members {
+                        wires.push(member_field.request_name(member).to_owned());
+                    }
                 }
             }
         }
@@ -714,6 +736,44 @@ fn push_fields(lines: &mut Vec<String>, indent: usize, fields: &[String]) {
     for field in fields {
         lines.push(format!("{}{field}", " ".repeat(indent)));
     }
+}
+
+/// Whether the property is the tag or a member of a union nested in an object.
+fn nested_member(spec: &KindSpec, info: &dokploy_spec::PropertyInfo) -> bool {
+    (info.arm.is_some() || info.union_tag)
+        && spec
+            .fields
+            .get(info.field_name())
+            .is_some_and(|field| field.nest.is_some())
+}
+
+/// The key of a request body a wire is in: the wire itself, or the object a pointer is inside.
+pub(crate) fn top_wire(wire: &str) -> &str {
+    wire.strip_prefix('/')
+        .map_or(wire, |pointer| pointer.split('/').next().unwrap_or(pointer))
+}
+
+/// The value a wire addresses in a request body or a remote row.
+pub(crate) fn json_at<'a>(value: &'a Json, wire: &str) -> Option<&'a Json> {
+    if wire.starts_with('/') {
+        value.pointer(wire)
+    } else {
+        value.get(wire)
+    }
+}
+
+/// `{ <top key>: <the object with the wire set to `to`> }`, to put one nested value in a row.
+pub(crate) fn nested_patch(row: &Json, wire: &str, to: &Json) -> Json {
+    let top = top_wire(wire).to_owned();
+    let mut object = row.get(&top).cloned().unwrap_or_else(|| json!({}));
+    if let Some(slot) = object.pointer_mut(&wire[top.len() + 1..]) {
+        *slot = to.clone();
+    } else if let Some(map) = object.as_object_mut() {
+        let key = wire.rsplit('/').next().unwrap_or(wire);
+        map.insert(key.to_owned(), to.clone());
+    }
+
+    json!({ top: object })
 }
 
 /// A key of [`Case::environment`] that is not a variable but a file the world writes in the

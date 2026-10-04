@@ -8,7 +8,7 @@ recipe_one=ai.one
 recipe_create=ai.create
 recipe_update=ai.update
 recipe_remove=ai.delete
-recipe_secrets="apiKey"
+recipe_secrets=".apiKey"
 
 recipe_create_body() {
     jq -n --arg name "$2" '

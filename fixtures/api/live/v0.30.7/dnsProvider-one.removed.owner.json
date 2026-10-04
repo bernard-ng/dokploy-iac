@@ -1,0 +1,10 @@
+{
+  "code": "NOT_FOUND",
+  "data": {
+    "code": "NOT_FOUND",
+    "httpStatus": 404,
+    "path": "dnsProvider.one",
+    "zodError": null
+  },
+  "message": "DNS provider not found"
+}

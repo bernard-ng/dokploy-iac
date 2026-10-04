@@ -8,7 +8,7 @@ recipe_one=certificates.one
 recipe_create=certificates.create
 recipe_update=certificates.update
 recipe_remove=certificates.remove
-recipe_secrets="privateKey"
+recipe_secrets=".privateKey"
 
 recipe_setup() {
     openssl req -x509 -newkey rsa:2048 -nodes -keyout "$workspace/key.pem" -out "$workspace/cert.pem" \

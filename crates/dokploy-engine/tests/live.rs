@@ -700,3 +700,77 @@ async fn an_ssh_key_certificate_and_ai_provider_live_through_the_engine() {
         json!([])
     );
 }
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
+async fn a_dns_provider_lives_through_every_arm_of_its_config() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    let env = [
+        ("LIVE_DNS_ONE", "live-dns-canary-1"),
+        ("LIVE_DNS_TWO", "live-dns-canary-2"),
+    ];
+    let document = |config: &str| {
+        format!("version: 2\nsettings:\n  dns_providers:\n    edge:\n      config:\n{config}")
+    };
+    let arms = [
+        (
+            "cloudflare",
+            "        type: cloudflare\n        api_token: { env: LIVE_DNS_ONE }\n",
+        ),
+        (
+            "route53",
+            "        type: route53\n        access_key_id: AKIALIVECANARY\n        secret_access_key: { env: LIVE_DNS_ONE }\n",
+        ),
+        (
+            "porkbun",
+            "        type: porkbun\n        api_key: { env: LIVE_DNS_ONE }\n        secret_api_key: { env: LIVE_DNS_TWO }\n",
+        ),
+        (
+            "infomaniak",
+            "        type: infomaniak\n        api_token: { env: LIVE_DNS_ONE }\n",
+        ),
+        (
+            "ovh",
+            "        type: ovh\n        endpoint: ovh-eu\n        application_key: live-application-key\n        application_secret: { env: LIVE_DNS_ONE }\n        consumer_key: { env: LIVE_DNS_TWO }\n",
+        ),
+    ];
+
+    let mut first = true;
+    for (arm, config) in arms {
+        let text = document(config);
+        assert_eq!(live.apply(&text, &env).await.unwrap(), 1, "{arm}");
+        let providers = call(&raw, OperationRequest::new("dnsProvider.all")).await;
+        assert_eq!(providers.as_array().unwrap().len(), 1, "{arm}");
+        assert_eq!(providers[0]["providerType"], arm);
+        assert_eq!(providers[0]["name"], "edge");
+        assert_eq!(
+            live.changes(&text, &env).await,
+            0,
+            "{arm} converges (its secrets are masked, never compared)"
+        );
+        if first {
+            first = false;
+        } else {
+            assert_ne!(
+                providers[0]["config"]["providerType"], "cloudflare",
+                "{arm}"
+            );
+        }
+    }
+
+    // A secret that is rotated is sent again, whole object included.
+    let rotated = [
+        ("LIVE_DNS_ONE", "live-dns-canary-rotated"),
+        ("LIVE_DNS_TWO", "live-dns-canary-2"),
+    ];
+    let ovh = document(arms[4].1);
+    assert_eq!(live.apply(&ovh, &rotated).await.unwrap(), 1);
+
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("dnsProvider.all")).await,
+        json!([])
+    );
+}

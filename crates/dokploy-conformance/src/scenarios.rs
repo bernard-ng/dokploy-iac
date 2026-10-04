@@ -83,8 +83,11 @@ fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
                     name.starts_with(&format!("{by_variant}."))
                         && w.case.fields.iter().any(|f| {
                             &f.name == name
-                                && contract
-                                    .is_some_and(|contract| contract.body_field(&f.wire).is_none())
+                                && contract.is_some_and(|contract| {
+                                    contract
+                                        .body_field(crate::case::top_wire(&f.wire))
+                                        .is_none()
+                                })
                         })
                 });
                 if let (Some(arm), true) = (arm, members_deferred) {
@@ -110,7 +113,11 @@ fn writes_a_secret(w: &World<'_>, values: &Values, operations: &[String]) -> boo
         matches!(values.get(name), Some(crate::case::Val::Secret(_)))
             && w.case.fields.iter().any(|field| {
                 field.name == name
-                    && contract.is_some_and(|contract| contract.body_field(&field.wire).is_none())
+                    && contract.is_some_and(|contract| {
+                        contract
+                            .body_field(crate::case::top_wire(&field.wire))
+                            .is_none()
+                    })
             })
     };
     let sent = |op: &String| operations.contains(op);
@@ -168,9 +175,9 @@ fn holds(w: &World<'_>, values: &Values) -> Check {
                 items.sort();
                 items
             };
-            sorted(object.get(&wire)) == sorted(Some(&want))
+            sorted(crate::case::json_at(&object, &wire)) == sorted(Some(&want))
         } else {
-            object.get(&wire) == Some(&want)
+            crate::case::json_at(&object, &wire) == Some(&want)
         };
         ensure!(same, "remote `{wire}` is not what the document says");
     }
@@ -274,13 +281,13 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
     let id = &w.case.spec.api.id;
     let mut allowed: Vec<String> = vec![id.clone()];
     match shape {
-        Shape::Partial => allowed.push(field.wire.clone()),
+        Shape::Partial => allowed.push(crate::case::top_wire(&field.wire).to_owned()),
         Shape::Full => {
             allowed.extend(
                 group_fields
                     .iter()
                     .flat_map(|name| w.case.cases_of(name))
-                    .map(|case| case.wire.clone()),
+                    .map(|case| crate::case::top_wire(&case.wire).to_owned()),
             );
             allowed.extend(w.case.group_wires(&group_fields));
         }
@@ -313,7 +320,8 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
         );
     }
     ensure!(
-        body.get(&field.wire) == field.b.as_ref().map(crate::case::Val::json).as_ref(),
+        crate::case::json_at(&body, &field.wire)
+            == field.b.as_ref().map(crate::case::Val::json).as_ref(),
         "the update did not carry the new value"
     );
     holds(w, &changed)?;
@@ -375,11 +383,12 @@ pub(crate) async fn drift(w: &World<'_>, name: &str) -> Check<Verdict> {
         ),
         _ => other.json(),
     };
-    w.sim.patch(
-        &w.case.spec.kind,
-        &id,
-        &json!({ field.wire.clone(): tampered }),
-    );
+    let patch = if field.wire.starts_with('/') {
+        crate::case::nested_patch(&w.only_object()?, &field.wire, &tampered)
+    } else {
+        json!({ field.wire.clone(): tampered })
+    };
+    w.sim.patch(&w.case.spec.kind, &id, &patch);
 
     // Content is compared as a receipt of what Dokploy returns; a field its read leaves out
     // (the application's Traefik file) cannot drift, so there is nothing to see.
@@ -480,7 +489,7 @@ async fn read_returns(w: &World<'_>, id: &str, wire: &str) -> bool {
     };
     let request = OperationRequest::new(&one.op).query(one.id_param.clone(), id);
     match w.sim.call(request).await {
-        Ok(item) => item.get(wire).is_some(),
+        Ok(item) => crate::case::json_at(&item, wire).is_some(),
         Err(_) => true,
     }
 }

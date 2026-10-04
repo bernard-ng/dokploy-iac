@@ -1,0 +1,27 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "dnsProvider.update",
+    "zodError": {
+      "fieldErrors": {
+        "config": [
+          "Invalid input: expected object, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "object",
+      "message": "Invalid input: expected object, received undefined",
+      "path": [
+        "config"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

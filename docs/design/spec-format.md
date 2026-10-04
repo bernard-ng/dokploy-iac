@@ -109,6 +109,13 @@ writes what the document says with an update that never carries the key (Dokploy
 to the same name), never counts it as an unmanaged collision, and forgets it instead of deleting it when
 the document drops it (Dokploy refuses that too; it goes with the project).
 
+`nest: config` (on a union field) is for a union whose arms Dokploy keeps in one nested object
+(`dnsProvider.create` takes `config: { providerType, apiToken }`). The arm members keep their plain
+`api` names; the union's own `api` is the pointer to its tag (`/config/providerType`). The engine writes
+the tag and the members of the active arm inside the object (a create takes it whole, and says what an
+arm requires before sending anything; a full update resends it, secrets included), and reads each member
+through `/config/<name>`. The request-side ledger sees one field, `config`.
+
 `file_key` is for a top-level `type: env` field only: it names a document key (`env_file`) that
 takes a dotenv file whose variables are added to the field's map (ADR 0010). It is an input of the
 document, not a property of Dokploy, so it has no `api`, takes no part in a write group, and must

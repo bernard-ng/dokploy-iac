@@ -95,7 +95,12 @@ pub(crate) fn writable(
         .get(info.field_name())
         .is_some_and(|field| field.membership.is_some())
         || info.api.contains("/*");
-    if !relation && info.api.trim_start_matches('/').contains('/') {
+    // The members of a union nested in an object are written inside it.
+    let nested = spec
+        .fields
+        .get(info.field_name())
+        .is_some_and(|field| field.nest.is_some());
+    if !relation && !nested && info.api.trim_start_matches('/').contains('/') {
         return Err(unsupported(
             "maps to a nested request key, which the executor does not write yet",
         ));
@@ -185,6 +190,19 @@ pub(crate) struct CreateRequest {
     pub(crate) deferred: Vec<PropertyPath>,
 }
 
+/// For a property of a union nested in an object: the key of the object, and the plain key of the
+/// property inside it.
+fn nested_key(spec: &KindSpec, path: &PropertyPath) -> Option<(String, String)> {
+    let info = path.info();
+    if info.arm.is_none() && !info.union_tag {
+        return None;
+    }
+    let nest = spec.fields.get(info.field_name())?.nest.clone()?;
+    let key = info.api.rsplit('/').next()?.to_owned();
+
+    Some((nest, key))
+}
+
 /// The create request: every managed property the create operation accepts, the attachment to
 /// the parent, and `null` for a field the contract requires that the document leaves out and
 /// the spec allows to be null.
@@ -210,6 +228,7 @@ pub(crate) fn create_request(
     let contract = request_contract(&operation.op);
     let mut body = Map::new();
     let mut deferred = Vec::new();
+    let mut nests: BTreeMap<String, Map<String, Json>> = BTreeMap::new();
 
     for path in checkpoint.property_paths() {
         let target = writable(spec, address, path)?;
@@ -227,7 +246,45 @@ pub(crate) fn create_request(
             deferred.push(path.clone());
             continue;
         }
+        // The members of a union nested in an object (`config: { providerType, apiToken }`) are
+        // written inside it, under their plain names.
+        if let Some((nest, key)) = nested_key(spec, path) {
+            nests
+                .entry(nest)
+                .or_default()
+                .insert(key, body_value(inputs, address, checkpoint, path)?);
+            continue;
+        }
         body.insert(target.wire, body_value(inputs, address, checkpoint, path)?);
+    }
+    // The object the create takes is the active arm whole: what the arm requires is named
+    // before any request is sent.
+    for (name, field) in &spec.fields {
+        let Some(nest) = &field.nest else { continue };
+        let Some(members) = nests.get(nest) else {
+            continue;
+        };
+        let Some(tag) = field.api.as_deref().and_then(|api| api.rsplit('/').next()) else {
+            continue;
+        };
+        let Some(active) = members.get(tag).and_then(Json::as_str) else {
+            continue;
+        };
+        for (member, member_field) in field.arms.get(active).into_iter().flatten() {
+            let wire = member_field.request_name(member);
+            if !members.contains_key(wire)
+                && !member_field.nullable
+                && member_field.fallback.is_none()
+            {
+                return Err(ApplyError::MissingRequired {
+                    address: address.clone(),
+                    field: format!("{name}.{active}.{member}"),
+                });
+            }
+        }
+    }
+    for (nest, members) in nests {
+        body.insert(nest, Json::Object(members));
     }
 
     let parent_kind = checkpoint
@@ -794,6 +851,19 @@ pub(crate) fn group_body(
             }
             continue;
         }
+        // A union nested in an object is written as that object, with the members of the arm the
+        // checkpoint names. A full group resends it whole, secrets included.
+        if let (Some(FieldType::Union { tag }), Some(nest)) = (&ty, &field.nest) {
+            if group.changed.contains(name) || group.shape == Shape::Full {
+                body.insert(
+                    nest.clone(),
+                    nested_union(
+                        spec, address, checkpoint, name, tag, field, nest, fresh, inputs,
+                    )?,
+                );
+            }
+            continue;
+        }
         // The properties the field plans as: its members, or itself.
         let paths: Vec<String> = match &ty {
             Some(FieldType::Struct) => field
@@ -869,6 +939,77 @@ pub(crate) fn group_body(
     }
 
     Ok(Json::Object(body))
+}
+
+/// The object a union nested in an object is written as: the tag, then each member of the active
+/// arm from the document, from what Dokploy holds (a member it does not own, when the arm is the
+/// same), or from the member's `fallback`. A secret the document does not declare cannot be
+/// resent, and a request that needs it says so.
+#[allow(clippy::too_many_arguments)]
+fn nested_union(
+    spec: &KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    name: &str,
+    tag: &str,
+    field: &dokploy_spec::Field,
+    nest: &str,
+    fresh: Option<&Json>,
+    inputs: Inputs<'_>,
+) -> Result<Json, ApplyError> {
+    let unsupported = |reason: &'static str| ApplyError::Unsupported {
+        address: address.clone(),
+        property: Some(name.to_owned()),
+        reason,
+    };
+    let tag_dotted = format!("{name}.{tag}");
+    let tag_path = PropertyPath::from_spec(spec, &tag_dotted)
+        .map_err(|_| unsupported("is not a property of the kind"))?;
+    let active = match checkpoint.property(&tag_path) {
+        Some(CheckpointValueRef::NonSensitive(Json::String(active))) => active.clone(),
+        _ => return Err(unsupported("names no arm")),
+    };
+    let arm = field
+        .arms
+        .get(&active)
+        .ok_or_else(|| unsupported("names an arm the spec does not have"))?;
+    let tag_key = field
+        .api
+        .as_deref()
+        .and_then(|api| api.rsplit('/').next())
+        .ok_or_else(|| unsupported("has no pointer to its tag"))?;
+    let held = fresh
+        .and_then(|fresh| fresh.get(nest))
+        .and_then(Json::as_object)
+        .filter(|held| held.get(tag_key).and_then(Json::as_str) == Some(active.as_str()));
+
+    let mut inner = Map::new();
+    inner.insert(tag_key.to_owned(), Json::String(active.clone()));
+    for (member, member_field) in arm {
+        let dotted = format!("{name}.{active}.{member}");
+        let path = PropertyPath::from_spec(spec, &dotted)
+            .map_err(|_| unsupported("is not a property of the kind"))?;
+        let wire = member_field.request_name(member).to_owned();
+        if checkpoint.property(&path).is_some() {
+            inner.insert(wire, body_value(inputs, address, checkpoint, &path)?);
+        } else if path.info().is_sensitive() {
+            if !member_field.nullable {
+                return Err(ApplyError::NeedsSecret {
+                    address: address.clone(),
+                    property: dotted,
+                });
+            }
+        } else if let Some(value) = held
+            .and_then(|held| held.get(&wire))
+            .filter(|v| !v.is_null())
+        {
+            inner.insert(wire, value.clone());
+        } else if let Some(fallback) = &member_field.fallback {
+            inner.insert(wire, fallback.clone());
+        }
+    }
+
+    Ok(Json::Object(inner))
 }
 
 /// The array of a map from a key to a set of selectors after the update: one element per key,

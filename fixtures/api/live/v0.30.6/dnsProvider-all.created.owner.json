@@ -1,0 +1,13 @@
+[
+  {
+    "config": {
+      "apiToken": "<redacted>",
+      "providerType": "cloudflare"
+    },
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "dnsProviderId": "dns-provider-1",
+    "name": "dnsProvider-contract",
+    "organizationId": "organization-1",
+    "providerType": "cloudflare"
+  }
+]

@@ -1774,6 +1774,7 @@ required_recipe_kinds=(
     sshKey
     ai
     certificates
+    dnsProvider
 )
 
 for recipe_kind in "${required_recipe_kinds[@]}"; do

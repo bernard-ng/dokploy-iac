@@ -156,10 +156,11 @@ settings:
       certificate_path: /etc/dokploy/certs/wildcard   # [c]
       auto_renew: true                       # [c]
       server: { name: leganews-staging }     # [c]
-  dns_providers:                             # ✘
+  dns_providers:                             # ✔ the arm is `config.type`; names are letters, digits, `_`, `-`
     cloudflare:
-      type: cloudflare
-      api_token: { env: CF_TOKEN }           # [s]
+      config:
+        type: cloudflare
+        api_token: { env: CF_TOKEN }         # [s]
     # route53: access_key_id, secret_access_key[s]
     # porkbun: api_key[s], secret_api_key[s]
     # infomaniak: api_token[s]

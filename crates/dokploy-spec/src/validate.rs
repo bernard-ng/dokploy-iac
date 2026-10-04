@@ -361,6 +361,17 @@ fn check_field(
     if let Some(parsed) = &parsed {
         check_type_rules(context, path, field, parsed, shared_types);
     }
+    if let Some(nest) = &field.nest {
+        let tag_pointer = field.api.as_deref().unwrap_or_default();
+        if !matches!(parsed, Some(FieldType::Union { .. })) || !top_level {
+            context.add(format!("{path}.nest"), "applies to a top-level union only");
+        } else if !tag_pointer.starts_with(&format!("/{nest}/")) {
+            context.add(
+                format!("{path}.api"),
+                format!("a union nested in `{nest}` points at its tag: `/{nest}/<tag key>`"),
+            );
+        }
+    }
     if field.file_key.is_some() && !(top_level && matches!(parsed, Some(FieldType::Env))) {
         context.add(
             format!("{path}.file_key"),
