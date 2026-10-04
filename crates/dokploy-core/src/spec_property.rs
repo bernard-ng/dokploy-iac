@@ -48,15 +48,20 @@ pub(crate) fn observation_valid(
     observation: &PropertyObservation,
 ) -> bool {
     if info.is_sensitive() {
-        return matches!(
-            observation,
-            PropertyObservation::KnownAbsent | PropertyObservation::Unknown(_)
-        );
+        // Only content is read back, as a receipt: a secret never is.
+        return match observation {
+            PropertyObservation::KnownAbsent | PropertyObservation::Unknown(_) => true,
+            PropertyObservation::Receipt(_) => {
+                info.class == dokploy_spec::ValueClass::Content && info.shape == PathShape::Atomic
+            }
+            PropertyObservation::Known(_) => false,
+        };
     }
     match observation {
         PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
         // A column of an arm Dokploy never saved is null whatever the arm requires of a save.
         PropertyObservation::KnownAbsent => info.nullable || info.arm.is_some(),
+        PropertyObservation::Receipt(_) => false,
         PropertyObservation::Known(value) => {
             if info.shape == PathShape::CollectionRoot {
                 value.as_json().is_object()

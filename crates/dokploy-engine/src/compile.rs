@@ -32,6 +32,10 @@ pub struct Compiled {
     /// The document's `moves` and `removed`, as written: they name addresses by suffix, and
     /// what a suffix means depends on what state tracks.
     pub(crate) directives: Directives,
+    /// The fingerprinter the receipts were made with: discovery makes the receipt of what Dokploy
+    /// holds in a content property with it, to compare the two.
+    /// A document with nothing declared has none: it observes no content.
+    pub(crate) fingerprinter: Option<Fingerprinter>,
 }
 
 /// `moves` and `removed` of a document, unresolved.
@@ -173,6 +177,7 @@ impl Compiled {
             resources: BTreeMap::new(),
             secrets: BTreeMap::new(),
             directives: Directives::default(),
+            fingerprinter: None,
         })
     }
 
@@ -195,6 +200,7 @@ impl Compiled {
             resources: BTreeMap::new(),
             secrets: BTreeMap::new(),
             directives: Directives::default(),
+            fingerprinter: self.fingerprinter.clone(),
         }
     }
 
@@ -451,6 +457,7 @@ impl Compiler<'_> {
             }
         };
         Ok(Compiled {
+            fingerprinter: Some(self.fingerprinter.clone()),
             scope: document.scope,
             document: document_id,
             desired: DesiredState::try_new(digest, desired)?,
@@ -585,7 +592,9 @@ impl Compiler<'_> {
                 }
                 Value::Source(source) => {
                     let bytes = self.read(address, name, source)?;
-                    properties.insert(path(name)?, self.receipt(address, name, &bytes));
+                    let property = path(name)?;
+                    let receipt = self.receipt(address, name, &bytes, property.info().trim);
+                    properties.insert(property, receipt);
                     secrets.insert((address.clone(), name.clone()), bytes);
                 }
                 // An empty block next to an `env_file` only adds no variable of its own: the
@@ -602,7 +611,10 @@ impl Compiler<'_> {
                             EnvValue::Public(text) => zeroizing(text.as_bytes()),
                             EnvValue::Secret(source) => self.read(address, &dotted, source)?,
                         };
-                        properties.insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
+                        properties.insert(
+                            path(&dotted)?,
+                            self.receipt(address, &dotted, &bytes, false),
+                        );
                         secrets.insert((address.clone(), dotted), bytes);
                     }
                 }
@@ -697,8 +709,10 @@ impl Compiler<'_> {
                             }
                             Value::Source(source) => {
                                 let bytes = self.read(address, &dotted, source)?;
-                                properties
-                                    .insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
+                                let property = path(&dotted)?;
+                                let receipt =
+                                    self.receipt(address, &dotted, &bytes, property.info().trim);
+                                properties.insert(property, receipt);
                                 secrets.insert((address.clone(), dotted), bytes);
                             }
                             other => {
@@ -725,8 +739,10 @@ impl Compiler<'_> {
                             }
                             Value::Source(source) => {
                                 let bytes = self.read(address, &dotted, source)?;
-                                properties
-                                    .insert(path(&dotted)?, self.receipt(address, &dotted, &bytes));
+                                let property = path(&dotted)?;
+                                let receipt =
+                                    self.receipt(address, &dotted, &bytes, property.info().trim);
+                                properties.insert(property, receipt);
                                 secrets.insert((address.clone(), dotted), bytes);
                                 continue;
                             }
@@ -747,7 +763,7 @@ impl Compiler<'_> {
                                     };
                                     properties.insert(
                                         path(&entry)?,
-                                        self.receipt(address, &entry, &bytes),
+                                        self.receipt(address, &entry, &bytes, false),
                                     );
                                     secrets.insert((address.clone(), entry), bytes);
                                 }
@@ -835,7 +851,10 @@ impl Compiler<'_> {
             }
             any = true;
             let dotted = format!("{target}.{variable}");
-            properties.insert(property(&dotted)?, self.receipt(address, &dotted, &value));
+            properties.insert(
+                property(&dotted)?,
+                self.receipt(address, &dotted, &value, false),
+            );
             secrets.insert((address.clone(), dotted), value);
         }
         if !any {
@@ -860,7 +879,16 @@ impl Compiler<'_> {
             })
     }
 
-    fn receipt(&self, address: &ResourceAddress, dotted: &str, bytes: &[u8]) -> OwnedValue {
+    /// The receipt of a value. A property whose spec says `trim` is fingerprinted without its
+    /// surrounding whitespace, so what Dokploy adds or drops there is not a difference.
+    fn receipt(
+        &self,
+        address: &ResourceAddress,
+        dotted: &str,
+        bytes: &[u8],
+        trim: bool,
+    ) -> OwnedValue {
+        let bytes = if trim { bytes.trim_ascii() } else { bytes };
         let path = SensitivePropertyPath::parse(dotted)
             .expect("a property path that passed the spec is a valid sensitive path");
         OwnedValue::Sensitive(SensitiveIntent::from_fingerprint(

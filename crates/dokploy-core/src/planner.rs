@@ -851,7 +851,11 @@ fn property_diagnostic(
             issue.property_unknown = Some(*reason);
             Some(issue)
         }
-        Some(PropertyObservation::Known(_) | PropertyObservation::KnownAbsent) => None,
+        Some(
+            PropertyObservation::Known(_)
+            | PropertyObservation::KnownAbsent
+            | PropertyObservation::Receipt(_),
+        ) => None,
     }
 }
 
@@ -1069,13 +1073,16 @@ fn observed_value(
             },
         )),
         PropertyObservation::KnownAbsent => Some(Some(OwnedValue::Null)),
+        PropertyObservation::Receipt(receipt) => Some(Some(OwnedValue::Sensitive(receipt.clone()))),
         PropertyObservation::Unknown(_) => None,
     }
 }
 
 fn observation_state(observation: Option<&PropertyObservation>) -> ValueState {
     match observation {
-        Some(PropertyObservation::Known(_)) => ValueState::Present,
+        Some(PropertyObservation::Known(_) | PropertyObservation::Receipt(_)) => {
+            ValueState::Present
+        }
         Some(PropertyObservation::KnownAbsent) => ValueState::Null,
         Some(PropertyObservation::Unknown(_)) | None => ValueState::Unknown,
     }

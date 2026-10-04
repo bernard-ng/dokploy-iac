@@ -198,7 +198,7 @@ fn a_vault_source_fingerprints_the_reference_not_a_value() {
             secret: "GHCR".into(),
         })
         .unwrap();
-    assert_eq!(&bytes[..], b"vault:infisical/GHCR");
+    assert_eq!(&bytes[..], b"${{vault.infisical.GHCR}}");
 }
 
 #[test]

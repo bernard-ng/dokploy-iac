@@ -20,6 +20,7 @@ mod fingerprint;
 mod project;
 mod recover;
 mod secrets;
+mod secrets_out;
 mod selectors;
 
 use dokploy_core::{Plan, RemoteStateError, StoredState, StoredStateError};
@@ -39,6 +40,7 @@ pub use dotenv::DotenvError;
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
 pub use recover::{RecoverError, RecoveryAction, RecoveryPreview, RecoverySummary};
 pub use secrets::{MAX_SOURCE_BYTES, SecretError, SecretReader, WorkspaceSecrets};
+pub use secrets_out::{DEFAULT_SECRETS_DIRECTORY, SecretsOutError, SecretsWriter};
 
 /// Anything that stops the engine from producing a plan.
 #[derive(Debug, Error)]

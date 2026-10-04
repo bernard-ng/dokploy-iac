@@ -228,3 +228,19 @@ async fn a_variable_dropped_from_the_map_is_removed_and_one_never_owned_stays() 
     );
     assert_eq!(world.pending_here(&one).await, 0, "converged");
 }
+
+#[tokio::test]
+async fn a_vault_variable_is_sent_as_the_reference_dokploy_resolves() {
+    let world = ProjectWorld::new();
+    let text = document(
+        "          environment:\n            MAIL_KEY: { vault: { provider: infisical, secret: MAIL_KEY } }\n            LOG_LEVEL: info\n",
+    );
+
+    world.apply_here(&text).await;
+
+    assert_eq!(
+        lines(&world.environment()),
+        ["LOG_LEVEL=info", "MAIL_KEY=${{vault.infisical.MAIL_KEY}}"]
+    );
+    assert_eq!(world.pending_here(&text).await, 0, "converged");
+}

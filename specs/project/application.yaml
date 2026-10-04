@@ -245,7 +245,7 @@ fields:
     api: traefikConfig
     type: file
     class: content
-    doc: The application's own dynamic Traefik file, read from a file of the workspace. It is written with `application.updateTraefikConfig` and, like any file content, compared by digest and never read back, so a change made at Dokploy is not seen.
+    doc: The application's own dynamic Traefik file, read from a file of the workspace. It is written with `application.updateTraefikConfig` and, like any file content, never read back by Dokploy (`application.one` does not return it), so a change made at Dokploy is not seen.
   networks:
     api: networkIds
     type: "set<selector(network)>"

@@ -6,7 +6,7 @@ use dokploy_sim::{Fault, FaultKind};
 use dokploy_spec::{Authority, Mutability, Shape};
 use serde_json::{Value as Json, json};
 
-use crate::case::Values;
+use crate::case::{SecretSource, VAULT_PROVIDER, Val, Values};
 use crate::world::{Check, World};
 
 /// How a scenario ended.
@@ -381,6 +381,11 @@ pub(crate) async fn drift(w: &World<'_>, name: &str) -> Check<Verdict> {
         &json!({ field.wire.clone(): tampered }),
     );
 
+    // Content is compared as a receipt of what Dokploy returns; a field its read leaves out
+    // (the application's Traefik file) cannot drift, so there is nothing to see.
+    if field.content && !read_returns(w, &id, &field.wire).await {
+        return skip("Dokploy's read does not return the content");
+    }
     let plan = w.plan(&values).await?;
     ensure!(
         plan.applyable(),
@@ -404,6 +409,80 @@ pub(crate) async fn drift(w: &World<'_>, name: &str) -> Check<Verdict> {
     converged(w, &values).await?;
 
     Ok(Verdict::Pass)
+}
+
+/// Every secret the kind has is supplied from `source` instead of the process environment: a file
+/// of the workspace, or (for the variables of an environment block, the only secret Dokploy can
+/// resolve for itself) a vault reference. The remote ends up with what the document says, the same
+/// document read from the environment plans nothing, and the scenario's leak scan runs as ever.
+pub(crate) async fn secrets_from(w: &World<'_>, source: SecretSource) -> Check<Verdict> {
+    let values = w.case.full();
+    let scalar =
+        |name: &str, value: &Val| matches!(value, Val::Secret(_)) && !w.case.is_content(name);
+    let applies = values.iter().any(|(name, value)| match (source, value) {
+        (SecretSource::Vault, Val::Environment { .. }) => true,
+        (SecretSource::File, Val::Environment { .. }) => true,
+        (SecretSource::File, value) => scalar(name, value),
+        _ => false,
+    });
+    if !applies {
+        return skip("the kind has no secret this source can supply");
+    }
+
+    let document = w.case.document_from(&values, false, source);
+    let environment = w.case.environment_from(&values, source);
+    w.apply_text(&document, environment.clone())
+        .await?
+        .map_err(|error| format!("apply failed: {error}"))?;
+
+    let object = w.only_object()?;
+    match source {
+        SecretSource::File => {
+            holds(w, &values)?;
+            converged(w, &values).await?;
+        }
+        SecretSource::Vault => {
+            for value in values.values() {
+                let Val::Environment { wire, variables } = value else {
+                    continue;
+                };
+                let text = object.get(wire).and_then(Json::as_str).unwrap_or_default();
+                for (key, secret) in variables {
+                    let reference = format!("{key}=${{{{vault.{VAULT_PROVIDER}.{key}}}}}");
+                    ensure!(
+                        text.lines().any(|line| line == reference),
+                        "the remote `{wire}` does not hold the vault reference of `{key}`"
+                    );
+                    ensure!(
+                        !text.contains(secret),
+                        "the vault variable `{key}` was sent as a value"
+                    );
+                }
+            }
+            let plan = w.plan_text(&document, environment).await?;
+            ensure!(
+                plan.applyable() && plan.changes().is_empty(),
+                "the plan after an apply with vault references is not empty"
+            );
+        }
+        SecretSource::Env => unreachable!("the environment is every other scenario's source"),
+    }
+
+    Ok(Verdict::Pass)
+}
+
+/// Whether the direct read of the resource returns `wire`.
+async fn read_returns(w: &World<'_>, id: &str, wire: &str) -> bool {
+    use dokploy_sdk::{OperationRequest, Transport};
+
+    let Some(one) = w.case.spec.api.read.one.as_ref() else {
+        return true;
+    };
+    let request = OperationRequest::new(&one.op).query(one.id_param.clone(), id);
+    match w.sim.call(request).await {
+        Ok(item) => item.get(wire).is_some(),
+        Err(_) => true,
+    }
 }
 
 pub(crate) async fn delete(w: &World<'_>) -> Check<Verdict> {

@@ -162,10 +162,19 @@ impl Suite {
             } else {
                 scenario!(format!("update:{name}"), |w| scenarios::update(&w, &name));
             }
-            if !field.secret {
+            // A secret is never read back, so it cannot drift; content is, as a receipt.
+            if !field.secret || field.content {
                 scenario!(format!("drift:{name}"), |w| scenarios::drift(&w, &name));
             }
         }
+        scenario!("secrets_from_files", |w| scenarios::secrets_from(
+            &w,
+            case::SecretSource::File
+        ));
+        scenario!("secrets_from_vault", |w| scenarios::secrets_from(
+            &w,
+            case::SecretSource::Vault
+        ));
         scenario!("delete", |w| scenarios::delete(&w));
         scenario!("protected_delete", |w| scenarios::protected_delete(&w));
         scenario!("unmanaged_collision", |w| scenarios::unmanaged_collision(

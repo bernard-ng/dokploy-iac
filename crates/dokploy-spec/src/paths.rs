@@ -77,6 +77,8 @@ pub struct PropertyInfo {
     pub tag_api: Option<String>,
     /// What to send when a write needs the property and nothing else supplies it.
     pub fallback: Option<serde_json::Value>,
+    /// Whether surrounding whitespace is ignored when the text is compared (`trim`).
+    pub trim: bool,
     /// The response key or JSON pointer the value is read from: the field's `api`, or its own
     /// name. A struct member is a key of its own, not nested in the struct, and an entry of a
     /// keyed collection has its root's.
@@ -294,6 +296,7 @@ fn base(
         union_tag: false,
         tag_api: None,
         fallback: field.fallback.clone(),
+        trim: field.trim,
         api: field.api.clone().unwrap_or_else(|| name.to_owned()),
     }
 }

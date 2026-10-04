@@ -19,6 +19,7 @@ use dokploy_state::{
 const DOMAIN: &[u8] = b"dokploy-iac\0sensitive-intent\0hmac-sha256-v1";
 
 /// A fingerprint key: an identifier and 32 secret bytes.
+#[derive(Clone)]
 pub struct FingerprintKey {
     id: FingerprintKeyId,
     bytes: Zeroizing<[u8; 32]>,
@@ -71,6 +72,7 @@ impl std::fmt::Debug for FingerprintKey {
 pub struct FingerprintKeyError;
 
 /// Computes receipts for one instance.
+#[derive(Clone)]
 pub struct Fingerprinter {
     instance: InstanceIdentity,
     key: FingerprintKey,

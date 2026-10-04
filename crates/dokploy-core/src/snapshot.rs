@@ -732,6 +732,9 @@ pub enum PropertyObservation {
     Known(ComparableValue),
     /// The property is conclusively absent remotely.
     KnownAbsent,
+    /// The keyed fingerprint of the current remote value of a content property: comparable with
+    /// the receipt of what the document says, and never the value.
+    Receipt(crate::SensitiveIntent),
     /// The property cannot be compared safely.
     Unknown(PropertyUnknownReason),
 }
@@ -909,6 +912,10 @@ fn compare_stored_observation(
             ) => {
                 sensitive_unverifiable = true;
                 true
+            }
+            // Content is read back as a receipt, which settles it either way.
+            (OwnedValue::Sensitive(expected), Some(PropertyObservation::Receipt(actual))) => {
+                expected == actual
             }
             (OwnedValue::Null, Some(PropertyObservation::KnownAbsent)) => true,
             (OwnedValue::EmptyCollection, Some(PropertyObservation::Known(value))) => value
@@ -1097,6 +1104,12 @@ impl RemoteState {
                             }
                             PropertyObservation::KnownAbsent => {
                                 receipt_field(&mut mac, b"state", b"absent");
+                            }
+                            PropertyObservation::Receipt(intent) => {
+                                receipt_field(&mut mac, b"state", b"receipt");
+                                let encoded = serde_json::to_vec(intent.fingerprint())
+                                    .expect("a fingerprint always serializes");
+                                receipt_field(&mut mac, b"value", &encoded);
                             }
                             PropertyObservation::Unknown(reason) => {
                                 receipt_field(&mut mac, b"state", b"unknown");

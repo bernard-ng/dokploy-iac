@@ -383,7 +383,7 @@ impl Case {
         fields
     }
 
-    fn is_content(&self, name: &str) -> bool {
+    pub(crate) fn is_content(&self, name: &str) -> bool {
         self.fields.iter().any(|f| f.name == name && f.content)
     }
 
@@ -426,7 +426,18 @@ impl Case {
 
     /// The environment that makes the secrets in `values` readable.
     pub(crate) fn environment(&self, values: &Values) -> BTreeMap<String, String> {
+        self.environment_from(values, SecretSource::Env)
+    }
+
+    /// The same, with the secrets read from `source`: a variable of the process, or a file the
+    /// world writes in the workspace (`@file/` keys). A vault reference has no value to supply.
+    pub(crate) fn environment_from(
+        &self,
+        values: &Values,
+        source: SecretSource,
+    ) -> BTreeMap<String, String> {
         let mut environment = BTreeMap::new();
+        let file = |name: &str| format!("{FILE_PREFIX}{}", secret_path(name));
         for (name, value) in values {
             match value {
                 Val::Secret(secret) if self.is_content(name) => {
@@ -435,12 +446,23 @@ impl Case {
                         secret.clone(),
                     );
                 }
+                Val::Secret(secret) if source == SecretSource::File => {
+                    environment.insert(file(name), secret.clone());
+                }
                 Val::Secret(secret) => {
                     environment.insert(env_name(name), secret.clone());
                 }
+                Val::Environment { variables, .. } if source == SecretSource::Vault => {
+                    let _ = variables;
+                }
                 Val::Environment { variables, .. } => {
                     for (key, secret) in variables {
-                        environment.insert(env_name(&format!("{name}.{key}")), secret.clone());
+                        let variable = format!("{name}.{key}");
+                        if source == SecretSource::File {
+                            environment.insert(file(&variable), secret.clone());
+                        } else {
+                            environment.insert(env_name(&variable), secret.clone());
+                        }
                     }
                 }
                 Val::Json(_) | Val::Selector { .. } | Val::SelectorSet { .. } => {}
@@ -463,6 +485,17 @@ impl Case {
     /// The document that carries `values`: a settings document for a settings kind, a project
     /// document with the kind nested under its ancestors otherwise.
     pub(crate) fn document(&self, values: &Values, protect: bool) -> String {
+        self.document_from(values, protect, SecretSource::Env)
+    }
+
+    /// The same, with the secrets written as sources of `source`. A scalar secret has no vault
+    /// source, so it stays an environment variable there.
+    pub(crate) fn document_from(
+        &self,
+        values: &Values,
+        protect: bool,
+        source: SecretSource,
+    ) -> String {
         let mut fields = Vec::new();
         // The members of a struct are written together, under the struct.
         let mut members: BTreeMap<&str, Vec<String>> = BTreeMap::new();
@@ -471,6 +504,9 @@ impl Case {
                 Val::Json(json) => json.to_string(),
                 Val::Secret(_) if self.is_content(name) => {
                     format!("{{ file: {} }}", content_path(name))
+                }
+                Val::Secret(_) if source == SecretSource::File => {
+                    format!("{{ file: {} }}", secret_path(name))
                 }
                 Val::Secret(_) => format!("{{ env: {} }}", env_name(name)),
                 Val::Selector { name, .. } => format!("{{ name: {name} }}"),
@@ -486,10 +522,21 @@ impl Case {
                     "{{ {} }}",
                     variables
                         .iter()
-                        .map(|(key, _)| format!(
-                            "{key}: {{ secret: {{ env: {} }} }}",
-                            env_name(&format!("{name}.{key}"))
-                        ))
+                        .map(|(key, _)| {
+                            let variable = format!("{name}.{key}");
+                            match source {
+                                SecretSource::Env => {
+                                    format!("{key}: {{ secret: {{ env: {} }} }}", env_name(&variable))
+                                }
+                                SecretSource::File => format!(
+                                    "{key}: {{ secret: {{ file: {} }} }}",
+                                    secret_path(&variable)
+                                ),
+                                SecretSource::Vault => format!(
+                                    "{key}: {{ vault: {{ provider: {VAULT_PROVIDER}, secret: {key} }} }}"
+                                ),
+                            }
+                        })
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
@@ -676,6 +723,26 @@ pub(crate) const FILE_PREFIX: &str = "@file/";
 /// Where the suite writes the content a field names.
 fn content_path(field: &str) -> String {
     format!("conformance/{}.txt", env_name(field).to_ascii_lowercase())
+}
+
+/// Where a secret comes from: the process environment, a file of the workspace, or Dokploy's
+/// vault (a reference, which only an environment variable can be).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SecretSource {
+    Env,
+    File,
+    Vault,
+}
+
+/// The vault the suite's references name.
+pub(crate) const VAULT_PROVIDER: &str = "conformance-vault";
+
+/// Where the suite writes a secret a field reads from a file.
+fn secret_path(field: &str) -> String {
+    format!(
+        "conformance/secret-{}.txt",
+        env_name(field).to_ascii_lowercase()
+    )
 }
 
 /// The directory of those files, which the leak scan skips: the suite wrote the canaries there.

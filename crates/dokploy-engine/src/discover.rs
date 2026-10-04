@@ -9,16 +9,21 @@ use std::collections::BTreeMap;
 
 use dokploy_core::{
     MutationContract, PropertyObservation, PropertyPath, RemoteFailureKind, RemoteObservation,
-    RemoteResource, RemoteState, RemoteStateError,
+    RemoteResource, RemoteState, RemoteStateError, SensitiveIntent,
 };
 use dokploy_sdk::{Error as SdkError, OperationRequest, Transport};
-use dokploy_spec::{Authority, KindSpec, ListRead, SpecRegistry};
-use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, StateFile};
+use dokploy_spec::{
+    Authority, KindSpec, ListRead, Mutability, PathShape, SpecRegistry, ValueClass,
+};
+use dokploy_state::{
+    InstanceIdentity, RemoteId, ResourceAddress, SensitivePropertyPath, StateFile,
+};
 use serde_json::Value as Json;
 
 use crate::EngineError;
 use crate::compile::Compiled;
-use crate::project::{field_value, item_id, project};
+use crate::fingerprint::Fingerprinter;
+use crate::project::{field_value, item_id, lookup, project};
 use crate::selectors::SelectorIndex;
 
 /// What was learned about one address; rebuilt into core types on demand.
@@ -159,6 +164,9 @@ pub(crate) async fn discover<T: Transport>(
         }
     }
 
+    if let Some(fingerprinter) = &compiled.fingerprinter {
+        add_content_receipts(specs, fingerprinter, &mut outcomes);
+    }
     let remote = build(specs, instance, outcomes)?;
 
     resolve_selectors(compiled, &selectors, remote)
@@ -631,6 +639,58 @@ fn resolve_selectors(
     remote
         .with_external_resolutions(resolutions)
         .map_err(EngineError::Remote)
+}
+
+/// Observes each readable content property of a present resource as the receipt of what Dokploy
+/// holds, so the plan can tell a content that was edited behind the engine's back (ADR 0010). A
+/// secret is never read back; a member of a union arm Dokploy does not hold is left unobserved.
+fn add_content_receipts(
+    specs: &SpecRegistry,
+    fingerprinter: &Fingerprinter,
+    outcomes: &mut BTreeMap<ResourceAddress, (String, Outcome)>,
+) {
+    for (address, (kind, outcome)) in outcomes.iter_mut() {
+        let (
+            Some(spec),
+            Outcome::Present {
+                properties, raw, ..
+            },
+        ) = (specs.get(kind), outcome)
+        else {
+            continue;
+        };
+        for info in spec.properties() {
+            if info.class != ValueClass::Content
+                || info.shape != PathShape::Atomic
+                || info.mutability == Mutability::WriteOnly
+            {
+                continue;
+            }
+            if let (Some(arm), Some(tag_api)) = (info.arm.as_deref(), info.tag_api.as_deref())
+                && !matches!(lookup(raw, tag_api), Some(Json::String(held)) if held == arm)
+            {
+                continue;
+            }
+            let observation = match lookup(raw, &info.api) {
+                Some(Json::String(text)) => {
+                    let bytes = if info.trim {
+                        text.as_bytes().trim_ascii()
+                    } else {
+                        text.as_bytes()
+                    };
+                    let Ok(path) = SensitivePropertyPath::parse(&info.path) else {
+                        continue;
+                    };
+                    PropertyObservation::Receipt(SensitiveIntent::from_fingerprint(
+                        fingerprinter.fingerprint(address, &path, bytes),
+                    ))
+                }
+                Some(Json::Null) => PropertyObservation::KnownAbsent,
+                _ => continue,
+            };
+            properties.insert(PropertyPath::from_property_info(info), observation);
+        }
+    }
 }
 
 /// Builds the planner's remote snapshot. A resource whose observation the planner rejects

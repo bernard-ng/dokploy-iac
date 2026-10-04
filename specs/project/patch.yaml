@@ -6,7 +6,7 @@
 # parent's id and its type (empty for the other type). `patch.update` is a patch but stores `content`
 # with a trailing newline added when it has none, so a read after an update differs from what was
 # sent (`content` is redacted in the fixtures, so the metadata holds it): comparing content through a
-# digest of what was sent, not a read-back, is M4's. A second patch of one file path for one parent
+# receipt that ignores surrounding whitespace (`trim`). A second patch of one file path for one parent
 # is an HTTP 500, not a 4xx, and a `delete` patch still needs `content` (empty is accepted).
 kind: patch
 scope: project
@@ -52,6 +52,7 @@ fields:
   content:
     type: file
     class: content
+    trim: true
     doc: The new content of the file, written in the document or read from a file.
   enabled:
     type: bool

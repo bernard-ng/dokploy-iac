@@ -11,6 +11,18 @@ All notable changes to this project will be documented in this file.
   entries the map writes win, and the values are fingerprinted like any other and never reach state.
   A spec opts in with the new `file_key` attribute of an `env` field (a spec-grammar addition).
   Problems in the file are named by line, never by value. The vision ratchet's project list is empty.
+- Content is compared with what Dokploy holds (milestone M4, ADR 0010): the engine observes the keyed
+  receipt of a readable content property (a `patch`'s `content`, a mount's, a Compose file) and plans
+  a change when it differs from the document's, so an edit made at Dokploy is a drift. A property whose
+  spec says `trim` is compared without surrounding whitespace (the `patch`'s `content`, because Dokploy
+  adds a newline). The conformance `drift` scenario now covers content fields.
+- `SecretsWriter` (milestone M4): writes secrets below the workspace with mode 0600, atomically,
+  refusing traversal, symlinks out, and overwrites, and keeps the directory out of git with a
+  `.gitignore` in it and an entry in the workspace's. The importer will use it (M6).
+- Conformance: `secrets_from_files` and `secrets_from_vault` supply every secret from a file and every
+  environment variable from a vault reference, with the canary leak scan.
+- **Breaking: a `vault` source sends the reference Dokploy resolves**, `${{vault.provider.secret}}`;
+  before, it sent a placeholder that was not one.
 - **Breaking: an environment variable the document stops naming is removed.** A document that gives
   `environment` variables (in the map or an `env_file`) now removes the variables a later apply no
   longer names, and leaves alone the ones it never named; before, they were only forgotten and

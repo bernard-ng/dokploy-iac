@@ -19,7 +19,7 @@ pub(crate) fn api_name<'a>(name: &'a str, field: &'a Field) -> &'a str {
     field.api.as_deref().unwrap_or(name)
 }
 
-fn lookup<'v>(item: &'v Json, pointer: &str) -> Option<&'v Json> {
+pub(crate) fn lookup<'v>(item: &'v Json, pointer: &str) -> Option<&'v Json> {
     if pointer.starts_with('/') {
         item.pointer(pointer)
     } else {

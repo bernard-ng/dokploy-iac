@@ -35,9 +35,10 @@ Each runs in a world of its own: a fresh simulator, workspace, and engine.
 | `converges` | applying again sends nothing |
 | `update:<field>` | changing one field sends exactly its write group's operation, only fields of that group, with the new value (a secret is rotated) |
 | `replace:<field>` | changing a `create_only` field removes then creates and gives a new identity |
-| `drift:<field>` | changing a field behind the engine's back plans one change naming it, and apply restores it |
+| `drift:<field>` | changing a field behind the engine's back plans one change naming it, and apply restores it; a content field drifts too (compared as a receipt), unless Dokploy's read does not return it (skipped), and a secret never does |
 | `follow_up_rejected`, `follow_up_lost_before`, `follow_up_lost_after` | for a kind whose create does not carry every field: the follow-up write is rejected or lost; the resource exists and state describes what the create wrote, recovery settles the step without repeating the create, and one more apply finishes (skipped when the create carries everything) |
 | `selector_unmatched`, `selector_ambiguous` | a selector that names nothing, or two resources, blocks the plan with a typed diagnostic and changes nothing (skipped when the kind has no selector whose target the suite can seed) |
+| `secrets_from_files`, `secrets_from_vault` | every secret the kind has is supplied from a file of the workspace, or (for the variables of an environment block) as a vault reference: the remote holds what the document says (the reference, for a vault), the same document read from the environment plans nothing, and the leak scan runs as ever (skipped when the kind has no secret the source can supply) |
 | `delete`, `protected_delete` | removal sends one remove; a protected resource is refused with nothing sent |
 | `unmanaged_collision`, `ambiguous_collision` | an existing resource, or two, with the same identity block the plan and nothing is changed |
 | `partial_authority` | absence from a `partial` collection is not proof |

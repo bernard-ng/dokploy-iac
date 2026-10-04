@@ -39,8 +39,8 @@ pub trait SecretReader {
 
 /// Reads `env` sources from a lookup and `file` sources from below a workspace root.
 ///
-/// A `vault` source has no value for this tool: Dokploy resolves it, so what is
-/// fingerprinted is the reference.
+/// A `vault` source has no value for this tool: Dokploy resolves it, so what is sent and
+/// fingerprinted is the reference, `${{vault.<provider>.<secret>}}` (ADR 0010).
 pub struct WorkspaceSecrets<F> {
     root: PathBuf,
     environment: F,
@@ -64,7 +64,7 @@ impl<F: Fn(&str) -> Option<String>> SecretReader for WorkspaceSecrets<F> {
                 .ok_or_else(|| SecretError::MissingEnvironment { name: name.clone() }),
             Source::File(path) => read_workspace_file(&self.root, path),
             Source::Vault { provider, secret } => Ok(Zeroizing::new(
-                format!("vault:{provider}/{secret}").into_bytes(),
+                format!("${{{{vault.{provider}.{secret}}}}}").into_bytes(),
             )),
         }
     }

@@ -39,9 +39,10 @@ token:    { vault: { provider: infisical, secret: API_TOKEN } }   # Dokploy reso
 image:    registry.example.com/app:1.2         # public literal
 ```
 
-`vault` sources render Dokploy's `${{vault.<provider>.<secret>}}` reference; the
-reference is not secret, the value never reaches this tool, and plan checks
-that the provider exists. `env` and `file` values are read at plan and apply time,
+`vault` sources render Dokploy's `${{vault.<provider>.<secret>}}` reference, which is what is sent
+and fingerprinted; the reference is not secret and the value never reaches this tool. Only an
+environment variable can be a vault reference. That the provider exists is checked once the
+settings document has `vault_providers` (M5). `env` and `file` values are read at plan and apply time,
 used for the one request that needs them, fingerprinted, and zeroised. A missing
 variable or file fails the command before any change.
 
@@ -74,8 +75,13 @@ level `env` use the same type.
 ### Content files
 
 A `file` source refers to a path under the workspace (no traversal, no symlink
-escape). The engine compares the content digest to the remote content read through
-the projection and plans an update when they differ. `plan --show-content` prints
+escape). The engine compares a receipt of the local content with a receipt of the remote content
+read through the projection and plans an update when they differ. The receipt is the keyed
+fingerprint of the secrets, not a bare SHA-256: a bare digest of a short file can be guessed, and
+state holds it. A property whose spec says `trim` is fingerprinted without its surrounding
+whitespace on both sides, because Dokploy stores a `patch`'s content with a trailing newline added
+by an update (captured on 0.30.6 and 0.30.7). A content property Dokploy does not return (the
+application's Traefik file) is not compared, so a change made there is not seen. `plan --show-content` prints
 a unified diff because the local file is already on disk. Import writes content to
 `files/` by default. A secret scanner (pattern and entropy) warns when imported
 content looks like it embeds credentials and offers `--content-secrets=extract` to
@@ -84,7 +90,10 @@ move the matches to environment variables.
 ### Where secrets live in the repository
 
 By default: `secrets/` directory of dotenv and plain files, written mode 0600,
-with `.gitignore` entries added automatically, never committed. Users who keep
+with `.gitignore` entries added automatically, never committed. `SecretsWriter` (in the engine)
+does the writing for an importer: private directories and files, atomic, nothing replaced, a path
+that leaves the directory refused, a `.gitignore` inside the directory that ignores everything in it
+and an entry in the workspace's own, and dotenv text that reads back as exactly the values written. Users who keep
 secrets in a manager point `env:` sources at it (CI secrets, `direnv`, `sops exec-env`).
 The tool does not decrypt anything itself in the beta; a `sops` source is a candidate
 for later and needs its own ADR.

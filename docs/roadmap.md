@@ -109,12 +109,19 @@ Exceptions and what the exit leaves to later:
 
 ## M4 status
 
-In progress. Done: `env_file` for the application and the Compose (`file_key` in the spec grammar,
-`Resource::env_files` in the model, the dotenv expansion in `compile`), which closes the two
-project-document lines of the vision ratchet. Left: the `env`, `file`, and `vault` sources of
-every secret field in the canary suite, content digests (a `patch` stores `content` with a trailing
-newline, so a read-back cannot be compared), fingerprints for paths, and the secrets-out writer with
-its `.gitignore` handling.
+Done. `env_file` for the application and the Compose (`file_key` in the spec grammar, the dotenv
+expansion in `compile`), which closes the two project-document lines of the vision ratchet; a
+variable the document stops naming is removed; a `vault` source sends Dokploy's
+`${{vault.provider.secret}}` reference; content is compared with what Dokploy holds through the
+keyed receipt of both (`trim` for the `patch`'s newline), so an edit made behind the engine's back
+is a drift; `SecretsWriter` writes secrets out below the workspace with `.gitignore` handling; and
+the conformance suite supplies every secret from a file and every environment variable from a vault
+reference besides the environment, scanning for the canaries as ever.
+
+Left to later: the vault provider check (M5, with the `vault_provider` kind), reading environment
+values back to detect a change made at Dokploy, and the importer that calls `SecretsWriter` (M6).
+The fingerprint already binds the instance, the address, and the property path, so no separate
+fingerprint of paths is needed.
 
 ## Cost gate (end of M2)
 
