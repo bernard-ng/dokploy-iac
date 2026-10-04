@@ -21,6 +21,7 @@ pub fn json_schema(registry: &SpecRegistry, scope: Scope) -> Value {
     definitions.insert("secret_source".to_owned(), secret_source());
     definitions.insert("file_source".to_owned(), file_source());
     definitions.insert("env_value".to_owned(), env_value());
+    definitions.insert("env_file".to_owned(), env_file());
     definitions.insert("selector".to_owned(), selector(false));
     definitions.insert("selector_server".to_owned(), selector(true));
     definitions.insert("lifecycle".to_owned(), lifecycle());
@@ -121,6 +122,11 @@ fn resource(registry: &SpecRegistry, spec: &KindSpec) -> Value {
     for (name, field) in &spec.fields {
         if let Ok(ty) = parse_type(&field.ty) {
             properties.insert(name.clone(), field_schema(field, &ty));
+        }
+    }
+    for field in spec.fields.values() {
+        if let Some(key) = &field.file_key {
+            properties.insert(key.clone(), reference("env_file"));
         }
     }
     for child in &spec.children {
@@ -278,6 +284,16 @@ fn file_source() -> Value {
     json!({
         "type": "object", "additionalProperties": false, "required": ["file"],
         "properties": { "file": { "type": "string", "minLength": 1 } }
+    })
+}
+
+fn env_file() -> Value {
+    json!({
+        "type": "object", "additionalProperties": false, "required": ["file"],
+        "properties": {
+            "file": { "type": "string", "minLength": 1 },
+            "public": { "type": "boolean" }
+        }
     })
 }
 

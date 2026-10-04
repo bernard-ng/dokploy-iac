@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `env_file` for the application and the Compose (milestone M4, [ADR 0010](docs/decisions/0010-secrets-environment-and-content.md)):
+  `env_file: { file: secrets/api.env }` adds the variables of a dotenv file to `environment`, the
+  entries the map writes win, and the values are fingerprinted like any other and never reach state.
+  A spec opts in with the new `file_key` attribute of an `env` field (a spec-grammar addition).
+  Problems in the file are named by line, never by value. The vision ratchet's project list is empty.
+
 - Live captures of `destination`, `network`, `patch`, `volume_backup`, and the tags of a project
   (`scripts/integration/capture-{destination,network,patch,volume-backup,project-tag}-contract.sh`) on
   Dokploy 0.30.6 and 0.30.7, with fixture checks and a shared `capture_project_setup` helper. They

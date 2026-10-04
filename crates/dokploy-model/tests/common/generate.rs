@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use dokploy_model::{
-    Document, EnvValue, Field, Lifecycle, Resource, Root, Sections, Selector, Source, Span, Value,
+    Document, EnvFile, EnvValue, Field, Lifecycle, Resource, Root, Sections, Selector, Source,
+    Span, Value,
 };
 use dokploy_spec::{
     Field as SpecField, FieldType, Granularity, KindSpec, Scope, SpecRegistry, ValueClass,
@@ -275,6 +276,30 @@ fn resource(rng: &mut Rng, registry: &SpecRegistry, spec: &KindSpec, key: String
             );
         }
     }
+    // A dotenv file goes with an environment that is not cleared.
+    let mut env_files = BTreeMap::new();
+    for (name, field) in &spec.fields {
+        let Some(key) = &field.file_key else { continue };
+        if rng.chance(1, 2)
+            && !matches!(
+                fields.get(name),
+                Some(Field {
+                    value: Value::Null,
+                    ..
+                })
+            )
+        {
+            env_files.insert(
+                name.clone(),
+                EnvFile {
+                    key: key.clone(),
+                    path: format!("env/{}.env", identifier(rng)),
+                    public: rng.chance(1, 2),
+                    span: Span::default(),
+                },
+            );
+        }
+    }
     let properties: Vec<String> = spec.properties().into_iter().map(|p| p.path).collect();
     let mut lifecycle = Lifecycle::default();
     if rng.chance(1, 3) {
@@ -309,6 +334,7 @@ fn resource(rng: &mut Rng, registry: &SpecRegistry, spec: &KindSpec, key: String
         key,
         span: Span::default(),
         fields,
+        env_files,
         lifecycle,
         depends_on,
         children,

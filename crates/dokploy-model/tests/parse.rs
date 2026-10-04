@@ -690,3 +690,108 @@ removed:
         DiagnosticCode::Directive | DiagnosticCode::UnknownField
     )));
 }
+
+fn api_with(lines: &str) -> String {
+    format!(
+        "version: 2\nproject:\n  slug: shop\n  environments:\n    staging:\n      applications:\n        api:\n{lines}"
+    )
+}
+
+fn api_of(document: &Document) -> &dokploy_model::Resource {
+    let Root::Project(project) = &document.root else {
+        panic!("not a project document");
+    };
+    &project.children["environments"]["staging"].children["applications"]["api"]
+}
+
+#[test]
+fn an_env_file_names_a_dotenv_file_for_the_environment_field() {
+    let document = parse(&api_with(
+        "          environment:\n            LOG_LEVEL: info\n          env_file: { file: env/staging/api.env }\n",
+    ))
+    .expect("valid");
+    let file = &api_of(&document).env_files["environment"];
+    assert_eq!(file.key, "env_file");
+    assert_eq!(file.path, "env/staging/api.env");
+    assert!(
+        !file.public,
+        "a file's values are secret unless declared public"
+    );
+    assert!(api_of(&document).fields.contains_key("environment"));
+
+    let document = parse(&api_with(
+        "          env_file:\n            file: env/api.env\n            public: true\n",
+    ))
+    .expect("an env_file may stand alone");
+    assert!(api_of(&document).env_files["environment"].public);
+
+    let rendered = document.render();
+    assert_eq!(
+        parse(&rendered).expect("renders to a valid document"),
+        document,
+        "{rendered}"
+    );
+}
+
+#[test]
+fn a_malformed_env_file_is_one_diagnostic_at_its_path() {
+    let path = "project.environments.staging.applications.api.env_file";
+    for (lines, code) in [
+        ("          env_file: env/api.env\n", DiagnosticCode::Source),
+        (
+            "          env_file: { public: true }\n",
+            DiagnosticCode::Source,
+        ),
+        (
+            "          env_file: { file: ../api.env }\n",
+            DiagnosticCode::Source,
+        ),
+        (
+            "          env_file: { file: /etc/api.env }\n",
+            DiagnosticCode::Source,
+        ),
+        (
+            "          env_file: { file: a.env, secret: true }\n",
+            DiagnosticCode::UnknownField,
+        ),
+    ] {
+        let found = codes(parse(&api_with(lines)));
+        assert!(
+            found.iter().any(|(found_code, found_path)| *found_code == code
+                && found_path.starts_with(path)),
+            "{lines}: {found:?}"
+        );
+    }
+
+    // `public` is a boolean, and `null` clears the variables the file would give.
+    assert!(
+        codes(parse(&api_with(
+            "          env_file: { file: a.env, public: yes-please }\n"
+        )))
+        .iter()
+        .any(|(code, _)| *code == DiagnosticCode::Type)
+    );
+    assert_eq!(
+        codes(parse(&api_with(
+            "          environment: null\n          env_file: { file: a.env }\n"
+        )))
+        .iter()
+        .map(|(code, _)| *code)
+        .collect::<Vec<_>>(),
+        [DiagnosticCode::Null]
+    );
+}
+
+#[test]
+fn only_a_field_that_declares_a_file_key_takes_one() {
+    // `build_args` is an env block too, but the spec gives only `environment` a file.
+    let found = codes(parse(&api_with(
+        "          build_args_file: { file: a.env }\n",
+    )));
+    assert!(
+        found
+            .iter()
+            .any(|(code, _)| *code == DiagnosticCode::UnknownField),
+        "{found:?}"
+    );
+}

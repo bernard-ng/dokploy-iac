@@ -101,11 +101,20 @@ Exceptions and what the exit leaves to later:
   destination deletes the volume backups that name it, and a second patch of one file path is an
   HTTP 500. The other project kinds (`application`, `compose`, the databases, and the leaves
   captured before M2) still lean on the earlier fixtures; the full live engine suite is M8's.
-- The vision ratchet (`docs/vision/gaps/`) counts 2 lines for the project document (`env_file` of the
-  application and of the Compose, which is M4's) and the settings document's remaining kinds (M5).
+- The vision ratchet (`docs/vision/gaps/`) counted 2 lines for the project document (`env_file` of the
+  application and of the Compose, closed by M4) and counts the settings document's remaining kinds (M5).
 - Not modeled, on purpose: database schedules (Dokploy runs schedules in applications and Compose
   only), Compose backups (ADR 0039), Compose `pullImages` (never returned), and the per-service
   `detachDokployNetwork` flag (kept as Dokploy holds it).
+
+## M4 status
+
+In progress. Done: `env_file` for the application and the Compose (`file_key` in the spec grammar,
+`Resource::env_files` in the model, the dotenv expansion in `compile`), which closes the two
+project-document lines of the vision ratchet. Left: the `env`, `file`, and `vault` sources of
+every secret field in the canary suite, content digests (a `patch` stores `content` with a trailing
+newline, so a read-back cannot be compared), fingerprints for paths, and the secrets-out writer with
+its `.gitignore` handling.
 
 ## Cost gate (end of M2)
 

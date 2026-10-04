@@ -378,3 +378,52 @@ fn a_public_field_cannot_carry_a_secret_looking_name() {
         issues(&fixed)
     );
 }
+
+#[test]
+fn a_file_key_names_a_free_document_key_of_a_top_level_env_field() {
+    let valid = with(
+        "  size: { type: int, mutability: create_only }",
+        "  size: { type: int, mutability: create_only }\n  environment: { api: env, type: env, file_key: env_file, mutability: create_only }",
+    );
+    assert!(issues(&valid).is_empty(), "{:?}", issues(&valid));
+
+    let not_env = with(
+        "  color: { type: text, nullable: true }",
+        "  color: { type: text, nullable: true, file_key: color_file }",
+    );
+    assert!(
+        issues(&not_env)
+            .iter()
+            .any(|issue| issue.contains("top-level env field only")),
+        "{:?}",
+        issues(&not_env)
+    );
+
+    for taken in ["name", "lifecycle", "depends_on"] {
+        let clash = with(
+            "  size: { type: int, mutability: create_only }",
+            &format!(
+                "  size: {{ type: int, mutability: create_only }}\n  environment: {{ api: env, type: env, mutability: create_only, file_key: {taken} }}"
+            ),
+        );
+        assert!(
+            issues(&clash)
+                .iter()
+                .any(|issue| issue.contains("already a key of the document")),
+            "{taken}: {:?}",
+            issues(&clash)
+        );
+    }
+
+    let twice = with(
+        "  size: { type: int, mutability: create_only }",
+        "  size: { type: int, mutability: create_only }\n  environment: { api: env, type: env, mutability: create_only, file_key: env_file }\n  build_args: { api: buildArgs, type: env, mutability: create_only, file_key: env_file }",
+    );
+    assert!(
+        issues(&twice)
+            .iter()
+            .any(|issue| issue.contains("file key of another field")),
+        "{:?}",
+        issues(&twice)
+    );
+}

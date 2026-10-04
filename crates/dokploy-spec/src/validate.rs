@@ -83,6 +83,7 @@ pub fn validate_spec(spec: &KindSpec, shared_types: &BTreeSet<String>) -> Vec<Is
             true,
         );
     }
+    check_file_keys(&mut context, spec);
     check_write_groups(&mut context, spec);
     check_children(&mut context, spec);
     if let Some(hook) = &spec.hook
@@ -92,6 +93,28 @@ pub fn validate_spec(spec: &KindSpec, shared_types: &BTreeSet<String>) -> Vec<Is
     }
 
     context.issues
+}
+
+/// A `file_key` is a document key of its own, so it must not name a field, a section, a
+/// directive, or another `file_key`.
+fn check_file_keys(context: &mut Context<'_>, spec: &KindSpec) {
+    let mut seen = BTreeSet::new();
+    for (name, field) in &spec.fields {
+        let Some(key) = &field.file_key else { continue };
+        let path = format!("fields.{name}.file_key");
+        if !is_snake(key) {
+            context.add(&path, "document keys are lower snake case");
+        }
+        if spec.fields.contains_key(key)
+            || spec.children.iter().any(|child| &child.section == key)
+            || ["lifecycle", "depends_on"].contains(&key.as_str())
+        {
+            context.add(&path, format!("`{key}` is already a key of the document"));
+        }
+        if !seen.insert(key.as_str()) {
+            context.add(&path, format!("`{key}` is the file key of another field"));
+        }
+    }
 }
 
 fn check_identity(context: &mut Context<'_>, spec: &KindSpec) {
@@ -300,6 +323,12 @@ fn check_field(
     };
     if let Some(parsed) = &parsed {
         check_type_rules(context, path, field, parsed, shared_types);
+    }
+    if field.file_key.is_some() && !(top_level && matches!(parsed, Some(FieldType::Env))) {
+        context.add(
+            format!("{path}.file_key"),
+            "applies to a top-level env field only",
+        );
     }
 
     if field.class == ValueClass::Public

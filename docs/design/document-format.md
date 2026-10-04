@@ -77,8 +77,12 @@ directive when it matches nothing or several. `to` must be declared in the docum
 has happened `from` is gone from state, and a bare `kind.key` then means a sibling of `to`, which
 keeps the declaration harmless to leave in. A removal of something nothing tracks does nothing.
 
-Not read yet: `lifecycle.deploy`, `env_file`, shared types, and checking that a `file` exists or
-that a `depends_on` address resolves. Those belong to the workspace and the engine.
+An `env` field that its spec gives a `file_key` accepts that key beside it: `env_file: { file: path }`
+or `{ file: path, public: true }` (ADR 0010). The model records the path (`Resource::env_files`) and
+reads nothing; the engine reads the dotenv file when it compiles.
+
+Not read yet: `lifecycle.deploy`, shared types, and checking that a `file` exists or that a
+`depends_on` address resolves. Those belong to the workspace and the engine.
 
 ## Diagnostics
 

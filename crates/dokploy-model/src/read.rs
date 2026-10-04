@@ -9,7 +9,7 @@ use dokploy_spec::{
 };
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
-use crate::document::{Document, Lifecycle, Move, Removal, Resource, Root, Sections};
+use crate::document::{Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections};
 use crate::raw::{Key, Node, Raw};
 use crate::value::{EnvValue, Selector, Source, Value};
 use crate::{Field, Span};
@@ -447,6 +447,7 @@ impl<'a> Reader<'a> {
         skip: Option<&str>,
     ) -> Option<Resource> {
         let mut fields = BTreeMap::new();
+        let mut env_files = BTreeMap::new();
         let mut children: Sections = BTreeMap::new();
         let mut lifecycle = Lifecycle::default();
         let mut depends_on = Vec::new();
@@ -472,6 +473,15 @@ impl<'a> Reader<'a> {
                         },
                     );
                 }
+            } else if let Some(target) = spec
+                .fields
+                .iter()
+                .find(|(_, field)| field.file_key.as_deref() == Some(name.name.as_str()))
+                .map(|(target, _)| target)
+            {
+                if let Some(file) = self.env_file(&name.name, name.span, node, &field_path) {
+                    env_files.insert(target.clone(), file);
+                }
             } else if let Some(child) = spec.children.iter().find(|c| c.section == name.name) {
                 let Some(child_spec) = self.registry.get(&child.kind) else {
                     failed = true;
@@ -482,9 +492,26 @@ impl<'a> Reader<'a> {
             } else {
                 let mut valid: Vec<&str> = spec.fields.keys().map(String::as_str).collect();
                 valid.extend(spec.children.iter().map(|c| c.section.as_str()));
+                valid.extend(spec.fields.values().filter_map(|f| f.file_key.as_deref()));
                 valid.extend(["depends_on", "lifecycle"]);
                 valid.sort_unstable();
                 self.unknown(&field_path, name.span, &spec.kind, &name.name, &valid);
+            }
+        }
+
+        // A cleared environment and a file of variables to put in it contradict each other.
+        for (target, file) in &env_files {
+            if let Some(Field {
+                value: Value::Null,
+                span,
+            }) = fields.get(target)
+            {
+                self.error(
+                    DiagnosticCode::Null,
+                    &format!("{path}.{target}"),
+                    *span,
+                    format!("`null` clears the variables, but `{}` gives some", file.key),
+                );
             }
         }
 
@@ -493,6 +520,7 @@ impl<'a> Reader<'a> {
             key: key.to_owned(),
             span: key_span,
             fields,
+            env_files,
             lifecycle,
             depends_on,
             children,
@@ -1159,6 +1187,65 @@ impl<'a> Reader<'a> {
                 None
             }
         }
+    }
+
+    /// `env_file: { file: path }` or `{ file: path, public: true }` (ADR 0010).
+    fn env_file(&mut self, key: &str, key_span: Span, node: &Node, path: &str) -> Option<EnvFile> {
+        let Raw::Map(entries) = &node.value else {
+            self.error(
+                DiagnosticCode::Source,
+                path,
+                node.span,
+                "a dotenv file is written as { file: path } or { file: path, public: true }",
+            );
+            return None;
+        };
+        let mut file = None;
+        let mut public = false;
+        let mut ok = true;
+        for (entry, value) in entries {
+            match (entry.name.as_str(), &value.value) {
+                ("file", _) => match self.file_path(value, &format!("{path}.file")) {
+                    Some(text) => file = Some(text),
+                    None => ok = false,
+                },
+                ("public", Raw::Bool(flag)) => public = *flag,
+                ("public", other) => {
+                    self.mismatch(
+                        &format!("{path}.public"),
+                        value.span,
+                        "true or false",
+                        other,
+                    );
+                    ok = false;
+                }
+                (other, _) => {
+                    self.unknown(
+                        &format!("{path}.{other}"),
+                        entry.span,
+                        "env_file",
+                        other,
+                        &["file", "public"],
+                    );
+                    ok = false;
+                }
+            }
+        }
+        if file.is_none() && ok {
+            self.error(
+                DiagnosticCode::Source,
+                path,
+                node.span,
+                "a dotenv file names its path: { file: path }",
+            );
+        }
+
+        file.filter(|_| ok).map(|path| EnvFile {
+            key: key.to_owned(),
+            path,
+            public,
+            span: key_span,
+        })
     }
 
     fn file_source(&mut self, node: &Node, path: &str) -> Option<Source> {

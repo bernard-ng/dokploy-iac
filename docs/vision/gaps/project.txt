@@ -1,2 +1,0 @@
-DOKDOC004 project.environments.staging.applications.api.env_file
-DOKDOC004 project.environments.staging.compose.stack.env_file

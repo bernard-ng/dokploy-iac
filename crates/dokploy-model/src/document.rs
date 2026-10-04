@@ -62,6 +62,19 @@ pub struct Lifecycle {
     pub ignore_changes: Vec<String>,
 }
 
+/// A dotenv file the document expands into an `env` field (`env_file`, ADR 0010).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnvFile {
+    /// The document key it is written under, such as `env_file`.
+    pub key: String,
+    /// The path below the workspace.
+    pub path: String,
+    /// Whether the file's values are declared non-secret (`public: true`).
+    pub public: bool,
+    /// Where the key is written.
+    pub span: Span,
+}
+
 /// One resource: its fields and the resources it contains.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Resource {
@@ -73,6 +86,9 @@ pub struct Resource {
     pub span: Span,
     /// The configured fields, by document name. An omitted field is unmanaged.
     pub fields: BTreeMap<String, Field>,
+    /// Dotenv files expanded into an `env` field, by the name of that field. The entries the
+    /// field gives itself win over the file's.
+    pub env_files: BTreeMap<String, EnvFile>,
     /// Lifecycle directives.
     pub lifecycle: Lifecycle,
     /// Addresses this resource depends on.

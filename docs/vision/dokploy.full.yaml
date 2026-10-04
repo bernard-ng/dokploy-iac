@@ -81,7 +81,7 @@ project:
             LOG_LEVEL: { value: info }
             DATABASE_URL: { secret: { env: API_DATABASE_URL } }          # [s]
             MAIL_KEY: { vault: { provider: infisical-staging, secret: MAIL_KEY } }   # ✘ planned (S10)
-          env_file: { file: env/staging/api.env }   # ✎ whole dotenv file as one source (alternative to the map)
+          env_file: { file: env/staging/api.env }   # ✔ a dotenv file added to the map; the map's entries win (ADR 0010)
           create_env_file: true              # ✘ write a .env file in the build context
           build_args:                        # ✘
             NODE_VERSION: { value: "22" }
@@ -254,7 +254,7 @@ project:
           environment:                       # ✘ (applications only today)
             MEILI_ENV: { value: production }
             MEILI_MASTER_KEY: { secret: { env: MEILI_MASTER_KEY } }   # [s]
-          env_file: { file: env/staging/stack.env }   # ✎
+          env_file: { file: env/staging/stack.env }   # ✔
           create_env_file: true              # ✘
           suffix: ""                         # ✘ appended to resource names
           randomize: false                   # ✘ randomize service names

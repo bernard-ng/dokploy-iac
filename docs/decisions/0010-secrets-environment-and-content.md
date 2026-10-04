@@ -53,6 +53,17 @@ For long lists, `env_file: { file: secrets/staging/api.env }` expands a dotenv f
 into the map; entries written explicitly win. Values that come from a file or
 `env` are **secret by default**; `env_file: { file: ..., public: true }` declares
 the file non-secret. Plans name the keys that change and never their values.
+
+A spec opts a field in with `file_key: env_file` (the application's and the Compose's
+`environment`). The file is read when the document is compiled, below the workspace like any
+`file` source. A line is blank, a `#` comment, or `KEY=VALUE` (`export ` before the name is
+accepted); one matching pair of `"` or `'` around a whole value is removed, as `docker compose`
+does, and nothing inside it is unescaped; a name that is not letters, digits, and underscores, a line that is none of those, and a
+name set twice are errors that give the line number and never a value. Each variable is fingerprinted
+like one written in the map, so a changed value, a new variable, or one that is gone from the file
+is a change of that variable alone. A variable the file stops giving is no longer managed, exactly
+like one dropped from the map (ADR 0004): Dokploy keeps it. A file with no variables, next to a map
+with none, declares the environment empty and clears it, as `environment: {}` does.
 `build_args` and `build_secrets`, preview variants, and project and environment
 level `env` use the same type.
 

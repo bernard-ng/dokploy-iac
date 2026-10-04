@@ -124,6 +124,8 @@ fields:
     granularity: key
     nullable: true
     needs_deploy: true
+    file_key: env_file
+    doc: Variables by name. `env_file` expands a dotenv file into the same map; a variable written here wins over the file's.
   create_env_file:
     api: createEnvFile
     type: bool

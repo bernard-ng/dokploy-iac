@@ -1,12 +1,12 @@
 //! Compiling a validated document into the planner's desired state.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dokploy_core::{
     ComparableValue, ConfigDigest, DesiredResource, DesiredState, DesiredStateError, OwnedValue,
     PropertyPath, ProtectionIntent, SensitiveIntent,
 };
-use dokploy_model::{Document, EnvValue, Resource, Root, Sections, Source, Value};
+use dokploy_model::{Document, EnvFile, EnvValue, Resource, Root, Sections, Source, Value};
 use dokploy_spec::{FieldType, Granularity, KindSpec, PathError, Scope, SpecRegistry, parse_type};
 use dokploy_state::{
     AddressSuffixError, DocumentId, ResourceAddress, ResourceAddressParseError, ResourceKind,
@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::canonical::{NotComparable, canonical};
+use crate::dotenv::{DotenvError, parse_dotenv};
 use crate::fingerprint::Fingerprinter;
 use crate::secrets::{SecretError, SecretReader};
 
@@ -242,6 +243,15 @@ pub enum CompileError {
         field: String,
         #[source]
         source: SecretError,
+    },
+    /// A dotenv file named by an `env_file` cannot be read as variables.
+    #[error("`{address}`: `{field}`: the file `{path}`: {source}")]
+    EnvFile {
+        address: ResourceAddress,
+        field: String,
+        path: String,
+        #[source]
+        source: DotenvError,
     },
     /// A value the engine cannot compile yet.
     #[error("`{address}`: field `{field}` {reason}")]
@@ -566,6 +576,10 @@ impl Compiler<'_> {
                     properties.insert(path(name)?, self.receipt(address, name, &bytes));
                     secrets.insert((address.clone(), name.clone()), bytes);
                 }
+                // An empty block next to an `env_file` only adds no variable of its own: the
+                // file decides whether the environment is empty.
+                Value::Env(variables)
+                    if variables.is_empty() && resource.env_files.contains_key(name) => {}
                 Value::Env(variables) if variables.is_empty() => {
                     properties.insert(path(name)?, OwnedValue::EmptyCollection);
                 }
@@ -754,7 +768,69 @@ impl Compiler<'_> {
             }
         }
 
+        for (target, file) in &resource.env_files {
+            self.expand_env_file(
+                address,
+                spec,
+                resource,
+                target,
+                file,
+                &mut properties,
+                secrets,
+            )?;
+        }
+
         Ok(properties)
+    }
+
+    /// Reads the dotenv file of an `env_file` and adds a variable for each name the field does not
+    /// write itself, so that what the field writes wins (ADR 0010). The values are read once, for
+    /// the fingerprints and the request that sends them, and are never stored.
+    #[allow(clippy::too_many_arguments)]
+    fn expand_env_file(
+        &self,
+        address: &ResourceAddress,
+        spec: &KindSpec,
+        resource: &Resource,
+        target: &str,
+        file: &EnvFile,
+        properties: &mut BTreeMap<PropertyPath, OwnedValue>,
+        secrets: &mut Secrets,
+    ) -> Result<(), CompileError> {
+        let property = |dotted: &str| {
+            PropertyPath::from_spec(spec, dotted).map_err(|source| CompileError::Property {
+                address: address.clone(),
+                field: dotted.to_owned(),
+                source,
+            })
+        };
+        let bytes = self.read(address, &file.key, &Source::File(file.path.clone()))?;
+        let variables = parse_dotenv(&bytes).map_err(|source| CompileError::EnvFile {
+            address: address.clone(),
+            field: file.key.clone(),
+            path: file.path.clone(),
+            source,
+        })?;
+        let written: BTreeSet<&str> = match resource.fields.get(target).map(|field| &field.value) {
+            Some(Value::Env(variables)) => variables.keys().map(String::as_str).collect(),
+            _ => BTreeSet::new(),
+        };
+
+        let mut any = !written.is_empty();
+        for (variable, value) in variables {
+            if written.contains(variable.as_str()) {
+                continue;
+            }
+            any = true;
+            let dotted = format!("{target}.{variable}");
+            properties.insert(property(&dotted)?, self.receipt(address, &dotted, &value));
+            secrets.insert((address.clone(), dotted), value);
+        }
+        if !any {
+            properties.insert(property(target)?, OwnedValue::EmptyCollection);
+        }
+
+        Ok(())
     }
 
     fn read(

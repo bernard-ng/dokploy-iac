@@ -101,6 +101,13 @@ fn resource_entries(resource: &Resource) -> Vec<(String, Out)> {
         .iter()
         .map(|(name, field)| (name.clone(), value_out(&field.value)))
         .collect();
+    for file in resource.env_files.values() {
+        let mut entry = vec![("file".to_owned(), Out::Scalar(scalar(&file.path)))];
+        if file.public {
+            entry.push(("public".to_owned(), Out::Scalar("true".to_owned())));
+        }
+        entries.push((file.key.clone(), Out::Map(entry)));
+    }
     if !resource.depends_on.is_empty() {
         entries.push((
             "depends_on".to_owned(),

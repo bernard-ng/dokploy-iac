@@ -407,6 +407,10 @@ pub struct Field {
     /// Whether surrounding whitespace is ignored when comparing text.
     #[serde(default)]
     pub trim: bool,
+    /// For a top-level `env` field, the document key that names a dotenv file to expand into it
+    /// (`env_file`, ADR 0010). It is an input of the document, not a property of Dokploy.
+    #[serde(default)]
+    pub file_key: Option<String>,
     /// Whether the update operation replaces the whole object and so must resend
     /// this secret (ADR 0008).
     #[serde(default)]

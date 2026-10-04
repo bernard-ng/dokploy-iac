@@ -99,8 +99,13 @@ fields:
 ```
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
-`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `since`,
-`until`, `doc` (one line for the generated reference), `example`.
+`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
+`since`, `until`, `doc` (one line for the generated reference), `example`.
+
+`file_key` is for a top-level `type: env` field only: it names a document key (`env_file`) that
+takes a dotenv file whose variables are added to the field's map (ADR 0010). It is an input of the
+document, not a property of Dokploy, so it has no `api`, takes no part in a write group, and must
+not be a key of the kind already.
 
 `fallback` is the value sent when a write needs a field and the document gives none and Dokploy
 holds none for it: `build_path: { fallback: "/" }`, `trigger_type: { fallback: push }`. It never

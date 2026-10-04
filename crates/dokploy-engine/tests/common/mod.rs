@@ -103,6 +103,16 @@ pub fn compile<T: Transport>(
     text: &str,
     environment: &[(&str, &str)],
 ) -> Compiled {
+    compile_in(engine, &std::env::temp_dir(), text, environment)
+}
+
+/// Compiles `text` with `root` as the workspace its `file` sources are read from.
+pub fn compile_in<T: Transport>(
+    engine: &Engine<T>,
+    root: &Path,
+    text: &str,
+    environment: &[(&str, &str)],
+) -> Compiled {
     let environment: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -110,9 +120,7 @@ pub fn compile<T: Transport>(
     let document = engine
         .parse(text)
         .unwrap_or_else(|error| panic!("the document is valid:\n{error}"));
-    let secrets = WorkspaceSecrets::new(std::env::temp_dir(), move |name: &str| {
-        environment.get(name).cloned()
-    });
+    let secrets = WorkspaceSecrets::new(root, move |name: &str| environment.get(name).cloned());
     engine
         .compile(&document, &engine.fingerprinter(key()), &secrets)
         .unwrap_or_else(|error| panic!("the document compiles: {error}"))
