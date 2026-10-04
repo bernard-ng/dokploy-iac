@@ -29,7 +29,8 @@ fields:
     default: key
   description:
     type: text
-    doc: Dokploy takes a text here, not null.
+    nullable: true
+    doc: Dokploy reads `null` for an environment made without one and takes only a text, so write an empty text to clear it (live capture, 0.30.6).
   env:
     type: env
     granularity: key

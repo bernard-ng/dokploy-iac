@@ -31,6 +31,16 @@ impl EnvText {
         })
     }
 
+    /// The value of a variable as written: what follows the first `=` of its first line.
+    pub(crate) fn value(&self, key: &str) -> Option<&str> {
+        self.lines.iter().find_map(|line| match line {
+            Line::Variable { key: existing, raw } if existing == key => {
+                raw.split_once('=').map(|(_, value)| value)
+            }
+            _ => None,
+        })
+    }
+
     pub(crate) fn contains(&self, key: &str) -> bool {
         self.keys().any(|existing| existing == key)
     }

@@ -48,11 +48,14 @@ pub(crate) fn observation_valid(
     observation: &PropertyObservation,
 ) -> bool {
     if info.is_sensitive() {
-        // Only content is read back, as a receipt: a secret never is.
+        // Only content and the variables of an environment (which Dokploy holds as text) are read
+        // back, as receipts: a secret never is.
         return match observation {
             PropertyObservation::KnownAbsent | PropertyObservation::Unknown(_) => true,
             PropertyObservation::Receipt(_) => {
-                info.class == dokploy_spec::ValueClass::Content && info.shape == PathShape::Atomic
+                (info.class == dokploy_spec::ValueClass::Content && info.shape == PathShape::Atomic)
+                    || (info.shape == PathShape::CollectionEntry
+                        && info.ty == dokploy_spec::FieldType::Env)
             }
             PropertyObservation::Known(_) => false,
         };

@@ -1,4 +1,4 @@
-//! The engine against a real Dokploy, for the settings kinds.
+//! The engine against a real Dokploy: the settings kinds, and one project document.
 //!
 //! Run through `scripts/integration/test-engine-live.sh`, which needs Docker. These are the
 //! live half of the contract the simulator copies (ADR 0015): every behavior the simulator
@@ -6,7 +6,7 @@
 
 mod common;
 
-use common::{compile_with, specs};
+use common::{compile_in, compile_with, specs};
 use dokploy_engine::{ApplyError, Engine, RecoveryAction};
 use dokploy_sdk::{Dokploy, OperationRequest, Transport};
 use dokploy_state::{DocumentId, StateStore};
@@ -372,4 +372,189 @@ async fn a_destination_lives_its_whole_life_through_the_engine() {
         call(&raw, OperationRequest::new("destination.all")).await,
         json!([])
     );
+}
+
+const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    staging:\n      applications:\n        api:\n          source: { type: docker, image: \"nginx:alpine\", username: ci, password: { env: LIVE_DOCKER_PASSWORD } }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
+
+/// A project document applied through the engine, its workspace holding the files it names.
+struct LiveProject {
+    engine: Engine<Dokploy>,
+    store: StateStore,
+    directory: tempfile::TempDir,
+}
+
+impl LiveProject {
+    fn new() -> Self {
+        let engine = Engine::new(specs(), client()).expect("the engine builds");
+        let directory = tempfile::tempdir().unwrap();
+        let store = StateStore::for_document(
+            directory.path().canonicalize().unwrap(),
+            engine.instance().clone(),
+            DocumentId::Project(dokploy_state::ResourceName::new("iac-live").unwrap()),
+        )
+        .unwrap();
+
+        Self {
+            engine,
+            store,
+            directory,
+        }
+    }
+
+    fn write(&self, path: &str, text: &str) {
+        let path = self.directory.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    fn compiled(&self, text: &str, env: &[(&str, &str)]) -> dokploy_engine::Compiled {
+        compile_in(&self.engine, self.directory.path(), text, env)
+    }
+
+    async fn apply(&self, text: &str, env: &[(&str, &str)]) -> usize {
+        let compiled = self.compiled(text, env);
+        self.engine
+            .apply(&compiled, &self.store, |_| true)
+            .await
+            .expect("applies")
+            .applied()
+    }
+
+    async fn changes(&self, text: &str, env: &[(&str, &str)]) -> usize {
+        let compiled = self.compiled(text, env);
+        let state = self.store.inspect().unwrap();
+        let plan = self
+            .engine
+            .plan(&compiled, state.as_ref())
+            .await
+            .expect("plans");
+        assert!(plan.applyable(), "{:?}", plan.diagnostics());
+
+        plan.changes().len()
+    }
+}
+
+#[tokio::test]
+#[ignore = "applies a project to the local Dokploy"]
+async fn an_environment_value_and_a_content_edited_at_dokploy_are_drift_the_engine_repairs() {
+    guard();
+    let live = LiveProject::new();
+    let raw = client();
+    let env = [
+        ("LIVE_API_TOKEN", "live-token-canary-1"),
+        ("LIVE_DOCKER_PASSWORD", "live-docker-canary-1"),
+    ];
+    live.write("patches/motd.txt", "hello from the repository");
+
+    live.apply(PROJECT, &env).await;
+    assert_eq!(
+        live.changes(PROJECT, &env).await,
+        0,
+        "converged against a real Dokploy"
+    );
+    let applications = call(&raw, OperationRequest::new("project.all")).await;
+    let application = applications
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|project| project["environments"].as_array().unwrap().clone())
+        .flat_map(|environment| environment["applications"].as_array().unwrap().clone())
+        .find(|application| application["name"] == "api")
+        .expect("the application exists");
+    let application_id = application["applicationId"].as_str().unwrap().to_owned();
+    let held = call(
+        &raw,
+        OperationRequest::new("application.one").query("applicationId", application_id.as_str()),
+    )
+    .await;
+    assert!(
+        held["env"].as_str().unwrap().contains("LOG_LEVEL=info"),
+        "Dokploy returns the environment text as written"
+    );
+
+    // Someone edits a variable in the dashboard.
+    call(
+        &raw,
+        OperationRequest::new("application.saveEnvironment").body(json!({
+            "applicationId": application_id,
+            "env": "LOG_LEVEL=debug\nAPI_TOKEN=live-token-canary-1\nSTRANGER=1",
+            "buildArgs": null, "buildSecrets": null, "createEnvFile": false
+        })),
+    )
+    .await;
+    assert_eq!(
+        live.changes(PROJECT, &env).await,
+        1,
+        "the edited value is seen"
+    );
+    live.apply(PROJECT, &env).await;
+    let held = call(
+        &raw,
+        OperationRequest::new("application.one").query("applicationId", application_id.as_str()),
+    )
+    .await;
+    let text = held["env"].as_str().unwrap();
+    assert!(text.contains("LOG_LEVEL=info"), "{text}");
+    assert!(
+        text.contains("STRANGER=1"),
+        "a variable the document never owned stays: {text}"
+    );
+    assert_eq!(live.changes(PROJECT, &env).await, 0);
+
+    // Someone edits the patch in the dashboard; Dokploy adds a trailing newline when it stores it.
+    let patches = call(
+        &raw,
+        OperationRequest::new("patch.byEntityId")
+            .query("id", application_id.as_str())
+            .query("type", "application"),
+    )
+    .await;
+    let patch_id = patches[0]["patchId"].as_str().unwrap().to_owned();
+    call(
+        &raw,
+        OperationRequest::new("patch.update")
+            .body(json!({ "patchId": patch_id, "content": "hello from the repository" })),
+    )
+    .await;
+    let stored = call(
+        &raw,
+        OperationRequest::new("patch.one").query("patchId", patch_id.as_str()),
+    )
+    .await;
+    assert_eq!(
+        stored["content"], "hello from the repository\n",
+        "Dokploy's update adds the newline"
+    );
+    assert_eq!(
+        live.changes(PROJECT, &env).await,
+        0,
+        "a trailing newline is not a difference"
+    );
+    call(
+        &raw,
+        OperationRequest::new("patch.update")
+            .body(json!({ "patchId": patch_id, "content": "edited in the dashboard" })),
+    )
+    .await;
+    assert_eq!(
+        live.changes(PROJECT, &env).await,
+        1,
+        "the edited content is seen"
+    );
+    live.apply(PROJECT, &env).await;
+    let stored = call(
+        &raw,
+        OperationRequest::new("patch.one").query("patchId", patch_id.as_str()),
+    )
+    .await;
+    assert_eq!(
+        stored["content"].as_str().unwrap().trim_end(),
+        "hello from the repository",
+        "restored (an update stores it with a trailing newline)"
+    );
+    assert_eq!(live.changes(PROJECT, &env).await, 0);
+
+    // The project goes away with its application.
+    let empty = "version: 2\nproject:\n  slug: iac-live\n";
+    live.apply(empty, &env).await;
 }

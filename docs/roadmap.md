@@ -118,8 +118,22 @@ is a drift; `SecretsWriter` writes secrets out below the workspace with `.gitign
 the conformance suite supplies every secret from a file and every environment variable from a vault
 reference besides the environment, scanning for the canaries as ever.
 
-Left to later: the vault provider check (M5, with the `vault_provider` kind), reading environment
-values back to detect a change made at Dokploy, and the importer that calls `SecretsWriter` (M6).
+The value of each environment variable the document or state names is read back from Dokploy's text
+and compared as a receipt too, so a variable edited at Dokploy is a drift and is restored, while one
+the document never named is left alone. A live engine test (`an_environment_value_and_a_content_edited_at_dokploy_are_drift_the_engine_repairs`,
+0.30.6 and 0.30.7) applies a project with an application, an environment, a secret, and a patch to a
+real Dokploy, edits the variable and the patch behind the engine's back, and checks the plan sees both,
+the repair is exact, and the newline Dokploy adds to a patch is not a difference.
+
+Left to later: the vault provider check (M5, with the `vault_provider` kind) and the importer that
+calls `SecretsWriter` (M6).
+
+The live test also found two M3 gaps the simulator hides. `project.create` makes a default
+`production` environment, so a document that declares `production` under a new project is rejected
+when the engine creates it (the test declares `staging`); fixing it means adopting what the project
+create returns, which is a spec-grammar and executor change. And an environment made without a
+description reads `null` while `environment.update` takes only text, so `description` is now
+nullable (written as an empty text to clear).
 The fingerprint already binds the instance, the address, and the property path, so no separate
 fingerprint of paths is needed.
 

@@ -81,7 +81,8 @@ fingerprint of the secrets, not a bare SHA-256: a bare digest of a short file ca
 state holds it. A property whose spec says `trim` is fingerprinted without its surrounding
 whitespace on both sides, because Dokploy stores a `patch`'s content with a trailing newline added
 by an update (captured on 0.30.6 and 0.30.7). A content property Dokploy does not return (the
-application's Traefik file) is not compared, so a change made there is not seen. `plan --show-content` prints
+application's Traefik file) is not compared, so a change made there is not seen. The value of each
+environment variable is compared the same way, from the text Dokploy holds for the block. `plan --show-content` prints
 a unified diff because the local file is already on disk. Import writes content to
 `files/` by default. A secret scanner (pattern and entropy) warns when imported
 content looks like it embeds credentials and offers `--content-secrets=extract` to

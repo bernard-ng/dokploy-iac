@@ -8,12 +8,12 @@
 use std::collections::BTreeMap;
 
 use dokploy_core::{
-    MutationContract, PropertyObservation, PropertyPath, RemoteFailureKind, RemoteObservation,
-    RemoteResource, RemoteState, RemoteStateError, SensitiveIntent,
+    MutationContract, PropertyObservation, PropertyPath, PropertyUnknownReason, RemoteFailureKind,
+    RemoteObservation, RemoteResource, RemoteState, RemoteStateError, SensitiveIntent,
 };
 use dokploy_sdk::{Error as SdkError, OperationRequest, Transport};
 use dokploy_spec::{
-    Authority, KindSpec, ListRead, Mutability, PathShape, SpecRegistry, ValueClass,
+    Authority, FieldType, KindSpec, ListRead, Mutability, PathShape, SpecRegistry, ValueClass,
 };
 use dokploy_state::{
     InstanceIdentity, RemoteId, ResourceAddress, SensitivePropertyPath, StateFile,
@@ -22,6 +22,7 @@ use serde_json::Value as Json;
 
 use crate::EngineError;
 use crate::compile::Compiled;
+use crate::envtext::EnvText;
 use crate::fingerprint::Fingerprinter;
 use crate::project::{field_value, item_id, lookup, project};
 use crate::selectors::SelectorIndex;
@@ -641,9 +642,10 @@ fn resolve_selectors(
         .map_err(EngineError::Remote)
 }
 
-/// Observes each readable content property of a present resource as the receipt of what Dokploy
-/// holds, so the plan can tell a content that was edited behind the engine's back (ADR 0010). A
-/// secret is never read back; a member of a union arm Dokploy does not hold is left unobserved.
+/// Observes each readable content property and each variable of an environment of a present
+/// resource as the receipt of what Dokploy holds, so the plan can tell a value that was edited
+/// behind the engine's back (ADR 0010). A secret is never read back; a member of a union arm
+/// Dokploy does not hold is left unobserved.
 fn add_content_receipts(
     specs: &SpecRegistry,
     fingerprinter: &Fingerprinter,
@@ -689,6 +691,44 @@ fn add_content_receipts(
                 _ => continue,
             };
             properties.insert(PropertyPath::from_property_info(info), observation);
+        }
+        // The variables of an environment: Dokploy holds the block as text, so the value of each
+        // one the document or state names is there to be fingerprinted.
+        let variables: Vec<PropertyPath> = properties
+            .iter()
+            .filter(|(path, observation)| {
+                path.info().shape == PathShape::CollectionEntry
+                    && path.info().ty == FieldType::Env
+                    && matches!(
+                        observation,
+                        PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+                    )
+            })
+            .map(|(path, _)| path.clone())
+            .collect();
+        for path in variables {
+            let info = path.info();
+            let key = info
+                .root
+                .as_deref()
+                .and_then(|root| info.path.strip_prefix(root))
+                .and_then(|rest| rest.strip_prefix('.'))
+                .unwrap_or_default();
+            let Some(Json::String(text)) = lookup(raw, &info.api) else {
+                continue;
+            };
+            let Some(value) = EnvText::parse(text).value(key).map(str::to_owned) else {
+                continue;
+            };
+            let Ok(sensitive) = SensitivePropertyPath::parse(&info.path) else {
+                continue;
+            };
+            properties.insert(
+                path,
+                PropertyObservation::Receipt(SensitiveIntent::from_fingerprint(
+                    fingerprinter.fingerprint(address, &sensitive, value.as_bytes()),
+                )),
+            );
         }
     }
 }

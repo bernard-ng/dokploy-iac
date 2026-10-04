@@ -244,3 +244,41 @@ async fn a_vault_variable_is_sent_as_the_reference_dokploy_resolves() {
     );
     assert_eq!(world.pending_here(&text).await, 0, "converged");
 }
+
+#[tokio::test]
+async fn a_variable_changed_at_dokploy_is_a_drift_that_apply_restores() {
+    let world = ProjectWorld::new();
+    world.write("secrets/api.env", &format!("DATABASE_URL={FROM_FILE}\n"));
+    let text = document(
+        "          environment:\n            LOG_LEVEL: info\n          env_file: { file: secrets/api.env }\n",
+    );
+    world.apply_here(&text).await;
+    assert_eq!(world.pending_here(&text).await, 0);
+
+    let id = world.sim.objects("application")[0]["applicationId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    world.sim.patch(
+        "application",
+        &id,
+        &serde_json::json!({ "env": format!("DATABASE_URL=edited-in-the-dashboard\nLOG_LEVEL=info\nSTRANGER=x") }),
+    );
+
+    assert_eq!(
+        world.pending_here(&text).await,
+        1,
+        "the changed value is seen"
+    );
+    world.apply_here(&text).await;
+    assert_eq!(
+        lines(&world.environment()),
+        [
+            format!("DATABASE_URL={FROM_FILE}").as_str(),
+            "LOG_LEVEL=info",
+            "STRANGER=x"
+        ],
+        "restored, and a variable the document never owned is left alone"
+    );
+    assert_eq!(world.pending_here(&text).await, 0);
+}

@@ -16,6 +16,13 @@ All notable changes to this project will be documented in this file.
   a change when it differs from the document's, so an edit made at Dokploy is a drift. A property whose
   spec says `trim` is compared without surrounding whitespace (the `patch`'s `content`, because Dokploy
   adds a newline). The conformance `drift` scenario now covers content fields.
+- The value of each environment variable the document or state names is read back from Dokploy's text
+  and compared as a receipt: a variable edited at Dokploy is a drift and is restored, and one the
+  document never named is left alone. A live engine test applies a project to a real Dokploy (0.30.6 and
+  0.30.7), edits an environment variable and a patch behind the engine's back, and checks both are
+  seen and repaired.
+- Fixed from that live test: an environment's `description` is nullable (Dokploy reads `null` for
+  one made without a description; clear it by writing an empty text).
 - `SecretsWriter` (milestone M4): writes secrets below the workspace with mode 0600, atomically,
   refusing traversal, symlinks out, and overwrites, and keeps the directory out of git with a
   `.gitignore` in it and an entry in the workspace's. The importer will use it (M6).
