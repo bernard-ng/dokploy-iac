@@ -54,6 +54,10 @@ pub(crate) struct CompiledResource {
     /// The fields the document declares as a non-empty set of selectors: the set is then exactly
     /// what the document names, so a member it used to name and no longer does is cleared.
     pub(crate) declared_sets: Vec<String>,
+    /// The environment fields the document gives variables (in the map or through an
+    /// `env_file`): the variables are then exactly what the document names, so one it used to
+    /// name and no longer does is removed.
+    pub(crate) declared_environments: Vec<String>,
 }
 
 impl std::fmt::Debug for Compiled {
@@ -341,7 +345,14 @@ impl Compiler<'_> {
                 .map_or(ProtectionIntent::Unmanaged, ProtectionIntent::Set);
             let mut selectors = Vec::new();
             let mut declared_sets = Vec::new();
+            let mut declared_environments: Vec<String> =
+                resource.env_files.keys().cloned().collect();
             for (name, field) in &resource.fields {
+                if matches!(&field.value, Value::Env(variables) if !variables.is_empty())
+                    && !declared_environments.contains(name)
+                {
+                    declared_environments.push(name.clone());
+                }
                 let names_members = match &field.value {
                     Value::List(items) => !items.is_empty(),
                     Value::Map(sets) => sets
@@ -421,6 +432,7 @@ impl Compiler<'_> {
                     collision: collision_values(spec, resource),
                     selectors,
                     declared_sets,
+                    declared_environments,
                 },
             );
         }

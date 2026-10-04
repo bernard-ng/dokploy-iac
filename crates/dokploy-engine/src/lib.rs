@@ -178,9 +178,72 @@ impl<T: Transport> Engine<T> {
         .await?;
 
         let desired = compiled.desired_for(state)?;
-        let desired = desired.with_cleared_properties(self.dropped_set_members(compiled, state));
+        let mut cleared = self.dropped_set_members(compiled, state);
+        for (address, paths) in self.dropped_variables(compiled, state) {
+            cleared.entry(address).or_default().extend(paths);
+        }
+        let desired = desired.with_cleared_properties(cleared);
 
         Ok(dokploy_core::plan(&desired, &stored, &remote))
+    }
+
+    /// The variables of an environment the document gives that state last applied and the
+    /// document no longer names: they are removed from the environment (ADR 0010).
+    fn dropped_variables(
+        &self,
+        compiled: &Compiled,
+        state: Option<&StateFile>,
+    ) -> std::collections::BTreeMap<dokploy_state::ResourceAddress, Vec<dokploy_core::PropertyPath>>
+    {
+        let mut dropped = std::collections::BTreeMap::new();
+        let Some(state) = state else {
+            return dropped;
+        };
+        for (address, resource) in &compiled.resources {
+            if resource.declared_environments.is_empty() {
+                continue;
+            }
+            let (Some(spec), Some(stored), Some(desired)) = (
+                self.specs.get(&resource.spec_kind),
+                state.resource(address),
+                compiled.desired.resources().get(address),
+            ) else {
+                continue;
+            };
+            let mut paths = Vec::new();
+            for sensitive in stored.sensitive_inputs().paths() {
+                let mut segments = sensitive.segments();
+                let (Some(field), Some(_variable)) = (segments.next(), segments.next()) else {
+                    continue;
+                };
+                if !resource
+                    .declared_environments
+                    .iter()
+                    .any(|name| name == field)
+                {
+                    continue;
+                }
+                // A block declared empty is cleared as a whole: nothing is removed one by one.
+                if dokploy_core::PropertyPath::from_spec(spec, field)
+                    .ok()
+                    .is_some_and(|root| desired.properties().contains_key(&root))
+                {
+                    continue;
+                }
+                let Ok(path) = dokploy_core::PropertyPath::from_spec(spec, sensitive.as_str())
+                else {
+                    continue;
+                };
+                if !desired.properties().contains_key(&path) {
+                    paths.push(path);
+                }
+            }
+            if !paths.is_empty() {
+                dropped.insert(address.clone(), paths);
+            }
+        }
+
+        dropped
     }
 
     /// The members of a set of selectors that state last applied and the document, which now

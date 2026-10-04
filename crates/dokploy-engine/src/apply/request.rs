@@ -1119,6 +1119,11 @@ fn environment_text(
             .strip_prefix(name)
             .and_then(|rest| rest.strip_prefix('.'))
             .unwrap_or_default();
+        // A variable the document stopped naming is `null` in the checkpoint: it is removed.
+        if matches!(checkpoint.property(path), Some(CheckpointValueRef::Null)) {
+            text.remove(key);
+            continue;
+        }
         let value = match secret_text(inputs.compiled, address, &dotted)? {
             Json::String(value) => value,
             _ => return Err(unsupported("has a variable that is not text")),

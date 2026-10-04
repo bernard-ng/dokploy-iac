@@ -111,11 +111,11 @@ async fn a_change_of_the_file_is_a_change_of_the_variables_it_touches() {
     world.apply_here(&text).await;
     assert_eq!(lines(&world.environment()), ["A=1", "B=changed", "C=3"]);
 
-    // A variable the file stops giving is no longer managed, like a field the document leaves
-    // out (ADR 0004): Dokploy keeps its value, and the next plan has nothing to do.
+    // A variable the file stops giving is removed, and the next plan has nothing to do.
     world.write("secrets/api.env", "A=1\nC=3\n");
+    assert_eq!(world.pending_here(&text).await, 1);
     world.apply_here(&text).await;
-    assert_eq!(lines(&world.environment()), ["A=1", "B=changed", "C=3"]);
+    assert_eq!(lines(&world.environment()), ["A=1", "C=3"]);
     assert_eq!(world.pending_here(&text).await, 0);
 }
 
@@ -199,4 +199,32 @@ async fn the_values_of_the_file_never_reach_state_or_the_journal() {
         everything.contains("DATABASE_URL"),
         "the variable's name is state, its value is not"
     );
+}
+
+#[tokio::test]
+async fn a_variable_dropped_from_the_map_is_removed_and_one_never_owned_stays() {
+    let world = ProjectWorld::new();
+    let two = document("          environment:\n            A: \"1\"\n            B: \"2\"\n");
+    world.apply_here(&two).await;
+    // Someone adds a variable at Dokploy that the document never named.
+    let id = world.sim.objects("application")[0]["applicationId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    world.sim.patch(
+        "application",
+        &id,
+        &serde_json::json!({ "env": "A=1\nB=2\nSTRANGER=x" }),
+    );
+
+    let one = document("          environment:\n            A: \"1\"\n");
+    assert_eq!(world.pending_here(&one).await, 1);
+    world.apply_here(&one).await;
+
+    assert_eq!(
+        lines(&world.environment()),
+        ["A=1", "STRANGER=x"],
+        "B was the document's and is removed; STRANGER never was"
+    );
+    assert_eq!(world.pending_here(&one).await, 0, "converged");
 }

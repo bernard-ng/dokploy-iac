@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
   entries the map writes win, and the values are fingerprinted like any other and never reach state.
   A spec opts in with the new `file_key` attribute of an `env` field (a spec-grammar addition).
   Problems in the file are named by line, never by value. The vision ratchet's project list is empty.
+- **Breaking: an environment variable the document stops naming is removed.** A document that gives
+  `environment` variables (in the map or an `env_file`) now removes the variables a later apply no
+  longer names, and leaves alone the ones it never named; before, they were only forgotten and
+  stayed at Dokploy. A block declared empty is still cleared as a whole.
 
 - Live captures of `destination`, `network`, `patch`, `volume_backup`, and the tags of a project
   (`scripts/integration/capture-{destination,network,patch,volume-backup,project-tag}-contract.sh`) on

@@ -61,9 +61,13 @@ accepted); one matching pair of `"` or `'` around a whole value is removed, as `
 does, and nothing inside it is unescaped; a name that is not letters, digits, and underscores, a line that is none of those, and a
 name set twice are errors that give the line number and never a value. Each variable is fingerprinted
 like one written in the map, so a changed value, a new variable, or one that is gone from the file
-is a change of that variable alone. A variable the file stops giving is no longer managed, exactly
-like one dropped from the map (ADR 0004): Dokploy keeps it. A file with no variables, next to a map
-with none, declares the environment empty and clears it, as `environment: {}` does.
+is a change of that variable alone. A document that gives an environment variables (in the map or in
+a file) owns exactly the variables it has named: one that a later apply no longer names, from the map
+or from the file, is removed from Dokploy's environment, and one it never named is left alone. State
+records the removal as an explicit clear, which the next plan does not report again. A file with no
+variables, next to a map with none, declares the environment empty and clears it, as
+`environment: {}` does. This is an exception to ADR 0004's "a field left out is unmanaged": it holds
+for the variables of an environment the document declares, not for an environment it leaves out.
 `build_args` and `build_secrets`, preview variants, and project and environment
 level `env` use the same type.
 

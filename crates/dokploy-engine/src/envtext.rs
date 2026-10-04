@@ -58,6 +58,14 @@ impl EnvText {
         }
     }
 
+    /// Removes a variable: every line that sets it.
+    pub(crate) fn remove(&mut self, key: &str) {
+        self.lines.retain(|line| match line {
+            Line::Variable { key: existing, .. } => existing != key,
+            Line::Other(_) => true,
+        });
+    }
+
     pub(crate) fn render(&self) -> String {
         self.lines
             .iter()

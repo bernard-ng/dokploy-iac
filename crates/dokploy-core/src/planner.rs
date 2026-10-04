@@ -893,7 +893,13 @@ fn compare_properties(
         }
 
         let Some(desired_value) = desired_value else {
-            if let Some(stored_value) = stored_value {
+            // An entry of a keyed collection the document cleared and then stopped naming has
+            // nothing left to do: Dokploy no longer holds it and the document no longer owns it.
+            let applied_clear =
+                key.info().root.is_some() && matches!(stored_value, Some(OwnedValue::Null));
+            if let Some(stored_value) = stored_value
+                && !applied_clear
+            {
                 any_config = true;
                 fields.push(FieldChange {
                     key: key.clone(),
