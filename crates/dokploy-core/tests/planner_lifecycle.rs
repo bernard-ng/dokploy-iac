@@ -15,6 +15,121 @@ fn kinds(plan: &dokploy_core::Plan) -> Vec<(String, ChangeKind)> {
 }
 
 #[test]
+fn an_adopt_only_resource_is_enrolled_and_only_writes_differences() {
+    let matching = plan(
+        &wanted(vec![
+            want("account.main")
+                .prop("name", val(json!("main")))
+                .prop("note", val(json!("ready"))),
+        ]),
+        &nothing_stored(),
+        &remote(vec![there(
+            "account.main",
+            "a-1",
+            vec![
+                ("name", known(json!("main"))),
+                ("note", known(json!("ready"))),
+            ],
+        )]),
+    );
+    let adopted = &matching.changes()[0];
+    assert_eq!(adopted.kind(), ChangeKind::Adopt);
+    assert_eq!(adopted.adopted_remote_id().unwrap().as_str(), "a-1");
+    assert!(adopted.fields().is_empty());
+
+    let changed = plan(
+        &wanted(vec![
+            want("account.main")
+                .prop("name", val(json!("main")))
+                .prop("note", val(json!("wanted"))),
+        ]),
+        &nothing_stored(),
+        &remote(vec![there(
+            "account.main",
+            "a-1",
+            vec![
+                ("name", known(json!("main"))),
+                ("note", known(json!("old"))),
+            ],
+        )]),
+    );
+    assert_eq!(changed.changes()[0].kind(), ChangeKind::Adopt);
+    assert_eq!(field_names(&changed.changes()[0]), ["note"]);
+}
+
+#[test]
+fn an_adopt_only_resource_cannot_be_created_destroyed_or_replaced() {
+    let absent = plan(
+        &wanted(vec![want("account.main").prop("name", val(json!("main")))]),
+        &nothing_stored(),
+        &remote(vec![missing("account.main")]),
+    );
+    assert_eq!(
+        absent.diagnostics()[0].code(),
+        PlanDiagnosticCode::AdoptTargetMissing
+    );
+
+    let destroy = plan(
+        &wanted(vec![]).with_removals(vec![RemovalDirective::new(addr("account.main"), true)]),
+        &stored(vec![have("account.main", "a-1", json!({"name": "main"}))]),
+        &remote(vec![there(
+            "account.main",
+            "a-1",
+            vec![("name", known(json!("main")))],
+        )]),
+    );
+    assert_eq!(
+        destroy.diagnostics()[0].code(),
+        PlanDiagnosticCode::AdoptOnlyDestroy
+    );
+
+    let replace = plan(
+        &wanted(vec![
+            want("account.main")
+                .prop("name", val(json!("main")))
+                .prop("note", val(json!("new")))
+                .replacing_on(&["note"]),
+        ]),
+        &nothing_stored(),
+        &remote(vec![there(
+            "account.main",
+            "a-1",
+            vec![
+                ("name", known(json!("main"))),
+                ("note", known(json!("old"))),
+            ],
+        )]),
+    );
+    assert_eq!(
+        replace.diagnostics()[0].code(),
+        PlanDiagnosticCode::UnsupportedMutation
+    );
+}
+
+#[test]
+fn an_adopt_only_resource_is_forgotten_when_omitted_or_lost() {
+    let existing = || have("account.main", "a-1", json!({"name": "main"})).protected();
+    let omitted = plan(
+        &wanted(vec![]),
+        &stored(vec![existing()]),
+        &remote(vec![there(
+            "account.main",
+            "a-1",
+            vec![("name", known(json!("main")))],
+        )]),
+    );
+    assert_eq!(omitted.changes()[0].kind(), ChangeKind::Forget);
+
+    let lost = plan(
+        &wanted(vec![want("account.main").prop("name", val(json!("main")))]),
+        &stored(vec![existing()]),
+        &remote(vec![missing("account.main")]),
+    );
+    assert_eq!(lost.changes()[0].kind(), ChangeKind::Forget);
+    assert_eq!(lost.drift()[0].kind(), DriftKind::Deleted);
+}
+
+#[test]
 fn protection_is_a_state_only_checkpoint_and_delete_reads_the_stored_value() {
     let observed = || remote(vec![alive("widget.main", "w-1")]);
 

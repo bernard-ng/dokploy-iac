@@ -1,0 +1,23 @@
+{
+  "bootstrap": "database_seed_for_dashboard_installed_app",
+  "capturedAt": "2026-10-06",
+  "createOperation": false,
+  "detailExposesCredentials": true,
+  "fixtures": [
+    "github-all.created.owner.json",
+    "github-installed.created.owner.json",
+    "github-one.created.owner.json",
+    "github-update.owner.json",
+    "github-one.updated.owner.json",
+    "github-share.owner.json",
+    "github-all.shared.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "github_provider",
+  "removeOperation": false,
+  "role": "owner",
+  "sanitized": true,
+  "shareStatus": 200,
+  "updateStatus": 200,
+  "version": "v0.30.6"
+}

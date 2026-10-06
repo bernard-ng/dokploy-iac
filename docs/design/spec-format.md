@@ -31,6 +31,11 @@ coverage: full                 # full (default) | partial: a prototype whose
                                # unclassified request fields are counted, not failed
 ```
 
+An `adopt_only` kind has no `api.create` or `api.remove`. Its configured resource must already
+exist in the authoritative read: the first apply enrolls that identity and uses ordinary write
+groups for any differences. Omission forgets the state entry without deleting the remote object;
+a missing target or an explicit destroy request blocks planning.
+
 ## Identity
 
 ```yaml

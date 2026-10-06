@@ -610,6 +610,8 @@ fn diagnostic_codes_and_the_plan_envelope_are_stable() {
         (UnsupportedMutation, "DOKPLAN017"),
         (MissingCreateProperty, "DOKPLAN018"),
         (UnresolvedExternalSelector, "DOKPLAN019"),
+        (AdoptTargetMissing, "DOKPLAN020"),
+        (AdoptOnlyDestroy, "DOKPLAN021"),
     ];
     for (code, text) in codes {
         assert_eq!(code.as_str(), text);

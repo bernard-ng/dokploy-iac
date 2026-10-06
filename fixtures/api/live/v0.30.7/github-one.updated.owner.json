@@ -1,0 +1,21 @@
+{
+  "gitProvider": {
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "name": "github-contract-renamed",
+    "organizationId": "organization-1",
+    "providerType": "github",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  },
+  "gitProviderId": "git-provider-1",
+  "githubAppId": 12345,
+  "githubAppName": "capture-app-renamed",
+  "githubClientId": "capture-client",
+  "githubClientSecret": "<redacted>",
+  "githubId": "github-1",
+  "githubInstallationId": "67890",
+  "githubPrivateKey": "<redacted>",
+  "githubUrl": "https://github.com",
+  "githubWebhookSecret": "<redacted>"
+}

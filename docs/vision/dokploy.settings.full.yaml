@@ -110,7 +110,7 @@ settings:
       password: { env: GHCR_TOKEN }          # [s]
       image_prefix: acme
       # [x] a registry local to a server: Dokploy neither stores nor returns the serverId
-  github_providers:                          # ✘ [a] installed through OAuth, then adopted
+  github_providers:                          # ✔ [a] installed through OAuth, then adopted
     leganews-org:
       app_name: leganews-dokploy             #   API: githubAppName
       shared_with_organization: true         #   gitProvider.toggleShare

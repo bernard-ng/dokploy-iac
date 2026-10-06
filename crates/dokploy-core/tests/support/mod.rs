@@ -105,10 +105,29 @@ write:
   - { op: cache.update, fields: [name, password], shape: partial }
 ";
 
+const ACCOUNT: &str = "
+kind: account
+scope: settings
+section: accounts
+title: Account
+class: adopt_only
+identity: { key: name, collision: [name], address: \"account.{key}\" }
+api:
+  id: accountId
+  update: { op: account.update }
+  read:
+    list: { op: account.all, authority: authoritative }
+fields:
+  name: { type: text, min_len: 1, default: key }
+  note: { type: text, nullable: true }
+write:
+  - { op: account.update, fields: [name, note], shape: partial }
+";
+
 pub fn specs() -> &'static SpecRegistry {
     static SPECS: OnceLock<SpecRegistry> = OnceLock::new();
     SPECS.get_or_init(|| {
-        let kinds: Vec<KindSpec> = [WIDGET, GADGET, CACHE]
+        let kinds: Vec<KindSpec> = [WIDGET, GADGET, CACHE, ACCOUNT]
             .iter()
             .map(|text| parse_spec(text).expect("the test spec parses"))
             .collect();

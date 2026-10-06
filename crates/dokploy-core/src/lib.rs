@@ -12,7 +12,9 @@ mod property;
 mod snapshot;
 mod spec_property;
 
-pub use mutation::{MutationContract, MutationMode, PropertyMutation, ReplacementOrder};
+pub use mutation::{
+    MutationContract, MutationMode, PropertyMutation, ReplacementOrder, ResourceLifecycle,
+};
 pub use plan::{
     ChangeKind, ChangeOrigin, CheckpointMaterializationError, CheckpointTarget, CheckpointValueRef,
     DriftChange, DriftKind, ExternalSelectorFailure, FieldChange, MetadataChangeKind, MoveAction,

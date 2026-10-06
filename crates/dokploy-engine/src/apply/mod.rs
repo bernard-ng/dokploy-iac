@@ -231,7 +231,7 @@ impl<T: Transport> Engine<T> {
                         }
                     }
                 }
-                ChangeKind::Update => {
+                ChangeKind::Adopt | ChangeKind::Update => {
                     let written = run::written(change);
                     request::groups(spec, address, &written)?;
                 }

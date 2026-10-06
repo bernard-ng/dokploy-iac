@@ -6,6 +6,9 @@
 
 mod common;
 
+use std::io::Write as _;
+use std::process::{Command, Stdio};
+
 use common::{compile_in, compile_with, specs};
 use dokploy_engine::{ApplyError, Engine, RecoveryAction};
 use dokploy_sdk::{Dokploy, OperationRequest, Transport};
@@ -34,6 +37,67 @@ fn client() -> Dokploy {
 
 async fn call(client: &Dokploy, request: OperationRequest) -> Value {
     client.call(request).await.expect("the live call succeeds")
+}
+
+fn psql(sql: &str) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut child = Command::new("docker")
+        .args([
+            "compose",
+            "--file",
+            "compose.integration.yaml",
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-U",
+            "dokploy",
+            "-d",
+            "dokploy",
+        ])
+        .current_dir(root)
+        .stdin(Stdio::piped())
+        .spawn()
+        .expect("the integration database is available");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(sql.as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success(), "integration SQL succeeds");
+}
+
+struct SeededGithub;
+
+impl SeededGithub {
+    fn new() -> Self {
+        psql(
+            r#"
+INSERT INTO git_provider
+    ("gitProviderId", name, "providerType", "createdAt", "organizationId", "userId", "sharedWithOrganization")
+SELECT 'live-github-provider', 'live-github', 'github', '2026-10-06T00:00:00.000Z', id, owner_id, false
+FROM organization
+LIMIT 1;
+INSERT INTO github
+    ("githubId", "githubAppName", "githubAppId", "githubClientId", "githubClientSecret",
+     "githubInstallationId", "githubPrivateKey", "githubWebhookSecret", "gitProviderId", "githubUrl")
+VALUES
+    ('live-github-row', 'installed-app', 12345, 'live-client', 'live-client-secret',
+     '67890', 'live-private-key', 'live-webhook-secret', 'live-github-provider', 'https://github.com');
+"#,
+        );
+        Self
+    }
+}
+
+impl Drop for SeededGithub {
+    fn drop(&mut self) {
+        psql("DELETE FROM git_provider WHERE \"gitProviderId\" = 'live-github-provider';\n");
+    }
 }
 
 struct Live {
@@ -87,6 +151,49 @@ impl Live {
 
         plan.changes().len()
     }
+}
+
+#[tokio::test]
+#[ignore = "adopts a dashboard-installed GitHub provider on the local Dokploy"]
+async fn a_github_provider_is_adopted_updated_and_forgotten() {
+    guard();
+    let _seeded = SeededGithub::new();
+    let live = Live::new();
+    let raw = client();
+    let document = r#"
+version: 2
+settings:
+  github_providers:
+    live-github:
+      app_name: managed-app
+      shared_with_organization: true
+"#;
+
+    assert_eq!(live.apply(document, &[]).await.unwrap(), 1);
+    let providers = call(&raw, OperationRequest::new("gitProvider.getAll")).await;
+    let github = providers
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|provider| provider["gitProviderId"] == "live-github-provider")
+        .unwrap();
+    assert_eq!(github["github"]["githubAppName"], "managed-app");
+    assert_eq!(github["sharedWithOrganization"], true);
+    assert_eq!(live.changes(document, &[]).await, 0);
+
+    assert_eq!(
+        live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap(),
+        1
+    );
+    let providers = call(&raw, OperationRequest::new("gitProvider.getAll")).await;
+    assert!(
+        providers
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|provider| provider["gitProviderId"] == "live-github-provider"),
+        "forget leaves the installed app in Dokploy"
+    );
 }
 
 #[tokio::test]

@@ -9,8 +9,8 @@ use crate::{
     MoveAction, MutationContract, MutationMode, OwnedValue, Plan, PlanDiagnostic,
     PlanDiagnosticCode, PlannedChange, PropertyObservation, PropertyPath, PropertyUnknownReason,
     ProtectionIntent, RemoteObservation, RemoteResource, RemoteState, ResourceCheckpoint,
-    StoredState, UnsupportedDirectiveKind, ValueState, plan::PLAN_FORMAT_VERSION,
-    snapshot::StoredResource,
+    ResourceLifecycle, StoredState, UnsupportedDirectiveKind, ValueState,
+    plan::PLAN_FORMAT_VERSION, snapshot::StoredResource,
 };
 
 /// Computes a plan without I/O or mutation.
@@ -90,6 +90,9 @@ pub fn plan(desired: &DesiredState, stored: &StoredState, remote: &RemoteState) 
             *destroy,
             stored,
             remote,
+            remote
+                .mutation_contract(address)
+                .expect("remote snapshots require one mutation contract per observation"),
             &mut changes,
             &mut drift,
             &mut diagnostics,
@@ -452,10 +455,18 @@ fn plan_explicit_removal(
     destroy: bool,
     stored: &StoredState,
     remote: &RemoteState,
+    contract: &MutationContract,
     changes: &mut Vec<PlannedChange>,
     drift: &mut Vec<DriftChange>,
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) {
+    if destroy && contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+        diagnostics.push(diagnostic(
+            PlanDiagnosticCode::AdoptOnlyDestroy,
+            Some(address.clone()),
+        ));
+        return;
+    }
     let Some(observation) = remote.observation(address) else {
         diagnostics.push(diagnostic(
             PlanDiagnosticCode::MissingObservation,
@@ -528,6 +539,13 @@ fn plan_missing_resource(
 ) {
     match (desired, stored) {
         (Some(desired), None) => {
+            if contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+                diagnostics.push(diagnostic(
+                    PlanDiagnosticCode::AdoptTargetMissing,
+                    Some(address),
+                ));
+                return;
+            }
             if add_create_contract_diagnostic(&address, desired, contract, diagnostics) {
                 return;
             }
@@ -542,6 +560,22 @@ fn plan_missing_resource(
             ));
         }
         (Some(desired), Some(stored)) => {
+            if contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+                drift.push(DriftChange {
+                    address: address.clone(),
+                    kind: DriftKind::Deleted,
+                    properties: Vec::new(),
+                });
+                changes.push(PlannedChange::resource(
+                    address,
+                    ChangeKind::Forget,
+                    ChangeOrigin::Drift,
+                    Vec::new(),
+                    Vec::new(),
+                    CheckpointTarget::Absent,
+                ));
+                return;
+            }
             if add_create_contract_diagnostic(&address, desired, contract, diagnostics) {
                 return;
             }
@@ -602,11 +636,15 @@ fn plan_present_resource(
     diagnostics: &mut Vec<PlanDiagnostic>,
 ) {
     let Some(stored) = stored else {
-        if desired.is_some() {
-            diagnostics.push(diagnostic(
-                PlanDiagnosticCode::UnmanagedAddressCollision,
-                Some(address),
-            ));
+        if let Some(desired) = desired {
+            if contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+                plan_adoption(address, desired, remote, contract, changes, diagnostics);
+            } else {
+                diagnostics.push(diagnostic(
+                    PlanDiagnosticCode::UnmanagedAddressCollision,
+                    Some(address),
+                ));
+            }
         }
         return;
     };
@@ -620,7 +658,18 @@ fn plan_present_resource(
     }
 
     let Some(desired) = desired else {
-        plan_present_delete(address, stored, remote, changes, drift, diagnostics);
+        if contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+            changes.push(PlannedChange::resource(
+                address,
+                ChangeKind::Forget,
+                ChangeOrigin::Config,
+                Vec::new(),
+                Vec::new(),
+                CheckpointTarget::Absent,
+            ));
+        } else {
+            plan_present_delete(address, stored, remote, changes, drift, diagnostics);
+        }
         return;
     };
 
@@ -677,6 +726,81 @@ fn plan_present_resource(
         change = change.replacing(order);
     }
     changes.push(change);
+}
+
+fn plan_adoption(
+    address: ResourceAddress,
+    desired: &DesiredResource,
+    remote: &RemoteResource,
+    contract: &MutationContract,
+    changes: &mut Vec<PlannedChange>,
+    diagnostics: &mut Vec<PlanDiagnostic>,
+) {
+    let mut property_diagnostics = required_property_diagnostics(&address, desired, remote);
+    if !property_diagnostics.is_empty() {
+        diagnostics.append(&mut property_diagnostics);
+        return;
+    }
+
+    let mut fields = Vec::new();
+    let mut mutations = Vec::new();
+    for (key, desired_value) in &desired.properties {
+        if desired.ignore_changes.contains(key) {
+            continue;
+        }
+        let observation = remote
+            .property(key)
+            .expect("desired property observations were validated");
+        let remote_value = observed_value(key, observation);
+        if remote_value
+            .as_ref()
+            .is_some_and(|value| value.as_ref() == Some(desired_value))
+        {
+            continue;
+        }
+        fields.push(FieldChange {
+            key: key.clone(),
+            stored: ValueState::Unmanaged,
+            desired: value_state(Some(desired_value)),
+            remote: remote_value.as_ref().map_or_else(
+                || observation_state(Some(observation)),
+                |value| value_state(value.as_ref()),
+            ),
+            origin: ChangeOrigin::Config,
+        });
+        mutations.push((key.clone(), matches!(desired_value, OwnedValue::Null)));
+    }
+
+    let baseline = StoredResource {
+        remote_id: remote.remote_id().clone(),
+        protected: false,
+        properties: BTreeMap::new(),
+        containment: None,
+        dependencies: Vec::new(),
+    };
+    if classify_mutation(
+        &address,
+        desired,
+        &baseline,
+        contract,
+        &mutations,
+        diagnostics,
+    )
+    .is_none()
+    {
+        return;
+    }
+
+    changes.push(
+        PlannedChange::adoption(
+            address,
+            remote.remote_id().clone(),
+            fields,
+            desired_metadata_for_create(desired),
+            checkpoint_for_desired(desired, None),
+        )
+        .preserving(desired.ignore_changes.clone()),
+    );
 }
 
 fn plan_present_delete(
@@ -802,6 +926,21 @@ fn classify_mutation(
     }
 
     if replace {
+        if contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+            let property = mutations.iter().find_map(|(property, _)| {
+                desired
+                    .replace_on_changes
+                    .contains(property)
+                    .then_some(property)
+            });
+            let mut issue = diagnostic(
+                PlanDiagnosticCode::UnsupportedMutation,
+                Some(address.clone()),
+            );
+            issue.property = property.cloned();
+            diagnostics.push(issue);
+            return None;
+        }
         if stored.protected {
             diagnostics.push(diagnostic(
                 PlanDiagnosticCode::ProtectedDelete,

@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add adopt-only lifecycle support and the `github_provider` settings kind. A configured GitHub App
+  is enrolled into state, updated through `github.update` and `gitProvider.toggleShare`, and forgotten
+  without remote deletion when omitted. Missing apps and destroy requests block planning. Sanitized
+  captures and a live engine test cover Dokploy 0.30.6 and 0.30.7, while GitHub installation
+  credentials returned by the detail endpoint are discarded at projection.
 - Add managed GitLab, Bitbucket, and Gitea provider settings. Their specs preserve the generic
   `gitProviderId` as the declarative identity while using provider-specific ids for direct reads and
   full updates, project source selectors resolve those generic ids, and credentials remain receipts

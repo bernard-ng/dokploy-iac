@@ -1,0 +1,53 @@
+# A GitHub App installed through Dokploy's dashboard. The API can update an installed app but
+# cannot create one, so configuration adopts an existing provider and never removes it remotely.
+kind: github_provider
+scope: settings
+section: github_providers
+title: GitHub provider
+class: adopt_only
+identity:
+  key: name
+  collision: [name]
+  address: "github_provider.{key}"
+api:
+  id: gitProviderId
+  update:
+    op: github.update
+    from_read: { githubId: /githubId }
+  read:
+    list: { op: gitProvider.getAll, authority: authoritative }
+    one: { op: github.one, id_param: githubId, id_from: /github/githubId, agree: true }
+fields:
+  name:
+    api: /gitProvider/name
+    list_api: name
+    request: name
+    type: text
+    min_len: 1
+    default: key
+  app_name:
+    api: githubAppName
+    list_api: /github/githubAppName
+    request: githubAppName
+    type: text
+    min_len: 1
+  shared_with_organization:
+    api: /gitProvider/sharedWithOrganization
+    list_api: sharedWithOrganization
+    request: sharedWithOrganization
+    type: bool
+    fallback: false
+write:
+  - op: github.update
+    fields: [name, app_name]
+    shape: full
+  - op: gitProvider.toggleShare
+    fields: [shared_with_organization]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId, userId, providerType, isOwner, isConfigured, githubAppId, githubInstallationId, githubUrl]
+  ignored:
+    - { field: githubClientId, reason: "GitHub App credential installed and rotated through the dashboard" }
+    - { field: githubClientSecret, reason: "GitHub App secret installed and rotated through the dashboard" }
+    - { field: githubPrivateKey, reason: "GitHub App private key installed and rotated through the dashboard" }
+    - { field: githubWebhookSecret, reason: "GitHub App webhook secret installed and rotated through the dashboard" }

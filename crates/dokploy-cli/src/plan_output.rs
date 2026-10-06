@@ -46,6 +46,7 @@ pub fn render(plan: &Plan, output: &mut dyn Write) -> std::io::Result<()> {
 fn change_kind(kind: ChangeKind) -> &'static str {
     match kind {
         ChangeKind::Create => "create",
+        ChangeKind::Adopt => "adopt",
         ChangeKind::Update => "update",
         ChangeKind::Replace => "replace",
         ChangeKind::Delete => "delete",

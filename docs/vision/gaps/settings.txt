@@ -1,6 +1,5 @@
 DOKDOC004 settings.cluster
 DOKDOC004 settings.custom_roles
-DOKDOC004 settings.github_providers
 DOKDOC004 settings.license
 DOKDOC004 settings.members
 DOKDOC004 settings.organization

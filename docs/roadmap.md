@@ -144,8 +144,8 @@ In progress, delivered by shape and captured live as it goes (each slice on Dokp
 with a live engine test): `ssh_key`, `ai_provider`, `certificate` (create-only secrets, the
 organization the API key acts in), `dns_provider` (a union kept in a nested `config` object),
 `server` (a selector to a resource of the same document), all twelve `notification` providers, and
-all eight `vault_provider` backends with named project/environment assignments, plus the managed
-GitLab, Bitbucket, and Gitea providers. Left: the adopt-only GitHub provider and the adopt-only
+all eight `vault_provider` backends with named project/environment assignments, the managed
+GitLab, Bitbucket, and Gitea providers, and the adopt-only GitHub provider. Left: the adopt-only
 singletons (`organization`, `web_server`). `destination`, `registry`,
 and `network` lost their `server` field because Dokploy does
 not store or list it. Out of the beta, as the vision document says: `custom_roles`, `members`,

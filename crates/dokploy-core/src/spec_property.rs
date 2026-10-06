@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dokploy_spec::{
-    FieldType, KindSpec, Mutability, PathError, PathShape, PropertyInfo, ValueRules,
+    FieldType, KindClass, KindSpec, Mutability, PathError, PathShape, PropertyInfo, ValueRules,
 };
 use dokploy_state::{SensitiveFingerprint, SensitivePropertyPath};
 use serde_json::Value;
@@ -399,6 +399,9 @@ impl MutationContract {
     #[must_use]
     pub fn from_spec(spec: &KindSpec) -> Self {
         let mut contract = Self::deny_all(ReplacementOrder::DeleteBeforeCreate);
+        if spec.class == KindClass::AdoptOnly {
+            contract = contract.adopt_only();
+        }
         for info in spec.properties() {
             let clearable = info.nullable;
             let mutation = match info.mutability {

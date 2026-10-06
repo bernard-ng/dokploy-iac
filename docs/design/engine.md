@@ -145,10 +145,11 @@ For each change, in the planner's dependency-safe order:
 | Change | Requests |
 |--------|----------|
 | create | one `create` carrying every managed property the create operation accepts and the attachment to the parent; a field the contract requires and the document omits is sent as `null` if the spec allows it; the new identity is learned as the spec says (`from_response`, or `diff_collection` over the list read before and after). What the operation does not accept is written right after by the spec's write groups, as a second journaled step (an update from the state the create recorded), so an interruption between the two leaves a resource that state describes exactly and the next plan finishes |
+| adopt | no create; the identity comes from the fresh observation, changed properties use the same write groups as an update, and the existing identity is checkpointed into state |
 | update | one request per write group that has a change, in the spec's order: `partial` sends the id and the changed fields, `full` re-sends the group from a fresh read overlaid with the changes (a secret in it must be declared in the document) |
 | remove | one `remove`; a 404 counts as removed; Dokploy acknowledging it while the resource can still be read fails the step and keeps the resource tracked |
 | replace | remove, then create (the order the planner proved) |
-| rename, adopt, forget | state only |
+| rename, forget | state only |
 
 Every step is written to the journal before it is sent, with the exact state it expects, and the
 state is checkpointed when it succeeds. A mutation is sent **once**. If the transport cannot say
@@ -169,7 +170,7 @@ meant to produce, and decides.
 
 | Open step | The remote shows | Recovery |
 |-----------|------------------|----------|
-| create | the resource, matching the target (a secret that cannot be read back is the one thing not compared) | adopts it: records its identity and checkpoints |
+| create or first adoption | the resource, matching the target (a secret that cannot be read back is the one thing not compared) | records its identity and checkpoints |
 | create | nothing | confirms no change |
 | update | the target | checkpoints the success |
 | update | the previous state | confirms no change |

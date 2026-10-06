@@ -122,6 +122,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
     async fn execute(&mut self, change: &PlannedChange) -> Result<(), ApplyError> {
         match change.kind() {
             ChangeKind::Create => self.create(change).await,
+            ChangeKind::Adopt => self.adopt_existing(change).await,
             ChangeKind::Update => self.update(change).await,
             ChangeKind::NoOp => self.adopt(change),
             ChangeKind::Delete | ChangeKind::Forget => self.remove(change).await,
@@ -425,59 +426,9 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         };
         let before = self.state.resource(address).ok_or_else(invalid)?.clone();
         let remote_id = before.remote_id().clone();
-        let groups = request::groups(spec, address, written)?;
-
-        // A full group re-sends what is there, so it starts from a fresh read.
-        let mut bodies = Vec::new();
-        for group in &groups {
-            let fresh = if group.reads_fresh {
-                Some(
-                    self.direct_read(spec, remote_id.as_str())
-                        .await
-                        .map_err(|code| ApplyError::Preparation {
-                            address: address.clone(),
-                            code,
-                        })?,
-                )
-            } else {
-                None
-            };
-            let mut body = request::group_body(
-                spec,
-                address,
-                checkpoint,
-                group,
-                remote_id.as_str(),
-                fresh.as_ref(),
-                self.inputs(),
-            )?;
-            let operation = request::group_operation(spec, address, checkpoint, group)?;
-            request::fix_update_body(spec, checkpoint, &operation, &mut body);
-            bodies.push(OperationRequest::new(&operation).body(body));
-        }
-
-        // The members of a relation are added and removed one request each, in the same step.
-        let held = if request::relation_needs_read(spec, written, checkpoint) {
-            Some(
-                self.direct_read(spec, remote_id.as_str())
-                    .await
-                    .map_err(|code| ApplyError::Preparation {
-                        address: address.clone(),
-                        code,
-                    })?,
-            )
-        } else {
-            None
-        };
-        bodies.extend(request::membership_requests(
-            spec,
-            address,
-            checkpoint,
-            written,
-            remote_id.as_str(),
-            held.as_ref(),
-            self.inputs(),
-        )?);
+        let bodies = self
+            .update_requests(spec, address, checkpoint, written, remote_id.as_str())
+            .await?;
 
         let resource = checkpoint
             .materialize(address, remote_id.clone())
@@ -495,6 +446,107 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         self.state.upsert_resource(address.clone(), resource)?;
         self.journal
             .succeed(token, Some(remote_id.clone()), &self.state)?;
+
+        let paths: Vec<&PropertyPath> = written
+            .iter()
+            .copied()
+            .filter(|path| !path.info().is_sensitive())
+            .collect();
+        self.verify(spec, address, remote_id.as_str(), checkpoint, &paths)
+            .await
+    }
+
+    async fn update_requests(
+        &self,
+        spec: &KindSpec,
+        address: &ResourceAddress,
+        checkpoint: &ResourceCheckpoint,
+        written: &[&PropertyPath],
+        remote_id: &str,
+    ) -> Result<Vec<OperationRequest>, ApplyError> {
+        let groups = request::groups(spec, address, written)?;
+
+        // A full group re-sends what is there, so it starts from a fresh read.
+        let mut bodies = Vec::new();
+        for group in &groups {
+            let fresh = if group.reads_fresh {
+                Some(self.direct_read(spec, remote_id).await.map_err(|code| {
+                    ApplyError::Preparation {
+                        address: address.clone(),
+                        code,
+                    }
+                })?)
+            } else {
+                None
+            };
+            let mut body = request::group_body(
+                spec,
+                address,
+                checkpoint,
+                group,
+                remote_id,
+                fresh.as_ref(),
+                self.inputs(),
+            )?;
+            let operation = request::group_operation(spec, address, checkpoint, group)?;
+            request::fix_update_body(spec, checkpoint, &operation, &mut body);
+            bodies.push(OperationRequest::new(&operation).body(body));
+        }
+
+        // The members of a relation are added and removed one request each, in the same step.
+        let held = if request::relation_needs_read(spec, written, checkpoint) {
+            Some(self.direct_read(spec, remote_id).await.map_err(|code| {
+                ApplyError::Preparation {
+                    address: address.clone(),
+                    code,
+                }
+            })?)
+        } else {
+            None
+        };
+        bodies.extend(request::membership_requests(
+            spec,
+            address,
+            checkpoint,
+            written,
+            remote_id,
+            held.as_ref(),
+            self.inputs(),
+        )?);
+
+        Ok(bodies)
+    }
+
+    /// Enrolls a remote resource that the tool may update but never create or destroy.
+    async fn adopt_existing(&mut self, change: &PlannedChange) -> Result<(), ApplyError> {
+        let address = change.address();
+        let spec = self.spec(address)?;
+        let invalid = || ApplyError::InvalidCheckpoint {
+            address: address.clone(),
+        };
+        let checkpoint = change.checkpoint().present().ok_or_else(invalid)?;
+        let remote_id = change.adopted_remote_id().ok_or_else(invalid)?.clone();
+        let written = written(change);
+        let bodies = self
+            .update_requests(spec, address, checkpoint, &written, remote_id.as_str())
+            .await?;
+        let resource = checkpoint
+            .materialize(address, remote_id.clone())
+            .map_err(|_| invalid())?;
+        let token = self.journal.start_recoverable_step(
+            address.clone(),
+            JournalAction::Create,
+            ExpectedCheckpoint::create(resource.clone()).map_err(|_| invalid())?,
+        )?;
+        for request in bodies {
+            if let Err(error) = self.engine.transport.call(request).await {
+                return self.failed(token, address, &error);
+            }
+        }
+        self.state.upsert_resource(address.clone(), resource)?;
+        self.journal
+            .succeed(token, Some(remote_id.clone()), &self.state)?;
+        self.record_selector_target(spec, address, checkpoint, &remote_id);
 
         let paths: Vec<&PropertyPath> = written
             .iter()

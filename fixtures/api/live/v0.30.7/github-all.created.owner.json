@@ -1,0 +1,23 @@
+[
+  {
+    "bitbucket": null,
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "gitea": null,
+    "github": {
+      "githubAppId": 12345,
+      "githubAppName": "capture-app",
+      "githubId": "github-1",
+      "githubInstallationId": "67890",
+      "githubUrl": "https://github.com",
+      "isConfigured": true
+    },
+    "gitlab": null,
+    "isOwner": true,
+    "name": "github-contract",
+    "organizationId": "organization-1",
+    "providerType": "github",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  }
+]

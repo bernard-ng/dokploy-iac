@@ -4,6 +4,16 @@ use serde::Serialize;
 
 use crate::PropertyPath;
 
+/// Whether the physical resource is owned for its whole lifecycle or only enrolled and updated.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ResourceLifecycle {
+    /// The tool may create and destroy the physical resource.
+    #[default]
+    Managed,
+    /// The physical resource must already exist and is never destroyed by the tool.
+    AdoptOnly,
+}
+
 /// How Dokploy can converge one owned field or containment edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MutationMode {
@@ -49,6 +59,7 @@ pub enum ReplacementOrder {
 /// Adapter-owned facts used by the pure planner to classify mutations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MutationContract {
+    lifecycle: ResourceLifecycle,
     allowed_on_create: BTreeSet<PropertyPath>,
     required_on_create: BTreeSet<PropertyPath>,
     properties: BTreeMap<PropertyPath, PropertyMutation>,
@@ -63,6 +74,7 @@ impl MutationContract {
     #[must_use]
     pub fn deny_all(replacement_order: ReplacementOrder) -> Self {
         Self {
+            lifecycle: ResourceLifecycle::Managed,
             allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
@@ -79,6 +91,7 @@ impl MutationContract {
     #[must_use]
     pub fn permissive() -> Self {
         Self {
+            lifecycle: ResourceLifecycle::Managed,
             allowed_on_create: BTreeSet::new(),
             required_on_create: BTreeSet::new(),
             properties: BTreeMap::new(),
@@ -86,6 +99,17 @@ impl MutationContract {
             default_property: PropertyMutation::new(MutationMode::InPlace, MutationMode::InPlace),
             replacement_order: ReplacementOrder::DeleteBeforeCreate,
         }
+    }
+
+    /// Declares that the physical resource can only be adopted, updated, and forgotten.
+    #[must_use]
+    pub fn adopt_only(mut self) -> Self {
+        self.lifecycle = ResourceLifecycle::AdoptOnly;
+        self
+    }
+
+    pub(crate) const fn lifecycle(&self) -> ResourceLifecycle {
+        self.lifecycle
     }
 
     /// Marks a property as required when creating a physical resource.

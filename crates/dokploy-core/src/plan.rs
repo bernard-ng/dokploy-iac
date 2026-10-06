@@ -19,6 +19,8 @@ pub(crate) const PLAN_FORMAT_VERSION: u32 = 1;
 pub enum ChangeKind {
     /// Create a resource that is absent remotely.
     Create,
+    /// Enroll and, when necessary, update a physical resource that already exists.
+    Adopt,
     /// Update a present resource in place.
     Update,
     /// Replace a resource in a later planner slice.
@@ -142,6 +144,8 @@ pub struct PlannedChange {
     fields: Vec<FieldChange>,
     metadata: Vec<MetadataChangeKind>,
     #[serde(skip)]
+    adopted_remote_id: Option<RemoteId>,
+    #[serde(skip)]
     checkpoint: CheckpointTarget,
 }
 
@@ -187,6 +191,29 @@ impl PlannedChange {
             origin,
             fields,
             metadata,
+            adopted_remote_id: None,
+            checkpoint,
+        }
+    }
+
+    pub(crate) fn adoption(
+        address: ResourceAddress,
+        remote_id: RemoteId,
+        fields: Vec<FieldChange>,
+        metadata: Vec<MetadataChangeKind>,
+        checkpoint: CheckpointTarget,
+    ) -> Self {
+        Self {
+            address,
+            previous_address: None,
+            move_action: None,
+            replacement_order: None,
+            preserved_paths: Vec::new(),
+            kind: ChangeKind::Adopt,
+            origin: ChangeOrigin::Config,
+            fields,
+            metadata,
+            adopted_remote_id: Some(remote_id),
             checkpoint,
         }
     }
@@ -210,6 +237,7 @@ impl PlannedChange {
             origin,
             fields,
             metadata,
+            adopted_remote_id: None,
             checkpoint: CheckpointTarget::Move { from, target },
         }
     }
@@ -254,7 +282,11 @@ impl PlannedChange {
         assert!(
             matches!(
                 self.kind,
-                ChangeKind::Update | ChangeKind::Replace | ChangeKind::NoOp | ChangeKind::Move
+                ChangeKind::Adopt
+                    | ChangeKind::Update
+                    | ChangeKind::Replace
+                    | ChangeKind::NoOp
+                    | ChangeKind::Move
             ),
             "only existing-resource actions can preserve ignored paths"
         );
@@ -266,6 +298,12 @@ impl PlannedChange {
     #[must_use]
     pub const fn kind(&self) -> ChangeKind {
         self.kind
+    }
+
+    /// Returns the already-existing physical identity selected for an adoption.
+    #[must_use]
+    pub const fn adopted_remote_id(&self) -> Option<&RemoteId> {
+        self.adopted_remote_id.as_ref()
     }
 
     /// Returns why the action is present.
@@ -581,6 +619,10 @@ pub enum PlanDiagnosticCode {
     MissingCreateProperty,
     /// A desired external selector has no unique fresh resolution.
     UnresolvedExternalSelector,
+    /// An adopt-only resource declared in configuration does not exist remotely.
+    AdoptTargetMissing,
+    /// Configuration requested destruction of an adopt-only resource.
+    AdoptOnlyDestroy,
 }
 
 impl PlanDiagnosticCode {
@@ -606,6 +648,8 @@ impl PlanDiagnosticCode {
             Self::UnsupportedMutation => "DOKPLAN017",
             Self::MissingCreateProperty => "DOKPLAN018",
             Self::UnresolvedExternalSelector => "DOKPLAN019",
+            Self::AdoptTargetMissing => "DOKPLAN020",
+            Self::AdoptOnlyDestroy => "DOKPLAN021",
         }
     }
 }
