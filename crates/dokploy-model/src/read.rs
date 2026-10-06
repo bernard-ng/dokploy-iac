@@ -322,7 +322,26 @@ impl<'a> Reader<'a> {
                 self.unknown(&path, section.span, "settings", &section.name, &valid);
                 continue;
             };
-            let resources = self.resource_map(spec, section_node, &path);
+            let resources = if let Some(key) = &spec.singleton {
+                let Raw::Map(entries) = &section_node.value else {
+                    self.error(
+                        DiagnosticCode::Type,
+                        &path,
+                        section_node.span,
+                        format!(
+                            "a {} singleton is a mapping of fields, found {}",
+                            spec.kind,
+                            section_node.value.describe()
+                        ),
+                    );
+                    continue;
+                };
+                self.body(spec, key, section.span, entries, &path, None)
+                    .map(|resource| BTreeMap::from([(key.clone(), resource)]))
+                    .unwrap_or_default()
+            } else {
+                self.resource_map(spec, section_node, &path)
+            };
             document.insert(section.name.clone(), resources);
         }
 
@@ -518,6 +537,7 @@ impl<'a> Reader<'a> {
         (!failed && self.diagnostics.len() == before).then(|| Resource {
             kind: spec.kind.clone(),
             key: key.to_owned(),
+            singleton: spec.singleton.is_some(),
             span: key_span,
             fields,
             env_files,

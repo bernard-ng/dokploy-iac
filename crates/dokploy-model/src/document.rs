@@ -82,6 +82,8 @@ pub struct Resource {
     pub kind: String,
     /// The key it has in the document (ADR 0006).
     pub key: String,
+    /// Whether the settings section renders this resource directly, without its fixed key.
+    pub singleton: bool,
     /// Where the key is written.
     pub span: Span,
     /// The configured fields, by document name. An omitted field is unmanaged.

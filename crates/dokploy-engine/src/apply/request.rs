@@ -775,7 +775,14 @@ fn variant_body(
     let contract = request_contract(&operation);
 
     let mut body = Map::new();
-    body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
+    let id_field = spec
+        .api
+        .update
+        .as_ref()
+        .filter(|update| update.op == operation)
+        .and_then(|update| update.id_param.as_ref())
+        .unwrap_or(&spec.api.id);
+    body.insert(id_field.clone(), Json::String(remote_id.to_owned()));
     // An operation shared by several arms takes the tag; one of its own implies it.
     if contract.is_some_and(|contract| contract.body_field(held_tag_key).is_some()) {
         body.insert(held_tag_key.to_owned(), Json::String(tag.clone()));
@@ -914,7 +921,14 @@ pub(crate) fn group_body(
         return variant_body(spec, address, checkpoint, group, remote_id, fresh, inputs);
     }
     let mut body = Map::new();
-    body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
+    let id_field = spec
+        .api
+        .update
+        .as_ref()
+        .filter(|update| update.op == group.operation)
+        .and_then(|update| update.id_param.as_ref())
+        .unwrap_or(&spec.api.id);
+    body.insert(id_field.clone(), Json::String(remote_id.to_owned()));
     if let Some(update) = spec
         .api
         .update

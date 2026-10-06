@@ -1,0 +1,25 @@
+# The organization selected by the API key. Dokploy creates it during bootstrap, so a document
+# adopts the active organization and may update it but never creates or removes it.
+kind: organization
+scope: settings
+section: organization
+singleton: active
+title: Organization
+class: adopt_only
+identity:
+  key: null
+  collision: []
+  address: "organization.{key}"
+api:
+  id: id
+  update: { op: organization.update, id_param: organizationId }
+  read:
+    singleton: { op: organization.active }
+fields:
+  name: { type: text, min_len: 1 }
+  logo: { type: text, nullable: true }
+  default_role: { api: defaultRole, request: defaultRole, type: text, nullable: true }
+write:
+  - { op: organization.update, fields: [name, logo, default_role], shape: full }
+ledger:
+  readonly: [slug, createdAt, metadata, ownerId]

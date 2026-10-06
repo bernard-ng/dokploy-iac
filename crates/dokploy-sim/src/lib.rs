@@ -46,6 +46,7 @@ enum Action {
     Remove,
     List,
     One,
+    Singleton,
     /// Adds or removes one member of a relation the kind holds.
     Member,
 }
@@ -187,9 +188,22 @@ impl Sim {
             if let Some(one) = &spec.api.read.one {
                 add(&one.op, kind, Action::One);
             }
+            if let Some(singleton) = &spec.api.read.singleton {
+                add(&singleton.op, kind, Action::Singleton);
+            }
         }
         for entries in routes.values_mut() {
             entries.dedup_by(|a, b| a.kind == b.kind && a.action == b.action);
+        }
+
+        let mut inner = Inner::default();
+        for spec in specs.kinds().filter(|spec| spec.singleton.is_some()) {
+            let object = new_object(spec, &Object::new(), &mut inner);
+            inner
+                .objects
+                .entry(spec.kind.clone())
+                .or_default()
+                .push(object);
         }
 
         Self {
@@ -197,7 +211,7 @@ impl Sim {
             routes,
             base_url: Url::parse("https://sim.dokploy.test/").expect("a constant URL"),
             shapes: Shapes::default(),
-            inner: Mutex::new(Inner::default()),
+            inner: Mutex::new(inner),
         }
     }
 
@@ -366,9 +380,7 @@ impl Sim {
             | None => {}
         }
 
-        let mut outcome = if operation == "organization.active" {
-            Ok(serde_json::json!({ "id": "sim-organization", "name": "Simulated" }))
-        } else if fault == Some(FaultKind::Swallow) {
+        let mut outcome = if fault == Some(FaultKind::Swallow) {
             Ok(Value::Bool(true))
         } else {
             self.execute(&mut inner, request)
@@ -469,6 +481,7 @@ impl Sim {
                 Action::Remove => self.remove(inner, spec, request),
                 Action::List => Ok(self.list(inner, spec, request)),
                 Action::One => self.one(inner, spec, request),
+                Action::Singleton => self.singleton(inner, spec, request),
                 Action::Member => self.member(inner, spec, request),
             };
             if last.is_ok() {
@@ -651,10 +664,17 @@ impl Sim {
         request: &OperationRequest,
     ) -> Result<Value, DokployError> {
         let body = body_object(request)?;
+        let id_field = spec
+            .api
+            .update
+            .as_ref()
+            .filter(|update| update.op == request.operation())
+            .and_then(|update| update.id_param.as_deref())
+            .unwrap_or(&spec.api.id);
         let id = body
-            .get(&spec.api.id)
+            .get(id_field)
             .and_then(Value::as_str)
-            .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{} is required", spec.api.id)))?
+            .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{id_field} is required")))?
             .to_owned();
         let object = inner
             .objects
@@ -678,7 +698,7 @@ impl Sim {
         }
         let held = held_fields(spec, request.operation(), &body);
         for (key, value) in &held {
-            if *key != spec.api.id {
+            if key != id_field {
                 let pointer_root = spec.fields.values().any(|field| {
                     field.list_api.is_some()
                         && field
@@ -968,6 +988,35 @@ impl Sim {
         }
 
         Ok(value)
+    }
+
+    fn singleton(
+        &self,
+        inner: &Inner,
+        spec: &KindSpec,
+        request: &OperationRequest,
+    ) -> Result<Value, DokployError> {
+        let objects = inner
+            .objects
+            .get(&spec.kind)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let [object] = objects else {
+            return if objects.is_empty() {
+                Err(not_found(spec))
+            } else {
+                Err(api_error(
+                    500,
+                    "INVALID_RESPONSE",
+                    format!("{} has more than one singleton object", spec.kind),
+                ))
+            };
+        };
+
+        Ok(match self.shapes.template(request.operation(), Role::One) {
+            Some(template) => fill(&template, object),
+            None => Value::Object(object.clone()),
+        })
     }
 }
 

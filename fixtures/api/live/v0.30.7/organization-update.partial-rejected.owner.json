@@ -1,0 +1,27 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "organization.update",
+    "zodError": {
+      "fieldErrors": {
+        "name": [
+          "Invalid input: expected string, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "name"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

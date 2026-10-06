@@ -22,7 +22,7 @@ version: 2                                   # ✔
 settings:
 
   # ===== Profile / organization ==============================================
-  organization:                              # ✘ [a] the active organization
+  organization:                              # ✔ [a] the active organization
     name: Leganews Pro                       #   API: organization.update
     logo: https://example.com/logo.svg
     default_role: member                     #   a built-in or custom role name

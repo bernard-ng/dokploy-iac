@@ -51,6 +51,9 @@ pub struct KindSpec {
     pub parents: Vec<String>,
     /// The key under the parent (or document root) that holds this kind's map.
     pub section: String,
+    /// The fixed internal key of an unkeyed settings singleton.
+    #[serde(default)]
+    pub singleton: Option<String>,
     /// The first Dokploy version the kind exists in.
     #[serde(default)]
     pub since: Option<String>,
@@ -266,6 +269,17 @@ pub struct Read {
     /// The direct read.
     #[serde(default)]
     pub one: Option<OneRead>,
+    /// A top-level singleton read that needs no identity parameter.
+    #[serde(default)]
+    pub singleton: Option<SingletonRead>,
+}
+
+/// A read of the one instance-wide object of a kind.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SingletonRead {
+    /// The operation.
+    pub op: String,
 }
 
 /// How absence is proven (ADR 0007).

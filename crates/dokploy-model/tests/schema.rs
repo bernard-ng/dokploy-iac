@@ -166,6 +166,16 @@ fn the_schema_accepts_every_document_the_generator_makes() {
 }
 
 #[test]
+fn a_singleton_section_is_the_resource_body_in_the_schema() {
+    let schema = json_schema(repository(), Scope::Settings);
+    let direct = "version: 2\nsettings:\n  organization:\n    name: Legalter\n";
+    let keyed = "version: 2\nsettings:\n  organization:\n    active:\n      name: Legalter\n";
+
+    assert!(errors_of(&schema, direct).is_empty());
+    assert!(!errors_of(&schema, keyed).is_empty());
+}
+
+#[test]
 fn the_schema_rejects_what_the_parser_rejects_where_json_can_say_so() {
     let settings = json_schema(repository(), Scope::Settings);
     let project = json_schema(repository(), Scope::Project);

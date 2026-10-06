@@ -86,10 +86,15 @@ fn section_entries(sections: &Sections) -> Vec<(String, Out)> {
     sections
         .iter()
         .map(|(section, resources)| {
-            let entries = resources
-                .iter()
-                .map(|(key, resource)| (key.clone(), Out::Map(resource_entries(resource))))
-                .collect();
+            let entries = match resources.values().next() {
+                Some(resource) if resources.len() == 1 && resource.singleton => {
+                    resource_entries(resource)
+                }
+                _ => resources
+                    .iter()
+                    .map(|(key, resource)| (key.clone(), Out::Map(resource_entries(resource))))
+                    .collect(),
+            };
             (section.clone(), Out::Map(entries))
         })
         .collect()

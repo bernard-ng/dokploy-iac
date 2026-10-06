@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add the adopt-only `organization` settings singleton. The unkeyed `settings.organization` block
+  adopts the organization returned by `organization.active`, updates its name, logo, and default
+  role, and is forgotten without remote deletion when omitted. The spec grammar now supports a
+  fixed internal key and a parameterless singleton read; parsing, canonical rendering, JSON Schema,
+  discovery, verification, and the simulator share those declarations. Sanitized captures and a
+  live engine test cover Dokploy 0.30.6 and 0.30.7.
 - Add adopt-only lifecycle support and the `github_provider` settings kind. A configured GitHub App
   is enrolled into state, updated through `github.update` and `gitProvider.toggleShare`, and forgotten
   without remote deletion when omitted. Missing apps and destroy requests block planning. Sanitized

@@ -338,6 +338,7 @@ fn resource(rng: &mut Rng, registry: &SpecRegistry, spec: &KindSpec, key: String
     Resource {
         kind: spec.kind.clone(),
         key,
+        singleton: spec.singleton.is_some(),
         span: Span::default(),
         fields,
         env_files,
@@ -355,8 +356,16 @@ pub fn document(seed: u64, registry: &SpecRegistry, scope: Scope) -> Document {
             let mut sections: Sections = BTreeMap::new();
             for spec in registry.roots(Scope::Settings) {
                 let mut resources = BTreeMap::new();
-                for _ in 0..1 + rng.below(3) {
-                    let key = identifier(&mut rng);
+                let count = if spec.singleton.is_some() {
+                    1
+                } else {
+                    1 + rng.below(3)
+                };
+                for _ in 0..count {
+                    let key = spec
+                        .singleton
+                        .clone()
+                        .unwrap_or_else(|| identifier(&mut rng));
                     resources.insert(key.clone(), resource(&mut rng, registry, spec, key));
                 }
                 if rng.chance(4, 5) {

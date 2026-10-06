@@ -20,6 +20,15 @@ settings:                    # or: project:
 A project document is the project resource itself, keyed by `slug`, with its children nested
 inside their parent (`environments:` → `applications:` → `redirects:`).
 
+A settings spec can declare an instance-wide singleton. Its section contains the fields directly,
+while its fixed internal key keeps state addresses stable:
+
+```yaml
+settings:
+  organization:               # address: organization.active
+    name: Legalter
+```
+
 ## API
 
 | Call | What it does |

@@ -162,6 +162,9 @@ fn operations_of(spec: &KindSpec) -> Vec<(String, String)> {
     if let Some(one) = &spec.api.read.one {
         add("read.one", &one.op);
     }
+    if let Some(singleton) = &spec.api.read.singleton {
+        add("read.singleton", &singleton.op);
+    }
     if let Some(list) = &spec.api.read.list
         && let Some(op) = &list.op
     {

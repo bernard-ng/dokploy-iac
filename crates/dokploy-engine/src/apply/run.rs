@@ -827,6 +827,23 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
     }
 
     async fn direct_read(&self, spec: &KindSpec, remote_id: &str) -> Result<Json, FailureCode> {
+        if let Some(singleton) = &spec.api.read.singleton {
+            return match self
+                .engine
+                .transport
+                .call(OperationRequest::new(&singleton.op))
+                .await
+            {
+                Ok(value)
+                    if value.is_object()
+                        && crate::project::item_id(spec, &value) == Some(remote_id) =>
+                {
+                    Ok(value)
+                }
+                Ok(_) => Err(FailureCode::TransportOutcomeUnknown),
+                Err(error) => Err(failure_code(&error)),
+            };
+        }
         let one = spec.api.read.one.as_ref().ok_or(FailureCode::Validation)?;
         let query_id = if let Some(pointer) = one.id_from.as_deref() {
             let items = self.listing(spec, None).await?;
@@ -865,7 +882,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         checkpoint: &ResourceCheckpoint,
         paths: &[&PropertyPath],
     ) -> Result<(), ApplyError> {
-        if spec.api.read.one.is_none() || paths.is_empty() {
+        if (spec.api.read.one.is_none() && spec.api.read.singleton.is_none()) || paths.is_empty() {
             return Ok(());
         }
         let direct =

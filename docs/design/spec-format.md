@@ -24,6 +24,7 @@ kind: registry                 # address prefix and spec id
 scope: settings                # settings | project
 parent: null                   # containing kind (environment, application, ...) or null
 section: registries            # key in the parent's YAML mapping
+singleton: null                # fixed internal key for an unkeyed settings singleton
 since: "0.26.0"                # optional Dokploy range
 title: Container registry      # for docs and diagnostics
 class: managed                 # managed | adopt_only  (ADR 0013)
@@ -35,6 +36,10 @@ An `adopt_only` kind has no `api.create` or `api.remove`. Its configured resourc
 exist in the authoritative read: the first apply enrolls that identity and uses ordinary write
 groups for any differences. Omission forgets the state entry without deleting the remote object;
 a missing target or an explicit destroy request blocks planning.
+
+A top-level settings kind may set `singleton: active` (or another fixed resource key). Its section
+contains the resource body directly instead of a map of user keys. The engine still uses the fixed
+key in state and addresses, such as `organization.active`.
 
 ## Identity
 
@@ -63,6 +68,16 @@ api:
   create_identity:             # ADR 0008: how the new id is learned
     diff_collection: { key: [name] }      # or: from_response: /registryId   or: none
   deploy: null                 # { op: compose.deploy, wait: deployment } for deployable kinds
+```
+
+An instance-wide singleton uses a parameterless read instead of a collection and direct read:
+
+```yaml
+singleton: active
+api:
+  id: id
+  read:
+    singleton: { op: organization.active }
 ```
 
 When the endpoint that creates a resource depends on a union arm, creation uses the same

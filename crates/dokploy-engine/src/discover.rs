@@ -219,6 +219,35 @@ async fn read_top_level<T: Transport>(
     group: &[Subject<'_>],
     selectors: &SelectorIndex,
 ) -> Result<Vec<(ResourceAddress, Outcome)>, EngineError> {
+    if let Some(singleton) = &spec.api.read.singleton {
+        if group.len() != 1 {
+            return Ok(all(
+                group,
+                Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
+            ));
+        }
+        let subject = &group[0];
+        let outcome = match transport.call(OperationRequest::new(&singleton.op)).await {
+            Ok(direct) if direct.is_object() => {
+                let Some(id) = item_id(spec, &direct).and_then(|id| RemoteId::new(id).ok()) else {
+                    return Ok(all(
+                        group,
+                        Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
+                    ));
+                };
+                Outcome::Present {
+                    properties: project(spec, &direct, selectors, &subject.entries),
+                    id,
+                    raw: direct,
+                }
+            }
+            Ok(_) => Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
+            Err(SdkError::Api(detail)) if detail.status() == 404 => Outcome::Missing,
+            Err(error) => Outcome::Unavailable(failure(&error)),
+        };
+
+        return Ok(vec![(subject.address.clone(), outcome)]);
+    }
     let Some(list) = spec.api.read.list.as_ref() else {
         return Ok(direct_only(transport, spec, group, selectors).await);
     };

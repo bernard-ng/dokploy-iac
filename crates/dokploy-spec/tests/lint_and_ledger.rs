@@ -85,6 +85,46 @@ fn the_base_spec_is_valid_and_its_ledger_is_clean() {
 }
 
 #[test]
+fn a_settings_singleton_uses_one_fixed_key_and_one_parameterless_read() {
+    let source = r#"
+kind: organization
+scope: settings
+section: organization
+singleton: active
+title: Organization
+class: adopt_only
+identity: { key: null, collision: [], address: "organization.{key}" }
+api:
+  id: id
+  update: { op: organization.update, id_param: organizationId }
+  read: { singleton: { op: organization.active } }
+fields:
+  name: { type: text }
+write:
+  - { op: organization.update, fields: [name], shape: full }
+"#;
+
+    assert_eq!(issues(source), Vec::<String>::new());
+
+    let collection = source.replace(
+        "read: { singleton: { op: organization.active } }",
+        "read: { list: { op: organization.all } }",
+    );
+    assert!(
+        issues(&collection)
+            .iter()
+            .any(|issue| issue.contains("a singleton kind needs a singleton read"))
+    );
+
+    let nested = source.replace("scope: settings", "scope: project");
+    assert!(
+        issues(&nested)
+            .iter()
+            .any(|issue| issue.contains("only valid for a top-level settings kind"))
+    );
+}
+
+#[test]
 fn lint_rejects_each_structural_mistake() {
     let cases: [(&str, String, &str); 11] = [
         (

@@ -85,7 +85,12 @@ fn reference(name: &str) -> Value {
 fn settings_root(registry: &SpecRegistry) -> Value {
     let mut sections = Map::new();
     for spec in registry.roots(Scope::Settings) {
-        sections.insert(spec.section.clone(), keyed(&spec.kind));
+        let section = if spec.singleton.is_some() {
+            reference(&spec.kind)
+        } else {
+            keyed(&spec.kind)
+        };
+        sections.insert(spec.section.clone(), section);
     }
     json!({ "type": "object", "additionalProperties": false, "properties": sections })
 }

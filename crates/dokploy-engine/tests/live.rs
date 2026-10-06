@@ -153,6 +153,54 @@ impl Live {
     }
 }
 
+fn organization_document(name: &Value, logo: &Value, default_role: &Value) -> String {
+    format!(
+        "version: 2\nsettings:\n  organization:\n    name: {}\n    logo: {}\n    default_role: {}\n",
+        serde_json::to_string(name).unwrap(),
+        serde_json::to_string(logo).unwrap(),
+        serde_json::to_string(default_role).unwrap(),
+    )
+}
+
+#[tokio::test]
+#[ignore = "adopts and restores the active organization on the local Dokploy"]
+async fn the_active_organization_is_adopted_updated_restored_and_forgotten() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    let original = call(&raw, OperationRequest::new("organization.active")).await;
+    let changed = organization_document(
+        &json!("Organization Live Contract"),
+        &json!("https://example.invalid/organization-live.svg"),
+        &Value::Null,
+    );
+
+    assert_eq!(live.apply(&changed, &[]).await.unwrap(), 1);
+    let active = call(&raw, OperationRequest::new("organization.active")).await;
+    assert_eq!(active["id"], original["id"]);
+    assert_eq!(active["name"], "Organization Live Contract");
+    assert_eq!(
+        active["logo"],
+        "https://example.invalid/organization-live.svg"
+    );
+    assert_eq!(live.changes(&changed, &[]).await, 0);
+
+    let restored = organization_document(
+        &original["name"],
+        &original["logo"],
+        &original["defaultRole"],
+    );
+    assert_eq!(live.apply(&restored, &[]).await.unwrap(), 1);
+    assert_eq!(
+        live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap(),
+        1
+    );
+    let active = call(&raw, OperationRequest::new("organization.active")).await;
+    assert_eq!(active["name"], original["name"]);
+    assert_eq!(active["logo"], original["logo"]);
+    assert_eq!(active["defaultRole"], original["defaultRole"]);
+}
+
 #[tokio::test]
 #[ignore = "adopts a dashboard-installed GitHub provider on the local Dokploy"]
 async fn a_github_provider_is_adopted_updated_and_forgotten() {

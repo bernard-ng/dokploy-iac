@@ -1,0 +1,21 @@
+{
+  "activeStatus": 200,
+  "capturedAt": "2026-10-06",
+  "createOperation": false,
+  "fixtures": [
+    "organization-active.before.owner.json",
+    "organization-update.partial-rejected.owner.json",
+    "organization-update.owner.json",
+    "organization-active.updated.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "kind": "organization",
+  "partialStatus": 400,
+  "removeOperation": false,
+  "role": "owner",
+  "sanitized": true,
+  "singleton": true,
+  "updateRequiresIdAndName": true,
+  "updateStatus": 200,
+  "version": "v0.30.7"
+}

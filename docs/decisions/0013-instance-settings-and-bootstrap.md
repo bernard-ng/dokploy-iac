@@ -18,8 +18,9 @@ cut the connection that is applying them.
 ### The settings document
 
 `settings:` holds the kinds in the beta list that are instance-wide
-(`docs/vision/dokploy.settings.full.yaml`). Each is flat-keyed and uses the same spec
-machinery as project kinds. Apply order within the document follows `ref`s
+(`docs/vision/dokploy.settings.full.yaml`). Collection kinds are flat-keyed; an instance-wide
+singleton stores a fixed internal key while its document section contains the fields directly.
+Both use the same spec machinery as project kinds. Apply order within the document follows `ref`s
 (a server references its SSH key; a registry may reference a server).
 
 ### Kind classes

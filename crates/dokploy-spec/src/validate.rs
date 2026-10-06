@@ -70,6 +70,17 @@ pub fn validate_spec(spec: &KindSpec, shared_types: &BTreeSet<String>) -> Vec<Is
             "must be lower snake case, starting with a letter",
         );
     }
+    if let Some(key) = &spec.singleton {
+        if spec.scope != crate::Scope::Settings || !spec.parents.is_empty() {
+            context.add("singleton", "is only valid for a top-level settings kind");
+        }
+        if !is_arm_name(key) {
+            context.add(
+                "singleton",
+                "must be a resource key using lower-case letters, digits, `-`, and `_`",
+            );
+        }
+    }
     if spec.title.trim().is_empty() {
         context.add("title", "must not be empty");
     }
@@ -201,6 +212,10 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
         ("api.remove.op", api.remove.as_ref().map(|o| &o.op)),
         ("api.deploy.op", api.deploy.as_ref().map(|o| &o.op)),
         ("api.read.one.op", api.read.one.as_ref().map(|o| &o.op)),
+        (
+            "api.read.singleton.op",
+            api.read.singleton.as_ref().map(|o| &o.op),
+        ),
     ] {
         if let Some(op) = operation {
             check_operation(context, path, op);
@@ -260,8 +275,27 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
             }
         }
     }
-    if api.read.list.is_none() && api.read.one.is_none() {
+    if api.read.list.is_none() && api.read.one.is_none() && api.read.singleton.is_none() {
         context.add("api.read", "a kind needs at least one read");
+    }
+    if api.read.singleton.is_some() {
+        if spec.singleton.is_none() {
+            context.add(
+                "api.read.singleton",
+                "needs a kind with a fixed `singleton` key",
+            );
+        }
+        if api.read.list.is_some() || api.read.one.is_some() {
+            context.add(
+                "api.read.singleton",
+                "is exclusive with collection and direct reads",
+            );
+        }
+    } else if spec.singleton.is_some() {
+        context.add(
+            "api.read.singleton",
+            "a singleton kind needs a singleton read",
+        );
     }
     for parent in api.parent_field.keys() {
         if !spec.parents.contains(parent) {
@@ -363,10 +397,10 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
     if let Some(update) = &api.update
         && !update.from_read.is_empty()
     {
-        if api.read.one.is_none() {
+        if api.read.one.is_none() && api.read.singleton.is_none() {
             context.add(
                 "api.update.from_read",
-                "copying update fields from a fresh read needs a direct read",
+                "copying update fields from a fresh read needs a direct or singleton read",
             );
         }
         for (field, pointer) in &update.from_read {

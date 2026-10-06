@@ -65,6 +65,31 @@ fn a_settings_document_with_a_registry_parses_into_typed_values() {
     assert_eq!(document.resources().len(), 1);
 }
 
+#[test]
+fn a_settings_singleton_has_no_user_supplied_resource_key() {
+    let source = "\
+version: 2
+settings:
+  organization:
+    name: Legalter
+    logo: null
+";
+    let document = parse(source).expect("valid singleton");
+    let organization = settings_resource(&document, "organization", "active");
+
+    assert_eq!(organization.kind, "organization");
+    assert_eq!(organization.key, "active");
+    assert!(organization.singleton);
+    assert_eq!(
+        organization.fields["name"].value,
+        Value::Text("Legalter".into())
+    );
+    assert_eq!(
+        document.render(),
+        "version: 2\nsettings:\n  organization:\n    logo: null\n    name: Legalter\n"
+    );
+}
+
 const PROJECT: &str = "\
 version: 2
 project:
