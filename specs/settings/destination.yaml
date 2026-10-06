@@ -62,14 +62,11 @@ fields:
     type: "list<text>"
     nullable: true
     doc: Extra flags passed to rclone.
-  server:
-    api: serverId
-    type: selector(server)
-    nullable: true
-    doc: Restrict the destination to one server.
 write:
   - op: destination.update
-    fields: [name, provider, access_key, secret_access_key, bucket, region, endpoint, additional_flags, server]
+    fields: [name, provider, access_key, secret_access_key, bucket, region, endpoint, additional_flags]
     shape: full
 ledger:
   readonly: [createdAt, organizationId]
+  ignored:
+    - { field: serverId, reason: "Dokploy 0.30.6 and 0.30.7 accept it and neither store it nor return it, so it cannot be managed" }

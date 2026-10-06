@@ -60,6 +60,10 @@ def normalized_scalar:
     if .value == null then . else .value = "backup-1" end
   elif .key == "destinationId" then
     if .value == null then . else .value = "destination-1" end
+  elif .key == "sshKeyId" then
+    if .value == null then . else .value = "ssh-key-1" end
+  elif .key == "serverId" then
+    if .value == null then . else .value = "server-1" end
   elif .key == "networkId" then
     if .value == null then . else .value = "network-1" end
   elif .key == "patchId" then
@@ -105,6 +109,8 @@ walk(
     with_entries(normalized_scalar)
     | if has("volumeBackupId") and has("appName") then
         .appName = "volume-backup-contract-test"
+      elif has("serverId") and has("appName") and has("ipAddress") then
+        .appName = "server-contract-test"
       elif has("projectId") and has("tagId") and has("id") then
         .id = "project-tag-1"
       elif has("applicationId") and has("appName") then

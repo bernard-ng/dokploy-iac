@@ -820,6 +820,9 @@ pub enum ExternalResolution {
     Unmatched,
     /// More than one external record matched the exact name.
     Ambiguous,
+    /// No record matches yet, but the document declares the resource itself: it is made before
+    /// this one (the dependency is recorded), and its identity is known by then.
+    Declared,
     /// The authoritative collection could not be read conclusively.
     Unavailable(RemoteFailureKind),
 }
@@ -828,7 +831,7 @@ impl ExternalResolution {
     /// Returns whether the selector resolved to a usable identity.
     #[must_use]
     pub const fn is_resolved(&self) -> bool {
-        matches!(self, Self::Local | Self::Resolved(_))
+        matches!(self, Self::Local | Self::Resolved(_) | Self::Declared)
     }
 
     /// Returns the resolved physical identity, which is absent for `local`.
@@ -836,7 +839,11 @@ impl ExternalResolution {
     pub const fn remote_id(&self) -> Option<&RemoteId> {
         match self {
             Self::Resolved(remote_id) => Some(remote_id),
-            Self::Local | Self::Unmatched | Self::Ambiguous | Self::Unavailable(_) => None,
+            Self::Local
+            | Self::Declared
+            | Self::Unmatched
+            | Self::Ambiguous
+            | Self::Unavailable(_) => None,
         }
     }
 }
@@ -846,6 +853,7 @@ impl fmt::Debug for ExternalResolution {
         match self {
             Self::Local => formatter.write_str("Local"),
             Self::Resolved(_) => formatter.write_str("Resolved([REDACTED])"),
+            Self::Declared => formatter.write_str("Declared"),
             Self::Unmatched => formatter.write_str("Unmatched"),
             Self::Ambiguous => formatter.write_str("Ambiguous"),
             Self::Unavailable(reason) => {
@@ -1142,6 +1150,9 @@ impl RemoteState {
                     ExternalResolution::Resolved(remote_id) => {
                         receipt_field(&mut mac, b"resolution", b"resolved");
                         receipt_field(&mut mac, b"external_id", remote_id.as_str().as_bytes());
+                    }
+                    ExternalResolution::Declared => {
+                        receipt_field(&mut mac, b"resolution", b"declared");
                     }
                     ExternalResolution::Unmatched => {
                         receipt_field(&mut mac, b"resolution", b"unmatched");

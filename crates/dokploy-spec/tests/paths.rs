@@ -79,7 +79,7 @@ fn flags_follow_the_class_mutability_and_type() {
         "a defaulted field is optional"
     );
 
-    let server = registry.property("registry", "server").unwrap();
+    let server = registry.property("certificate", "server").unwrap();
     assert_eq!(server.selector.as_deref(), Some("server"));
     assert!(server.is_selector() && server.nullable && !server.is_required_on_create());
 

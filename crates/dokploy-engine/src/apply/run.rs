@@ -261,6 +261,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         self.state.upsert_resource(address.clone(), resource)?;
         self.journal
             .succeed(token, Some(remote_id.clone()), &self.state)?;
+        self.record_selector_target(spec, address, checkpoint, &remote_id);
 
         let paths: Vec<&PropertyPath> = at_creation
             .property_paths()
@@ -365,11 +366,35 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
         self.state.upsert_resource(address.clone(), resource)?;
         self.journal
             .succeed(token, Some(remote_id.clone()), &self.state)?;
+        self.record_selector_target(spec, address, checkpoint, &remote_id);
         if deferred.is_empty() {
             return Ok(());
         }
         let deferred: Vec<&PropertyPath> = deferred.iter().collect();
         self.write(address, checkpoint, &deferred).await
+    }
+
+    /// A resource that was just made is what a selector later in the apply may name: the index
+    /// read before the first write does not have it.
+    fn record_selector_target(
+        &mut self,
+        spec: &KindSpec,
+        address: &ResourceAddress,
+        checkpoint: &ResourceCheckpoint,
+        remote_id: &RemoteId,
+    ) {
+        let Some(key) = spec.identity.key.as_deref() else {
+            return;
+        };
+        let Ok(path) = PropertyPath::from_spec(spec, key) else {
+            return;
+        };
+        if let Some(dokploy_core::CheckpointValueRef::NonSensitive(Json::String(name))) =
+            checkpoint.property(&path)
+        {
+            self.selectors
+                .record(address.kind().as_str(), remote_id.as_str(), name);
+        }
     }
 
     async fn update(&mut self, change: &PlannedChange) -> Result<(), ApplyError> {

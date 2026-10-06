@@ -1,0 +1,73 @@
+# A remote server Dokploy deploys to or builds on.
+#
+# Live facts (0.30.6): create answers the whole object and does not contact the host (`setup`,
+# `validate`, and `setupMonitoring` are actions, not configuration); update needs every field of the
+# server (HTTP 400 without them) and answers the whole object; `server.all` adds `totalSum` and
+# `server.one` nests the SSH key and the deployments; names are not unique; remove answers the
+# removed object. A new server has Docker cleanup on and a builds concurrency of 1.
+kind: server
+scope: settings
+section: servers
+title: Remote server
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "server.{key}"
+api:
+  id: serverId
+  create: { op: server.create }
+  update: { op: server.update }
+  remove: { op: server.remove }
+  read:
+    list: { op: server.all, authority: authoritative }
+    one: { op: server.one, id_param: serverId, agree: true }
+  create_identity:
+    from_response: /serverId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  description:
+    type: text
+    nullable: true
+  ip_address:
+    api: ipAddress
+    type: text
+    min_len: 1
+  port:
+    type: int
+    min: 1
+    max: 65535
+  username:
+    type: text
+    min_len: 1
+  ssh_key:
+    api: sshKeyId
+    type: selector(ssh_key)
+    nullable: true
+    doc: The key Dokploy connects with.
+  type:
+    api: serverType
+    type: enum[deploy, build]
+  docker_cleanup:
+    api: enableDockerCleanup
+    type: bool
+  command:
+    type: text
+    doc: A command Dokploy runs on the host when it sets it up; the create does not take it.
+  builds_concurrency:
+    api: buildsConcurrency
+    type: int
+    min: 1
+    max: 100
+write:
+  - op: server.update
+    fields: [name, description, ip_address, port, username, ssh_key, type, docker_cleanup, command]
+    shape: full
+  - op: server.updateBuildsConcurrency
+    fields: [builds_concurrency]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId, appName, serverStatus, metricsConfig, totalSum, deployments, sshKey]

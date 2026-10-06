@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 
 use dokploy_core::{
-    MutationContract, PropertyObservation, PropertyPath, PropertyUnknownReason, RemoteFailureKind,
-    RemoteObservation, RemoteResource, RemoteState, RemoteStateError, SensitiveIntent,
+    ExternalResolution, MutationContract, PropertyObservation, PropertyPath, PropertyUnknownReason,
+    RemoteFailureKind, RemoteObservation, RemoteResource, RemoteState, RemoteStateError,
+    SensitiveIntent,
 };
 use dokploy_sdk::{Error as SdkError, OperationRequest, Transport};
 use dokploy_spec::{
@@ -641,7 +642,16 @@ fn resolve_selectors(
             let Some(kind) = path.info().selector.as_deref() else {
                 continue;
             };
-            if let Some(resolution) = selectors.resolve(kind, value) {
+            let resolution = match selectors.resolve(kind, value) {
+                // Nothing there yet, but the document makes it before this resource.
+                Some(ExternalResolution::Unmatched) | None
+                    if resource.declared_selectors.contains(path) =>
+                {
+                    Some(ExternalResolution::Declared)
+                }
+                other => other,
+            };
+            if let Some(resolution) = resolution {
                 resolutions.push(((address.clone(), path.clone()), resolution));
             }
         }

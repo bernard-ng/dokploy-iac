@@ -138,6 +138,17 @@ clear).
 The fingerprint already binds the instance, the address, and the property path, so no separate
 fingerprint of paths is needed.
 
+## M5 status
+
+In progress, delivered by shape and captured live as it goes (each slice on Dokploy 0.30.6 and 0.30.7,
+with a live engine test): `ssh_key`, `ai_provider`, `certificate` (create-only secrets, the
+organization the API key acts in), `dns_provider` (a union kept in a nested `config` object), and
+`server` (a selector to a resource of the same document). Left: the Git providers, the twelve
+notification providers, `vault_provider`, and the adopt-only singletons (`organization`,
+`web_server`). `destination`, `registry`, and `network` lost their `server` field because Dokploy does
+not store or list it. Out of the beta, as the vision document says: `custom_roles`, `members`,
+`sso_providers`, `profile`, `cluster`, and `license`.
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured

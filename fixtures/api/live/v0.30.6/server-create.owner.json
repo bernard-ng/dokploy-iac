@@ -1,0 +1,39 @@
+{
+  "appName": "server-contract-test",
+  "buildsConcurrency": 1,
+  "command": "",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "description": "capture",
+  "enableDockerCleanup": true,
+  "ipAddress": "203.0.113.9",
+  "metricsConfig": {
+    "containers": {
+      "refreshRate": 60,
+      "services": {
+        "exclude": [],
+        "include": []
+      }
+    },
+    "server": {
+      "cronJob": "",
+      "port": 4500,
+      "refreshRate": 60,
+      "retentionDays": 2,
+      "thresholds": {
+        "cpu": 0,
+        "memory": 0
+      },
+      "token": "<redacted>",
+      "type": "Remote",
+      "urlCallback": ""
+    }
+  },
+  "name": "server-contract",
+  "organizationId": "organization-1",
+  "port": 22,
+  "serverId": "server-1",
+  "serverStatus": "active",
+  "serverType": "deploy",
+  "sshKeyId": "ssh-key-1",
+  "username": "root"
+}

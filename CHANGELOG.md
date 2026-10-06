@@ -41,6 +41,13 @@ All notable changes to this project will be documented in this file.
   longer names, and leaves alone the ones it never named; before, they were only forgotten and
   stayed at Dokploy. A block declared empty is still cleared as a whole.
 
+- Settings kind `server` (M5) with a capture on 0.30.6 and 0.30.7 and a live test. A selector can now name
+  a resource the same document declares (a server's `ssh_key: { name: deploy }` with `ssh_keys.deploy` in
+  the document): the planner resolves it as `Declared`, the resource that names it depends on it (so it is
+  made after it and removed before it, and the dependency is kept in state), and the executor learns its
+  id when it creates it. **Breaking:** `destination`, `registry`, and `network` lose their `server` field:
+  Dokploy 0.30.6 and 0.30.7 neither store nor return it for a destination or a registry, and `network.all`
+  lists only the host's networks unless it is given a `serverId`, so none of them can be managed honestly.
 - Settings kind `dns_provider` (M5) and a spec-grammar addition for it: `nest` on a union field, for an
   arm Dokploy keeps inside a nested object (`config: { providerType, apiToken }`). Live on 0.30.6 and
   0.30.7 through all five arms, switching arms in place; the conformance suite understands pointer

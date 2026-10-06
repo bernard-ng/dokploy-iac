@@ -1775,6 +1775,7 @@ required_recipe_kinds=(
     ai
     certificates
     dnsProvider
+    server
 )
 
 for recipe_kind in "${required_recipe_kinds[@]}"; do

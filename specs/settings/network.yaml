@@ -62,11 +62,7 @@ fields:
     nullable: true
     mutability: create_only
     doc: "IP address management as Docker's own JSON: `{ driver, config: [{ subnet, gateway, ipRange }] }`."
-  server:
-    api: serverId
-    type: selector(server)
-    nullable: true
-    mutability: create_only
-    doc: The server the network lives on; empty is the Dokploy host.
 ledger:
   readonly: [createdAt, organizationId]
+  ignored:
+    - { field: serverId, reason: "network.all lists only the Dokploy host's networks unless it is given a serverId, so a network on a remote server cannot be found by the authoritative list (live capture, 0.30.6)" }

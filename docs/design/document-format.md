@@ -15,7 +15,6 @@ settings:                    # or: project:
       url: ghcr.io
       username: ci
       password: { env: GHCR_TOKEN }        # a secret is a source, never a literal
-      server: { name: edge-1 }             # a selector: a resource outside the document
 ```
 
 A project document is the project resource itself, keyed by `slug`, with its children nested

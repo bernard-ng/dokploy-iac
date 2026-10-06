@@ -43,8 +43,6 @@ settings:
       password:
         env: GHCR_TOKEN
       image_prefix: acme
-      server:
-        name: edge-1
 ";
 
 #[test]
@@ -59,10 +57,6 @@ fn a_settings_document_with_a_registry_parses_into_typed_values() {
     assert_eq!(
         ghcr.fields["password"].value,
         Value::Source(Source::Env("GHCR_TOKEN".into()))
-    );
-    assert_eq!(
-        ghcr.fields["server"].value,
-        Value::Selector(Selector::Name("edge-1".into()))
     );
     assert_eq!(
         ghcr.fields["url"].span.line, 6,

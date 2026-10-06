@@ -774,3 +774,69 @@ async fn a_dns_provider_lives_through_every_arm_of_its_config() {
         json!([])
     );
 }
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
+async fn a_server_selects_its_ssh_key_by_name_and_is_updated_in_place() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    let key = call(
+        &raw,
+        OperationRequest::new("sshKey.generate").body(json!({ "type": "ed25519" })),
+    )
+    .await;
+    let env = [("LIVE_SERVER_KEY", key["privateKey"].as_str().unwrap())];
+    let document = |port: u16, description: &str, concurrency: u32| {
+        format!(
+            "version: 2\nsettings:\n  ssh_keys:\n    deploy:\n      public_key: \"{}\"\n      private_key:\n        env: LIVE_SERVER_KEY\n  servers:\n    build-1:\n      description: {description}\n      ip_address: 203.0.113.50\n      port: {port}\n      username: root\n      ssh_key: {{ name: deploy }}\n      type: build\n      docker_cleanup: true\n      command: echo live\n      builds_concurrency: {concurrency}\n",
+            key["publicKey"].as_str().unwrap()
+        )
+    };
+
+    // The key is made before the server, and the server names it.
+    assert_eq!(
+        live.apply(&document(22, "first", 2), &env).await.unwrap(),
+        2,
+        "the key, then the server (whose create carries the rest in its own step)"
+    );
+    let servers = call(&raw, OperationRequest::new("server.all")).await;
+    assert_eq!(servers[0]["name"], "build-1");
+    assert_eq!(servers[0]["port"], 22);
+    assert_eq!(servers[0]["buildsConcurrency"], 2);
+    assert_eq!(servers[0]["command"], "echo live");
+    let keys = call(&raw, OperationRequest::new("sshKey.all")).await;
+    assert_eq!(servers[0]["sshKeyId"], keys[0]["sshKeyId"]);
+    assert_eq!(
+        live.changes(&document(22, "first", 2), &env).await,
+        0,
+        "converged"
+    );
+
+    // An update needs every field, so it resends them all, and leaves the concurrency alone.
+    live.apply(&document(2222, "second", 2), &env)
+        .await
+        .unwrap();
+    let servers = call(&raw, OperationRequest::new("server.all")).await;
+    assert_eq!(servers[0]["port"], 2222);
+    assert_eq!(servers[0]["description"], "second");
+    assert_eq!(servers[0]["buildsConcurrency"], 2);
+    live.apply(&document(2222, "second", 4), &env)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("server.all")).await[0]["buildsConcurrency"],
+        4
+    );
+
+    // The server goes before the key it names.
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("server.all")).await,
+        json!([])
+    );
+    assert_eq!(
+        call(&raw, OperationRequest::new("sshKey.all")).await,
+        json!([])
+    );
+}

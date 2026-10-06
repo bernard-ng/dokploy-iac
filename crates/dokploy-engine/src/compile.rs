@@ -62,6 +62,9 @@ pub(crate) struct CompiledResource {
     /// `env_file`): the variables are then exactly what the document names, so one it used to
     /// name and no longer does is removed.
     pub(crate) declared_environments: Vec<String>,
+    /// The selectors that name a resource this document declares and does not exist yet: they
+    /// resolve once it is made, and the resource depends on it.
+    pub(crate) declared_selectors: Vec<PropertyPath>,
 }
 
 impl std::fmt::Debug for Compiled {
@@ -310,6 +313,23 @@ impl Compiler<'_> {
         }
         let known: Vec<ResourceAddress> = pending.iter().map(|(a, _, _)| a.clone()).collect();
 
+        // What the document declares, by kind and name: a selector that names one of these is a
+        // reference inside the document.
+        let mut declared: BTreeMap<(String, String), ResourceAddress> = BTreeMap::new();
+        for (address, resource, _) in &pending {
+            let Some(spec) = self.specs.get(&resource.kind) else {
+                continue;
+            };
+            let Some(key) = spec.identity.key.as_deref() else {
+                continue;
+            };
+            if let Some(serde_json::Value::String(name)) =
+                collision_values(spec, resource).remove(key)
+            {
+                declared.insert((resource.kind.clone(), name), address.clone());
+            }
+        }
+
         let mut desired = BTreeMap::new();
         let mut resources = BTreeMap::new();
         let mut secrets = BTreeMap::new();
@@ -321,7 +341,7 @@ impl Compiler<'_> {
                     kind: resource.kind.clone(),
                 })?;
             let properties = self.properties(address, spec, resource, &mut secrets)?;
-            let dependencies = resource
+            let mut dependencies = resource
                 .depends_on
                 .iter()
                 .map(|text| {
@@ -350,6 +370,7 @@ impl Compiler<'_> {
                 .protect
                 .map_or(ProtectionIntent::Unmanaged, ProtectionIntent::Set);
             let mut selectors = Vec::new();
+            let mut declared_selectors = Vec::new();
             let mut declared_sets = Vec::new();
             let mut declared_environments: Vec<String> =
                 resource.env_files.keys().cloned().collect();
@@ -419,6 +440,17 @@ impl Compiler<'_> {
                     if let Ok(path) = PropertyPath::from_spec(spec, &dotted)
                         && !ignored.contains(&path)
                     {
+                        if let dokploy_model::Selector::Name(target_name) = selector
+                            && let Some(target_kind) = path.info().selector.as_deref()
+                            && let Some(target) =
+                                declared.get(&(target_kind.to_owned(), target_name.clone()))
+                            && target != address
+                        {
+                            if !dependencies.contains(target) {
+                                dependencies.push(target.clone());
+                            }
+                            declared_selectors.push(path.clone());
+                        }
                         selectors.push((path, selector_json(selector)));
                     }
                 }
@@ -439,6 +471,7 @@ impl Compiler<'_> {
                     selectors,
                     declared_sets,
                     declared_environments,
+                    declared_selectors,
                 },
             );
         }

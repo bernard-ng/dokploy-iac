@@ -53,14 +53,11 @@ fields:
     type: text
     nullable: true
     doc: Prefix prepended to image names pushed to this registry.
-  server:
-    api: serverId
-    type: selector(server)
-    nullable: true
-    doc: Restrict the registry to one server.
 write:
   - op: registry.update
-    fields: [name, type, url, username, password, image_prefix, server]
+    fields: [name, type, url, username, password, image_prefix]
     shape: partial
 ledger:
   readonly: [createdAt, organizationId]
+  ignored:
+    - { field: serverId, reason: "Dokploy 0.30.6 and 0.30.7 neither store nor return it (the login runs on that server over SSH), so it cannot be managed" }

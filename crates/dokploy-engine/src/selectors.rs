@@ -91,6 +91,26 @@ impl SelectorIndex {
             .map(|entry| entry.name.as_str())
     }
 
+    /// A resource the apply just made, so a selector that names it resolves from now on.
+    pub(crate) fn record(&mut self, kind: &str, id: &str, name: &str) {
+        let entry = Entry {
+            id: id.to_owned(),
+            name: name.to_owned(),
+        };
+        match self.kinds.entry(kind.to_owned()) {
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                if let Ok(entries) = slot.get_mut()
+                    && !entries.iter().any(|existing| existing.id == entry.id)
+                {
+                    entries.push(entry);
+                }
+            }
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(Ok(vec![entry]));
+            }
+        }
+    }
+
     /// What a selector value means now: the id of the one resource with that name, `Local`,
     /// or why it cannot be resolved. `None` when the kind was not read.
     pub(crate) fn resolve(&self, kind: &str, selector: &Json) -> Option<ExternalResolution> {

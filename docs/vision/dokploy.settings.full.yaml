@@ -76,29 +76,19 @@ settings:
       description: CI deploy key
       public_key: "ssh-ed25519 AAAA... ci"   # [c]
       private_key: { env: DEPLOY_SSH_KEY }   # [c][s] update has no key fields: rotation = replace
-  servers:                                   # ✘
+  servers:                                   # ✔
     leganews-staging:
       description: Staging Swarm node
       ip_address: 203.0.113.20
       port: 22
       username: root
-      ssh_key: { name: deploy }              # typed reference
+      ssh_key: { name: deploy }              # ✔ a key of this document is made first and removed last
       type: deploy                           #   deploy | build
       docker_cleanup: true                   #   API: enableDockerCleanup
-      command: ""                            # ? custom setup command (server.update.command)
-      metrics:                               #   server.setupMonitoring: an action that carries a config
-        server:
-          refresh_rate: 30
-          port: 4500
-          token: { env: METRICS_TOKEN }      # [s]
-          callback_url: https://dokploy.example.com/api/metrics
-          retention_days: 7
-          cron: "0 0 * * *"
-          thresholds: { cpu: 80, memory: 80 }
-        containers:
-          refresh_rate: 30
-          services: { include: [], exclude: [] }
-      # `setup` (install Docker/Traefik on the host) and `validate` are actions: [x]
+      command: ""                            #   server.update.command
+      builds_concurrency: 2                  #   server.updateBuildsConcurrency, 1..100
+      # [x] `metrics` (server.setupMonitoring is an action that carries a config), `setup` (install
+      # Docker/Traefik on the host), and `validate` are actions, not configuration.
   networks:                                  # ✘ Docker networks managed by Dokploy
     backend:
       driver: overlay                        #   bridge | overlay  [c]
@@ -108,7 +98,7 @@ settings:
       enable_ipv6: false
       mtu: 1450                              #   68..65535
       ipam: { driver: default, config: [{ subnet: 10.20.0.0/24, gateway: 10.20.0.1, ip_range: 10.20.0.128/25 }] }
-      server: { name: leganews-staging }
+      # [x] a network on a remote server: network.all lists only the host's unless it is given a serverId
   cluster:                                   # [x] swarm nodes (addWorker, removeWorker) are actions
 
   # ===== Registry / Git / Certificates / DNS ================================
@@ -119,7 +109,7 @@ settings:
       username: ci
       password: { env: GHCR_TOKEN }          # [s]
       image_prefix: acme
-      server: { name: leganews-staging }     # optional: registry local to a server
+      # [x] a registry local to a server: Dokploy neither stores nor returns the serverId
   git_providers:                             # ✘
     leganews-org:
       type: github                           # [a] a GitHub App is installed through OAuth: adopt, never create
@@ -177,7 +167,7 @@ settings:
       access_key: { env: S3_ACCESS_KEY }     # [s]
       secret_access_key: { env: S3_SECRET }  # [s]
       additional_flags: ["--s3-no-check-bucket"]
-      server: { name: leganews-staging }
+      # [x] a destination local to a server: Dokploy neither stores nor returns the serverId
 
   # ===== Notifications =======================================================
   notifications:                             # ✘ twelve provider types, one shape each

@@ -1,0 +1,50 @@
+{
+  "appName": "server-contract-test",
+  "buildsConcurrency": 1,
+  "command": "<redacted>",
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "deployments": [],
+  "description": null,
+  "enableDockerCleanup": false,
+  "ipAddress": "203.0.113.10",
+  "metricsConfig": {
+    "containers": {
+      "refreshRate": 60,
+      "services": {
+        "exclude": [],
+        "include": []
+      }
+    },
+    "server": {
+      "cronJob": "",
+      "port": 4500,
+      "refreshRate": 60,
+      "retentionDays": 2,
+      "thresholds": {
+        "cpu": 0,
+        "memory": 0
+      },
+      "token": "<redacted>",
+      "type": "Remote",
+      "urlCallback": ""
+    }
+  },
+  "name": "server-contract-renamed",
+  "organizationId": "organization-1",
+  "port": 2222,
+  "serverId": "server-1",
+  "serverStatus": "active",
+  "serverType": "build",
+  "sshKey": {
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "description": null,
+    "lastUsedAt": null,
+    "name": "server-contract-key",
+    "organizationId": "organization-1",
+    "privateKey": "<redacted>",
+    "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKnUP/9p8nX1Z6ZH6ohfkgl7i0ZMIoxO3cohZOLjDCBL dokploy",
+    "sshKeyId": "ssh-key-1"
+  },
+  "sshKeyId": "ssh-key-1",
+  "username": "deploy"
+}

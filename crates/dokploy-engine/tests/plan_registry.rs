@@ -388,23 +388,6 @@ fn empty_project_state(engine: &dokploy_engine::Engine<Canned>) -> dokploy_state
 }
 
 #[tokio::test]
-async fn a_selector_without_a_fresh_resolution_blocks_planning() {
-    let transport = Canned::new().serving("registry.all", json!([]));
-    let engine = engine(transport);
-    let document = format!("{DOCUMENT}      server:\n        name: edge-1\n");
-    let compiled = compile(&engine, &document, &[("GHCR_TOKEN", TOKEN)]);
-
-    let plan = engine.plan(&compiled, None).await.unwrap();
-
-    assert!(!plan.applyable(), "{plan:?}");
-    assert!(
-        plan.diagnostics()
-            .iter()
-            .any(|d| { d.code() == PlanDiagnosticCode::UnresolvedExternalSelector })
-    );
-}
-
-#[tokio::test]
 async fn planning_is_deterministic() {
     let state = applied_state().await;
     let transport = remote_with(registry("ghcr.io", "someone-else"));

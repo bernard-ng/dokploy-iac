@@ -171,7 +171,11 @@ fn unresolved_external_selectors(
                 continue;
             }
             let failure = match remote.external_resolution(address, path) {
-                Some(ExternalResolution::Local | ExternalResolution::Resolved(_)) => continue,
+                Some(
+                    ExternalResolution::Local
+                    | ExternalResolution::Resolved(_)
+                    | ExternalResolution::Declared,
+                ) => continue,
                 Some(ExternalResolution::Unmatched) => ExternalSelectorFailure::Unmatched,
                 Some(ExternalResolution::Ambiguous) => ExternalSelectorFailure::Ambiguous,
                 Some(ExternalResolution::Unavailable(_)) => ExternalSelectorFailure::Unavailable,

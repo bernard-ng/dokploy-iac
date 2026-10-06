@@ -1,0 +1,80 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "server.update",
+    "zodError": {
+      "fieldErrors": {
+        "description": [
+          "Invalid input: expected nonoptional, received undefined"
+        ],
+        "ipAddress": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "port": [
+          "Invalid input: expected number, received undefined"
+        ],
+        "serverType": [
+          "Invalid input: expected nonoptional, received undefined"
+        ],
+        "sshKeyId": "ssh-key-1",
+        "username": [
+          "Invalid input: expected nonoptional, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "nonoptional",
+      "message": "Invalid input: expected nonoptional, received undefined",
+      "path": [
+        "description"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "ipAddress"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "number",
+      "message": "Invalid input: expected number, received undefined",
+      "path": [
+        "port"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "nonoptional",
+      "message": "Invalid input: expected nonoptional, received undefined",
+      "path": [
+        "username"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "nonoptional",
+      "message": "Invalid input: expected nonoptional, received undefined",
+      "path": [
+        "sshKeyId"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "nonoptional",
+      "message": "Invalid input: expected nonoptional, received undefined",
+      "path": [
+        "serverType"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}
