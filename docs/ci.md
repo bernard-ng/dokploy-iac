@@ -116,8 +116,9 @@ scripts/integration/reset.sh
 The `registry` capture starts a throwaway `registry:2` (pinned by digest) on
 `127.0.0.1:5000` (`DOKPLOY_CAPTURE_REGISTRY_PORT`), because Dokploy runs `docker login` when it
 creates a registry. The settings captures (`registry`, `tag`, `destination`, `network`) share
-`capture-lib.sh` and need an instance with none of that kind. The `patch`, `volume-backup`, and
-`project-tag` captures build their own throwaway project (`capture_project_setup`) and remove it;
+`capture-lib.sh` and need an instance with none of that kind. The `patch`, `volume-backup`,
+`project-tag`, and `vault-provider` captures build their own throwaway project
+(`capture_project_setup`) and remove it;
 `project-tag` also needs an instance with no tags, and `volume-backup` makes and removes its own
 destination. None of them needs Swarm or an S3 server: Dokploy does not contact a destination when it
 is created, and an overlay network is not captured.

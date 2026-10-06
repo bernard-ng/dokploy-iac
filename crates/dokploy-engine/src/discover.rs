@@ -147,8 +147,22 @@ pub(crate) async fn discover<T: Transport>(
 
     // The collections of the kinds the subjects select from serve both to turn the ids Dokploy
     // returns into names and to resolve the names the document uses.
-    let targets = SelectorIndex::targets(specs, by_kind.keys().map(String::as_str));
+    let mut targets = SelectorIndex::targets(specs, by_kind.keys().map(String::as_str));
+    if !compiled.vault_references.is_empty() {
+        targets.insert("vault_provider".to_owned());
+    }
     let selectors = SelectorIndex::load(transport, specs, &targets).await;
+    for (address, property, provider) in &compiled.vault_references {
+        if !matches!(
+            selectors.resolve("vault_provider", &serde_json::json!({ "name": provider })),
+            Some(ExternalResolution::Resolved(_))
+        ) {
+            return Err(EngineError::VaultProvider {
+                address: address.clone(),
+                property: property.clone(),
+            });
+        }
+    }
 
     let mut outcomes: BTreeMap<ResourceAddress, (String, Outcome)> = BTreeMap::new();
     for kind in kinds {

@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add the managed `vault_provider` settings kind with all eight Dokploy backends, masked
+  credentials, provider-specific defaults, and project/environment assignments by name. The new
+  `key_selector` spec attribute resolves both levels of Dokploy's `{ projectId, environmentIds }`
+  array from fresh state. A project document using `{ vault: ... }` now blocks planning unless its
+  provider exists uniquely. Live engine tests and sanitized captures cover Dokploy 0.30.6 and
+  0.30.7.
 - Add the managed `notification` settings kind with all twelve Dokploy providers, shared event
   switches, per-provider create and update operations, nested response projection, computed provider
   ids, and conformance coverage through every arm. Custom HTTP headers come from a secret JSON source;

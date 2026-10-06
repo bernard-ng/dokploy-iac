@@ -20,6 +20,12 @@ use crate::dotenv::{DotenvError, parse_dotenv};
 use crate::fingerprint::Fingerprinter;
 use crate::secrets::{SecretError, SecretReader};
 
+type FoundSelector<'a> = (
+    String,
+    &'a dokploy_model::Selector,
+    Option<(&'a str, &'a str)>,
+);
+
 /// A document compiled for planning.
 pub struct Compiled {
     pub(crate) scope: Scope,
@@ -29,6 +35,8 @@ pub struct Compiled {
     /// Secret values by address and dotted property path, kept only so an apply can send
     /// them. They are zeroed when the compiled document is dropped and never printed.
     pub(crate) secrets: BTreeMap<(ResourceAddress, String), zeroize::Zeroizing<Vec<u8>>>,
+    /// Vault sources the document names: each provider must resolve uniquely before planning.
+    pub(crate) vault_references: Vec<(ResourceAddress, String, String)>,
     /// The document's `moves` and `removed`, as written: they name addresses by suffix, and
     /// what a suffix means depends on what state tracks.
     pub(crate) directives: Directives,
@@ -179,6 +187,7 @@ impl Compiled {
             desired: DesiredState::try_new(digest, BTreeMap::new())?,
             resources: BTreeMap::new(),
             secrets: BTreeMap::new(),
+            vault_references: Vec::new(),
             directives: Directives::default(),
             fingerprinter: None,
         })
@@ -202,6 +211,7 @@ impl Compiled {
                 .expect("an empty desired state is valid"),
             resources: BTreeMap::new(),
             secrets: BTreeMap::new(),
+            vault_references: Vec::new(),
             directives: Directives::default(),
             fingerprinter: self.fingerprinter.clone(),
         }
@@ -333,6 +343,7 @@ impl Compiler<'_> {
         let mut desired = BTreeMap::new();
         let mut resources = BTreeMap::new();
         let mut secrets = BTreeMap::new();
+        let mut vault_references = Vec::new();
         for (address, resource, containment) in &pending {
             let spec = self
                 .specs
@@ -340,6 +351,9 @@ impl Compiler<'_> {
                 .ok_or_else(|| CompileError::UnknownKind {
                     kind: resource.kind.clone(),
                 })?;
+            for (name, field) in &resource.fields {
+                collect_vault_references(address, name, &field.value, &mut vault_references);
+            }
             let properties = self.properties(address, spec, resource, &mut secrets)?;
             let mut dependencies = resource
                 .depends_on
@@ -396,8 +410,12 @@ impl Compiler<'_> {
                 {
                     declared_sets.push(name.clone());
                 }
-                let found: Vec<(String, &dokploy_model::Selector)> = match &field.value {
-                    Value::Selector(selector) => vec![(name.clone(), selector)],
+                let key_selector = spec
+                    .fields
+                    .get(name)
+                    .and_then(|field| field.key_selector.as_deref());
+                let found: Vec<FoundSelector<'_>> = match &field.value {
+                    Value::Selector(selector) => vec![(name.clone(), selector, None)],
                     // Each member of each set of a map is an entry the planner resolves.
                     Value::Map(sets) => sets
                         .iter()
@@ -409,7 +427,11 @@ impl Compiler<'_> {
                             items.iter().filter_map(move |item| match item {
                                 Value::Selector(
                                     selector @ dokploy_model::Selector::Name(entry),
-                                ) => Some((format!("{name}.{key}.{entry}"), selector)),
+                                ) => Some((
+                                    format!("{name}.{key}.{entry}"),
+                                    selector,
+                                    key_selector.map(|kind| (kind, key.as_str())),
+                                )),
                                 _ => None,
                             })
                         })
@@ -419,7 +441,7 @@ impl Compiler<'_> {
                         .iter()
                         .filter_map(|item| match item {
                             Value::Selector(selector @ dokploy_model::Selector::Name(entry)) => {
-                                Some((format!("{name}.{entry}"), selector))
+                                Some((format!("{name}.{entry}"), selector, None))
                             }
                             _ => None,
                         })
@@ -429,14 +451,14 @@ impl Compiler<'_> {
                         .iter()
                         .filter_map(|(member, value)| match value {
                             Value::Selector(selector) => {
-                                Some((format!("{name}.{tag}.{member}"), selector))
+                                Some((format!("{name}.{tag}.{member}"), selector, None))
                             }
                             _ => None,
                         })
                         .collect(),
                     _ => Vec::new(),
                 };
-                for (dotted, selector) in found {
+                for (dotted, selector, scope) in found {
                     if let Ok(path) = PropertyPath::from_spec(spec, &dotted)
                         && !ignored.contains(&path)
                     {
@@ -451,7 +473,16 @@ impl Compiler<'_> {
                             }
                             declared_selectors.push(path.clone());
                         }
-                        selectors.push((path, selector_json(selector)));
+                        let mut value = selector_json(selector);
+                        if let Some((kind, name)) = scope
+                            && let Some(object) = value.as_object_mut()
+                        {
+                            object.insert(
+                                "scope".to_owned(),
+                                serde_json::json!({ "kind": kind, "name": name }),
+                            );
+                        }
+                        selectors.push((path, value));
                     }
                 }
             }
@@ -496,6 +527,7 @@ impl Compiler<'_> {
             desired: DesiredState::try_new(digest, desired)?,
             resources,
             secrets,
+            vault_references,
             directives: Directives {
                 moves: document
                     .moves
@@ -931,6 +963,49 @@ impl Compiler<'_> {
 }
 
 type Secrets = BTreeMap<(ResourceAddress, String), zeroize::Zeroizing<Vec<u8>>>;
+
+fn collect_vault_references(
+    address: &ResourceAddress,
+    path: &str,
+    value: &Value,
+    found: &mut Vec<(ResourceAddress, String, String)>,
+) {
+    match value {
+        Value::Source(Source::Vault { provider, .. }) => {
+            found.push((address.clone(), path.to_owned(), provider.clone()));
+        }
+        Value::Env(variables) => {
+            for (name, value) in variables {
+                if let EnvValue::Secret(Source::Vault { provider, .. }) = value {
+                    found.push((address.clone(), format!("{path}.{name}"), provider.clone()));
+                }
+            }
+        }
+        Value::List(values) => {
+            for (index, value) in values.iter().enumerate() {
+                collect_vault_references(address, &format!("{path}.{index}"), value, found);
+            }
+        }
+        Value::Map(values) => {
+            for (name, value) in values {
+                collect_vault_references(address, &format!("{path}.{name}"), value, found);
+            }
+        }
+        Value::Union { tag, fields } => {
+            for (name, value) in fields {
+                collect_vault_references(address, &format!("{path}.{tag}.{name}"), value, found);
+            }
+        }
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Number(_)
+        | Value::Text(_)
+        | Value::Source(_)
+        | Value::Selector(_)
+        | Value::Blob(_) => {}
+    }
+}
 
 fn comparable(json: serde_json::Value) -> OwnedValue {
     ComparableValue::try_from_json(json).map_or(OwnedValue::Null, OwnedValue::Value)

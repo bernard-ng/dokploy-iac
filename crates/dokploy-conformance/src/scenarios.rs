@@ -443,6 +443,9 @@ pub(crate) async fn secrets_from(w: &World<'_>, source: SecretSource) -> Check<V
     if !applies {
         return skip("the kind has no secret this source can supply");
     }
+    if source == SecretSource::Vault {
+        w.seed_target("vault_provider", "conformance-vault-1", VAULT_PROVIDER);
+    }
 
     let document = w.case.document_from(&values, false, source);
     let environment = w.case.environment_from(&values, source);

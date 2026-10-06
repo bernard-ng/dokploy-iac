@@ -883,6 +883,57 @@ settings:
 
 #[tokio::test]
 #[ignore = "applies settings to the local Dokploy"]
+async fn a_vault_provider_lives_through_every_arm_and_resolves_assignments() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    let project = call(
+        &raw,
+        OperationRequest::new("project.create").body(json!({ "name": "vault-assignment-project" })),
+    )
+    .await;
+    let project_id = project["project"]["projectId"].as_str().unwrap();
+    let environment_id = project["environment"]["environmentId"].as_str().unwrap();
+    let env = [("LIVE_VAULT_SECRET", "live-vault-canary")];
+    let document = |config: &str| {
+        format!(
+            "version: 2\nsettings:\n  vault_providers:\n    secrets:\n      config:\n{config}      assignments:\n        vault-assignment-project:\n          - {{ name: production }}\n"
+        )
+    };
+    let arms = [
+        "        type: hashicorp\n        url: https://vault.invalid\n        token: { env: LIVE_VAULT_SECRET }\n        namespace: ops\n        mount: secret\n",
+        "        type: infisical\n        site_url: https://app.infisical.com\n        client_id: live-client\n        client_secret: { env: LIVE_VAULT_SECRET }\n        project_id: live-project\n        environment_slug: staging\n        secret_path: /\n",
+        "        type: aws\n        region: us-east-1\n        access_key_id: AKIALIVECANARY\n        secret_access_key: { env: LIVE_VAULT_SECRET }\n        endpoint: https://aws.invalid\n",
+        "        type: aws-parameter-store\n        region: us-east-1\n        access_key_id: AKIALIVECANARY\n        secret_access_key: { env: LIVE_VAULT_SECRET }\n        endpoint: https://ssm.invalid\n        parameter_path: /dokploy\n",
+        "        type: doppler\n        service_token: { env: LIVE_VAULT_SECRET }\n        project: live\n        config: staging\n",
+        "        type: azure\n        vault_uri: https://live.vault.azure.net\n        tenant_id: live-tenant\n        client_id: live-client\n        client_secret: { env: LIVE_VAULT_SECRET }\n",
+        "        type: scaleway\n        region: fr-par\n        project_id: live-project\n        secret_key: { env: LIVE_VAULT_SECRET }\n        api_url: https://api.scaleway.com\n",
+        "        type: phase\n        token: { env: LIVE_VAULT_SECRET }\n        app_id: live-app\n        environment_slug: staging\n        path: /\n        api_url: https://api.phase.dev\n",
+    ];
+
+    for (index, config) in arms.into_iter().enumerate() {
+        let text = document(config);
+        assert_eq!(live.apply(&text, &env).await.unwrap(), 1, "arm {index}");
+        let providers = call(&raw, OperationRequest::new("vaultProvider.all")).await;
+        assert_eq!(providers.as_array().unwrap().len(), 1);
+        assert_eq!(providers[0]["assignments"][0]["projectId"], project_id);
+        assert_eq!(
+            providers[0]["assignments"][0]["environmentIds"][0],
+            environment_id
+        );
+        assert_eq!(live.changes(&text, &env).await, 0, "arm {index}");
+    }
+
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    call(
+        &raw,
+        OperationRequest::new("project.remove").body(json!({ "projectId": project_id })),
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
 async fn a_server_selects_its_ssh_key_by_name_and_is_updated_in_place() {
     guard();
     let live = Live::new();

@@ -42,7 +42,8 @@ image:    registry.example.com/app:1.2         # public literal
 `vault` sources render Dokploy's `${{vault.<provider>.<secret>}}` reference, which is what is sent
 and fingerprinted; the reference is not secret and the value never reaches this tool. Only an
 environment variable can be a vault reference. That the provider exists is checked once the
-settings document has `vault_providers` (M5). `env` and `file` values are read at plan and apply time,
+settings document has `vault_providers` (M5); planning now checks the named provider against fresh
+settings state. `env` and `file` values are read at plan and apply time,
 used for the one request that needs them, fingerprinted, and zeroised. A missing
 variable or file fails the command before any change.
 

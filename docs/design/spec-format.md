@@ -112,7 +112,8 @@ fields:
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
-`request`, `json`, `since`, `until`, `doc` (one line for the generated reference), `example`.
+`request`, `json`, `key_selector`, `since`, `until`, `doc` (one line for the generated reference),
+`example`.
 
 `request` names the top-level request field when `api` is a different response field or a JSON
 pointer. Notification settings use this because Dokploy accepts `webhookUrl` but reads it below a
@@ -135,6 +136,11 @@ the document drops it (Dokploy refuses that too; it goes with the project).
 the tag and the members of the active arm inside the object (a create takes it whole, and says what an
 arm requires before sending anything; a full update resends it, secrets included), and reads each member
 through `/config/<name>`. The request-side ledger sees one field, `config`.
+
+`key_selector: project` is for a `map<text, set<selector(environment)>>` whose map keys are also
+resource names. Vault assignments use this shape: the document maps a project name to environment
+names, while Dokploy reads and writes an array of `{ projectId, environmentIds }` objects. The
+engine resolves both levels from fresh collections.
 
 `file_key` is for a top-level `type: env` field only: it names a document key (`env_file`) that
 takes a dotenv file whose variables are added to the field's map (ADR 0010). It is an input of the

@@ -472,6 +472,11 @@ pub struct Field {
     /// the union's own `api` is the pointer to the tag (`/config/providerType`).
     #[serde(default)]
     pub nest: Option<String>,
+    /// For a map whose values are sets of selectors, the kind selected by each map key. The
+    /// request and response use ids for both the key and the set members, while the document uses
+    /// names for both (`project name -> environment names`).
+    #[serde(default)]
+    pub key_selector: Option<String>,
     /// For a top-level `env` field, the document key that names a dotenv file to expand into it
     /// (`env_file`, ADR 0010). It is an input of the document, not a property of Dokploy.
     #[serde(default)]

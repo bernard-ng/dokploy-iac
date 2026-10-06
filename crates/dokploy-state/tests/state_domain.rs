@@ -332,7 +332,6 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
         "",
         "Environment",
         "environment.",
-        "environment.API-TOKEN",
         "environment.1ABC",
         "environment..A",
         "password extra",
@@ -346,6 +345,7 @@ fn sensitive_inputs_validate_paths_and_resource_state_rejects_ownership_overlap(
     for valid in [
         "environment",
         "environment.lowercase",
+        "config.aws-parameter-store.token",
         "limits.token",
         "description",
     ] {

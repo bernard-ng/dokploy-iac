@@ -6,7 +6,9 @@
 
 use std::collections::BTreeMap;
 
-use dokploy_core::{ComparableValue, PropertyObservation, PropertyPath, PropertyUnknownReason};
+use dokploy_core::{
+    ComparableValue, ExternalResolution, PropertyObservation, PropertyPath, PropertyUnknownReason,
+};
 use dokploy_spec::{Field, FieldType, KindSpec, PathShape, parse_type};
 use serde_json::Value as Json;
 
@@ -260,20 +262,27 @@ fn observe_selector_set(
         return not_returned;
     };
     // A map of sets holds one element per key: its members are named `key.member`.
-    let held: Vec<(Option<String>, Held)> = if info.ty.is_map_of_selector_sets() {
+    let held: Vec<(Option<String>, Option<String>, Held)> = if info.ty.is_map_of_selector_sets() {
         match held_keyed_ids(item, &info.api) {
             Some(Ok(keyed)) => keyed
                 .into_iter()
-                .map(|(key, ids)| (Some(key), Held::Ids(ids)))
+                .map(|(key, ids)| {
+                    let display = info.key_selector.as_deref().map(|kind| {
+                        selectors
+                            .name_of(kind, &key)
+                            .map_or_else(|| format!("?{key}"), str::to_owned)
+                    });
+                    (Some(key), display, Held::Ids(ids))
+                })
                 .collect(),
-            Some(Err(())) => vec![(None, Held::Invalid)],
-            None => vec![(None, Held::NotReturned)],
+            Some(Err(())) => vec![(None, None, Held::Invalid)],
+            None => vec![(None, None, Held::NotReturned)],
         }
     } else {
-        vec![(None, held_ids(item, &info.api))]
+        vec![(None, None, held_ids(item, &info.api))]
     };
     let mut names = serde_json::Map::new();
-    for (key, ids) in held {
+    for (key_id, key_name, ids) in held {
         match ids {
             Held::NotReturned => return not_returned,
             Held::Null => return PropertyObservation::KnownAbsent,
@@ -282,10 +291,15 @@ fn observe_selector_set(
             }
             Held::Ids(ids) => {
                 for id in &ids {
-                    let member = selectors
-                        .name_of(kind, id)
-                        .map_or_else(|| format!("?{id}"), str::to_owned);
-                    let name = match &key {
+                    let member = match key_id.as_deref() {
+                        Some(parent_id) if info.key_selector.is_some() => selectors
+                            .name_of_scoped(kind, id, parent_id)
+                            .map_or_else(|| format!("?{id}"), str::to_owned),
+                        _ => selectors
+                            .name_of(kind, id)
+                            .map_or_else(|| format!("?{id}"), str::to_owned),
+                    };
+                    let name = match key_name.as_deref().or(key_id.as_deref()) {
                         Some(key) => format!("{key}.{member}"),
                         None => member,
                     };
@@ -355,19 +369,39 @@ fn observe_selector_entry(
         .and_then(|root| info.path.strip_prefix(root))
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or_default();
-    // An entry of a map of sets is `key.member`; the read is already of the key's element.
-    let name = if info.api.contains("/*[") {
-        name.split_once('.').map_or(name, |(_, member)| member)
+    // An entry of a map of sets is `key.member`. When the key is itself a selector, replace its
+    // document name in the pointer with the id Dokploy stores and resolve the member below it.
+    let (name, api, parent_id) = if info.api.contains("/*[") {
+        let Some((key, member)) = name.split_once('.') else {
+            return not_returned;
+        };
+        if let Some(key_kind) = info.key_selector.as_deref() {
+            let Some(ExternalResolution::Resolved(parent_id)) =
+                selectors.resolve(key_kind, &serde_json::json!({ "name": key }))
+            else {
+                return not_returned;
+            };
+            let api = info
+                .api
+                .replace(&format!("={key}]"), &format!("={}]", parent_id.as_str()));
+            (member, api, Some(parent_id))
+        } else {
+            (member, info.api.clone(), None)
+        }
     } else {
-        name
+        (name, info.api.clone(), None)
     };
-    match held_ids(item, &info.api) {
+    match held_ids(item, &api) {
         Held::NotReturned => not_returned,
         Held::Null => PropertyObservation::KnownAbsent,
         Held::Ids(ids) => {
             let mut unnamed = false;
             for id in &ids {
-                match selectors.name_of(kind, id) {
+                let held = parent_id.as_ref().map_or_else(
+                    || selectors.name_of(kind, id),
+                    |parent| selectors.name_of_scoped(kind, id, parent.as_str()),
+                );
+                match held {
                     Some(held) if held == name => {
                         return ComparableValue::try_from_json(serde_json::json!({ "name": name }))
                             .map_or(

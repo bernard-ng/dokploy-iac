@@ -1,0 +1,32 @@
+{
+  "capturedAt": "2026-10-06",
+  "createReturns": "object",
+  "createStatus": 200,
+  "detailExposesCredentials": false,
+  "duplicateNamesAllowed": false,
+  "duplicateStatus": 500,
+  "fixtures": [
+    "vaultProvider-create.owner.json",
+    "vaultProvider-all.created.owner.json",
+    "vaultProvider-one.created.owner.json",
+    "vaultProvider-update.partial-rejected.owner.json",
+    "vaultProvider-update.owner.json",
+    "vaultProvider-one.updated.owner.json",
+    "vaultProvider-remove.owner.json",
+    "vaultProvider-one.removed.owner.json",
+    "vaultProvider-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "vault_provider",
+  "listingExposesCredentials": false,
+  "listingMasksCredentials": true,
+  "partialUpdateStatus": 400,
+  "removeReturns": "boolean",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": false,
+  "updateReturns": "object",
+  "version": "v0.30.6"
+}

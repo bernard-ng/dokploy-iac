@@ -204,21 +204,22 @@ settings:
     critical: {}
 
   # ===== Secrets (Dokploy Vault) =============================================
-  vault_providers:                           # ✘ planned in the earlier design (S9, S10)
+  vault_providers:                           # ✔
     infisical-staging:
-      type: infisical                        #   hashicorp | infisical | aws | aws-parameter-store | doppler | azure | scaleway | phase
-      site_url: https://app.infisical.com
-      client_id: { env: INFISICAL_CLIENT_ID }          # [s]
-      client_secret: { env: INFISICAL_CLIENT_SECRET }  # [s]
-      project_id: 6f1c0b5e-1111-2222-3333-444455556666
-      environment_slug: staging
-      secret_path: /
-      assignments:                           #   which projects/environments may use it
-        - { project: leganews-platform, environments: [staging] }
+      config:
+        type: infisical                      #   hashicorp | infisical | aws | aws-parameter-store | doppler | azure | scaleway | phase
+        site_url: https://app.infisical.com
+        client_id: infisical-client
+        client_secret: { env: INFISICAL_CLIENT_SECRET }  # [s]
+        project_id: 6f1c0b5e-1111-2222-3333-444455556666
+        environment_slug: staging
+        secret_path: /
+      assignments:                           #   project and environments, both by name
+        leganews-platform: [{ name: staging }]
     # other arms: hashicorp{url,namespace,mount,token[s]}, aws{region,access_key_id,secret_access_key[s],endpoint},
     # aws-parameter-store{... parameter_path}, doppler{service_token[s],project,config},
     # azure{vault_uri,tenant_id,client_id,client_secret[s]}, scaleway{region,project_id,secret_key[s],api_url},
-    # phase{token[s],app_id,env,path,api_url}
+    # phase{token[s],app_id,environment_slug,path,api_url}
 
   # ===== AI ==================================================================
   ai_providers:                              # ✘ in the beta

@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Issue;
 use crate::model::{
-    Api, Authority, CreateIdentity, CreateOperation, Field, KindClass, KindSpec, Mutability,
-    ValueClass, WriteGroup,
+    Api, Authority, CreateIdentity, CreateOperation, Field, Granularity, KindClass, KindSpec,
+    Mutability, ValueClass, WriteGroup,
 };
 use crate::types::{FieldType, parse_type};
 
@@ -13,6 +13,13 @@ fn is_snake(text: &str) -> bool {
     let mut characters = text.chars();
     characters.next().is_some_and(|c| c.is_ascii_lowercase())
         && characters.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn is_arm_name(text: &str) -> bool {
+    let mut characters = text.chars();
+    characters.next().is_some_and(|c| c.is_ascii_lowercase())
+        && characters
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '-'))
 }
 
 fn is_operation(text: &str) -> bool {
@@ -409,6 +416,18 @@ fn check_field(
             );
         }
     }
+    if field.key_selector.is_some()
+        && !(top_level
+            && parsed
+                .as_ref()
+                .is_some_and(FieldType::is_map_of_selector_sets)
+            && field.granularity == Some(Granularity::Key))
+    {
+        context.add(
+            format!("{path}.key_selector"),
+            "applies to a top-level map of selector sets with key granularity",
+        );
+    }
     if field.file_key.is_some() && !(top_level && matches!(parsed, Some(FieldType::Env))) {
         context.add(
             format!("{path}.file_key"),
@@ -578,10 +597,10 @@ fn check_type_rules(
                 context.add(format!("{path}.members"), "a union has arms, not members");
             }
             for (arm, fields) in &field.arms {
-                if !is_snake(arm) {
+                if !is_arm_name(arm) {
                     context.add(
                         format!("{path}.arms.{arm}"),
-                        "arm names are lower snake case",
+                        "arm names are lower snake or kebab case",
                     );
                 }
                 if fields.contains_key(tag) {

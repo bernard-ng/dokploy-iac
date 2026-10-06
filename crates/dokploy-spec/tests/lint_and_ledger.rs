@@ -86,7 +86,7 @@ fn the_base_spec_is_valid_and_its_ledger_is_clean() {
 
 #[test]
 fn lint_rejects_each_structural_mistake() {
-    let cases: [(&str, String, &str); 10] = [
+    let cases: [(&str, String, &str); 11] = [
         (
             "a secret that can be read back",
             with(
@@ -154,6 +154,14 @@ fn lint_rejects_each_structural_mistake() {
                 "create: { op: createWidget }",
             ),
             "not a `resource.operation` id",
+        ),
+        (
+            "a key selector on a scalar field",
+            with(
+                "color: { type: text, nullable: true }",
+                "color: { type: text, nullable: true, key_selector: project }",
+            ),
+            "applies to a top-level map of selector sets with key granularity",
         ),
     ];
     for (label, source, expected) in cases {

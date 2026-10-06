@@ -185,8 +185,9 @@ impl SensitivePropertyPath {
     /// Parses a dotted property path.
     ///
     /// The first segment is a lower snake case field name. Later segments are
-    /// collection keys or struct members: letters, digits, and underscores, not
-    /// starting with a digit.
+    /// collection keys, union arms, or struct members: letters, digits, underscores, and
+    /// hyphens, not starting with a digit. The model applies stricter rules where the domain
+    /// requires them, such as environment variable names.
     pub fn parse(value: &str) -> Result<Self, SensitivePropertyPathError> {
         if value.len() > MAX_SENSITIVE_PATH_LEN {
             return Err(SensitivePropertyPathError);
@@ -204,7 +205,7 @@ impl SensitivePropertyPath {
         }
         for segment in segments {
             count += 1;
-            if count > MAX_SENSITIVE_PATH_SEGMENTS || !valid_environment_name(segment) {
+            if count > MAX_SENSITIVE_PATH_SEGMENTS || !valid_sensitive_segment(segment) {
                 return Err(SensitivePropertyPathError);
             }
         }
@@ -222,6 +223,17 @@ impl SensitivePropertyPath {
     pub fn segments(&self) -> impl Iterator<Item = &str> {
         self.0.split('.')
     }
+}
+
+fn valid_sensitive_segment(value: &str) -> bool {
+    if value.len() > 256 {
+        return false;
+    }
+
+    let mut characters = value.chars();
+    matches!(characters.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
+        && characters
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
 }
 
 impl fmt::Display for SensitivePropertyPath {

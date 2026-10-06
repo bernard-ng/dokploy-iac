@@ -62,6 +62,8 @@ pub struct PropertyInfo {
     pub selector: Option<String>,
     /// The collection root, for an entry.
     pub root: Option<String>,
+    /// For a map of selector sets, the kind each map key selects.
+    pub key_selector: Option<String>,
     /// Constraints on the value.
     pub rules: ValueRules,
     /// Whether the document supplies a default (`default: key`).
@@ -291,6 +293,7 @@ fn base(
         nullable: field.nullable,
         selector: selector_of(parsed),
         root: None,
+        key_selector: field.key_selector.clone(),
         rules: ValueRules {
             min_len: field.min_len,
             min: field.min,

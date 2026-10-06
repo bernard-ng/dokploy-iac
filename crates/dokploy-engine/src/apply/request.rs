@@ -1188,13 +1188,40 @@ fn keyed_set_elements(
         {
             continue;
         }
-        let Some((key, _)) = split(&path.to_string()) else {
+        let Some((key, entry)) = split(&path.to_string()) else {
             continue;
         };
-        owned
-            .entry(key)
-            .or_default()
-            .push(body_value(inputs, address, checkpoint, path)?);
+        let (request_key, id) = if let Some(key_kind) = field.key_selector.as_deref() {
+            let selectors = inputs
+                .selectors
+                .ok_or_else(|| ApplyError::UnresolvedSelector {
+                    address: address.clone(),
+                    property: path.to_string(),
+                })?;
+            let Some(ExternalResolution::Resolved(parent_id)) =
+                selectors.resolve(key_kind, &serde_json::json!({ "name": key }))
+            else {
+                return Err(ApplyError::UnresolvedSelector {
+                    address: address.clone(),
+                    property: path.to_string(),
+                });
+            };
+            let Some(ExternalResolution::Resolved(member_id)) =
+                selectors.resolve_scoped(&kind, &entry, parent_id.as_str())
+            else {
+                return Err(ApplyError::UnresolvedSelector {
+                    address: address.clone(),
+                    property: path.to_string(),
+                });
+            };
+            (
+                parent_id.as_str().to_owned(),
+                Json::String(member_id.as_str().to_owned()),
+            )
+        } else {
+            (key, body_value(inputs, address, checkpoint, path)?)
+        };
+        owned.entry(request_key).or_default().push(id);
     }
     // What it stopped naming: written, and `null` in the checkpoint.
     let removed: Vec<(String, String)> = group
@@ -1228,10 +1255,20 @@ fn keyed_set_elements(
             .unwrap_or_default();
         if let Some(selectors) = inputs.selectors {
             ids.retain(|id| {
-                let held = id.as_str().and_then(|id| selectors.name_of(&kind, id));
-                !removed
-                    .iter()
-                    .any(|(removed_key, entry)| *removed_key == key && Some(entry.as_str()) == held)
+                let held_key = field
+                    .key_selector
+                    .as_deref()
+                    .and_then(|key_kind| selectors.name_of(key_kind, &key));
+                let held = id.as_str().and_then(|id| {
+                    if field.key_selector.is_some() {
+                        selectors.name_of_scoped(&kind, id, &key)
+                    } else {
+                        selectors.name_of(&kind, id)
+                    }
+                });
+                !removed.iter().any(|(removed_key, entry)| {
+                    held_key.unwrap_or(&key) == removed_key && Some(entry.as_str()) == held
+                })
             });
         }
         for id in owned.get(&key).into_iter().flatten() {

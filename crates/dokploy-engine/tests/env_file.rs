@@ -9,8 +9,8 @@ use std::path::Path;
 
 use common::compile_in;
 use common::project::ProjectWorld;
-use dokploy_engine::{CompileError, DotenvError};
-use serde_json::Value;
+use dokploy_engine::{CompileError, DotenvError, EngineError};
+use serde_json::{Value, json};
 
 const FROM_FILE: &str = "from-file-canary-1";
 const EXPLICIT: &str = "explicit-canary-2";
@@ -232,6 +232,9 @@ async fn a_variable_dropped_from_the_map_is_removed_and_one_never_owned_stays() 
 #[tokio::test]
 async fn a_vault_variable_is_sent_as_the_reference_dokploy_resolves() {
     let world = ProjectWorld::new();
+    world
+        .sim
+        .seed("vault_provider", &json!({ "name": "infisical" }));
     let text = document(
         "          environment:\n            MAIL_KEY: { vault: { provider: infisical, secret: MAIL_KEY } }\n            LOG_LEVEL: info\n",
     );
@@ -243,6 +246,22 @@ async fn a_vault_variable_is_sent_as_the_reference_dokploy_resolves() {
         ["LOG_LEVEL=info", "MAIL_KEY=${{vault.infisical.MAIL_KEY}}"]
     );
     assert_eq!(world.pending_here(&text).await, 0, "converged");
+}
+
+#[tokio::test]
+async fn a_vault_variable_whose_provider_does_not_exist_blocks_planning() {
+    let world = ProjectWorld::new();
+    let text = document(
+        "          environment:\n            MAIL_KEY: { vault: { provider: missing, secret: MAIL_KEY } }\n",
+    );
+    let engine = world.engine();
+    let compiled = compile_in(&engine, world.directory.path(), &text, &[]);
+    let state = world.store(&engine).inspect().unwrap();
+
+    assert!(matches!(
+        engine.plan(&compiled, state.as_ref()).await,
+        Err(EngineError::VaultProvider { property, .. }) if property == "environment.MAIL_KEY"
+    ));
 }
 
 #[tokio::test]

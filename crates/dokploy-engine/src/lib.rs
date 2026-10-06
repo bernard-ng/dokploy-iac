@@ -75,6 +75,12 @@ pub enum EngineError {
     /// A `moves` or `removed` entry does not name exactly one address.
     #[error(transparent)]
     Directive(#[from] DirectiveError),
+    /// A vault source names no unique provider in fresh settings state.
+    #[error("`{address}`: vault source at `{property}` does not name one available vault provider")]
+    VaultProvider {
+        address: dokploy_state::ResourceAddress,
+        property: String,
+    },
 }
 
 /// Compiles documents and plans them against a Dokploy reached through a transport.

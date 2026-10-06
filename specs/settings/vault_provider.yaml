@@ -1,0 +1,94 @@
+# A Dokploy Vault provider. The provider credentials live in one nested `config` union; assignments
+# map projects to the environments allowed to read from it.
+#
+# Live facts (0.30.6 and 0.30.7): all eight provider arms create without testing their credentials, create and
+# update answer the whole object, secrets read back as `********`, and update requires `name`, the
+# whole `config`, and `assignments`. Assignments read back as project and environment ids.
+kind: vault_provider
+scope: settings
+section: vault_providers
+title: Vault provider
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "vault_provider.{key}"
+api:
+  id: vaultProviderId
+  create:
+    op: vaultProvider.create
+    send: { assignments: [] }
+  update: { op: vaultProvider.update }
+  remove: { op: vaultProvider.remove }
+  read:
+    list: { op: vaultProvider.all, authority: authoritative }
+    one: { op: vaultProvider.one, id_param: vaultProviderId, agree: true }
+  create_identity:
+    from_response: /vaultProviderId
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+    pattern: "^[a-zA-Z0-9_-]{1,64}$"
+  config:
+    api: /config/providerType
+    nest: config
+    type: union(type)
+    arms:
+      hashicorp:
+        url: { type: text, min_len: 1 }
+        token: { type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        namespace: { type: text, nullable: true }
+        mount: { type: text, min_len: 1, fallback: secret }
+      infisical:
+        site_url: { api: siteUrl, type: text, fallback: "https://app.infisical.com" }
+        client_id: { api: clientId, type: text, min_len: 1 }
+        client_secret: { api: clientSecret, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        project_id: { api: projectId, type: text, min_len: 1 }
+        environment_slug: { api: environmentSlug, type: text, min_len: 1 }
+        secret_path: { api: secretPath, type: text, fallback: "/" }
+      aws:
+        region: { type: text, min_len: 1 }
+        access_key_id: { api: accessKeyId, type: text, min_len: 1 }
+        secret_access_key: { api: secretAccessKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        endpoint: { type: text, nullable: true }
+      aws-parameter-store:
+        region: { type: text, min_len: 1 }
+        access_key_id: { api: accessKeyId, type: text, min_len: 1 }
+        secret_access_key: { api: secretAccessKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        endpoint: { type: text, nullable: true }
+        parameter_path: { api: parameterPath, type: text, nullable: true }
+      doppler:
+        service_token: { api: serviceToken, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        project: { type: text, nullable: true }
+        config: { type: text, nullable: true }
+      azure:
+        vault_uri: { api: vaultUri, type: text, min_len: 1 }
+        tenant_id: { api: tenantId, type: text, min_len: 1 }
+        client_id: { api: clientId, type: text, min_len: 1 }
+        client_secret: { api: clientSecret, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+      scaleway:
+        region: { type: text, min_len: 1, fallback: fr-par }
+        project_id: { api: projectId, type: text, min_len: 1 }
+        secret_key: { api: secretKey, type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        api_url: { api: apiUrl, type: text, fallback: "https://api.scaleway.com" }
+      phase:
+        token: { type: text, min_len: 1, class: secret, mutability: write_only, resend_on_update: true }
+        app_id: { api: appId, type: text, min_len: 1 }
+        environment_slug: { api: env, type: text, min_len: 1 }
+        path: { type: text, fallback: "/" }
+        api_url: { api: apiUrl, type: text, fallback: "https://api.phase.dev" }
+  assignments:
+    api: "/assignments/*[projectId=$key]/environmentIds"
+    request: assignments
+    type: "map<text, set<selector(environment)>>"
+    key_selector: project
+    granularity: key
+    doc: Projects and their allowed environments, both by name. An empty map removes every assignment.
+write:
+  - op: vaultProvider.update
+    fields: [name, config, assignments]
+    shape: full
+ledger:
+  readonly: [createdAt, organizationId, providerType]

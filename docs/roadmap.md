@@ -142,10 +142,11 @@ fingerprint of paths is needed.
 
 In progress, delivered by shape and captured live as it goes (each slice on Dokploy 0.30.6 and 0.30.7,
 with a live engine test): `ssh_key`, `ai_provider`, `certificate` (create-only secrets, the
-organization the API key acts in), `dns_provider` (a union kept in a nested `config` object), and
-`server` (a selector to a resource of the same document). Left: the Git providers, the twelve
-notification providers, `vault_provider`, and the adopt-only singletons (`organization`,
-`web_server`). `destination`, `registry`, and `network` lost their `server` field because Dokploy does
+organization the API key acts in), `dns_provider` (a union kept in a nested `config` object),
+`server` (a selector to a resource of the same document), all twelve `notification` providers, and
+all eight `vault_provider` backends with named project/environment assignments. Left: the Git
+providers and the adopt-only singletons (`organization`, `web_server`). `destination`, `registry`,
+and `network` lost their `server` field because Dokploy does
 not store or list it. Out of the beta, as the vision document says: `custom_roles`, `members`,
 `sso_providers`, `profile`, `cluster`, and `license`.
 

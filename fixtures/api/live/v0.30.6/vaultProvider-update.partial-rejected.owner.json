@@ -1,0 +1,38 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "vaultProvider.update",
+    "zodError": {
+      "fieldErrors": {
+        "assignments": [
+          "Invalid input: expected array, received undefined"
+        ],
+        "config": [
+          "Invalid input: expected object, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "object",
+      "message": "Invalid input: expected object, received undefined",
+      "path": [
+        "config"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "array",
+      "message": "Invalid input: expected array, received undefined",
+      "path": [
+        "assignments"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

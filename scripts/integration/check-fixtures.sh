@@ -1776,6 +1776,7 @@ required_recipe_kinds=(
     certificates
     dnsProvider
     server
+    vaultProvider
 )
 
 for recipe_kind in "${required_recipe_kinds[@]}"; do

@@ -12,6 +12,8 @@ def normalized_scalar:
     if .value == null then . else .value = "project-1" end
   elif .key == "environmentId" then
     if .value == null then . else .value = "environment-1" end
+  elif .key == "environmentIds" and (.value | type) == "array" then
+    .value = (.value | map("environment-1"))
   elif .key == "applicationId" then
     if .value == null then . else .value = "application-1" end
   elif .key == "composeId" then
