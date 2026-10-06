@@ -388,6 +388,16 @@ fn check_field(
     if let Some(parsed) = &parsed {
         check_type_rules(context, path, field, parsed, shared_types);
     }
+    if field.json
+        && (!matches!(parsed, Some(FieldType::Text))
+            || field.class != ValueClass::Secret
+            || field.mutability != Mutability::WriteOnly)
+    {
+        context.add(
+            format!("{path}.json"),
+            "JSON decoding applies only to a write_only secret text field",
+        );
+    }
     if let Some(nest) = &field.nest {
         let tag_pointer = field.api.as_deref().unwrap_or_default();
         if !matches!(parsed, Some(FieldType::Union { .. })) || !top_level {

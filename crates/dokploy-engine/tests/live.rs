@@ -777,6 +777,112 @@ async fn a_dns_provider_lives_through_every_arm_of_its_config() {
 
 #[tokio::test]
 #[ignore = "applies settings to the local Dokploy"]
+async fn notifications_live_through_every_provider() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    let env = [
+        (
+            "LIVE_NOTIFICATION_SECRET",
+            "https://hooks.invalid/live-canary",
+        ),
+        (
+            "LIVE_NOTIFICATION_HEADERS",
+            r#"{"Authorization":"Bearer live-canary"}"#,
+        ),
+    ];
+    let document = |deploy: bool| {
+        format!(
+            r##"version: 2
+settings:
+  notifications:
+    slack:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: slack, webhook_url: {{ env: LIVE_NOTIFICATION_SECRET }}, channel: "#ops" }}
+    telegram:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: telegram, bot_token: {{ env: LIVE_NOTIFICATION_SECRET }}, chat_id: "-100123", message_thread_id: "" }}
+    discord:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: discord, webhook_url: {{ env: LIVE_NOTIFICATION_SECRET }}, decoration: true }}
+    email:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: email, smtp_server: smtp.invalid, smtp_port: 587, username: mailer, password: {{ env: LIVE_NOTIFICATION_SECRET }}, from_address: dokploy@example.test, to_addresses: [ops@example.test] }}
+    resend:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: resend, api_key: {{ env: LIVE_NOTIFICATION_SECRET }}, from_address: dokploy@example.test, to_addresses: [ops@example.test] }}
+    gotify:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: gotify, server_url: https://gotify.invalid, app_token: {{ env: LIVE_NOTIFICATION_SECRET }}, priority: 5, decoration: true }}
+    ntfy:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: ntfy, server_url: https://ntfy.invalid, topic: live, access_token: {{ env: LIVE_NOTIFICATION_SECRET }}, priority: 3 }}
+    mattermost:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: mattermost, webhook_url: {{ env: LIVE_NOTIFICATION_SECRET }}, channel: ops, username: dokploy }}
+    custom:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: custom, endpoint: https://custom.invalid/dokploy, headers: {{ env: LIVE_NOTIFICATION_HEADERS }} }}
+    lark:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: lark, webhook_url: {{ env: LIVE_NOTIFICATION_SECRET }} }}
+    teams:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: teams, webhook_url: {{ env: LIVE_NOTIFICATION_SECRET }} }}
+    pushover:
+      events: {{ app_deploy: {deploy} }}
+      config: {{ type: pushover, user_key: {{ env: LIVE_NOTIFICATION_SECRET }}, api_token: {{ env: LIVE_NOTIFICATION_SECRET }}, priority: 0, retry: 60, expire: 3600 }}
+"##
+        )
+    };
+
+    assert_eq!(live.apply(&document(true), &env).await.unwrap(), 12);
+    let notifications = call(&raw, OperationRequest::new("notification.all")).await;
+    let held_types: std::collections::BTreeSet<&str> = notifications
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|notification| notification["notificationType"].as_str())
+        .collect();
+    assert_eq!(
+        held_types,
+        [
+            "slack",
+            "telegram",
+            "discord",
+            "email",
+            "resend",
+            "gotify",
+            "ntfy",
+            "mattermost",
+            "custom",
+            "lark",
+            "teams",
+            "pushover",
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(live.changes(&document(true), &env).await, 0);
+    assert_eq!(live.apply(&document(false), &env).await.unwrap(), 12);
+    assert!(
+        call(&raw, OperationRequest::new("notification.all"))
+            .await
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|notification| notification["appDeploy"] == false)
+    );
+
+    live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
+    assert_eq!(
+        call(&raw, OperationRequest::new("notification.all")).await,
+        json!([])
+    );
+}
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
 async fn a_server_selects_its_ssh_key_by_name_and_is_updated_in_place() {
     guard();
     let live = Live::new();

@@ -112,11 +112,15 @@ fields:
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
-`since`, `until`, `doc` (one line for the generated reference), `example`.
+`request`, `json`, `since`, `until`, `doc` (one line for the generated reference), `example`.
 
 `request` names the top-level request field when `api` is a different response field or a JSON
 pointer. Notification settings use this because Dokploy accepts `webhookUrl` but reads it below a
 provider object such as `/slack/webhookUrl`.
+
+`json: true` decodes a write-only secret text source as JSON before putting it in the request.
+It is for secret objects such as custom notification headers: the document names a file or
+environment variable, while plans, state, errors, and journals never hold the decoded values.
 
 `made_with_parent: { name, marker }` (on a kind, not a field) says Dokploy makes one of this kind
 by itself when it makes the parent: a project's `production` environment, flagged by the computed bool

@@ -102,7 +102,9 @@ pub(crate) fn writable(
         .fields
         .get(info.field_name())
         .is_some_and(|field| field.nest.is_some());
-    if !relation && !nested && info.api.trim_start_matches('/').contains('/') {
+    let flat_request =
+        info.api != info.request && !info.request.trim_start_matches('/').contains('/');
+    if !relation && !nested && !flat_request && info.api.trim_start_matches('/').contains('/') {
         return Err(unsupported(
             "maps to a nested request key, which the executor does not write yet",
         ));
@@ -134,6 +136,20 @@ fn body_value(
             selector_id(address, path, value, selectors)
         }
         Some(CheckpointValueRef::NonSensitive(value)) => Ok(value.clone()),
+        Some(CheckpointValueRef::Sensitive) if path.info().json => {
+            let dotted = path.to_string();
+            let bytes = compiled
+                .secrets
+                .get(&(address.clone(), dotted.clone()))
+                .ok_or_else(|| ApplyError::MissingSecret {
+                    address: address.clone(),
+                    property: dotted.clone(),
+                })?;
+            serde_json::from_slice(bytes).map_err(|_| ApplyError::SecretNotJson {
+                address: address.clone(),
+                property: dotted,
+            })
+        }
         Some(CheckpointValueRef::Sensitive) => secret_text(compiled, address, &path.to_string()),
         Some(CheckpointValueRef::EmptyCollection) | None => Err(ApplyError::Unsupported {
             address: address.clone(),

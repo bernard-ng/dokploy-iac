@@ -11,13 +11,29 @@ use dokploy_spec::{CreateOperation, KindSpec, PropertyInfo};
 /// default, when the document leaves it out.
 #[must_use]
 pub fn required_at_creation(spec: &KindSpec, info: &PropertyInfo) -> bool {
-    info.is_required_on_create() && create_requires(spec, info)
+    variant_tag_required(spec, info)
+        || info.fallback.is_none() && info.is_required_on_create() && create_requires(spec, info)
+}
+
+fn variant_tag_required(spec: &KindSpec, info: &PropertyInfo) -> bool {
+    matches!(
+        &spec.api.create,
+        Some(CreateOperation::ByVariant { by_variant, .. })
+            if by_variant == info.field_name() && info.union_tag
+    )
 }
 
 fn create_requires(spec: &KindSpec, info: &PropertyInfo) -> bool {
     let Some(create) = &spec.api.create else {
         return true;
     };
+    if matches!(
+        create,
+        CreateOperation::ByVariant { by_variant, .. }
+            if by_variant == info.field_name() && info.union_tag
+    ) {
+        return true;
+    }
     let operations: Vec<&str> = match create {
         CreateOperation::Op(operation) => vec![&operation.op],
         CreateOperation::ByVariant { by_variant, ops }
@@ -45,8 +61,13 @@ fn create_requires(spec: &KindSpec, info: &PropertyInfo) -> bool {
 pub(crate) fn mutation_contract(spec: &KindSpec) -> MutationContract {
     let mut contract = MutationContract::from_spec(spec);
     for info in spec.properties() {
-        if info.is_required_on_create() && !create_requires(spec, &info) {
-            contract = contract.optional_on_create(&PropertyPath::from_property_info(info));
+        let path = PropertyPath::from_property_info(info.clone());
+        if variant_tag_required(spec, &info) {
+            contract = contract.requiring(path);
+        } else if info.is_required_on_create()
+            && (info.fallback.is_some() || !create_requires(spec, &info))
+        {
+            contract = contract.optional_on_create(&path);
         }
     }
 

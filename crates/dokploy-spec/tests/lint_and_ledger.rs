@@ -248,6 +248,38 @@ write:
 }
 
 #[test]
+fn json_decoding_is_limited_to_write_only_secret_text() {
+    let valid = BASE.replace(
+        "token: { type: text, class: secret, mutability: write_only }",
+        "token: { type: text, class: secret, mutability: write_only, json: true }",
+    );
+    assert_eq!(issues(&valid), Vec::<String>::new());
+
+    for invalid in [
+        valid.replace(
+            "token: { type: text, class: secret, mutability: write_only, json: true }",
+            "token: { type: bool, class: secret, mutability: write_only, json: true }",
+        ),
+        valid.replace(
+            "token: { type: text, class: secret, mutability: write_only, json: true }",
+            "token: { type: text, class: public, mutability: write_only, json: true }",
+        ),
+        valid.replace(
+            "token: { type: text, class: secret, mutability: write_only, json: true }",
+            "token: { type: text, class: secret, mutability: create_only, json: true }",
+        ),
+    ] {
+        assert!(
+            issues(&invalid)
+                .iter()
+                .any(|issue| issue.contains("JSON decoding applies only")),
+            "{:?}",
+            issues(&invalid)
+        );
+    }
+}
+
+#[test]
 fn the_ledger_fails_an_unclassified_request_field_for_full_coverage() {
     let mut document = openapi();
     document["components"]["schemas"]["WidgetUpdate"]["properties"]["surprise"] = json!({});

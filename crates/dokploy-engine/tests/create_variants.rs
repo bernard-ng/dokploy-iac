@@ -32,6 +32,7 @@ fields:
       custom:
         provider_id: { api: customId, request: customId, type: text, mutability: computed }
         endpoint: { type: text }
+        headers: { type: text, class: secret, mutability: write_only, json: true }
       pushover:
         provider_id: { api: pushoverId, request: pushoverId, type: text, mutability: computed }
         user_key: { api: userKey, type: text, class: secret, mutability: write_only }
@@ -47,7 +48,7 @@ async fn the_active_arm_selects_the_create_operation() {
     for (arm, fields, expected_create, expected_update) in [
         (
             "custom",
-            "endpoint: https://example.invalid/hook",
+            "endpoint: https://example.invalid/hook\n        headers: { env: NOTICE_HEADERS }",
             "notification.createCustom",
             "notification.updateCustom",
         ),
@@ -67,7 +68,13 @@ async fn the_active_arm_selects_the_create_operation() {
             "version: 2\nsettings:\n  notifications:\n    ops:\n      config:\n        type: {arm}\n        {fields}\n"
         );
         let document = engine.parse(&text).unwrap();
-        let secrets = WorkspaceSecrets::new(directory.path(), |_| Some("canary-token".to_owned()));
+        let secrets = WorkspaceSecrets::new(directory.path(), |name| {
+            Some(if name == "NOTICE_HEADERS" {
+                r#"{"Authorization":"Bearer canary"}"#.to_owned()
+            } else {
+                "canary-token".to_owned()
+            })
+        });
         let compiled = engine
             .compile(&document, &engine.fingerprinter(common::key()), &secrets)
             .unwrap();
@@ -81,6 +88,12 @@ async fn the_active_arm_selects_the_create_operation() {
         engine.apply(&compiled, &store, |_| true).await.unwrap();
 
         assert_eq!(sim.mutations()[0].operation(), expected_create);
+        if arm == "custom" {
+            assert_eq!(
+                sim.mutations()[0].body().unwrap()["headers"],
+                serde_json::json!({ "Authorization": "Bearer canary" })
+            );
+        }
 
         let remote = sim.objects("notification").remove(0);
         let id = remote["notificationId"].as_str().unwrap();
@@ -92,7 +105,13 @@ async fn the_active_arm_selects_the_create_operation() {
         sim.clear_requests();
         let changed = text.replacen("      config:", "      name: renamed\n      config:", 1);
         let document = engine.parse(&changed).unwrap();
-        let secrets = WorkspaceSecrets::new(directory.path(), |_| Some("canary-token".to_owned()));
+        let secrets = WorkspaceSecrets::new(directory.path(), |name| {
+            Some(if name == "NOTICE_HEADERS" {
+                r#"{"Authorization":"Bearer canary"}"#.to_owned()
+            } else {
+                "canary-token".to_owned()
+            })
+        });
         let compiled = engine
             .compile(&document, &engine.fingerprinter(common::key()), &secrets)
             .unwrap();
@@ -104,4 +123,39 @@ async fn the_active_arm_selects_the_create_operation() {
         assert_eq!(update.operation(), expected_update);
         assert_eq!(update.body().unwrap()["name"], "renamed");
     }
+}
+
+#[tokio::test]
+async fn invalid_json_secret_blocks_the_apply_without_exposing_its_value() {
+    let registry =
+        SpecRegistry::from_specs(vec![parse_spec(SPEC).unwrap()], &BTreeSet::new()).unwrap();
+    let sim = dokploy_sim::Sim::new(Arc::new(registry.clone()));
+    let engine = Engine::new(registry, &sim).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let document = engine
+        .parse(
+            "version: 2\nsettings:\n  notifications:\n    ops:\n      config:\n        type: custom\n        endpoint: https://example.invalid/hook\n        headers: { env: NOTICE_HEADERS }\n",
+        )
+        .unwrap();
+    let secret = "not-json-canary";
+    let secrets = WorkspaceSecrets::new(directory.path(), |_| Some(secret.to_owned()));
+    let compiled = engine
+        .compile(&document, &engine.fingerprinter(common::key()), &secrets)
+        .unwrap();
+    let store = StateStore::for_document(
+        directory.path().canonicalize().unwrap(),
+        engine.instance().clone(),
+        DocumentId::Settings,
+    )
+    .unwrap();
+
+    let error = engine
+        .apply(&compiled, &store, |_| true)
+        .await
+        .expect_err("invalid JSON stops preflight");
+    let rendered = format!("{error} {error:?}");
+
+    assert!(rendered.contains("is not valid JSON"));
+    assert!(!rendered.contains(secret));
+    assert!(sim.mutations().is_empty(), "nothing was sent");
 }

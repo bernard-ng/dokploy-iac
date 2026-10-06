@@ -63,6 +63,12 @@ pub enum ApplyError {
         address: ResourceAddress,
         property: String,
     },
+    /// A JSON secret is not valid JSON.
+    #[error("{address}: secret `{property}` is not valid JSON")]
+    SecretNotJson {
+        address: ResourceAddress,
+        property: String,
+    },
     /// The update replaces the whole group, so a secret in it must be declared in the
     /// document.
     #[error("{address}: updating this replaces `{property}`, so its source must be declared")]

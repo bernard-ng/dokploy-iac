@@ -420,6 +420,9 @@ pub struct Field {
     /// The top-level request field when it differs from the response field or pointer.
     #[serde(default)]
     pub request: Option<String>,
+    /// Parse a text secret's source as JSON before writing it.
+    #[serde(default)]
+    pub json: bool,
     /// The type expression (ADR 0004).
     #[serde(rename = "type")]
     pub ty: String,

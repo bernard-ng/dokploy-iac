@@ -72,13 +72,21 @@ fn creation_ops(w: &World<'_>, values: &Values) -> Vec<String> {
                     }
                 });
                 // The tag and the members the create operation does not accept are left to it.
+                let tag_is_implied = matches!(
+                    &spec.api.create,
+                    Some(dokploy_spec::CreateOperation::ByVariant {
+                        by_variant: create_variant,
+                        ..
+                    }) if create_variant == by_variant
+                );
                 let members_deferred = values.keys().any(|name| {
                     name.starts_with(&format!("{by_variant}."))
                         && w.case.fields.iter().any(|f| {
                             &f.name == name
+                                && !(f.union_tag && tag_is_implied)
                                 && contract.is_some_and(|contract| {
                                     contract
-                                        .body_field(crate::case::top_wire(&f.wire))
+                                        .body_field(crate::case::top_wire(&f.request))
                                         .is_none()
                                 })
                         })
@@ -108,7 +116,7 @@ fn writes_a_secret(w: &World<'_>, values: &Values, operations: &[String]) -> boo
                 field.name == name
                     && contract.is_some_and(|contract| {
                         contract
-                            .body_field(crate::case::top_wire(&field.wire))
+                            .body_field(crate::case::top_wire(&field.request))
                             .is_none()
                     })
             })
@@ -274,13 +282,13 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
     let id = &w.case.spec.api.id;
     let mut allowed: Vec<String> = vec![id.clone()];
     match shape {
-        Shape::Partial => allowed.push(crate::case::top_wire(&field.wire).to_owned()),
+        Shape::Partial => allowed.push(crate::case::top_wire(&field.request).to_owned()),
         Shape::Full => {
             allowed.extend(
                 group_fields
                     .iter()
                     .flat_map(|name| w.case.cases_of(name))
-                    .map(|case| crate::case::top_wire(&case.wire).to_owned()),
+                    .map(|case| crate::case::top_wire(&case.request).to_owned()),
             );
             allowed.extend(w.case.group_wires(&group_fields));
         }
@@ -312,9 +320,14 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
             "the update sent `{key}`, which is outside its write group"
         );
     }
+    let expected = field.b.as_ref().map(|value| match value {
+        Val::Secret(secret) if field.json => {
+            serde_json::from_str(secret).expect("a generated JSON secret is valid")
+        }
+        _ => value.json(),
+    });
     ensure!(
-        crate::case::json_at(&body, &field.wire)
-            == field.b.as_ref().map(crate::case::Val::json).as_ref(),
+        crate::case::json_at(&body, &field.request) == expected.as_ref(),
         "the update did not carry the new value"
     );
     holds(w, &changed)?;

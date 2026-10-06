@@ -47,10 +47,15 @@ pub(crate) struct FieldCase {
     /// Where the document writes it: the name, without the arm of a union member
     /// (`source.owner` for `source.github.owner`).
     pub(crate) doc: String,
-    /// The request and response key.
+    /// The response key or pointer.
     pub(crate) wire: String,
+    /// The request key or pointer when it differs from the response.
+    pub(crate) request: String,
     pub(crate) mutability: Mutability,
+    pub(crate) union_tag: bool,
     pub(crate) secret: bool,
+    /// The secret source is JSON decoded before it is sent.
+    pub(crate) json: bool,
     /// Its value is a file's content, written `{ file: path }`, not an environment variable.
     pub(crate) content: bool,
     pub(crate) required: bool,
@@ -195,13 +200,16 @@ impl Case {
                 doc: doc.clone(),
                 // A member of a union nested in an object is addressed by its pointer
                 // (`/config/apiToken`), which finds it in a request body and in the remote row.
-                wire: if nested_member(spec, &info) {
+                wire: info.api.clone(),
+                request: if nested_member(spec, &info) {
                     info.api.clone()
                 } else {
                     info.request_key().to_owned()
                 },
                 mutability: info.mutability,
+                union_tag: info.union_tag,
                 secret,
+                json: info.json,
                 content: info.class == ValueClass::Content,
                 // An arm of a nested union is created whole: what it requires goes in the minimal
                 // document too.
@@ -291,10 +299,17 @@ impl Case {
                     None,
                 )
             } else if secret {
-                (
-                    Some(Val::Secret(format!("canary-{name}-a"))),
-                    Some(Val::Secret(format!("canary-{name}-b"))),
-                )
+                if info.json {
+                    (
+                        Some(Val::Secret(format!(r#"{{"X-Canary":"canary-{name}-a"}}"#))),
+                        Some(Val::Secret(format!(r#"{{"X-Canary":"canary-{name}-b"}}"#))),
+                    )
+                } else {
+                    (
+                        Some(Val::Secret(format!("canary-{name}-a"))),
+                        Some(Val::Secret(format!("canary-{name}-b"))),
+                    )
+                }
             } else {
                 (
                     sample(&info, &name, 0).map(Val::Json),
@@ -668,7 +683,12 @@ impl Case {
                     expected.insert(field.wire.clone(), json.clone());
                 }
                 Some(Val::Secret(secret)) => {
-                    expected.insert(field.wire.clone(), json!(secret));
+                    let value = if field.json {
+                        serde_json::from_str(secret).expect("a generated JSON secret is valid")
+                    } else {
+                        json!(secret)
+                    };
+                    expected.insert(field.wire.clone(), value);
                 }
                 Some(Val::Selector { id, .. }) => {
                     expected.insert(field.wire.clone(), json!(id));
@@ -710,14 +730,20 @@ impl Case {
     pub(crate) fn canaries(&self) -> Vec<String> {
         self.fields
             .iter()
-            .flat_map(|f| [Some(&f.a), f.b.as_ref()])
-            .flatten()
-            .flat_map(|value| match value {
-                Val::Secret(secret) => vec![secret.clone()],
-                Val::Environment { variables, .. } => {
-                    variables.iter().map(|(_, secret)| secret.clone()).collect()
-                }
-                Val::Json(_) | Val::Selector { .. } | Val::SelectorSet { .. } => Vec::new(),
+            .flat_map(|field| {
+                [Some(&field.a), field.b.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|value| match value {
+                        Val::Secret(secret) if field.json => serde_json::from_str(secret)
+                            .map(|value| json_strings(&value))
+                            .unwrap_or_default(),
+                        Val::Secret(secret) => vec![secret.clone()],
+                        Val::Environment { variables, .. } => {
+                            variables.iter().map(|(_, secret)| secret.clone()).collect()
+                        }
+                        Val::Json(_) | Val::Selector { .. } | Val::SelectorSet { .. } => Vec::new(),
+                    })
             })
             .collect()
     }
@@ -738,6 +764,15 @@ impl Case {
                 _ => Vec::new(),
             })
             .collect()
+    }
+}
+
+fn json_strings(value: &Json) -> Vec<String> {
+    match value {
+        Json::String(text) => vec![text.clone()],
+        Json::Array(items) => items.iter().flat_map(json_strings).collect(),
+        Json::Object(entries) => entries.values().flat_map(json_strings).collect(),
+        Json::Null | Json::Bool(_) | Json::Number(_) => Vec::new(),
     }
 }
 

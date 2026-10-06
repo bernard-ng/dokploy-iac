@@ -60,7 +60,35 @@ async fn a_dns_provider_conforms_through_each_arm_of_its_config() {
     }
 }
 
+#[tokio::test]
+async fn a_notification_conforms_through_each_provider() {
+    for arm in [
+        "slack",
+        "telegram",
+        "discord",
+        "email",
+        "resend",
+        "gotify",
+        "ntfy",
+        "mattermost",
+        "custom",
+        "lark",
+        "teams",
+        "pushover",
+    ] {
+        conforms_through("notification", "config", arm, &NOTIFICATION_SCENARIOS).await;
+    }
+}
+
 const DNS_SCENARIOS: [&str; 5] = [
+    "create",
+    "converges",
+    "delete",
+    "secrets_from_files",
+    "unknown_create_after",
+];
+
+const NOTIFICATION_SCENARIOS: [&str; 5] = [
     "create",
     "converges",
     "delete",

@@ -489,7 +489,8 @@ impl Sim {
                 return Err(not_found(parent_spec));
             }
         }
-        let mut object = new_object(spec, &body, inner);
+        let held = held_fields(spec, request.operation(), &body);
+        let mut object = new_object(spec, &held, inner);
         if let Some(dokploy_spec::CreateOperation::ByVariant { by_variant, ops }) = &spec.api.create
             && let Some((arm, _)) = ops
                 .iter()
@@ -500,6 +501,15 @@ impl Sim {
                 field.request_name(by_variant).to_owned(),
                 Value::String(arm.clone()),
             );
+            for (member, member_field) in field.arms.get(arm).into_iter().flatten() {
+                if member_field.mutability != dokploy_spec::Mutability::Computed {
+                    continue;
+                }
+                let api = member_field.api.as_deref().unwrap_or(member);
+                if !api.starts_with('/') {
+                    object.insert(api.to_owned(), Value::String(format!("sim-{arm}-{member}")));
+                }
+            }
         }
         // The row names its parent in a column of its own, whatever the request called it.
         for parent in &spec.parents {
@@ -548,9 +558,9 @@ impl Sim {
         for field in spec.fields.values() {
             for members in field.arms.values() {
                 for (member, member_field) in members {
-                    object
-                        .entry(member_field.request_name(member).to_owned())
-                        .or_insert(Value::Null);
+                    let api = member_field.api.as_deref().unwrap_or(member);
+                    let column = api.trim_start_matches('/').split('/').next().unwrap_or(api);
+                    object.entry(column.to_owned()).or_insert(Value::Null);
                 }
             }
         }
@@ -650,7 +660,8 @@ impl Sim {
                 "You cannot rename the default one".to_owned(),
             ));
         }
-        for (key, value) in &body {
+        let held = held_fields(spec, request.operation(), &body);
+        for (key, value) in &held {
             if *key != spec.api.id {
                 object.insert(key.clone(), value.clone());
             }
@@ -969,6 +980,59 @@ fn body_object(request: &OperationRequest) -> Result<Object, DokployError> {
             "a JSON object body is required".to_owned(),
         )),
     }
+}
+
+/// Projects flat provider request fields into the nested shape the direct read returns. The
+/// operation selects the active arm, so identical request names such as `webhookUrl` remain
+/// unambiguous.
+fn held_fields(spec: &KindSpec, operation: &str, body: &Object) -> Object {
+    let Some((field_name, arm_name)) = operation_variant(spec, operation) else {
+        return body.clone();
+    };
+    let Some(members) = spec
+        .fields
+        .get(field_name)
+        .and_then(|field| field.arms.get(arm_name))
+    else {
+        return body.clone();
+    };
+
+    let mut held = Value::Object(body.clone());
+    for (member, field) in members {
+        let request = field.request_name(member);
+        let Some(value) = body.get(request) else {
+            continue;
+        };
+        let api = field.api.as_deref().unwrap_or(member);
+        if !api.starts_with('/') || api == request {
+            continue;
+        }
+        if let Value::Object(object) = &mut held {
+            object.remove(request);
+        }
+        set_pointer(&mut held, api, value.clone());
+    }
+
+    held.as_object().cloned().unwrap_or_default()
+}
+
+fn operation_variant<'a>(spec: &'a KindSpec, operation: &str) -> Option<(&'a str, &'a str)> {
+    if let Some(dokploy_spec::CreateOperation::ByVariant { by_variant, ops }) = &spec.api.create
+        && let Some((arm, _)) = ops.iter().find(|(_, candidate)| *candidate == operation)
+    {
+        return Some((by_variant, arm));
+    }
+    for group in &spec.write {
+        if let WriteGroup::ByVariant {
+            by_variant, ops, ..
+        } = group
+            && let Some((arm, _)) = ops.iter().find(|(_, candidate)| *candidate == operation)
+        {
+            return Some((by_variant, arm));
+        }
+    }
+
+    None
 }
 
 /// Refuses what the real Dokploy refuses by schema: an unknown or missing field.

@@ -170,31 +170,32 @@ settings:
       # [x] a destination local to a server: Dokploy neither stores nor returns the serverId
 
   # ===== Notifications =======================================================
-  notifications:                             # ✘ twelve provider types, one shape each
+  notifications:                             # ✔ twelve provider types, one union shape
     ops-slack:
-      type: slack
-      webhook_url: { env: SLACK_WEBHOOK }    # [s]
-      channel: "#ops"
+      config:
+        type: slack
+        webhook_url: { env: SLACK_WEBHOOK }  # [s]
+        channel: "#ops"
       events:                                #   same eight toggles on every provider
-        - app_deploy
-        - app_build_error
-        - database_backup
-        - volume_backup
-        - dokploy_backup
-        - dokploy_restart
-        - docker_cleanup
-        - server_threshold
-    ops-telegram: { type: telegram, bot_token: { env: TG_TOKEN }, chat_id: "-100123", message_thread_id: "7", events: [app_deploy] }
-    ops-discord:  { type: discord,  webhook_url: { env: DISCORD_WEBHOOK }, decoration: true, events: [app_build_error] }
-    ops-email:    { type: email, smtp_server: smtp.example.com, smtp_port: 587, username: mailer, password: { env: SMTP_PASSWORD }, from_address: dokploy@example.com, to_addresses: [ops@example.com], events: [database_backup] }
-    ops-resend:   { type: resend, api_key: { env: RESEND_KEY }, from_address: dokploy@example.com, to_addresses: [ops@example.com], events: [app_deploy] }
-    ops-gotify:   { type: gotify, server_url: https://gotify.example.com, app_token: { env: GOTIFY_TOKEN }, priority: 5, decoration: true, events: [app_deploy] }
-    ops-ntfy:     { type: ntfy, server_url: https://ntfy.sh, topic: leganews, access_token: { env: NTFY_TOKEN }, priority: 3, events: [app_deploy] }
-    ops-mattermost: { type: mattermost, webhook_url: { env: MM_WEBHOOK }, channel: ops, username: dokploy, events: [app_deploy] }
-    ops-custom:   { type: custom, endpoint: https://hooks.example.com/dokploy, headers: { X-Token: { secret: { env: HOOK_TOKEN } } }, events: [app_deploy] }
-    ops-lark:     { type: lark, webhook_url: { env: LARK_WEBHOOK }, events: [app_deploy] }
-    ops-teams:    { type: teams, webhook_url: { env: TEAMS_WEBHOOK }, events: [app_deploy] }
-    ops-pushover: { type: pushover, user_key: { env: PUSHOVER_USER }, api_token: { env: PUSHOVER_TOKEN }, priority: 0, retry: 60, expire: 3600, events: [server_threshold] }
+        app_deploy: true
+        app_build_error: true
+        database_backup: true
+        volume_backup: true
+        dokploy_backup: true
+        dokploy_restart: true
+        docker_cleanup: true
+        server_threshold: true
+    ops-telegram: { config: { type: telegram, bot_token: { env: TG_TOKEN }, chat_id: "-100123", message_thread_id: "7" }, events: { app_deploy: true } }
+    ops-discord:  { config: { type: discord,  webhook_url: { env: DISCORD_WEBHOOK }, decoration: true }, events: { app_build_error: true } }
+    ops-email:    { config: { type: email, smtp_server: smtp.example.com, smtp_port: 587, username: mailer, password: { env: SMTP_PASSWORD }, from_address: dokploy@example.com, to_addresses: [ops@example.com] }, events: { database_backup: true } }
+    ops-resend:   { config: { type: resend, api_key: { env: RESEND_KEY }, from_address: dokploy@example.com, to_addresses: [ops@example.com] }, events: { app_deploy: true } }
+    ops-gotify:   { config: { type: gotify, server_url: https://gotify.example.com, app_token: { env: GOTIFY_TOKEN }, priority: 5, decoration: true }, events: { app_deploy: true } }
+    ops-ntfy:     { config: { type: ntfy, server_url: https://ntfy.sh, topic: leganews, access_token: { env: NTFY_TOKEN }, priority: 3 }, events: { app_deploy: true } }
+    ops-mattermost: { config: { type: mattermost, webhook_url: { env: MM_WEBHOOK }, channel: ops, username: dokploy }, events: { app_deploy: true } }
+    ops-custom:   { config: { type: custom, endpoint: https://hooks.example.com/dokploy, headers: { file: secrets/custom-notification-headers.json } }, events: { app_deploy: true } }
+    ops-lark:     { config: { type: lark, webhook_url: { env: LARK_WEBHOOK } }, events: { app_deploy: true } }
+    ops-teams:    { config: { type: teams, webhook_url: { env: TEAMS_WEBHOOK } }, events: { app_deploy: true } }
+    ops-pushover: { config: { type: pushover, user_key: { env: PUSHOVER_USER }, api_token: { env: PUSHOVER_TOKEN }, priority: 0, retry: 60, expire: 3600 }, events: { server_threshold: true } }
   # Server thresholds (cpu/memory alert limits) are configured through server metrics above.
 
   # ===== Tags ================================================================

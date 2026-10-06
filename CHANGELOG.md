@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add the managed `notification` settings kind with all twelve Dokploy providers, shared event
+  switches, per-provider create and update operations, nested response projection, computed provider
+  ids, and conformance coverage through every arm. Custom HTTP headers come from a secret JSON source;
+  malformed JSON stops preflight without exposing or sending the value.
 - Extend kind specs for notification-shaped resources: `api.create` can select an operation from a
   union arm, a variant write group can carry common fields, and a field can name different request
   and response paths. The engine, simulator, ledger, and conformance harness all follow those rules.

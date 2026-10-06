@@ -88,6 +88,8 @@ pub struct PropertyInfo {
     pub api: String,
     /// The top-level field used when writing this property.
     pub request: String,
+    /// Whether secret bytes are decoded as JSON for the request body.
+    pub json: bool,
 }
 
 impl PropertyInfo {
@@ -304,6 +306,7 @@ fn base(
         trim: field.trim,
         api: field.api.clone().unwrap_or_else(|| name.to_owned()),
         request: field.request_name(name).to_owned(),
+        json: field.json,
     }
 }
 

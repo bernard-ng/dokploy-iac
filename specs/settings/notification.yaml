@@ -1,0 +1,138 @@
+# A notification destination. Dokploy exposes one create and update operation per provider, while
+# all providers share the same notification row and event switches.
+#
+# Live facts (0.30.6 and 0.30.7): every create answers an empty body, so identity is learned by diffing
+# `notification.all`; reads expose the provider id at the top level and public provider settings
+# below an object named for the provider; update requires both ids. Provider secrets are write-only.
+kind: notification
+scope: settings
+section: notifications
+title: Notification
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "notification.{key}"
+api:
+  id: notificationId
+  create:
+    by_variant: config
+    ops:
+      slack: notification.createSlack
+      telegram: notification.createTelegram
+      discord: notification.createDiscord
+      email: notification.createEmail
+      resend: notification.createResend
+      gotify: notification.createGotify
+      ntfy: notification.createNtfy
+      mattermost: notification.createMattermost
+      custom: notification.createCustom
+      lark: notification.createLark
+      teams: notification.createTeams
+      pushover: notification.createPushover
+  remove: { op: notification.remove }
+  read:
+    list: { op: notification.all, authority: authoritative }
+    one: { op: notification.one, id_param: notificationId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    type: text
+    min_len: 1
+    default: key
+  events:
+    type: struct
+    granularity: field
+    members:
+      app_build_error: { api: appBuildError, type: bool, fallback: false }
+      database_backup: { api: databaseBackup, type: bool, fallback: false }
+      dokploy_backup: { api: dokployBackup, type: bool, fallback: false }
+      volume_backup: { api: volumeBackup, type: bool, fallback: false }
+      dokploy_restart: { api: dokployRestart, type: bool, fallback: false }
+      app_deploy: { api: appDeploy, type: bool, fallback: false }
+      docker_cleanup: { api: dockerCleanup, type: bool, fallback: false }
+      server_threshold: { api: serverThreshold, type: bool, fallback: false }
+  config:
+    api: notificationType
+    type: union(type)
+    arms:
+      slack:
+        provider_id: { api: slackId, type: text, mutability: computed }
+        webhook_url: { api: /slack/webhookUrl, request: webhookUrl, type: text, min_len: 1, class: secret, mutability: write_only }
+        channel: { api: /slack/channel, request: channel, type: text }
+      telegram:
+        provider_id: { api: telegramId, type: text, mutability: computed }
+        bot_token: { api: /telegram/botToken, request: botToken, type: text, min_len: 1, class: secret, mutability: write_only }
+        chat_id: { api: /telegram/chatId, request: chatId, type: text, min_len: 1 }
+        message_thread_id: { api: /telegram/messageThreadId, request: messageThreadId, type: text, fallback: "" }
+      discord:
+        provider_id: { api: discordId, type: text, mutability: computed }
+        webhook_url: { api: /discord/webhookUrl, request: webhookUrl, type: text, min_len: 1, class: secret, mutability: write_only }
+        decoration: { api: /discord/decoration, request: decoration, type: bool, fallback: false }
+      email:
+        provider_id: { api: emailId, type: text, mutability: computed }
+        smtp_server: { api: /email/smtpServer, request: smtpServer, type: text, min_len: 1 }
+        smtp_port: { api: /email/smtpPort, request: smtpPort, type: int, min: 1 }
+        username: { api: /email/username, request: username, type: text, min_len: 1 }
+        password: { api: /email/password, request: password, type: text, min_len: 1, class: secret, mutability: write_only }
+        from_address: { api: /email/fromAddress, request: fromAddress, type: text, min_len: 1 }
+        to_addresses: { api: /email/toAddresses, request: toAddresses, type: "list<text>" }
+      resend:
+        provider_id: { api: resendId, type: text, mutability: computed }
+        api_key: { api: /resend/apiKey, request: apiKey, type: text, min_len: 1, class: secret, mutability: write_only }
+        from_address: { api: /resend/fromAddress, request: fromAddress, type: text, min_len: 1 }
+        to_addresses: { api: /resend/toAddresses, request: toAddresses, type: "list<text>" }
+      gotify:
+        provider_id: { api: gotifyId, type: text, mutability: computed }
+        server_url: { api: /gotify/serverUrl, request: serverUrl, type: text, min_len: 1 }
+        app_token: { api: /gotify/appToken, request: appToken, type: text, min_len: 1, class: secret, mutability: write_only }
+        priority: { api: /gotify/priority, request: priority, type: int, min: 1 }
+        decoration: { api: /gotify/decoration, request: decoration, type: bool, fallback: false }
+      ntfy:
+        provider_id: { api: ntfyId, type: text, mutability: computed }
+        server_url: { api: /ntfy/serverUrl, request: serverUrl, type: text, min_len: 1 }
+        topic: { api: /ntfy/topic, request: topic, type: text, min_len: 1 }
+        access_token: { api: /ntfy/accessToken, request: accessToken, type: text, class: secret, mutability: write_only }
+        priority: { api: /ntfy/priority, request: priority, type: int, min: 1 }
+      mattermost:
+        provider_id: { api: mattermostId, type: text, mutability: computed }
+        webhook_url: { api: /mattermost/webhookUrl, request: webhookUrl, type: text, min_len: 1, class: secret, mutability: write_only }
+        channel: { api: /mattermost/channel, request: channel, type: text, nullable: true }
+        username: { api: /mattermost/username, request: username, type: text, nullable: true }
+      custom:
+        provider_id: { api: customId, type: text, mutability: computed }
+        endpoint: { api: /custom/endpoint, request: endpoint, type: text, min_len: 1 }
+        headers: { api: /custom/headers, request: headers, type: text, class: secret, mutability: write_only, json: true }
+      lark:
+        provider_id: { api: larkId, type: text, mutability: computed }
+        webhook_url: { api: /lark/webhookUrl, request: webhookUrl, type: text, min_len: 1, class: secret, mutability: write_only }
+      teams:
+        provider_id: { api: teamsId, type: text, mutability: computed }
+        webhook_url: { api: /teams/webhookUrl, request: webhookUrl, type: text, min_len: 1, class: secret, mutability: write_only }
+      pushover:
+        provider_id: { api: pushoverId, type: text, mutability: computed }
+        user_key: { api: /pushover/userKey, request: userKey, type: text, min_len: 1, class: secret, mutability: write_only }
+        api_token: { api: /pushover/apiToken, request: apiToken, type: text, min_len: 1, class: secret, mutability: write_only }
+        priority: { api: /pushover/priority, request: priority, type: int, min: -2, max: 2 }
+        retry: { api: /pushover/retry, request: retry, type: int, min: 30, nullable: true }
+        expire: { api: /pushover/expire, request: expire, type: int, min: 1, max: 10800, nullable: true }
+write:
+  - by_variant: config
+    fields: [name, events]
+    ops:
+      slack: notification.updateSlack
+      telegram: notification.updateTelegram
+      discord: notification.updateDiscord
+      email: notification.updateEmail
+      resend: notification.updateResend
+      gotify: notification.updateGotify
+      ntfy: notification.updateNtfy
+      mattermost: notification.updateMattermost
+      custom: notification.updateCustom
+      lark: notification.updateLark
+      teams: notification.updateTeams
+      pushover: notification.updatePushover
+    shape: full
+ledger:
+  readonly: [createdAt, organizationId]

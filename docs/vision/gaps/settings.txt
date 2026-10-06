@@ -3,7 +3,6 @@ DOKDOC004 settings.custom_roles
 DOKDOC004 settings.git_providers
 DOKDOC004 settings.license
 DOKDOC004 settings.members
-DOKDOC004 settings.notifications
 DOKDOC004 settings.organization
 DOKDOC004 settings.profile
 DOKDOC004 settings.sso_providers
