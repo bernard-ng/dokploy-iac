@@ -1,0 +1,21 @@
+[
+  {
+    "bitbucket": {
+      "bitbucketId": "VRnUvcpKNWUktNbm_TD8Y",
+      "bitbucketUsername": "capture-ci",
+      "isConfigured": false,
+      "isDeprecated": false
+    },
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "gitea": null,
+    "github": null,
+    "gitlab": null,
+    "isOwner": true,
+    "name": "bitbucket-contract",
+    "organizationId": "organization-1",
+    "providerType": "bitbucket",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  }
+]

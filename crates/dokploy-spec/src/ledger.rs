@@ -236,6 +236,7 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
         if let Some(param) = &operation.id_param {
             names.insert(param.clone());
         }
+        names.extend(operation.from_read.keys().cloned());
         names.extend(operation.attach.keys().cloned());
         names.extend(operation.send.keys().cloned());
         for overrides in operation.attach_by_parent.values() {
@@ -246,6 +247,7 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
         if let Some(param) = &operation.id_param {
             names.insert(param.clone());
         }
+        names.extend(operation.from_read.keys().cloned());
         names.extend(operation.attach.keys().cloned());
         names.extend(operation.send.keys().cloned());
         for overrides in operation.attach_by_parent.values() {

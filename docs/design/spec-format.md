@@ -84,6 +84,15 @@ A collection read once per parent says so: `list: { op: environment.byProjectId,
 embedded in its parent's direct read (`embedded_in`), and a kind with neither is found by its
 recorded identity only.
 
+When a shared collection carries a subtype id for the direct read, `one.id_from` names its JSON
+pointer. The canonical `api.id` still identifies the resource in state and mutations:
+
+```yaml
+read:
+  list: { op: gitProvider.getAll, authority: authoritative }
+  one: { op: gitlab.one, id_param: gitlabId, id_from: /gitlab/gitlabId, agree: true }
+```
+
 ## Fields
 
 ```yaml
@@ -112,12 +121,16 @@ fields:
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
-`request`, `json`, `key_selector`, `since`, `until`, `doc` (one line for the generated reference),
-`example`.
+`request`, `list_api`, `json`, `key_selector`, `since`, `until`, `doc` (one line for the generated
+reference), `example`.
 
 `request` names the top-level request field when `api` is a different response field or a JSON
 pointer. Notification settings use this because Dokploy accepts `webhookUrl` but reads it below a
 provider object such as `/slack/webhookUrl`.
+
+`list_api` names the field or JSON pointer in a collection item when it differs from `api`, which
+continues to describe the direct response. Git providers use it because the shared collection keeps
+the name at `name`, while subtype direct reads keep it at `/gitProvider/name`.
 
 `json: true` decodes a write-only secret text source as JSON before putting it in the request.
 It is for secret objects such as custom notification headers: the document names a file or
@@ -229,7 +242,10 @@ An operation (`api.create`, `update`, `remove`) is `op` plus, as needed: `id_par
 that carries the identity), `attach` and `attach_by_parent` (request fields filled from context;
 `parent_id` is the id of the parent, any other value is sent as written, and each applies to the
 create and, other than `parent_id`, to the update), and `send` (typed fields sent as written on every
-call of a create, an update, or a remove: `send: { deleteVolumes: false }`).
+call of a create, an update, or a remove: `send: { deleteVolumes: false }`). An update can also use
+`from_read: { requestField: /response/pointer }` for required transport fields copied from a fresh
+direct read. Git provider updates use this for their subtype id while state retains the canonical
+`gitProviderId`.
 
 A collection read per parent is `read.list: { op, scope: { param, query_by_parent } }`: `param`
 carries the parent's id, and `query_by_parent` adds the parameters that tell the list which kind of

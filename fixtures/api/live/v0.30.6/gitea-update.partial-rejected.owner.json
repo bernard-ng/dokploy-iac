@@ -1,0 +1,38 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "gitea.update",
+    "zodError": {
+      "fieldErrors": {
+        "giteaId": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "giteaUrl": [
+          "Invalid input: expected string, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "giteaId"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "giteaUrl"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

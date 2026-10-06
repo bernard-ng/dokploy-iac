@@ -309,6 +309,7 @@ pub(crate) async fn update(w: &World<'_>, name: &str) -> Check<Verdict> {
                 .map(|key| (*key).to_owned()),
         );
         allowed.extend(update.send.keys().cloned());
+        allowed.extend(update.from_read.keys().cloned());
     }
     for key in body
         .as_object()

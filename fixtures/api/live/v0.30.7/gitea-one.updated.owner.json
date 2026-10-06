@@ -1,0 +1,23 @@
+{
+  "accessToken": "<redacted>",
+  "clientId": "capture-client-2",
+  "clientSecret": "<redacted>",
+  "expiresAt": null,
+  "gitProvider": {
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "name": "gitea-contract-renamed",
+    "organizationId": "organization-1",
+    "providerType": "gitea",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  },
+  "gitProviderId": "git-provider-1",
+  "giteaId": "rWRTeoDh8uwrvSBUTcx5X",
+  "giteaInternalUrl": "http://gitea-updated.internal",
+  "giteaUrl": "https://gitea-updated.invalid",
+  "lastAuthenticatedAt": null,
+  "redirectUri": "https://dokploy.invalid/gitea/callback-2",
+  "refreshToken": null,
+  "scopes": "repo,repo:status,read:user,read:org"
+}

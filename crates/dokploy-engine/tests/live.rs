@@ -2,7 +2,7 @@
 //!
 //! Run through `scripts/integration/test-engine-live.sh`, which needs Docker. These are the
 //! live half of the contract the simulator copies (ADR 0015): every behavior the simulator
-//! models for `tag` and `registry` is exercised here against the digest-pinned image.
+//! models captured by the integration scripts are exercised here against the digest-pinned image.
 
 mod common;
 
@@ -377,6 +377,91 @@ async fn a_destination_lives_its_whole_life_through_the_engine() {
     live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap();
     assert_eq!(
         call(&raw, OperationRequest::new("destination.all")).await,
+        json!([])
+    );
+}
+
+#[tokio::test]
+#[ignore = "applies settings to the local Dokploy"]
+async fn git_providers_live_through_the_shared_collection() {
+    guard();
+    let live = Live::new();
+    let raw = client();
+    assert_eq!(
+        call(&raw, OperationRequest::new("gitProvider.getAll")).await,
+        json!([]),
+        "a fresh instance"
+    );
+    let document = |suffix: &str| {
+        format!(
+            r#"version: 2
+settings:
+  gitlab_providers:
+    gitlab:
+      url: https://gitlab{suffix}.invalid
+      internal_url: http://gitlab.internal
+      application_id: gitlab-app
+      secret: {{ env: LIVE_GITLAB_SECRET }}
+      group_name: acme{suffix}
+      redirect_uri: https://dokploy.invalid/gitlab/callback
+      shared_with_organization: true
+  bitbucket_providers:
+    bitbucket:
+      username: ci{suffix}
+      email: ci@example.com
+      app_password: {{ env: LIVE_BITBUCKET_PASSWORD }}
+      api_token: {{ env: LIVE_BITBUCKET_TOKEN }}
+      workspace: acme{suffix}
+      shared_with_organization: true
+  gitea_providers:
+    gitea:
+      url: https://gitea{suffix}.invalid
+      internal_url: http://gitea.internal
+      redirect_uri: https://dokploy.invalid/gitea/callback
+      client_id: gitea-client{suffix}
+      client_secret: {{ env: LIVE_GITEA_SECRET }}
+      access_token: {{ env: LIVE_GITEA_TOKEN }}
+      shared_with_organization: true
+"#
+        )
+    };
+    let environment = [
+        ("LIVE_GITLAB_SECRET", "live-gitlab-secret"),
+        ("LIVE_BITBUCKET_PASSWORD", "live-bitbucket-password"),
+        ("LIVE_BITBUCKET_TOKEN", "live-bitbucket-token"),
+        ("LIVE_GITEA_SECRET", "live-gitea-secret"),
+        ("LIVE_GITEA_TOKEN", "live-gitea-token"),
+    ];
+
+    assert_eq!(live.apply(&document(""), &environment).await.unwrap(), 3);
+    let providers = call(&raw, OperationRequest::new("gitProvider.getAll")).await;
+    assert_eq!(providers.as_array().unwrap().len(), 3);
+    assert!(providers.as_array().unwrap().iter().all(|provider| {
+        provider["gitProviderId"].as_str().is_some()
+            && provider[provider["providerType"].as_str().unwrap()]
+                .as_object()
+                .is_some()
+    }));
+    assert_eq!(
+        live.changes(&document(""), &environment).await,
+        0,
+        "all three providers converge"
+    );
+
+    assert_eq!(
+        live.apply(&document("-updated"), &environment)
+            .await
+            .unwrap(),
+        3
+    );
+    assert_eq!(live.changes(&document("-updated"), &environment).await, 0);
+
+    assert_eq!(
+        live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap(),
+        3
+    );
+    assert_eq!(
+        call(&raw, OperationRequest::new("gitProvider.getAll")).await,
         json!([])
     );
 }

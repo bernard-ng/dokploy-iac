@@ -522,7 +522,12 @@ pub(crate) fn groups(
                     .collect(),
                 changed,
                 fields: fields.clone(),
-                reads_fresh: *shape == Shape::Full || has_environment || has_selector_set,
+                reads_fresh: *shape == Shape::Full
+                    || has_environment
+                    || has_selector_set
+                    || spec.api.update.as_ref().is_some_and(|update| {
+                        update.op == op.as_str() && !update.from_read.is_empty()
+                    }),
             });
         }
     }
@@ -910,6 +915,24 @@ pub(crate) fn group_body(
     }
     let mut body = Map::new();
     body.insert(spec.api.id.clone(), Json::String(remote_id.to_owned()));
+    if let Some(update) = spec
+        .api
+        .update
+        .as_ref()
+        .filter(|update| update.op == group.operation)
+    {
+        for (field, pointer) in &update.from_read {
+            let value = fresh
+                .and_then(|fresh| lookup(fresh, pointer))
+                .cloned()
+                .ok_or_else(|| ApplyError::Unsupported {
+                    address: address.clone(),
+                    property: None,
+                    reason: "needs an update identity the direct read did not return",
+                })?;
+            body.insert(field.clone(), value);
+        }
+    }
 
     for name in &group.fields {
         let field = spec
@@ -1038,14 +1061,15 @@ pub(crate) fn group_body(
                     Some(CheckpointValueRef::Sensitive) => {
                         body.insert(wire, secret_text(inputs.compiled, address, &dotted)?);
                     }
-                    _ => {
+                    _ if field.resend_on_update => {
                         return Err(ApplyError::NeedsSecret {
                             address: address.clone(),
                             property: dotted,
                         });
                     }
+                    _ => {}
                 }
-            } else if let Some(current) = fresh.and_then(|fresh| fresh.get(&wire)) {
+            } else if let Some(current) = fresh.and_then(|fresh| lookup(fresh, &path.info().api)) {
                 body.insert(wire, current.clone());
             }
         }

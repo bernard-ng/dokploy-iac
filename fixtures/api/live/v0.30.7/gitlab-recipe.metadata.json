@@ -1,0 +1,30 @@
+{
+  "capturedAt": "2026-10-06",
+  "createReturns": "empty",
+  "createStatus": 200,
+  "detailExposesCredentials": true,
+  "duplicateNamesAllowed": true,
+  "duplicateStatus": 200,
+  "fixtures": [
+    "gitlab-all.created.owner.json",
+    "gitlab-one.created.owner.json",
+    "gitlab-update.partial-rejected.owner.json",
+    "gitlab-one.updated.owner.json",
+    "gitlab-remove.owner.json",
+    "gitlab-one.removed.owner.json",
+    "gitlab-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.7@sha256:62e4354a49ee686ea749d3541d93113d494501befe81f5226c7f859f201e3a7c",
+  "kind": "gitlab_provider",
+  "listingExposesCredentials": false,
+  "listingMasksCredentials": false,
+  "partialUpdateStatus": 400,
+  "removeReturns": "object",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": false,
+  "updateReturns": "empty",
+  "version": "v0.30.7"
+}

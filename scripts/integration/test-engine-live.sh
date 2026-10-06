@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Runs the engine against the local Dokploy for the settings kinds (tag, registry, network, destination) and one project document: the live
+# Runs the engine against the local Dokploy for settings kinds and one project document: the live
 # half of the contract the simulator copies (ADR 0015). Needs Docker and a fresh instance
 # (run reset.sh and up.sh first). Starts a throwaway registry on 127.0.0.1:5000 because
 # Dokploy runs `docker login` when it creates a registry.

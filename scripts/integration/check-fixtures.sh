@@ -1775,6 +1775,9 @@ required_recipe_kinds=(
     ai
     certificates
     dnsProvider
+    gitlab
+    bitbucket
+    gitea
     server
     vaultProvider
 )

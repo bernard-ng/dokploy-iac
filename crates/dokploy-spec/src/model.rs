@@ -208,6 +208,10 @@ pub struct Operation {
     /// The parameter that carries the identity, when it is not the id field.
     #[serde(default)]
     pub id_param: Option<String>,
+    /// Request fields copied from the fresh direct-read response before an update. This is for
+    /// APIs whose update needs a secondary physical id besides the kind's canonical id.
+    #[serde(default)]
+    pub from_read: BTreeMap<String, String>,
     /// Request fields filled from context instead of configuration. `parent_id` is the id of the
     /// containing resource; any other value is sent as written (`domainType: compose`).
     #[serde(default)]
@@ -342,6 +346,10 @@ pub struct OneRead {
     pub op: String,
     /// The parameter carrying the identity.
     pub id_param: String,
+    /// The field or JSON pointer in the collection item whose value the direct-read parameter
+    /// takes, when it differs from the kind's canonical id.
+    #[serde(default)]
+    pub id_from: Option<String>,
     /// Whether the direct read must agree with the collection.
     #[serde(default)]
     pub agree: bool,
@@ -417,6 +425,10 @@ pub struct Field {
     /// The request/response field name or JSON pointer; defaults to the field name.
     #[serde(default)]
     pub api: Option<String>,
+    /// The field or JSON pointer used in a collection item when it differs from the direct-read
+    /// response mapping in `api`.
+    #[serde(default)]
+    pub list_api: Option<String>,
     /// The top-level request field when it differs from the response field or pointer.
     #[serde(default)]
     pub request: Option<String>,

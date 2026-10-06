@@ -1,0 +1,27 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "bitbucket.update",
+    "zodError": {
+      "fieldErrors": {
+        "bitbucketId": [
+          "Invalid input: expected string, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "bitbucketId"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

@@ -90,6 +90,12 @@ pub fn validate_spec(spec: &KindSpec, shared_types: &BTreeSet<String>) -> Vec<Is
             shared_types,
             true,
         );
+        if field.list_api.is_some() && spec.api.read.list.is_none() {
+            context.add(
+                format!("fields.{name}.list_api"),
+                "a collection mapping needs a collection read",
+            );
+        }
     }
     check_file_keys(&mut context, spec);
     check_made_with_parent(&mut context, spec);
@@ -341,6 +347,43 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
             "agreement needs a collection to agree with",
         );
     }
+    if let Some(one) = &api.read.one
+        && let Some(pointer) = &one.id_from
+    {
+        if api.read.list.is_none() {
+            context.add(
+                "api.read.one.id_from",
+                "a collection pointer needs a collection read",
+            );
+        }
+        if !pointer.starts_with('/') {
+            context.add("api.read.one.id_from", "must be a JSON pointer");
+        }
+    }
+    if let Some(update) = &api.update
+        && !update.from_read.is_empty()
+    {
+        if api.read.one.is_none() {
+            context.add(
+                "api.update.from_read",
+                "copying update fields from a fresh read needs a direct read",
+            );
+        }
+        for (field, pointer) in &update.from_read {
+            if field.trim().is_empty() {
+                context.add(
+                    "api.update.from_read",
+                    "request field names must not be empty",
+                );
+            }
+            if !pointer.starts_with('/') {
+                context.add(
+                    format!("api.update.from_read.{field}"),
+                    "must be a JSON pointer",
+                );
+            }
+        }
+    }
     match &api.create_identity {
         Some(CreateIdentity::FromResponse(pointer)) if !pointer.starts_with('/') => {
             context.add(
@@ -414,6 +457,17 @@ fn check_field(
                 format!("{path}.api"),
                 format!("a union nested in `{nest}` points at its tag: `/{nest}/<tag key>`"),
             );
+        }
+    }
+    if let Some(pointer) = &field.list_api {
+        if !top_level {
+            context.add(
+                format!("{path}.list_api"),
+                "applies to a top-level field only",
+            );
+        }
+        if pointer.trim().is_empty() {
+            context.add(format!("{path}.list_api"), "must not be empty");
         }
     }
     if field.key_selector.is_some()

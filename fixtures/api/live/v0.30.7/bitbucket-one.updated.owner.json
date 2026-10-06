@@ -1,0 +1,18 @@
+{
+  "apiToken": "<redacted>",
+  "appPassword": "<redacted>",
+  "bitbucketEmail": "capture-2@example.com",
+  "bitbucketId": "VRnUvcpKNWUktNbm_TD8Y",
+  "bitbucketUsername": "capture-ci-2",
+  "bitbucketWorkspaceName": "capture-workspace-2",
+  "gitProvider": {
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "name": "bitbucket-contract-renamed",
+    "organizationId": "organization-1",
+    "providerType": "bitbucket",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  },
+  "gitProviderId": "git-provider-1"
+}

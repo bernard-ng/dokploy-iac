@@ -61,7 +61,7 @@ project:
 
           source:                            # ✔ (github only today)
             type: github
-            provider: { name: leganews-org } # ✘ settings `git_providers` selector (API: githubId)
+            provider: { name: leganews-org } # ✘ settings `github_providers` selector (API: githubId)
             owner: acme                      # ✘ (today: `repository` holds "owner/repo")
             repository: api                  # ✔i
             branch: main                     # ✔i

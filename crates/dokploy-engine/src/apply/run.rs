@@ -15,7 +15,7 @@ use serde_json::Value as Json;
 use super::{ApplyError, request};
 use crate::Engine;
 use crate::compile::Compiled;
-use crate::project::{item_id, project};
+use crate::project::{list_field_value, list_item_id, project};
 use crate::selectors::SelectorIndex;
 
 /// What an apply did.
@@ -312,13 +312,13 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             .await?;
         let mut found = items.iter().filter(|item| {
             crate::discover::is_made_with_parent(spec, item)
-                && wanted.iter().all(|(name, value)| {
-                    crate::project::field_value(spec, name, item).as_ref() == Some(value)
-                })
+                && wanted
+                    .iter()
+                    .all(|(name, value)| list_field_value(spec, name, item).as_ref() == Some(value))
         });
 
         Ok(match (found.next(), found.next()) {
-            (Some(item), None) => item_id(spec, item).map(str::to_owned),
+            (Some(item), None) => list_item_id(spec, item).map(str::to_owned),
             _ => None,
         })
     }
@@ -587,11 +587,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
     /// Whether the resource can still be read. An error other than a success proves nothing
     /// either way: the remove was acknowledged, so it is taken as gone.
     async fn still_there(&self, spec: &KindSpec, remote_id: &str) -> bool {
-        let Some(one) = spec.api.read.one.as_ref() else {
-            return false;
-        };
-        let request = OperationRequest::new(&one.op).query(one.id_param.clone(), remote_id);
-        matches!(self.engine.transport.call(request).await, Ok(response) if response.is_object())
+        self.direct_read(spec, remote_id).await.is_ok()
     }
 
     /// A rename that also changes properties: the address moves first, with the resource as state
@@ -751,7 +747,7 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
     ) -> Option<String> {
         let known: Vec<&str> = before
             .iter()
-            .filter_map(|item| item_id(spec, item))
+            .filter_map(|item| list_item_id(spec, item))
             .collect();
         let after = self.listing(spec, parent).await.ok()?;
         let wanted: Vec<(String, Json)> = key
@@ -767,23 +763,38 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             })
             .collect::<Option<_>>()?;
         let mut matches = after.iter().filter(|item| {
-            item_id(spec, item).is_some_and(|id| !known.contains(&id))
-                && wanted.iter().all(|(name, value)| {
-                    crate::project::field_value(spec, name, item).as_ref() == Some(value)
-                })
+            list_item_id(spec, item).is_some_and(|id| !known.contains(&id))
+                && wanted
+                    .iter()
+                    .all(|(name, value)| list_field_value(spec, name, item).as_ref() == Some(value))
         });
         match (matches.next(), matches.next()) {
-            (Some(item), None) => item_id(spec, item).map(str::to_owned),
+            (Some(item), None) => list_item_id(spec, item).map(str::to_owned),
             _ => None,
         }
     }
 
     async fn direct_read(&self, spec: &KindSpec, remote_id: &str) -> Result<Json, FailureCode> {
         let one = spec.api.read.one.as_ref().ok_or(FailureCode::Validation)?;
+        let query_id = if let Some(pointer) = one.id_from.as_deref() {
+            let items = self.listing(spec, None).await?;
+            let mut matches = items
+                .iter()
+                .filter(|item| list_item_id(spec, item) == Some(remote_id));
+            let Some(item) = matches.next().filter(|_| matches.next().is_none()) else {
+                return Err(FailureCode::Validation);
+            };
+            crate::project::lookup(item, pointer)
+                .and_then(Json::as_str)
+                .map(str::to_owned)
+                .ok_or(FailureCode::Validation)?
+        } else {
+            remote_id.to_owned()
+        };
         match self
             .engine
             .transport
-            .call(OperationRequest::new(&one.op).query(one.id_param.clone(), remote_id))
+            .call(OperationRequest::new(&one.op).query(one.id_param.clone(), query_id))
             .await
         {
             Ok(value) if value.is_object() => Ok(value),

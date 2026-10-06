@@ -1,0 +1,22 @@
+{
+  "accessToken": null,
+  "applicationId": "application-1",
+  "expiresAt": null,
+  "gitProvider": {
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "name": "gitlab-contract-renamed",
+    "organizationId": "organization-1",
+    "providerType": "gitlab",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  },
+  "gitProviderId": "git-provider-1",
+  "gitlabId": "wnE3g63_9Cc3fMM_6hU74",
+  "gitlabInternalUrl": "http://gitlab-updated.internal",
+  "gitlabUrl": "https://gitlab-updated.invalid",
+  "groupName": "capture-group-2",
+  "redirectUri": "https://dokploy.invalid/gitlab/callback-2",
+  "refreshToken": null,
+  "secret": "<redacted>"
+}

@@ -1,0 +1,63 @@
+# A GitLab OAuth provider. Dokploy lists every Git provider through one shared collection, while
+# the detail and mutation endpoints use the GitLab row id.
+kind: gitlab_provider
+scope: settings
+section: gitlab_providers
+title: GitLab provider
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "gitlab_provider.{key}"
+api:
+  id: gitProviderId
+  create:
+    op: gitlab.create
+    send: { authId: declarative }
+  update:
+    op: gitlab.update
+    from_read: { gitlabId: /gitlabId }
+  remove: { op: gitProvider.remove }
+  read:
+    list: { op: gitProvider.getAll, authority: authoritative }
+    one: { op: gitlab.one, id_param: gitlabId, id_from: /gitlab/gitlabId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    api: /gitProvider/name
+    list_api: name
+    request: name
+    type: text
+    min_len: 1
+    default: key
+  url:
+    api: gitlabUrl
+    list_api: /gitlab/gitlabUrl
+    request: gitlabUrl
+    type: text
+    min_len: 1
+  internal_url:
+    api: gitlabInternalUrl
+    request: gitlabInternalUrl
+    type: text
+    nullable: true
+  application_id: { api: applicationId, request: applicationId, type: text }
+  secret: { type: text, class: secret, mutability: write_only }
+  group_name: { api: groupName, request: groupName, type: text }
+  redirect_uri: { api: redirectUri, request: redirectUri, type: text }
+  shared_with_organization:
+    api: /gitProvider/sharedWithOrganization
+    list_api: sharedWithOrganization
+    request: sharedWithOrganization
+    type: bool
+    fallback: false
+write:
+  - op: gitlab.update
+    fields: [name, url, internal_url, application_id, secret, group_name, redirect_uri]
+    shape: full
+  - op: gitProvider.toggleShare
+    fields: [shared_with_organization]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId, userId, providerType, isOwner, isConfigured, accessToken, refreshToken, expiresAt]

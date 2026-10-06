@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add managed GitLab, Bitbucket, and Gitea provider settings. Their specs preserve the generic
+  `gitProviderId` as the declarative identity while using provider-specific ids for direct reads and
+  full updates, project source selectors resolve those generic ids, and credentials remain receipts
+  even though Dokploy returns them in clear text. Sanitized captures and a live engine lifecycle
+  cover Dokploy 0.30.6 and 0.30.7.
+- Extend kind specs for APIs whose list and direct response shapes differ: `list_api` maps collection
+  fields, `read.one.id_from` supplies a subtype direct-read id, and `api.update.from_read` copies
+  required transport fields from a fresh direct response.
 - Add the managed `vault_provider` settings kind with all eight Dokploy backends, masked
   credentials, provider-specific defaults, and project/environment assignments by name. The new
   `key_selector` spec attribute resolves both levels of Dokploy's `{ projectId, environmentIds }`

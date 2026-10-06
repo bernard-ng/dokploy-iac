@@ -36,11 +36,27 @@ pub(crate) fn item_id<'v>(spec: &KindSpec, item: &'v Json) -> Option<&'v str> {
         .filter(|id| !id.trim().is_empty())
 }
 
+/// The canonical identity of a collection item.
+pub(crate) fn list_item_id<'v>(spec: &KindSpec, item: &'v Json) -> Option<&'v str> {
+    item_id(spec, item)
+}
+
 /// The canonical value of one field of a response item, when it is readable.
 pub(crate) fn field_value(spec: &KindSpec, name: &str, item: &Json) -> Option<Json> {
     let field = spec.fields.get(name)?;
     let ty = parse_type(&field.ty).ok()?;
     canonical_remote(lookup(item, api_name(name, field))?, &ty)
+}
+
+/// The canonical value of a field in a collection item, honoring its list-specific mapping.
+pub(crate) fn list_field_value(spec: &KindSpec, name: &str, item: &Json) -> Option<Json> {
+    let field = spec.fields.get(name)?;
+    let ty = parse_type(&field.ty).ok()?;
+    let pointer = field
+        .list_api
+        .as_deref()
+        .unwrap_or_else(|| api_name(name, field));
+    canonical_remote(lookup(item, pointer)?, &ty)
 }
 
 /// Projects an item onto every property of the kind, and onto the entries of keyed

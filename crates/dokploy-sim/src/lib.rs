@@ -437,6 +437,22 @@ impl Sim {
             ));
         };
 
+        if routes.len() > 1 && routes.iter().all(|route| route.action == Action::List) {
+            let mut items = Vec::new();
+            for route in routes {
+                let spec = self
+                    .specs
+                    .get(&route.kind)
+                    .expect("a routed kind has a spec");
+                let Value::Array(mut listed) = self.list(inner, spec, request) else {
+                    continue;
+                };
+                items.append(&mut listed);
+            }
+
+            return Ok(Value::Array(items));
+        }
+
         let mut last = Err(api_error(
             404,
             "NOT_FOUND",
@@ -663,7 +679,23 @@ impl Sim {
         let held = held_fields(spec, request.operation(), &body);
         for (key, value) in &held {
             if *key != spec.api.id {
-                object.insert(key.clone(), value.clone());
+                let pointer_root = spec.fields.values().any(|field| {
+                    field.list_api.is_some()
+                        && field
+                            .api
+                            .as_deref()
+                            .and_then(|api| api.strip_prefix('/'))
+                            .and_then(|pointer| pointer.split('/').next())
+                            == Some(key.as_str())
+                });
+                if pointer_root
+                    && let (Some(Value::Object(current)), Value::Object(changed)) =
+                        (object.get_mut(key), value)
+                {
+                    current.extend(changed.clone());
+                } else {
+                    object.insert(key.clone(), value.clone());
+                }
             }
         }
         // The operation that saves an arm of a union is what makes it the arm Dokploy holds: the
@@ -848,6 +880,22 @@ impl Sim {
             })
             .collect();
 
+        let has_list_projection = spec.fields.values().any(|field| field.list_api.is_some())
+            || spec
+                .api
+                .read
+                .one
+                .as_ref()
+                .is_some_and(|one| one.id_from.is_some());
+        if has_list_projection {
+            return Value::Array(
+                items
+                    .into_iter()
+                    .map(|object| projected_list_item(spec, object))
+                    .collect(),
+            );
+        }
+
         match self.shapes.template(request.operation(), Role::List) {
             Some(template) => fill_list(&template, &items),
             None => Value::Array(
@@ -873,7 +921,17 @@ impl Sim {
             .ok_or_else(|| {
                 api_error(400, "BAD_REQUEST", format!("{} is required", one.id_param))
             })?;
-        let object = find(inner, spec, id).ok_or_else(|| not_found(spec))?;
+        let object = if one.id_from.is_some() {
+            inner
+                .objects
+                .get(&spec.kind)
+                .into_iter()
+                .flatten()
+                .find(|object| object.get(&one.id_param).and_then(Value::as_str) == Some(id))
+        } else {
+            find(inner, spec, id)
+        }
+        .ok_or_else(|| not_found(spec))?;
         let mut value = match self.shapes.template(request.operation(), Role::One) {
             Some(template) => fill(&template, object),
             None => Value::Object(object.clone()),
@@ -986,18 +1044,40 @@ fn body_object(request: &OperationRequest) -> Result<Object, DokployError> {
 /// operation selects the active arm, so identical request names such as `webhookUrl` remain
 /// unambiguous.
 fn held_fields(spec: &KindSpec, operation: &str, body: &Object) -> Object {
+    let mut held = Value::Object(body.clone());
+    for (name, field) in &spec.fields {
+        if field.list_api.is_none() {
+            continue;
+        }
+        let request = field.request_name(name);
+        let api = field.api.as_deref().unwrap_or(name);
+        if !api.starts_with('/') || api.contains('*') || api == request {
+            continue;
+        }
+        let Some((held_key, value)) = body
+            .get(request)
+            .map(|value| (request, value))
+            .or_else(|| body.get(api).map(|value| (api, value)))
+        else {
+            continue;
+        };
+        if let Value::Object(object) = &mut held {
+            object.remove(held_key);
+        }
+        set_pointer(&mut held, api, value.clone());
+    }
+
     let Some((field_name, arm_name)) = operation_variant(spec, operation) else {
-        return body.clone();
+        return held.as_object().cloned().unwrap_or_default();
     };
     let Some(members) = spec
         .fields
         .get(field_name)
         .and_then(|field| field.arms.get(arm_name))
     else {
-        return body.clone();
+        return held.as_object().cloned().unwrap_or_default();
     };
 
-    let mut held = Value::Object(body.clone());
     for (member, field) in members {
         let request = field.request_name(member);
         let Some(value) = body.get(request) else {
@@ -1083,6 +1163,7 @@ fn check_contract(operation: &str, request: &OperationRequest) -> Result<(), Dok
 }
 
 fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
+    let fields = held_fields(spec, "", fields);
     let mut object = Object::new();
     // A nullable column that was not given is null; the simulator cannot invent a default for
     // a column that must have a value, so it leaves it unreturned rather than wrong.
@@ -1108,9 +1189,30 @@ fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
         };
         object.insert(name.clone(), Value::String(value));
     }
-    for (key, value) in fields {
+    for (key, value) in &fields {
         object.insert(key.clone(), value.clone());
     }
+    let mut held = Value::Object(object);
+    for (name, field) in &spec.fields {
+        let Some(fallback) = field.fallback.as_ref().filter(|_| field.list_api.is_some()) else {
+            continue;
+        };
+        let api = field.api.as_deref().unwrap_or(name);
+        let missing = if api.starts_with('/') {
+            held.pointer(api).is_none()
+        } else {
+            held.get(api).is_none()
+        };
+        if missing {
+            let pointer = if api.starts_with('/') {
+                api.to_owned()
+            } else {
+                format!("/{api}")
+            };
+            set_pointer(&mut held, &pointer, fallback.clone());
+        }
+    }
+    let mut object = held.as_object().cloned().unwrap_or_default();
     inner.next_id += 1;
     // A seeded object may bring its own id, so a test can name it in advance.
     if !fields.contains_key(&spec.api.id) {
@@ -1119,8 +1221,54 @@ fn new_object(spec: &KindSpec, fields: &Object, inner: &mut Inner) -> Object {
             Value::String(format!("sim-{}-{}", spec.kind, inner.next_id)),
         );
     }
+    if let Some(one) = &spec.api.read.one
+        && one.id_from.is_some()
+        && !fields.contains_key(&one.id_param)
+    {
+        object.insert(
+            one.id_param.clone(),
+            Value::String(format!("sim-{}-{}", one.id_param, inner.next_id)),
+        );
+    }
 
     object
+}
+
+/// Shapes a stored direct-read object as its collection item when the two endpoints expose
+/// different paths. Git provider lists are the first contract with this shape.
+fn projected_list_item(spec: &KindSpec, object: &Object) -> Value {
+    let direct = Value::Object(object.clone());
+    let mut listed = Value::Object(Object::new());
+
+    if let Some(id) = object.get(&spec.api.id) {
+        set_pointer(&mut listed, &format!("/{}", spec.api.id), id.clone());
+    }
+    if let Some(one) = &spec.api.read.one
+        && let Some(pointer) = &one.id_from
+        && let Some(id) = object.get(&one.id_param)
+    {
+        set_pointer(&mut listed, pointer, id.clone());
+    }
+    for (name, field) in &spec.fields {
+        let source = field.api.as_deref().unwrap_or(name);
+        let target = field.list_api.as_deref().unwrap_or(source);
+        let value = if source.starts_with('/') {
+            direct.pointer(source)
+        } else {
+            direct.get(source)
+        }
+        .or_else(|| object.get(field.request_name(name)));
+        if let Some(value) = value {
+            let pointer = if target.starts_with('/') {
+                target.to_owned()
+            } else {
+                format!("/{target}")
+            };
+            set_pointer(&mut listed, &pointer, value.clone());
+        }
+    }
+
+    listed
 }
 
 /// Whether `object` is the row Dokploy made with its parent (the spec's marker is true).

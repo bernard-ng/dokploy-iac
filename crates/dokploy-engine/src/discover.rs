@@ -25,7 +25,7 @@ use crate::EngineError;
 use crate::compile::Compiled;
 use crate::envtext::EnvText;
 use crate::fingerprint::Fingerprinter;
-use crate::project::{field_value, item_id, lookup, project};
+use crate::project::{field_value, item_id, list_field_value, list_item_id, lookup, project};
 use crate::selectors::SelectorIndex;
 
 /// What was learned about one address; rebuilt into core types on demand.
@@ -407,13 +407,13 @@ async fn settle<T: Transport>(
     };
     let by_id: BTreeMap<&str, &Json> = listing
         .iter()
-        .filter_map(|item| item_id(spec, item).map(|id| (id, item)))
+        .filter_map(|item| list_item_id(spec, item).map(|id| (id, item)))
         .collect();
     // A collection that lists one identity twice, or names another parent's items, contradicts
     // itself: nothing can be concluded from it.
     let identified = listing
         .iter()
-        .filter(|item| item_id(spec, item).is_some())
+        .filter(|item| list_item_id(spec, item).is_some())
         .count();
     let foreign =
         attachment.is_some_and(|attachment| listing.iter().any(|item| !attachment.owns(item)));
@@ -503,10 +503,10 @@ fn find<'a>(
             && subject
                 .moved_from
                 .as_ref()
-                .is_none_or(|source| item_id(spec, item) != Some(source.as_str()))
+                .is_none_or(|source| list_item_id(spec, item) != Some(source.as_str()))
             && wanted
                 .iter()
-                .all(|(name, value)| field_value(spec, name, item).as_ref() == Some(value))
+                .all(|(name, value)| list_field_value(spec, name, item).as_ref() == Some(value))
     });
     match (matches.next(), matches.next()) {
         (None, _) => Found::Nothing,
@@ -532,7 +532,7 @@ async fn resolve<T: Transport>(
     selectors: &SelectorIndex,
     entries: &[PropertyPath],
 ) -> Outcome {
-    let Some(id) = item_id(spec, listed).and_then(|id| RemoteId::new(id).ok()) else {
+    let Some(id) = list_item_id(spec, listed).and_then(|id| RemoteId::new(id).ok()) else {
         return Outcome::Unavailable(RemoteFailureKind::InvalidResponse);
     };
     let Some(one) = spec.api.read.one.as_ref() else {
@@ -542,7 +542,16 @@ async fn resolve<T: Transport>(
             raw: listed.clone(),
         };
     };
-    let request = OperationRequest::new(&one.op).query(one.id_param.clone(), id.as_str());
+    let query_id = match one.id_from.as_deref() {
+        Some(pointer) => {
+            let Some(query_id) = lookup(listed, pointer).and_then(Json::as_str) else {
+                return Outcome::Unavailable(RemoteFailureKind::InvalidResponse);
+            };
+            query_id
+        }
+        None => id.as_str(),
+    };
+    let request = OperationRequest::new(&one.op).query(one.id_param.clone(), query_id);
     let direct = match transport.call(request).await {
         Ok(direct) if direct.is_object() => direct,
         Ok(_) => return Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
@@ -569,7 +578,7 @@ fn agree(spec: &KindSpec, listed: &Json, direct: &Json) -> bool {
         .filter(|(_, field)| field.class == dokploy_spec::ValueClass::Public)
         .all(|(name, _)| {
             match (
-                field_value(spec, name, listed),
+                list_field_value(spec, name, listed),
                 field_value(spec, name, direct),
             ) {
                 (Some(left), Some(right)) => left == right,

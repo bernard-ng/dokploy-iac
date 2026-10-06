@@ -17,7 +17,7 @@ use dokploy_state::RemoteId;
 use serde_json::Value as Json;
 
 use crate::discover::read_collection;
-use crate::project::{field_value, item_id};
+use crate::project::{field_value, item_id, list_field_value, list_item_id};
 
 /// The kind whose selectors may also say `{ local: true }`: the Dokploy host itself.
 const LOCAL_KIND: &str = "server";
@@ -243,7 +243,7 @@ fn entries(
     let mut ids = BTreeSet::new();
     for item in items {
         let (Some(id), Some(Json::String(name))) =
-            (item_id(spec, item), field_value(spec, key, item))
+            (list_item_id(spec, item), list_field_value(spec, key, item))
         else {
             continue;
         };

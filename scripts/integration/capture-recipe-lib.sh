@@ -10,8 +10,10 @@
 #   recipe_id          the id key of the object (sshKeyId)
 #   recipe_id_label    what the sanitiser makes of an id (ssh-key-1)
 #   recipe_name        the key the object is named by (default: name)
+#   recipe_one_name    dot-separated path to the name in a direct read (default: recipe_name)
 #   recipe_list / recipe_one / recipe_create / recipe_update / recipe_remove   operation ids
 #   recipe_one_param   the query parameter of the direct read (default: the id key)
+#   recipe_one_id      dot-separated path to the direct-read id in a list item (default: id key)
 #   recipe_remove_action   the fixture suffix of the remove (default: the operation's action)
 #   recipe_secrets     space-separated jq paths of the object that carry a secret (.privateKey)
 # and these functions:
@@ -28,7 +30,9 @@ capture_recipe() {
     # shellcheck source=/dev/null
     source "$script_directory/recipes/$recipe.sh"
     recipe_name="${recipe_name:-name}"
+    recipe_one_name="${recipe_one_name:-$recipe_name}"
     recipe_one_param="${recipe_one_param:-$recipe_id}"
+    recipe_one_id="${recipe_one_id:-$recipe_id}"
     recipe_remove_action="${recipe_remove_action:-${recipe_remove#*.}}"
 
     capture_begin "$recipe_fixture"
@@ -66,19 +70,20 @@ capture_recipe() {
         if jq -e --arg key "$recipe_id" 'type == "object" and has($key)' "$workspace/create.json" >/dev/null 2>&1; then
             create_returns=object
         else
-            create_returns="$(jq -r 'type' "$workspace/create.json" 2>/dev/null || echo other)"
+            create_returns="$(jq -r 'if type == "object" then "object_without_id" else type end' "$workspace/create.json" 2>/dev/null || echo other)"
         fi
     fi
     api_request GET "$recipe_list" "$workspace/all-created.json" >/dev/null
     jq -e 'length == 1' "$workspace/all-created.json" >/dev/null
     object_id="$(jq -er --arg key "$recipe_id" '.[0][$key]' "$workspace/all-created.json")"
+    one_object_id="$(jq -er --arg path "$recipe_one_id" '.[0] | getpath($path | split("."))' "$workspace/all-created.json")"
     created_ids+=("$object_id")
     if [[ "$create_returns" == object ]]; then
         jq -e --arg key "$recipe_id" --arg id "$object_id" '.[$key] == $id' "$workspace/create.json" >/dev/null
         cp "$workspace/create.json" "$workspace/$recipe_fixture-create.json"
         published+=("$recipe_fixture-create")
     fi
-    one_status="$(api_request GET "$one_url_prefix$(urlencode "$object_id")" "$workspace/one-created.json")"
+    one_status="$(api_request GET "$one_url_prefix$(urlencode "$one_object_id")" "$workspace/one-created.json")"
     require_status "$one_status" 200 "$recipe_one after create"
     cp "$workspace/all-created.json" "$workspace/$recipe_fixture-all.created.json"
     cp "$workspace/one-created.json" "$workspace/$recipe_fixture-one.created.json"
@@ -105,8 +110,8 @@ capture_recipe() {
     partial_status="$(api_request POST "$recipe_update" "$workspace/partial.json" "$workspace/partial.request.json")"
     update_is_patch=false
     if [[ "$partial_status" == 200 ]]; then
-        api_request GET "$one_url_prefix$(urlencode "$object_id")" "$workspace/one-partial.json" >/dev/null
-        if jq -e --arg key "$recipe_name" --arg name "$renamed" '.[$key] == $name' "$workspace/one-partial.json" >/dev/null; then
+        api_request GET "$one_url_prefix$(urlencode "$one_object_id")" "$workspace/one-partial.json" >/dev/null
+        if jq -e --arg path "$recipe_one_name" --arg name "$renamed" 'getpath($path | split(".")) == $name' "$workspace/one-partial.json" >/dev/null; then
             update_is_patch=true
         fi
         if [[ -s "$workspace/partial.json" ]] && jq -e . "$workspace/partial.json" >/dev/null 2>&1; then
@@ -132,8 +137,8 @@ capture_recipe() {
             published+=("$recipe_fixture-update")
         fi
     fi
-    api_request GET "$one_url_prefix$(urlencode "$object_id")" "$workspace/one-updated.json" >/dev/null
-    jq -e --arg key "$recipe_name" --arg name "$renamed" '.[$key] == $name' "$workspace/one-updated.json" >/dev/null
+    api_request GET "$one_url_prefix$(urlencode "$one_object_id")" "$workspace/one-updated.json" >/dev/null
+    jq -e --arg path "$recipe_one_name" --arg name "$renamed" 'getpath($path | split(".")) == $name' "$workspace/one-updated.json" >/dev/null
     cp "$workspace/one-updated.json" "$workspace/$recipe_fixture-one.updated.json"
     published+=("$recipe_fixture-one.updated")
 
@@ -159,7 +164,7 @@ capture_recipe() {
             published+=("$recipe_fixture-$recipe_remove_action")
         fi
     fi
-    removed_one_status="$(api_request GET "$one_url_prefix$(urlencode "$object_id")" "$workspace/one-removed.json")"
+    removed_one_status="$(api_request GET "$one_url_prefix$(urlencode "$one_object_id")" "$workspace/one-removed.json")"
     cp "$workspace/one-removed.json" "$workspace/$recipe_fixture-one.removed.json"
     published+=("$recipe_fixture-one.removed")
     # what is left (a duplicate) goes too

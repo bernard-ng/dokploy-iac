@@ -110,13 +110,12 @@ settings:
       password: { env: GHCR_TOKEN }          # [s]
       image_prefix: acme
       # [x] a registry local to a server: Dokploy neither stores nor returns the serverId
-  git_providers:                             # ✘
+  github_providers:                          # ✘ [a] installed through OAuth, then adopted
     leganews-org:
-      type: github                           # [a] a GitHub App is installed through OAuth: adopt, never create
       app_name: leganews-dokploy             #   API: githubAppName
       shared_with_organization: true         #   gitProvider.toggleShare
+  gitlab_providers:                          # ✔
     company-gitlab:
-      type: gitlab
       url: https://gitlab.example.com        #   API: gitlabUrl
       internal_url: http://gitlab.internal   #   API: gitlabInternalUrl
       application_id: "0123456789"
@@ -124,21 +123,23 @@ settings:
       group_name: acme
       redirect_uri: https://dokploy.example.com/api/providers/gitlab/callback
       shared_with_organization: true
+  gitea_providers:                           # ✔
     company-gitea:
-      type: gitea
       url: https://gitea.example.com
       internal_url: http://gitea.internal
       client_id: abc
       client_secret: { env: GITEA_CLIENT_SECRET }   # [s]
       access_token: { env: GITEA_TOKEN }     # [s] OAuth tokens: refresh_token, expires_at, scopes ... are session state
-      username: ci
-      organization_name: acme
+      redirect_uri: https://dokploy.example.com/api/providers/gitea/callback
+      shared_with_organization: true
+  bitbucket_providers:                       # ✔
     company-bitbucket:
-      type: bitbucket
       workspace: acme                        #   API: bitbucketWorkspaceName
       username: ci
       email: ci@example.com
       app_password: { env: BITBUCKET_APP_PASSWORD }  # [s] or api_token
+      api_token: { env: BITBUCKET_API_TOKEN }
+      shared_with_organization: true
   certificates:                              # ✘
     wildcard:
       certificate_data: { file: certs/wildcard.pem }   # [s]? public; compared by content

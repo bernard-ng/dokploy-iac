@@ -1,0 +1,21 @@
+[
+  {
+    "bitbucket": null,
+    "createdAt": "2026-09-28T00:00:00.000Z",
+    "gitProviderId": "git-provider-1",
+    "gitea": null,
+    "github": null,
+    "gitlab": {
+      "applicationId": "application-1",
+      "gitlabId": "wnE3g63_9Cc3fMM_6hU74",
+      "gitlabUrl": "https://gitlab.invalid",
+      "isConfigured": false
+    },
+    "isOwner": true,
+    "name": "gitlab-contract",
+    "organizationId": "organization-1",
+    "providerType": "gitlab",
+    "sharedWithOrganization": false,
+    "userId": "user-1"
+  }
+]

@@ -1,0 +1,57 @@
+# A Bitbucket provider. Dokploy keeps the API token and app password in clear text; the projection
+# drops both at the response boundary and state records only keyed receipts.
+kind: bitbucket_provider
+scope: settings
+section: bitbucket_providers
+title: Bitbucket provider
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "bitbucket_provider.{key}"
+api:
+  id: gitProviderId
+  create:
+    op: bitbucket.create
+    send: { authId: declarative }
+  update:
+    op: bitbucket.update
+    from_read: { bitbucketId: /bitbucketId }
+  remove: { op: gitProvider.remove }
+  read:
+    list: { op: gitProvider.getAll, authority: authoritative }
+    one: { op: bitbucket.one, id_param: bitbucketId, id_from: /bitbucket/bitbucketId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    api: /gitProvider/name
+    list_api: name
+    request: name
+    type: text
+    min_len: 1
+    default: key
+  username:
+    api: bitbucketUsername
+    list_api: /bitbucket/bitbucketUsername
+    request: bitbucketUsername
+    type: text
+  email: { api: bitbucketEmail, request: bitbucketEmail, type: text }
+  app_password: { api: appPassword, request: appPassword, type: text, class: secret, mutability: write_only }
+  api_token: { api: apiToken, request: apiToken, type: text, class: secret, mutability: write_only }
+  workspace: { api: bitbucketWorkspaceName, request: bitbucketWorkspaceName, type: text }
+  shared_with_organization:
+    api: /gitProvider/sharedWithOrganization
+    list_api: sharedWithOrganization
+    request: sharedWithOrganization
+    type: bool
+    fallback: false
+write:
+  - op: bitbucket.update
+    fields: [name, username, email, app_password, api_token, workspace]
+    shape: full
+  - op: gitProvider.toggleShare
+    fields: [shared_with_organization]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId, userId, providerType, isOwner, isConfigured, isDeprecated]

@@ -174,6 +174,46 @@ fn lint_rejects_each_structural_mistake() {
 }
 
 #[test]
+fn collection_and_fresh_read_mappings_are_checked() {
+    let valid = BASE
+        .replace("update: { op: widget.update }", "update: { op: widget.update, from_read: { physicalId: /physicalId } }")
+        .replace(
+            "one: { op: widget.one, id_param: widgetId, agree: true }",
+            "one: { op: widget.one, id_param: physicalId, id_from: /physical/physicalId, agree: true }",
+        )
+        .replace("name: { type: text }", "name: { type: text, list_api: displayName }");
+    assert_eq!(issues(&valid), Vec::<String>::new());
+
+    let without_list = valid.replace("    list: { op: widget.all }\n", "");
+    let found = issues(&without_list);
+    assert!(
+        found
+            .iter()
+            .any(|issue| issue.contains("collection pointer needs a collection read")),
+        "{found:#?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|issue| issue.contains("collection mapping needs a collection read")),
+        "{found:#?}"
+    );
+
+    let bad_pointers = valid
+        .replace("physicalId: /physicalId", "physicalId: physicalId")
+        .replace("id_from: /physical/physicalId", "id_from: physicalId");
+    let found = issues(&bad_pointers);
+    assert_eq!(
+        found
+            .iter()
+            .filter(|issue| issue.contains("must be a JSON pointer"))
+            .count(),
+        2,
+        "{found:#?}"
+    );
+}
+
+#[test]
 fn a_union_must_be_written_by_an_operation_per_arm() {
     let source = r#"
 kind: widget

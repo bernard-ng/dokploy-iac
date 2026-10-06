@@ -1,0 +1,68 @@
+# A Gitea OAuth provider. OAuth session refresh data is server-owned; the declarative surface owns
+# the endpoint, client credentials, and optional access token.
+kind: gitea_provider
+scope: settings
+section: gitea_providers
+title: Gitea provider
+class: managed
+identity:
+  key: name
+  collision: [name]
+  address: "gitea_provider.{key}"
+api:
+  id: gitProviderId
+  create: { op: gitea.create }
+  update:
+    op: gitea.update
+    from_read: { giteaId: /giteaId }
+  remove: { op: gitProvider.remove }
+  read:
+    list: { op: gitProvider.getAll, authority: authoritative }
+    one: { op: gitea.one, id_param: giteaId, id_from: /gitea/giteaId, agree: true }
+  create_identity:
+    diff_collection: { key: [name] }
+fields:
+  name:
+    api: /gitProvider/name
+    list_api: name
+    request: name
+    type: text
+    min_len: 1
+    default: key
+  url:
+    api: giteaUrl
+    list_api: /gitea/giteaUrl
+    request: giteaUrl
+    type: text
+    min_len: 1
+  internal_url: { api: giteaInternalUrl, request: giteaInternalUrl, type: text, nullable: true }
+  redirect_uri: { api: redirectUri, request: redirectUri, type: text }
+  client_id:
+    api: clientId
+    list_api: /gitea/clientId
+    request: clientId
+    type: text
+  client_secret: { api: clientSecret, request: clientSecret, type: text, class: secret, mutability: write_only }
+  access_token: { api: accessToken, request: accessToken, type: text, class: secret, mutability: write_only }
+  shared_with_organization:
+    api: /gitProvider/sharedWithOrganization
+    list_api: sharedWithOrganization
+    request: sharedWithOrganization
+    type: bool
+    fallback: false
+write:
+  - op: gitea.update
+    fields: [name, url, internal_url, redirect_uri, client_id, client_secret, access_token]
+    shape: full
+  - op: gitProvider.toggleShare
+    fields: [shared_with_organization]
+    shape: partial
+ledger:
+  readonly: [createdAt, organizationId, userId, providerType, isOwner, isConfigured]
+  ignored:
+    - { field: refreshToken, reason: "OAuth session state refreshed by Dokploy, not configuration" }
+    - { field: expiresAt, reason: "OAuth session expiry maintained by Dokploy, not configuration" }
+    - { field: scopes, reason: "OAuth session scopes returned by the provider, not configuration" }
+    - { field: lastAuthenticatedAt, reason: "OAuth session timestamp maintained by Dokploy, not configuration" }
+    - { field: giteaUsername, reason: "provider identity returned by OAuth, not configuration" }
+    - { field: organizationName, reason: "provider identity returned by OAuth, not configuration" }

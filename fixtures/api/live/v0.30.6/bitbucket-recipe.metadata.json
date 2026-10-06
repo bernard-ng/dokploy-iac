@@ -1,0 +1,31 @@
+{
+  "capturedAt": "2026-10-06",
+  "createReturns": "empty",
+  "createStatus": 200,
+  "detailExposesCredentials": true,
+  "duplicateNamesAllowed": true,
+  "duplicateStatus": 200,
+  "fixtures": [
+    "bitbucket-all.created.owner.json",
+    "bitbucket-one.created.owner.json",
+    "bitbucket-update.partial-rejected.owner.json",
+    "bitbucket-update.owner.json",
+    "bitbucket-one.updated.owner.json",
+    "bitbucket-remove.owner.json",
+    "bitbucket-one.removed.owner.json",
+    "bitbucket-all.removed.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "bitbucket_provider",
+  "listingExposesCredentials": false,
+  "listingMasksCredentials": false,
+  "partialUpdateStatus": 400,
+  "removeReturns": "object",
+  "removeStatus": 200,
+  "removedOneStatus": 404,
+  "role": "owner",
+  "sanitized": true,
+  "updateIsPatch": false,
+  "updateReturns": "object",
+  "version": "v0.30.6"
+}

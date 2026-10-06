@@ -1,0 +1,38 @@
+{
+  "code": "BAD_REQUEST",
+  "data": {
+    "code": "BAD_REQUEST",
+    "httpStatus": 400,
+    "path": "gitlab.update",
+    "zodError": {
+      "fieldErrors": {
+        "gitlabId": [
+          "Invalid input: expected string, received undefined"
+        ],
+        "gitlabUrl": [
+          "Invalid input: expected string, received undefined"
+        ]
+      },
+      "formErrors": []
+    }
+  },
+  "issues": [
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "gitlabId"
+      ]
+    },
+    {
+      "code": "invalid_type",
+      "expected": "string",
+      "message": "Invalid input: expected string, received undefined",
+      "path": [
+        "gitlabUrl"
+      ]
+    }
+  ],
+  "message": "Input validation failed"
+}

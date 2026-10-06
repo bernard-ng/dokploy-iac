@@ -79,7 +79,7 @@ fields:
         enable_submodules: { api: enableSubmodules, type: bool }
         watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
       gitlab:
-        provider: { api: gitlabId, type: selector(git_provider), nullable: true }
+        provider: { api: gitlabId, type: selector(gitlab_provider), nullable: true }
         project_id: { api: gitlabProjectId, type: int, nullable: true }
         owner: { api: gitlabOwner, type: text, nullable: true }
         repository: { api: gitlabRepository, type: text, nullable: true }
@@ -88,7 +88,7 @@ fields:
         enable_submodules: { api: enableSubmodules, type: bool }
         watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
       bitbucket:
-        provider: { api: bitbucketId, type: selector(git_provider), nullable: true }
+        provider: { api: bitbucketId, type: selector(bitbucket_provider), nullable: true }
         owner: { api: bitbucketOwner, type: text, nullable: true }
         repository: { api: bitbucketRepository, type: text, nullable: true }
         repository_slug: { api: bitbucketRepositorySlug, type: text, nullable: true }
@@ -96,7 +96,7 @@ fields:
         enable_submodules: { api: enableSubmodules, type: bool }
         watch_paths: { api: watchPaths, type: "list<text>", nullable: true }
       gitea:
-        provider: { api: giteaId, type: selector(git_provider), nullable: true }
+        provider: { api: giteaId, type: selector(gitea_provider), nullable: true }
         owner: { api: giteaOwner, type: text, nullable: true }
         repository: { api: giteaRepository, type: text, nullable: true }
         branch: { api: giteaBranch, type: text, nullable: true }
