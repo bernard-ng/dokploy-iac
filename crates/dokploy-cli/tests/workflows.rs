@@ -30,6 +30,15 @@ settings:
     blue: { color: \"#0000ff\" }
 ";
 
+const DISRUPTIVE_SETTINGS: &str = "\
+version: 2
+settings:
+  tags:
+    blue: { color: \"#0000ff\" }
+  web_server:
+    server_ip: 203.0.113.10
+";
+
 struct Fixture {
     sim: Sim,
     directory: tempfile::TempDir,
@@ -42,6 +51,14 @@ impl Fixture {
         let specs = dokploy_spec::embedded().expect("embedded specs");
         Self {
             sim: Sim::new(Arc::new(specs)).with_fixtures(&fixtures),
+            directory: tempfile::tempdir().unwrap(),
+        }
+    }
+
+    fn without_live_fixtures() -> Self {
+        let specs = dokploy_spec::embedded().expect("embedded specs");
+        Self {
+            sim: Sim::new(Arc::new(specs)),
             directory: tempfile::tempdir().unwrap(),
         }
     }
@@ -80,6 +97,19 @@ async fn apply(
     input: &str,
     terminal: bool,
 ) -> Run {
+    apply_with_disruptive_permission(fixture, text, destroy, auto_approve, false, input, terminal)
+        .await
+}
+
+async fn apply_with_disruptive_permission(
+    fixture: &Fixture,
+    text: &str,
+    destroy: bool,
+    auto_approve: bool,
+    allow_disruptive: bool,
+    input: &str,
+    terminal: bool,
+) -> Run {
     let engine = fixture.engine();
     let workspace = fixture.file(text);
     let (mut result, mut diagnostics) = (Vec::new(), Vec::new());
@@ -93,6 +123,7 @@ async fn apply(
         },
         destroy,
         auto_approve,
+        allow_disruptive,
         Terminal {
             input: &mut stdin,
             available: terminal,
@@ -107,6 +138,63 @@ async fn apply(
         result: String::from_utf8(result).unwrap(),
         diagnostics: String::from_utf8(diagnostics).unwrap(),
     }
+}
+
+#[tokio::test]
+async fn disruptive_changes_are_last_visible_and_explicitly_allowed_when_non_interactive() {
+    let fixture = Fixture::without_live_fixtures();
+    let web_server = fixture.sim.objects("web_server").remove(0);
+    fixture.sim.patch(
+        "web_server",
+        web_server["id"].as_str().unwrap(),
+        &serde_json::json!({
+            "host": null,
+            "https": false,
+            "certificateType": "none",
+            "serverIp": "127.0.0.1",
+            "buildsConcurrency": 1,
+            "remoteServersOnly": false,
+            "enforceSSO": false,
+            "requestLogging": false,
+            "enableDockerCleanup": true,
+            "logCleanupCron": "0 0 * * *",
+            "traefikDashboard": false,
+            "additionalPorts": [],
+            "traefikEnv": "",
+            "traefikConfig": "entryPoints: {}",
+            "webServerTraefikConfig": "http: {}",
+            "middlewareTraefikConfig": "http: {}"
+        }),
+    );
+
+    let (_, output) = plan(&fixture, DISRUPTIVE_SETTINGS, false, true).await;
+    let ordinary = output.find("create tag.blue").expect("ordinary change");
+    let disruptive = output
+        .find("adopt web_server.default (config) [disruptive]")
+        .unwrap_or_else(|| panic!("disruptive change marker missing: {output}"));
+    assert!(ordinary < disruptive, "{output}");
+
+    let rejected = apply(&fixture, DISRUPTIVE_SETTINGS, false, true, "", false).await;
+    let error = rejected.status.expect_err("permission is required");
+    assert!(error.contains("--allow-disruptive"), "{error}");
+    assert!(fixture.sim.mutations().is_empty());
+
+    let applied = apply_with_disruptive_permission(
+        &fixture,
+        DISRUPTIVE_SETTINGS,
+        false,
+        true,
+        true,
+        "",
+        false,
+    )
+    .await;
+    assert_eq!(
+        applied.status,
+        Ok(CommandStatus::Success),
+        "{}",
+        applied.diagnostics
+    );
 }
 
 async fn plan(

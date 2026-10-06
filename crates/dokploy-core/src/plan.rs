@@ -11,6 +11,10 @@ use uuid::Uuid;
 use crate::ReplacementOrder;
 use crate::{ConfigDigest, OwnedValue, PropertyPath, PropertyUnknownReason, RemoteFailureKind};
 
+const fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 pub(crate) const PLAN_FORMAT_VERSION: u32 = 1;
 
 /// The remote convergence action selected for one managed resource.
@@ -142,6 +146,8 @@ pub struct PlannedChange {
     kind: ChangeKind,
     origin: ChangeOrigin,
     fields: Vec<FieldChange>,
+    #[serde(skip_serializing_if = "is_false")]
+    disruptive: bool,
     metadata: Vec<MetadataChangeKind>,
     #[serde(skip)]
     adopted_remote_id: Option<RemoteId>,
@@ -181,6 +187,7 @@ impl PlannedChange {
             !matches!(checkpoint, CheckpointTarget::Move { .. }),
             "ordinary changes cannot carry move checkpoints"
         );
+        let disruptive = fields.iter().any(|field| field.key.info().disruptive);
         Self {
             address,
             previous_address: None,
@@ -190,6 +197,7 @@ impl PlannedChange {
             kind,
             origin,
             fields,
+            disruptive,
             metadata,
             adopted_remote_id: None,
             checkpoint,
@@ -203,6 +211,7 @@ impl PlannedChange {
         metadata: Vec<MetadataChangeKind>,
         checkpoint: CheckpointTarget,
     ) -> Self {
+        let disruptive = fields.iter().any(|field| field.key.info().disruptive);
         Self {
             address,
             previous_address: None,
@@ -212,6 +221,7 @@ impl PlannedChange {
             kind: ChangeKind::Adopt,
             origin: ChangeOrigin::Config,
             fields,
+            disruptive,
             metadata,
             adopted_remote_id: Some(remote_id),
             checkpoint,
@@ -227,6 +237,7 @@ impl PlannedChange {
         metadata: Vec<MetadataChangeKind>,
         target: ResourceCheckpoint,
     ) -> Self {
+        let disruptive = fields.iter().any(|field| field.key.info().disruptive);
         Self {
             address: to,
             previous_address: Some(from.clone()),
@@ -236,6 +247,7 @@ impl PlannedChange {
             kind: ChangeKind::Move,
             origin,
             fields,
+            disruptive,
             metadata,
             adopted_remote_id: None,
             checkpoint: CheckpointTarget::Move { from, target },
@@ -316,6 +328,12 @@ impl PlannedChange {
     #[must_use]
     pub fn fields(&self) -> &[FieldChange] {
         &self.fields
+    }
+
+    /// Returns whether this change can restart Traefik or the server.
+    #[must_use]
+    pub const fn disruptive(&self) -> bool {
+        self.disruptive
     }
 
     /// Returns state-only metadata changes in stable order.
@@ -787,6 +805,12 @@ impl Plan {
     #[must_use]
     pub fn changes(&self) -> &[PlannedChange] {
         &self.changes
+    }
+
+    /// Returns whether applying the plan includes a disruptive change.
+    #[must_use]
+    pub fn has_disruptive_changes(&self) -> bool {
+        self.changes.iter().any(PlannedChange::disruptive)
     }
 
     /// Returns drift in deterministic logical-address order.

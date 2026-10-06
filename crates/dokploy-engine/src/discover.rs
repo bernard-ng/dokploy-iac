@@ -227,8 +227,13 @@ async fn read_top_level<T: Transport>(
             ));
         }
         let subject = &group[0];
-        let outcome = match transport.call(OperationRequest::new(&singleton.op)).await {
-            Ok(direct) if direct.is_object() => {
+        let outcome = match fetch_singleton(transport, singleton).await {
+            Ok(Some(mut direct)) if direct.is_object() => {
+                if let Err(error) =
+                    merge_entry_reads(transport, &subject.entries, &mut direct).await
+                {
+                    return Ok(all(group, Outcome::Unavailable(error)));
+                }
                 let Some(id) = item_id(spec, &direct).and_then(|id| RemoteId::new(id).ok()) else {
                     return Ok(all(
                         group,
@@ -241,9 +246,9 @@ async fn read_top_level<T: Transport>(
                     raw: direct,
                 }
             }
-            Ok(_) => Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
-            Err(SdkError::Api(detail)) if detail.status() == 404 => Outcome::Missing,
-            Err(error) => Outcome::Unavailable(failure(&error)),
+            Ok(Some(_)) => Outcome::Unavailable(RemoteFailureKind::InvalidResponse),
+            Ok(None) => Outcome::Missing,
+            Err(error) => Outcome::Unavailable(error),
         };
 
         return Ok(vec![(subject.address.clone(), outcome)]);
@@ -264,6 +269,88 @@ async fn read_top_level<T: Transport>(
     let listing = fetch_list(transport, OperationRequest::new(operation)).await;
 
     Ok(settle(transport, spec, list, group, listing, None, selectors).await)
+}
+
+async fn fetch_singleton<T: Transport>(
+    transport: &T,
+    read: &dokploy_spec::SingletonRead,
+) -> Result<Option<Json>, RemoteFailureKind> {
+    let mut value = match transport.call(OperationRequest::new(&read.op)).await {
+        Ok(value) if value.is_object() => value,
+        Ok(_) => return Err(RemoteFailureKind::InvalidResponse),
+        Err(SdkError::Api(detail)) if detail.status() == 404 => return Ok(None),
+        Err(error) => return Err(failure(&error)),
+    };
+    let object = value
+        .as_object_mut()
+        .expect("the singleton response was checked as an object");
+    for (field, supplemental) in &read.merge {
+        let merged = match transport
+            .call(OperationRequest::new(&supplemental.op))
+            .await
+        {
+            Ok(value) => value,
+            Err(SdkError::Api(detail))
+                if matches!(detail.status(), 404 | 500) && supplemental.fallback.is_some() =>
+            {
+                supplemental.fallback.clone().unwrap_or(Json::Null)
+            }
+            Err(error) => return Err(failure(&error)),
+        };
+        object.insert(field.clone(), merged);
+    }
+
+    Ok(Some(value))
+}
+
+async fn merge_entry_reads<T: Transport>(
+    transport: &T,
+    entries: &[PropertyPath],
+    item: &mut Json,
+) -> Result<(), RemoteFailureKind> {
+    for path in entries {
+        let info = path.info();
+        let Some(operations) = &info.entry else {
+            continue;
+        };
+        let key = info
+            .root
+            .as_deref()
+            .and_then(|root| info.path.strip_prefix(root))
+            .and_then(|rest| rest.strip_prefix('.'))
+            .unwrap_or_default();
+        let remote_key = operations
+            .key_format
+            .as_deref()
+            .map_or_else(|| key.to_owned(), |format| format.replace("{key}", key));
+        let value = match transport
+            .call(
+                OperationRequest::new(&operations.read.op)
+                    .query(operations.read.key.clone(), remote_key),
+            )
+            .await
+        {
+            Ok(Json::String(value)) => Json::String(value),
+            Ok(Json::Null) => Json::Null,
+            Ok(_) => return Err(RemoteFailureKind::InvalidResponse),
+            Err(SdkError::Api(detail)) if operations.read.missing.contains(&detail.status()) => {
+                Json::Null
+            }
+            Err(error) => return Err(failure(&error)),
+        };
+        let object = item
+            .as_object_mut()
+            .expect("the singleton response was checked as an object");
+        let held = object
+            .entry(info.api.clone())
+            .or_insert_with(|| Json::Object(serde_json::Map::new()));
+        let Some(held) = held.as_object_mut() else {
+            return Err(RemoteFailureKind::InvalidResponse);
+        };
+        held.insert(key.to_owned(), value);
+    }
+
+    Ok(())
 }
 
 /// A child kind: its collection is read once per parent, from what was learned about it.
@@ -790,6 +877,42 @@ fn add_content_receipts(
                 continue;
             };
             let Some(value) = EnvText::parse(text).value(key).map(str::to_owned) else {
+                continue;
+            };
+            let Ok(sensitive) = SensitivePropertyPath::parse(&info.path) else {
+                continue;
+            };
+            properties.insert(
+                path,
+                PropertyObservation::Receipt(SensitiveIntent::from_fingerprint(
+                    fingerprinter.fingerprint(address, &sensitive, value.as_bytes()),
+                )),
+            );
+        }
+        let files: Vec<PropertyPath> = properties
+            .iter()
+            .filter(|(path, observation)| {
+                path.info().shape == PathShape::CollectionEntry
+                    && path.info().ty == FieldType::File
+                    && matches!(
+                        observation,
+                        PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+                    )
+            })
+            .map(|(path, _)| path.clone())
+            .collect();
+        for path in files {
+            let info = path.info();
+            let key = info
+                .root
+                .as_deref()
+                .and_then(|root| info.path.strip_prefix(root))
+                .and_then(|rest| rest.strip_prefix('.'))
+                .unwrap_or_default();
+            let Some(Json::String(value)) = lookup(raw, &info.api)
+                .and_then(Json::as_object)
+                .and_then(|map| map.get(key))
+            else {
                 continue;
             };
             let Ok(sensitive) = SensitivePropertyPath::parse(&info.path) else {

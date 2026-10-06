@@ -1,0 +1,1 @@
+"http:\n  routers:\n    dokploy-router-app:\n      rule: Host(`dokploy.docker.localhost`) && PathPrefix(`/`)\n      service: dokploy-service-app\n      entryPoints:\n        - web\n  services:\n    dokploy-service-app:\n      loadBalancer:\n        servers:\n          - url: http://dokploy:3000\n        passHostHeader: true\n"

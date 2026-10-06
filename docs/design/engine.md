@@ -140,7 +140,9 @@ that is incomplete or has a blocking diagnostic is never applied. A **preflight*
 request without sending it, so a change the executor cannot make is reported before the first byte
 goes out.
 
-For each change, in the planner's dependency-safe order:
+For each change, in the planner's dependency-safe order, ordinary changes run first, removals run
+after them, and disruptive changes run last. Within one resource, ordinary write groups also run
+before disruptive groups.
 
 | Change | Requests |
 |--------|----------|

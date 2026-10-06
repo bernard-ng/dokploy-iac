@@ -53,11 +53,15 @@ a failure. It uploads both redaction-safe JSON review output and the strict
 saved-plan envelope. The example
 [apply workflow](../.github/examples/dokploy-apply.yml) accepts the approved
 plan workflow run ID, downloads that run's envelope, waits for a protected
-GitHub Environment, then invokes `dokploy apply PLAN --auto-approve`. The
+GitHub Environment, then invokes
+`dokploy apply PLAN --auto-approve --allow-disruptive`. The
 envelope is not blindly executed: apply rebuilds and compares the plan under
 the workspace writer lock using fresh remote reads. The plan artifact also
 records the exact source commit, and the apply workflow validates and checks
 out that revision before rebuilding the CLI.
+
+An approved plan with a disruptive web-server change needs `--allow-disruptive`.
+Keep that flag behind the protected environment review.
 
 Both examples intentionally select the same self-hosted runner label, fixed
 workspace path, and concurrency group. The runner storage must preserve the
@@ -76,8 +80,9 @@ on the `production` GitHub Environment before enabling apply.
 
 `engine-live` runs `scripts/integration/test-engine-live.sh` for every Dokploy version in
 `specs/versions.yaml` that has fixtures (0.30.6 and 0.30.7): the v2 engine applies, converges,
-updates, detects drift, rotates a secret, recovers, and removes a `tag` and a `registry` against the
-digest-pinned image. It is the live half of what the simulator copies
+updates, detects drift, rotates a secret, recovers, manages the adopt-only web
+server, and removes a `tag` and a `registry` against the digest-pinned image. It
+is the live half of what the simulator copies
 ([ADR 0015](decisions/0015-testing-simulator-and-live-contracts.md)); the registry part starts a
 throwaway `registry:2` because Dokploy runs `docker login` on create. Locally:
 

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use dokploy_conformance::{Outcome, Suite, report};
-use dokploy_spec::load_dir;
+use dokploy_spec::{KindClass, load_dir};
 
 fn root() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -12,7 +12,7 @@ fn root() -> std::path::PathBuf {
 #[tokio::test]
 async fn every_kind_with_a_full_spec_conforms() {
     let specs = load_dir(&root().join("specs")).expect("repository specs are valid");
-    let suite = Suite::new(specs, root().join("fixtures/api/live/v0.30.6"));
+    let suite = Suite::new(specs.clone(), root().join("fixtures/api/live/v0.30.6"));
 
     let results = suite.run_all().await;
     println!("{}", report(&results));
@@ -30,6 +30,19 @@ async fn every_kind_with_a_full_spec_conforms() {
                     && r.outcome == Outcome::Pass
             })
             .count();
+        if specs
+            .get(&kind)
+            .is_some_and(|spec| spec.class == KindClass::AdoptOnly)
+        {
+            assert_eq!(ran, 0, "`{kind}` unexpectedly ran create scenarios");
+            assert!(
+                results.iter().any(|result| {
+                    result.kind == kind && matches!(&result.outcome, Outcome::Skip(_))
+                }),
+                "`{kind}` did not report why create scenarios were skipped"
+            );
+            continue;
+        }
         assert!(
             ran >= 10,
             "`{kind}` ran only {ran} scenarios: {}",

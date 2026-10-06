@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Complete the M5 settings surface with the adopt-only `web_server` singleton. It composes the
+  split Dokploy reads, writes endpoint-owned struct members and named Traefik dynamic files,
+  orders disruptive work last, labels disruptive plans, and requires `--allow-disruptive` beside
+  unattended approval. The licensed SSO and remote-server-only controls remain outside the beta.
+  Sanitized captures and a live adopt, update, converge, restore, and forget lifecycle cover
+  Dokploy 0.30.6 and 0.30.7.
 - Add the adopt-only `organization` settings singleton. The unkeyed `settings.organization` block
   adopts the organization returned by `organization.active`, updates its name, logo, and default
   role, and is forgotten without remote deletion when omitted. The spec grammar now supports a

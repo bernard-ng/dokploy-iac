@@ -513,6 +513,12 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
             held.as_ref(),
             self.inputs(),
         )?);
+        bodies.extend(request::entry_requests(
+            address,
+            checkpoint,
+            written,
+            self.inputs(),
+        )?);
 
         Ok(bodies)
     }
@@ -828,20 +834,41 @@ impl<'e, T: Transport> Run<'e, '_, '_, T> {
 
     async fn direct_read(&self, spec: &KindSpec, remote_id: &str) -> Result<Json, FailureCode> {
         if let Some(singleton) = &spec.api.read.singleton {
-            return match self
+            let mut value = match self
                 .engine
                 .transport
                 .call(OperationRequest::new(&singleton.op))
                 .await
             {
-                Ok(value)
-                    if value.is_object()
-                        && crate::project::item_id(spec, &value) == Some(remote_id) =>
+                Ok(value) if value.is_object() => value,
+                Ok(_) => return Err(FailureCode::TransportOutcomeUnknown),
+                Err(error) => return Err(failure_code(&error)),
+            };
+            for (field, supplemental) in &singleton.merge {
+                let merged = match self
+                    .engine
+                    .transport
+                    .call(OperationRequest::new(&supplemental.op))
+                    .await
                 {
-                    Ok(value)
-                }
-                Ok(_) => Err(FailureCode::TransportOutcomeUnknown),
-                Err(error) => Err(failure_code(&error)),
+                    Ok(value) => value,
+                    Err(SdkError::Api(detail))
+                        if matches!(detail.status(), 404 | 500)
+                            && supplemental.fallback.is_some() =>
+                    {
+                        supplemental.fallback.clone().unwrap_or(Json::Null)
+                    }
+                    Err(error) => return Err(failure_code(&error)),
+                };
+                value
+                    .as_object_mut()
+                    .expect("the singleton response was checked as an object")
+                    .insert(field.clone(), merged);
+            }
+            return if crate::project::item_id(spec, &value) == Some(remote_id) {
+                Ok(value)
+            } else {
+                Err(FailureCode::TransportOutcomeUnknown)
             };
         }
         let one = spec.api.read.one.as_ref().ok_or(FailureCode::Validation)?;

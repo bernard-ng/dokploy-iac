@@ -355,6 +355,26 @@ required_external_selector_fixtures=(
     "external-selector-contract.metadata.json"
 )
 
+required_web_server_fixtures=(
+    "web-server.before.owner.json"
+    "web-server-requests.before.owner.json"
+    "web-server-haveTraefikDashboardPortEnabled.owner.json"
+    "web-server-getTraefikPorts.owner.json"
+    "web-server-readTraefikEnv.owner.json"
+    "web-server-readTraefikConfig.owner.json"
+    "web-server-readWebServerTraefikConfig.owner.json"
+    "web-server-readMiddlewareTraefikConfig.owner.json"
+    "web-server-update-builds.owner.json"
+    "web-server-update-remote.owner.json"
+    "web-server-update-sso.owner.json"
+    "web-server-update-docker.owner.json"
+    "web-server-update-logs.owner.json"
+    "web-server-update-requests.owner.json"
+    "web-server.updated.owner.json"
+    "web-server-requests.updated.owner.json"
+    "web-server-contract.metadata.json"
+)
+
 for fixture_name in "${required_redis_fixtures[@]}"; do
     if fixture_missing "$fixture_name"; then
         echo "Missing Redis contract fixture: $fixture_name" >&2
@@ -502,6 +522,13 @@ for fixture_name in "${required_external_selector_fixtures[@]}"; do
     fi
 done
 
+for fixture_name in "${required_web_server_fixtures[@]}"; do
+    if fixture_missing "$fixture_name"; then
+        echo "Missing web-server contract fixture: $fixture_name" >&2
+        exit 1
+    fi
+done
+
 if ! find "$fixture_directory" -type f -name '*.json' -print0 \
     | xargs -0 jq --exit-status '.' >/dev/null
 then
@@ -578,6 +605,35 @@ if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_ima
     and .cleanupEvidence.projectOneAbsent == true
 ' "$versioned_fixture_directory/redis-contract.metadata.json" >/dev/null; then
     echo "Redis contract metadata does not prove capture and cleanup." >&2
+    exit 1
+fi
+
+if ! jq --exit-status '
+    (.id | type) == "string"
+    and (.serverIp | type) == "string"
+    and (.buildsConcurrency | type) == "number"
+    and (.remoteServersOnly | type) == "boolean"
+    and (.enforceSSO | type) == "boolean"
+    and (.enableDockerCleanup | type) == "boolean"
+    and (.logCleanupCron | type) == "string"
+    and (.sshPrivateKey == null or .sshPrivateKey == "<redacted>")
+' "$versioned_fixture_directory/web-server.before.owner.json" >/dev/null; then
+    echo "Web-server fixture does not preserve the sanitized singleton contract." >&2
+    exit 1
+fi
+
+if ! jq --exit-status --arg version "$dokploy_version" --arg image "$dokploy_image" '
+    .version == $version and .image == $image and .sanitized == true
+    and .kind == "web_server" and .singleton == true
+    and .createOperation == false and .removeOperation == false
+    and .baseStatus == 200 and .requestsStatus == 200
+    and .supplementalStatuses == [500, 500, 500, 200, 200, 200]
+    and .enterpriseStatuses == [403, 403]
+    and .updateStatuses == [200, 200, 200, 200]
+    and .updatedStatus == 200 and .updatedRequestsStatus == 200
+    and (.fixtures | length) == 16
+' "$versioned_fixture_directory/web-server-contract.metadata.json" >/dev/null; then
+    echo "Web-server metadata does not prove the captured singleton contract." >&2
     exit 1
 fi
 

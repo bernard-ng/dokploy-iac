@@ -13,10 +13,15 @@ pub fn render(plan: &Plan, output: &mut dyn Write) -> std::io::Result<()> {
     for change in plan.changes() {
         writeln!(
             output,
-            "  {} {} ({})",
+            "  {} {} ({}){}",
             change_kind(change.kind()),
             change.address(),
-            change_origin(change.origin())
+            change_origin(change.origin()),
+            if change.disruptive() {
+                " [disruptive]"
+            } else {
+                ""
+            }
         )?;
         for field in change.fields() {
             writeln!(output, "    property: {}", field.key())?;

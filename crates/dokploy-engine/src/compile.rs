@@ -745,10 +745,21 @@ impl Compiler<'_> {
                             FieldType::Map(item) => item.as_ref(),
                             _ => &ty,
                         };
-                        let json = canonical(entry, item).map_err(|NotComparable::HoldsSecret| {
-                            unsupported("holds a secret inside a collection, which is not supported yet")
-                        })?;
-                        properties.insert(path(&dotted)?, comparable(json));
+                        if let Value::Source(source) = entry
+                            && matches!(item, FieldType::File)
+                        {
+                            let bytes = self.read(address, &dotted, source)?;
+                            let property = path(&dotted)?;
+                            let receipt =
+                                self.receipt(address, &dotted, &bytes, property.info().trim);
+                            properties.insert(property, receipt);
+                            secrets.insert((address.clone(), dotted), bytes);
+                        } else {
+                            let json = canonical(entry, item).map_err(|NotComparable::HoldsSecret| {
+                                unsupported("holds a secret inside a collection, which is not supported yet")
+                            })?;
+                            properties.insert(path(&dotted)?, comparable(json));
+                        }
                     }
                 }
                 // A union is planned per member: its tag, and the members of the arm it names.
@@ -830,6 +841,33 @@ impl Compiler<'_> {
                                         path(&entry)?,
                                         self.receipt(address, &entry, &bytes, false),
                                     );
+                                    secrets.insert((address.clone(), entry), bytes);
+                                }
+                                continue;
+                            }
+                            Value::Map(entries)
+                                if spec_field.members.get(member).is_some_and(|field| {
+                                    matches!(
+                                        parse_type(&field.ty),
+                                        Ok(FieldType::Map(item)) if *item == FieldType::File
+                                    ) && field.granularity == Some(Granularity::Key)
+                                }) =>
+                            {
+                                if entries.is_empty() {
+                                    properties.insert(path(&dotted)?, OwnedValue::EmptyCollection);
+                                }
+                                for (key, value) in entries {
+                                    let entry = format!("{dotted}.{key}");
+                                    let Value::Source(source) = value else {
+                                        return Err(unsupported(
+                                            "holds file content that is not a source",
+                                        ));
+                                    };
+                                    let bytes = self.read(address, &entry, source)?;
+                                    let property = path(&entry)?;
+                                    let receipt =
+                                        self.receipt(address, &entry, &bytes, property.info().trim);
+                                    properties.insert(property, receipt);
                                     secrets.insert((address.clone(), entry), bytes);
                                 }
                                 continue;

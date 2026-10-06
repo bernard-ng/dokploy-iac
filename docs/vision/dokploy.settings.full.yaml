@@ -42,7 +42,7 @@ settings:
     footer_text: © Leganews
 
   # ===== Web Server ==========================================================
-  web_server:                                # ✘ [a] singleton (see design S6); changes can restart Traefik
+  web_server:                                # ✔ [a] singleton; changes can restart Traefik
     domain:                                  #   settings.assignDomainServer
       host: dokploy.example.com
       https: true
@@ -50,8 +50,7 @@ settings:
       letsencrypt_email: ops@example.com
     server_ip: 203.0.113.10                  #   settings.updateServerIp
     builds_concurrency: 2                    #   1..100
-    remote_servers_only: false               # ?  readable only if getWebServerSettings returns it
-    enforce_sso: false                       #   settings.updateEnforceSSO
+    # remote_servers_only and enforce_sso require an enterprise licence and are out of scope. [x]
     request_logging: true                    #   settings.toggleRequests
     cleanup:
       docker: true                           #   settings.updateDockerCleanup
@@ -64,13 +63,13 @@ settings:
       static_config: { file: traefik/traefik.yml }        # settings.updateTraefikConfig
       web_server_config: { file: traefik/dokploy.yml }    # settings.updateWebServerTraefikConfig
       middlewares_config: { file: traefik/middlewares.yml }  # settings.updateMiddlewareTraefikConfig
-      files:                                 # ✎ the "Traefik File System" page: arbitrary dynamic files
-        redirect-www: { path: dynamic/redirect-www.yml, content: { file: traefik/redirect-www.yml } }
+      files:                                 # dynamic/<key>.yml; settings.updateTraefikFile
+        redirect-www: { file: traefik/redirect-www.yml }
     ssh_private_key: { file: ssh/dokploy_ed25519 }   # [s] settings.saveSSHPrivateKey
-    gpu: { setup: false }                    # [x] setupGPU is an action
+    # GPU setup is an imperative action and is out of scope. [x]
 
   # ===== Remote Servers ======================================================
-  ssh_keys:                                  # ✘ [s]
+  ssh_keys:                                  # ✔ [s]
     deploy:
       name: deploy                           #   remote name; defaults to key
       description: CI deploy key
@@ -89,7 +88,7 @@ settings:
       builds_concurrency: 2                  #   server.updateBuildsConcurrency, 1..100
       # [x] `metrics` (server.setupMonitoring is an action that carries a config), `setup` (install
       # Docker/Traefik on the host), and `validate` are actions, not configuration.
-  networks:                                  # ✘ Docker networks managed by Dokploy
+  networks:                                  # ✔ Docker networks managed by Dokploy
     backend:
       driver: overlay                        #   bridge | overlay  [c]
       internal: false
@@ -102,7 +101,7 @@ settings:
   cluster:                                   # [x] swarm nodes (addWorker, removeWorker) are actions
 
   # ===== Registry / Git / Certificates / DNS ================================
-  registries:                                # ✘ (referenced by name from applications today)
+  registries:                                # ✔
     ghcr:
       type: cloud                            #   registryType
       url: ghcr.io
@@ -140,7 +139,7 @@ settings:
       app_password: { env: BITBUCKET_APP_PASSWORD }  # [s] or api_token
       api_token: { env: BITBUCKET_API_TOKEN }
       shared_with_organization: true
-  certificates:                              # ✘
+  certificates:                              # ✔
     wildcard:
       certificate_data: { file: certs/wildcard.pem }   # [s]? public; compared by content
       private_key: { env: WILDCARD_KEY }     # [s]
@@ -159,7 +158,7 @@ settings:
     #      application_key, application_secret[s], consumer_key[s]
 
   # ===== S3 Destinations =====================================================
-  destinations:                              # ✘ (referenced by name from backups today)
+  destinations:                              # ✔
     offsite:
       provider: s3
       bucket: leganews-backups
@@ -223,7 +222,7 @@ settings:
     # phase{token[s],app_id,environment_slug,path,api_url}
 
   # ===== AI ==================================================================
-  ai_providers:                              # ✘ in the beta
+  ai_providers:                              # ✔
     openai:
       api_url: https://api.openai.com/v1
       api_key: { env: OPENAI_API_KEY }       # [s]

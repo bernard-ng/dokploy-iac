@@ -174,7 +174,11 @@ async fn execute_inner(
             )
             .await
         }
-        Command::Apply { file, auto_approve } => {
+        Command::Apply {
+            file,
+            auto_approve,
+            allow_disruptive,
+        } => {
             let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::apply(
@@ -186,6 +190,7 @@ async fn execute_inner(
                 },
                 false,
                 auto_approve,
+                allow_disruptive,
                 workflow::Terminal {
                     input,
                     available: terminal_available,
@@ -206,6 +211,7 @@ async fn execute_inner(
                 },
                 true,
                 auto_approve,
+                false,
                 workflow::Terminal {
                     input,
                     available: terminal_available,

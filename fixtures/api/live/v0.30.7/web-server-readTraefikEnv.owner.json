@@ -1,0 +1,10 @@
+{
+  "code": "INTERNAL_SERVER_ERROR",
+  "data": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "httpStatus": 500,
+    "path": "settings.readTraefikEnv",
+    "zodError": null
+  },
+  "message": "Command execution failed: The argument 'file' cannot be empty. Received ''"
+}

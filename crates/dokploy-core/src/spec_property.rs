@@ -55,7 +55,10 @@ pub(crate) fn observation_valid(
             PropertyObservation::Receipt(_) => {
                 (info.class == dokploy_spec::ValueClass::Content && info.shape == PathShape::Atomic)
                     || (info.shape == PathShape::CollectionEntry
-                        && info.ty == dokploy_spec::FieldType::Env)
+                        && matches!(
+                            info.ty,
+                            dokploy_spec::FieldType::Env | dokploy_spec::FieldType::File
+                        ))
             }
             PropertyObservation::Known(_) => false,
         };

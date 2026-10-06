@@ -80,6 +80,23 @@ api:
     singleton: { op: organization.active }
 ```
 
+Some singleton settings are split across several parameterless endpoints. `merge` inserts each
+supplemental response under the named response key before projection. A `fallback` is used only when
+that endpoint answers 404 or 500, which Dokploy uses for an optional file or port configuration that
+does not exist yet. `update_id: false` says the singleton's write operations take no resource id.
+
+```yaml
+api:
+  id: id
+  update_id: false
+  read:
+    singleton:
+      op: settings.getWebServerSettings
+      merge:
+        requestLogging: { op: settings.haveActivateRequests }
+        additionalPorts: { op: settings.getTraefikPorts, fallback: [] }
+```
+
 When the endpoint that creates a resource depends on a union arm, creation uses the same
 variant dispatch as a write group:
 
@@ -140,7 +157,7 @@ fields:
 ```
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
-`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
+`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `entry`, `trim`, `file_key`,
 `request`, `list_api`, `json`, `key_selector`, `since`, `until`, `doc` (one line for the generated
 reference), `example`.
 
@@ -155,6 +172,17 @@ the name at `name`, while subtype direct reads keep it at `/gitProvider/name`.
 `json: true` decodes a write-only secret text source as JSON before putting it in the request.
 It is for secret objects such as custom notification headers: the document names a file or
 environment variable, while plans, state, errors, and journals never hold the decoded values.
+
+`disruptive: true` marks a property whose write may restart Traefik or the server. Plans expose the
+flag, unattended apply requires `--allow-disruptive`, and both resource changes and write groups put
+ordinary work first.
+
+`entry` is for a `map<text, file>` with `granularity: key` whose API reads and writes one entry at a
+time. `read` names the operation and query key, `write` names the operation and its key/value body
+fields, and `key_format` maps a document key made of letters, digits, underscores, and hyphens to
+the remote path. Dokploy's Traefik files use
+`/etc/dokploy/traefik/dynamic/{key}.yml`. The API has no delete operation, so omitting a previously
+owned entry forgets it while leaving the remote file in place.
 
 `made_with_parent: { name, marker }` (on a kind, not a field) says Dokploy makes one of this kind
 by itself when it makes the parent: a project's `production` environment, flagged by the computed bool
@@ -239,6 +267,9 @@ write:
 A write group may name a union field (`source`, `node`) and then writes its tag and the members of
 every arm; `by_variant` is for a union whose arms are written by different operations, and an
 operation may be listed for several arms (`build`: one `saveBuildType` for all).
+
+A group can name one property of a per-member struct, such as `cleanup.docker`; this sends that
+member through its own endpoint without claiming the other members of the struct.
 
 `shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation by a
 union tag, `ops: { arm: operation }`: one request per apply, to the operation of the arm the

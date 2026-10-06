@@ -40,9 +40,6 @@ fn is_selector_set(ty: &FieldType) -> bool {
 
 /// A property the executor can write.
 pub(crate) struct Writable {
-    /// The document field the property belongs to (its first path segment): what a write group
-    /// names.
-    pub(crate) name: String,
     /// The body key.
     pub(crate) wire: String,
     pub(crate) mutability: Mutability,
@@ -71,6 +68,7 @@ pub(crate) fn writable(
         PathShape::CollectionRoot | PathShape::CollectionEntry
             if is_selector_set(&info.ty)
                 || (info.shape == PathShape::CollectionEntry && info.selector.is_some()) => {}
+        PathShape::CollectionEntry if info.entry.is_some() => {}
         PathShape::CollectionRoot | PathShape::CollectionEntry => {
             return Err(unsupported(
                 "is a keyed collection of plain values, which the executor does not write yet",
@@ -111,7 +109,6 @@ pub(crate) fn writable(
     }
 
     Ok(Writable {
-        name: info.field_name().to_owned(),
         wire: info.request_key().to_owned(),
         mutability: info.mutability,
     })
@@ -441,6 +438,8 @@ pub(crate) struct GroupRequest {
     /// Whether the body is built from what Dokploy holds now: a `full` group re-sends it, and
     /// an environment block keeps the variables the document does not own.
     pub(crate) reads_fresh: bool,
+    /// Whether this write can restart Traefik or the server.
+    pub(crate) disruptive: bool,
 }
 
 /// Splits the written properties into the spec's write groups, in the order the spec lists
@@ -452,7 +451,8 @@ pub(crate) fn groups(
 ) -> Result<Vec<GroupRequest>, ApplyError> {
     let mut names = Vec::new();
     for path in written {
-        names.push(writable(spec, address, path)?.name);
+        writable(spec, address, path)?;
+        names.push(path.to_string());
     }
     let mut requests = Vec::new();
     for group in &spec.write {
@@ -463,17 +463,32 @@ pub(crate) fn groups(
             shape,
         } = group
         {
-            if names.contains(by_variant) || fields.iter().any(|field| names.contains(field)) {
+            if names
+                .iter()
+                .any(|name| declaration_covers(by_variant, name))
+                || fields
+                    .iter()
+                    .any(|field| names.iter().any(|name| declaration_covers(field, name)))
+            {
                 let mut group_fields = fields.clone();
                 group_fields.push(by_variant.clone());
+                let disruptive = group_fields.iter().any(|field| {
+                    spec.properties().iter().any(|property| {
+                        declaration_covers(field, &property.path) && property.disruptive
+                    })
+                });
                 requests.push(GroupRequest {
                     operation: String::new(),
                     variants: Some((by_variant.clone(), ops.clone())),
                     shape: *shape,
                     changed: group_fields
                         .iter()
-                        .filter(|field| names.contains(field))
-                        .cloned()
+                        .flat_map(|field| {
+                            names
+                                .iter()
+                                .filter(|name| declaration_covers(field, name))
+                                .cloned()
+                        })
                         .collect(),
                     written: written
                         .iter()
@@ -486,6 +501,7 @@ pub(crate) fn groups(
                         .collect(),
                     fields: group_fields,
                     reads_fresh: true,
+                    disruptive,
                 });
             }
             continue;
@@ -493,23 +509,19 @@ pub(crate) fn groups(
         let WriteGroup::Op { op, fields, shape } = group else {
             continue;
         };
-        let changed: Vec<String> = fields
+        let changed: Vec<String> = names
             .iter()
-            .filter(|f| names.contains(f))
+            .filter(|name| fields.iter().any(|field| declaration_covers(field, name)))
             .cloned()
             .collect();
         if !changed.is_empty() {
             let has_environment = fields.iter().any(|name| {
-                spec.fields
-                    .get(name)
-                    .and_then(|field| parse_type(&field.ty).ok())
-                    .is_some_and(|ty| matches!(ty, FieldType::Env))
+                spec.property(name)
+                    .is_ok_and(|property| matches!(property.ty, FieldType::Env))
             });
             let has_selector_set = fields.iter().any(|name| {
-                spec.fields
-                    .get(name)
-                    .and_then(|field| parse_type(&field.ty).ok())
-                    .is_some_and(|ty| is_selector_set(&ty))
+                spec.property(name)
+                    .is_ok_and(|property| is_selector_set(&property.ty))
             });
             requests.push(GroupRequest {
                 operation: op.clone(),
@@ -517,7 +529,11 @@ pub(crate) fn groups(
                 shape: *shape,
                 written: written
                     .iter()
-                    .filter(|path| fields.iter().any(|f| f == path.info().field_name()))
+                    .filter(|path| {
+                        fields
+                            .iter()
+                            .any(|field| declaration_covers(field, &path.to_string()))
+                    })
                     .map(|path| path.to_string())
                     .collect(),
                 changed,
@@ -528,14 +544,26 @@ pub(crate) fn groups(
                     || spec.api.update.as_ref().is_some_and(|update| {
                         update.op == op.as_str() && !update.from_read.is_empty()
                     }),
+                disruptive: fields.iter().any(|field| {
+                    spec.properties().iter().any(|property| {
+                        declaration_covers(field, &property.path) && property.disruptive
+                    })
+                }),
             });
         }
     }
     for name in &names {
+        if written
+            .iter()
+            .find(|path| path.to_string() == *name)
+            .is_some_and(|path| path.info().entry.is_some())
+        {
+            continue;
+        }
         // A relation is written by its own requests, one per member.
         if spec
             .fields
-            .get(name)
+            .get(name.split('.').next().unwrap_or(name))
             .is_some_and(|field| field.membership.is_some())
         {
             continue;
@@ -552,7 +580,51 @@ pub(crate) fn groups(
         }
     }
 
+    requests.sort_by_key(|request| request.disruptive);
+
     Ok(requests)
+}
+
+/// One request per written entry of a keyed map that has per-entry operations.
+pub(crate) fn entry_requests(
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+    written: &[&PropertyPath],
+    inputs: Inputs<'_>,
+) -> Result<Vec<OperationRequest>, ApplyError> {
+    let mut requests = Vec::new();
+    for path in written {
+        let info = path.info();
+        let Some(entry) = &info.entry else {
+            continue;
+        };
+        let key = info
+            .root
+            .as_deref()
+            .and_then(|root| info.path.strip_prefix(root))
+            .and_then(|rest| rest.strip_prefix('.'))
+            .unwrap_or_default();
+        let remote_key = entry
+            .key_format
+            .as_deref()
+            .map_or_else(|| key.to_owned(), |format| format.replace("{key}", key));
+        let mut body = Map::new();
+        body.insert(entry.write.key.clone(), Json::String(remote_key));
+        body.insert(
+            entry.write.value.clone(),
+            body_value(inputs, address, checkpoint, path)?,
+        );
+        requests.push(OperationRequest::new(&entry.write.op).body(Json::Object(body)));
+    }
+
+    Ok(requests)
+}
+
+fn declaration_covers(declaration: &str, property: &str) -> bool {
+    declaration == property
+        || property
+            .strip_prefix(declaration)
+            .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// Whether a write declares a relation empty or clears it, which needs the members Dokploy holds.
@@ -782,7 +854,9 @@ fn variant_body(
         .filter(|update| update.op == operation)
         .and_then(|update| update.id_param.as_ref())
         .unwrap_or(&spec.api.id);
-    body.insert(id_field.clone(), Json::String(remote_id.to_owned()));
+    if spec.api.update_id {
+        body.insert(id_field.clone(), Json::String(remote_id.to_owned()));
+    }
     // An operation shared by several arms takes the tag; one of its own implies it.
     if contract.is_some_and(|contract| contract.body_field(held_tag_key).is_some()) {
         body.insert(held_tag_key.to_owned(), Json::String(tag.clone()));
@@ -928,7 +1002,9 @@ pub(crate) fn group_body(
         .filter(|update| update.op == group.operation)
         .and_then(|update| update.id_param.as_ref())
         .unwrap_or(&spec.api.id);
-    body.insert(id_field.clone(), Json::String(remote_id.to_owned()));
+    if spec.api.update_id {
+        body.insert(id_field.clone(), Json::String(remote_id.to_owned()));
+    }
     if let Some(update) = spec
         .api
         .update
@@ -949,6 +1025,23 @@ pub(crate) fn group_body(
     }
 
     for name in &group.fields {
+        if name.contains('.') {
+            let path =
+                PropertyPath::from_spec(spec, name).map_err(|_| ApplyError::Unsupported {
+                    address: address.clone(),
+                    property: Some(name.clone()),
+                    reason: "is not a property of the kind",
+                })?;
+            let wire = path.info().request_key().to_owned();
+            if group.written.contains(name) {
+                body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
+            } else if group.shape == Shape::Full
+                && let Some(current) = fresh.and_then(|fresh| lookup(fresh, &path.info().api))
+            {
+                body.insert(wire, current.clone());
+            }
+            continue;
+        }
         let field = spec
             .fields
             .get(name)
@@ -956,7 +1049,7 @@ pub(crate) fn group_body(
         let ty = parse_type(&field.ty).ok();
         if matches!(ty, Some(FieldType::Env)) {
             let wire = field.request_name(name).to_owned();
-            if group.changed.contains(name) {
+            if group_changed(group, name) {
                 body.insert(
                     wire.clone(),
                     environment_text(spec, address, checkpoint, name, &wire, fresh, inputs)?,
@@ -971,7 +1064,7 @@ pub(crate) fn group_body(
         // A map from a key to a set of selectors is an array with one element per key.
         if ty.as_ref().is_some_and(FieldType::is_map_of_selector_sets) {
             let wire = field.request_name(name).to_owned();
-            if group.changed.contains(name) {
+            if group_changed(group, name) {
                 body.insert(
                     wire.clone(),
                     keyed_set_elements(
@@ -989,7 +1082,7 @@ pub(crate) fn group_body(
         // document removed, plus the ones it names.
         if is_selector_set(ty.as_ref().unwrap_or(&FieldType::Text)) {
             let wire = field.request_name(name).to_owned();
-            if group.changed.contains(name) {
+            if group_changed(group, name) {
                 body.insert(
                     wire.clone(),
                     selector_ids(spec, address, checkpoint, group, name, &wire, fresh, inputs)?,
@@ -1004,7 +1097,7 @@ pub(crate) fn group_body(
         // A union nested in an object is written as that object, with the members of the arm the
         // checkpoint names. A full group resends it whole, secrets included.
         if let (Some(FieldType::Union { tag }), Some(nest)) = (&ty, &field.nest) {
-            if group.changed.contains(name) || group.shape == Shape::Full {
+            if group_changed(group, name) || group.shape == Shape::Full {
                 body.insert(
                     nest.clone(),
                     nested_union(
@@ -1090,6 +1183,13 @@ pub(crate) fn group_body(
     }
 
     Ok(Json::Object(body))
+}
+
+fn group_changed(group: &GroupRequest, field: &str) -> bool {
+    group
+        .written
+        .iter()
+        .any(|path| declaration_covers(field, path))
 }
 
 /// The object a union nested in an object is written as: the tag, then each member of the active

@@ -162,6 +162,93 @@ fn organization_document(name: &Value, logo: &Value, default_role: &Value) -> St
     )
 }
 
+fn web_server_document(settings: &Value, request_logging: bool) -> String {
+    format!(
+        concat!(
+            "version: 2\nsettings:\n  web_server:\n",
+            "    server_ip: {}\n",
+            "    builds_concurrency: {}\n",
+            "    request_logging: {}\n",
+            "    cleanup:\n",
+            "      docker: {}\n",
+            "      logs_cron: {}\n",
+            "    traefik:\n",
+            "      files:\n",
+            "        iac-live-contract: {{ file: traefik/iac-live-contract.yml }}\n"
+        ),
+        serde_json::to_string(&settings["serverIp"]).unwrap(),
+        settings["buildsConcurrency"],
+        request_logging,
+        settings["enableDockerCleanup"],
+        serde_json::to_string(&settings["logCleanupCron"]).unwrap(),
+    )
+}
+
+#[tokio::test]
+#[ignore = "adopts and restores the local web server on the local Dokploy"]
+async fn the_web_server_is_adopted_updated_restored_and_forgotten() {
+    guard();
+    let live = Live::new();
+    live.write("traefik/iac-live-contract.yml", "http: {}\n");
+    let raw = client();
+    let original = call(&raw, OperationRequest::new("settings.getWebServerSettings")).await;
+    let original_logging = call(&raw, OperationRequest::new("settings.haveActivateRequests"))
+        .await
+        .as_bool()
+        .unwrap();
+    let mut changed = original.clone();
+    changed["serverIp"] = json!("203.0.113.10");
+    changed["buildsConcurrency"] = json!(if original["buildsConcurrency"] == 1 {
+        2
+    } else {
+        1
+    });
+    changed["enableDockerCleanup"] = json!(!original["enableDockerCleanup"].as_bool().unwrap());
+    changed["logCleanupCron"] = json!("17 3 * * *");
+    let changed_document = web_server_document(&changed, !original_logging);
+
+    assert_eq!(live.apply(&changed_document, &[]).await.unwrap(), 1);
+    let held = call(&raw, OperationRequest::new("settings.getWebServerSettings")).await;
+    for field in [
+        "serverIp",
+        "buildsConcurrency",
+        "enableDockerCleanup",
+        "logCleanupCron",
+    ] {
+        assert_eq!(held[field], changed[field], "{field}");
+    }
+    assert_eq!(
+        call(&raw, OperationRequest::new("settings.haveActivateRequests")).await,
+        json!(!original_logging)
+    );
+    assert_eq!(
+        call(
+            &raw,
+            OperationRequest::new("settings.readTraefikFile")
+                .query("path", "/etc/dokploy/traefik/dynamic/iac-live-contract.yml",),
+        )
+        .await,
+        json!("http: {}\n")
+    );
+    assert_eq!(live.changes(&changed_document, &[]).await, 0);
+
+    let restored = web_server_document(&original, original_logging);
+    assert_eq!(live.apply(&restored, &[]).await.unwrap(), 1);
+    assert_eq!(
+        live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap(),
+        1
+    );
+    let held = call(&raw, OperationRequest::new("settings.getWebServerSettings")).await;
+    for field in [
+        "serverIp",
+        "buildsConcurrency",
+        "enableDockerCleanup",
+        "logCleanupCron",
+    ] {
+        assert_eq!(held[field], original[field], "restored {field}");
+    }
+}
+
 #[tokio::test]
 #[ignore = "adopts and restores the active organization on the local Dokploy"]
 async fn the_active_organization_is_adopted_updated_restored_and_forgotten() {

@@ -84,6 +84,10 @@ pub struct PropertyInfo {
     pub fallback: Option<serde_json::Value>,
     /// Whether surrounding whitespace is ignored when the text is compared (`trim`).
     pub trim: bool,
+    /// Whether changing this property can restart Traefik or the server.
+    pub disruptive: bool,
+    /// Per-entry operations for a keyed map with no collection endpoint.
+    pub entry: Option<crate::model::EntryOperations>,
     /// The response key or JSON pointer the value is read from: the field's `api`, or its own
     /// name. A struct member is a key of its own, not nested in the struct, and an entry of a
     /// keyed collection has its root's.
@@ -118,6 +122,7 @@ impl PropertyInfo {
         self.class != ValueClass::Public
             || self.mutability == Mutability::WriteOnly
             || (self.shape == PathShape::CollectionEntry && self.ty == FieldType::Env)
+            || (self.shape == PathShape::CollectionEntry && self.ty == FieldType::File)
     }
 
     /// Whether the property is readable but never configurable.
@@ -307,6 +312,8 @@ fn base(
         tag_api: None,
         fallback: field.fallback.clone(),
         trim: field.trim,
+        disruptive: field.disruptive,
+        entry: field.entry.clone(),
         api: field.api.clone().unwrap_or_else(|| name.to_owned()),
         request: field.request_name(name).to_owned(),
         json: field.json,
@@ -341,6 +348,17 @@ fn resolve_inside(
 
     if is_collection(parsed, granularity) {
         validate_key(parsed, rest, full)?;
+        if field.entry.is_some()
+            && (rest.is_empty()
+                || !rest.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+                }))
+        {
+            return Err(PathError::InvalidKey {
+                path: full.to_owned(),
+                reason: "a per-entry key uses only ASCII letters, digits, underscores, and hyphens",
+            });
+        }
         // The entry of a map of sets is a member of one of the sets: `service.network`.
         let element = match parsed {
             FieldType::Map(inner) if parsed.is_map_of_selector_sets() => match &**inner {

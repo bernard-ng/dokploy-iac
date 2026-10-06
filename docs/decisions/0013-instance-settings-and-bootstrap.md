@@ -29,7 +29,7 @@ Both use the same spec machinery as project kinds. Apply order within the docume
 |-------|-------|-----------|
 | **managed** | tag, ssh key, server, network, registry, certificate, DNS provider, S3 destination, notification, vault provider, AI provider | created, updated, deleted; deletion honours protection; imported protected |
 | **adopt-only** | organization, web server, GitHub provider | exist already; configuration updates them; removing the block forgets them (`removed: destroy: false`); `create` and `destroy` are validation errors |
-| **excluded** | users, roles, SSO, SCIM, licence, whitelabeling, billing, profile | not in the beta (ADR 0001) |
+| **excluded** | users, roles, SSO, SCIM, licence, whitelabeling, billing, profile, the licensed web-server `enforceSSO` and `remoteServersOnly` controls | not in the beta (ADR 0001) |
 
 ### Disruptive changes
 

@@ -4,5 +4,4 @@ DOKDOC004 settings.license
 DOKDOC004 settings.members
 DOKDOC004 settings.profile
 DOKDOC004 settings.sso_providers
-DOKDOC004 settings.web_server
 DOKDOC004 settings.whitelabeling

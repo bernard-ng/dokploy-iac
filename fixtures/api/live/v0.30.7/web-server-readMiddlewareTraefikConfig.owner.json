@@ -1,0 +1,1 @@
+"http:\n  middlewares:\n    redirect-to-https:\n      redirectScheme:\n        scheme: https\n        permanent: true\n"

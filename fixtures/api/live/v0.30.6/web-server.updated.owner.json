@@ -1,0 +1,55 @@
+{
+  "buildsConcurrency": 2,
+  "certificateType": "none",
+  "cleanupCacheApplications": false,
+  "cleanupCacheOnCompose": false,
+  "cleanupCacheOnPreviews": false,
+  "createdAt": "2026-09-28T00:00:00.000Z",
+  "enableDockerCleanup": false,
+  "enforceSSO": false,
+  "host": null,
+  "https": false,
+  "id": "web-server-1",
+  "letsEncryptEmail": null,
+  "logCleanupCron": "17 3 * * *",
+  "metricsConfig": {
+    "containers": {
+      "refreshRate": 60,
+      "services": {
+        "exclude": [],
+        "include": []
+      }
+    },
+    "server": {
+      "cronJob": "",
+      "port": 4500,
+      "refreshRate": 60,
+      "retentionDays": 2,
+      "thresholds": {
+        "cpu": 0,
+        "memory": 0
+      },
+      "token": "<redacted>",
+      "type": "Dokploy",
+      "urlCallback": ""
+    }
+  },
+  "remoteServersOnly": false,
+  "serverIp": "169.239.158.78",
+  "sshPrivateKey": null,
+  "updatedAt": "2026-09-28T00:00:00.000Z",
+  "whitelabelingConfig": {
+    "appDescription": null,
+    "appName": null,
+    "customCss": null,
+    "docsUrl": null,
+    "errorPageDescription": null,
+    "errorPageTitle": null,
+    "faviconUrl": null,
+    "footerText": null,
+    "loginLogoUrl": null,
+    "logoUrl": null,
+    "metaTitle": null,
+    "supportUrl": null
+  }
+}

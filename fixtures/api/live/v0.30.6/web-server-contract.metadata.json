@@ -1,0 +1,51 @@
+{
+  "baseStatus": 200,
+  "capturedAt": "2026-10-06",
+  "createOperation": false,
+  "enterpriseStatuses": [
+    403,
+    403
+  ],
+  "fixtures": [
+    "web-server.before.owner.json",
+    "web-server-requests.before.owner.json",
+    "web-server-haveTraefikDashboardPortEnabled.owner.json",
+    "web-server-getTraefikPorts.owner.json",
+    "web-server-readTraefikEnv.owner.json",
+    "web-server-readTraefikConfig.owner.json",
+    "web-server-readWebServerTraefikConfig.owner.json",
+    "web-server-readMiddlewareTraefikConfig.owner.json",
+    "web-server-update-builds.owner.json",
+    "web-server-update-remote.owner.json",
+    "web-server-update-sso.owner.json",
+    "web-server-update-docker.owner.json",
+    "web-server-update-logs.owner.json",
+    "web-server-update-requests.owner.json",
+    "web-server.updated.owner.json",
+    "web-server-requests.updated.owner.json"
+  ],
+  "image": "dokploy/dokploy:v0.30.6@sha256:1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8",
+  "kind": "web_server",
+  "removeOperation": false,
+  "requestsStatus": 200,
+  "role": "owner",
+  "sanitized": true,
+  "singleton": true,
+  "supplementalStatuses": [
+    500,
+    500,
+    500,
+    200,
+    200,
+    200
+  ],
+  "updateStatuses": [
+    200,
+    200,
+    200,
+    200
+  ],
+  "updatedRequestsStatus": 200,
+  "updatedStatus": 200,
+  "version": "v0.30.6"
+}

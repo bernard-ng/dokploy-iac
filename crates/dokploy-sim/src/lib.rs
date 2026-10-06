@@ -163,6 +163,25 @@ impl Sim {
                     add(&membership.remove.op, kind, Action::Member);
                 }
             }
+            fn add_entry_routes(field: &dokploy_spec::Field, routes: &mut Vec<(String, Action)>) {
+                if let Some(entry) = &field.entry {
+                    routes.push((entry.read.op.clone(), Action::Singleton));
+                    routes.push((entry.write.op.clone(), Action::Update));
+                }
+                for member in field.members.values() {
+                    add_entry_routes(member, routes);
+                }
+                for member in field.arms.values().flat_map(BTreeMap::values) {
+                    add_entry_routes(member, routes);
+                }
+            }
+            let mut entry_routes = Vec::new();
+            for field in spec.fields.values() {
+                add_entry_routes(field, &mut entry_routes);
+            }
+            for (operation, action) in entry_routes {
+                add(&operation, kind, action);
+            }
             for group in &spec.write {
                 match group {
                     WriteGroup::Op { op, .. } => add(op, kind, Action::Update),
@@ -190,6 +209,9 @@ impl Sim {
             }
             if let Some(singleton) = &spec.api.read.singleton {
                 add(&singleton.op, kind, Action::Singleton);
+                for read in singleton.merge.values() {
+                    add(&read.op, kind, Action::Singleton);
+                }
             }
         }
         for entries in routes.values_mut() {
@@ -671,19 +693,56 @@ impl Sim {
             .filter(|update| update.op == request.operation())
             .and_then(|update| update.id_param.as_deref())
             .unwrap_or(&spec.api.id);
-        let id = body
-            .get(id_field)
-            .and_then(Value::as_str)
-            .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{id_field} is required")))?
-            .to_owned();
-        let object = inner
-            .objects
-            .get_mut(&spec.kind)
-            .and_then(|all| {
+        let object = if spec.api.update_id {
+            let id = body
+                .get(id_field)
+                .and_then(Value::as_str)
+                .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{id_field} is required")))?
+                .to_owned();
+            inner.objects.get_mut(&spec.kind).and_then(|all| {
                 all.iter_mut()
                     .find(|o| id_of(spec, o).as_deref() == Some(&id))
             })
-            .ok_or_else(|| not_found(spec))?;
+        } else {
+            inner
+                .objects
+                .get_mut(&spec.kind)
+                .and_then(|all| (all.len() == 1).then(|| &mut all[0]))
+        }
+        .ok_or_else(|| not_found(spec))?;
+        if let Some(field) = entry_field(spec, request.operation(), false) {
+            let entry = field.entry.as_ref().expect("an entry field");
+            let key = body
+                .get(&entry.write.key)
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    api_error(
+                        400,
+                        "BAD_REQUEST",
+                        format!("{} is required", entry.write.key),
+                    )
+                })?;
+            let value = body.get(&entry.write.value).cloned().ok_or_else(|| {
+                api_error(
+                    400,
+                    "BAD_REQUEST",
+                    format!("{} is required", entry.write.value),
+                )
+            })?;
+            let api = field.api.as_deref().unwrap_or("entries");
+            let held = object
+                .entry(api.to_owned())
+                .or_insert_with(|| Value::Object(Map::new()));
+            let Some(held) = held.as_object_mut() else {
+                return Err(api_error(
+                    500,
+                    "INVALID_RESPONSE",
+                    format!("{api} is not an object"),
+                ));
+            };
+            held.insert(key.to_owned(), value);
+            return Ok(Value::Bool(true));
+        }
         // Nor can it be renamed: a body that names it is refused, even with the same name.
         if is_made_with_parent(spec, object)
             && let Some(key) = spec.identity.key.as_deref()
@@ -1013,11 +1072,84 @@ impl Sim {
             };
         };
 
+        let read = spec
+            .api
+            .read
+            .singleton
+            .as_ref()
+            .expect("a routed singleton has a read");
+        if let Some(field) = entry_field(spec, request.operation(), true) {
+            let entry = field.entry.as_ref().expect("an entry field");
+            let key = request
+                .query_parameters()
+                .get(&entry.read.key)
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    api_error(
+                        400,
+                        "BAD_REQUEST",
+                        format!("{} is required", entry.read.key),
+                    )
+                })?;
+            let api = field.api.as_deref().unwrap_or("entries");
+            return Ok(object
+                .get(api)
+                .and_then(Value::as_object)
+                .and_then(|entries| entries.get(key))
+                .cloned()
+                .unwrap_or(Value::Null));
+        }
+        if request.operation() != read.op
+            && let Some((field, _)) = read
+                .merge
+                .iter()
+                .find(|(_, supplemental)| supplemental.op == request.operation())
+        {
+            return Ok(object.get(field).cloned().unwrap_or(Value::Null));
+        }
+
         Ok(match self.shapes.template(request.operation(), Role::One) {
             Some(template) => fill(&template, object),
             None => Value::Object(object.clone()),
         })
     }
+}
+
+fn entry_field<'a>(
+    spec: &'a KindSpec,
+    operation: &str,
+    read: bool,
+) -> Option<&'a dokploy_spec::Field> {
+    fn find<'a>(
+        field: &'a dokploy_spec::Field,
+        operation: &str,
+        read: bool,
+    ) -> Option<&'a dokploy_spec::Field> {
+        if field.entry.as_ref().is_some_and(|entry| {
+            if read {
+                entry.read.op == operation
+            } else {
+                entry.write.op == operation
+            }
+        }) {
+            return Some(field);
+        }
+        field
+            .members
+            .values()
+            .find_map(|member| find(member, operation, read))
+            .or_else(|| {
+                field
+                    .arms
+                    .values()
+                    .flat_map(BTreeMap::values)
+                    .find_map(|member| find(member, operation, read))
+            })
+    }
+
+    spec.fields
+        .values()
+        .find_map(|field| find(field, operation, read))
 }
 
 impl Transport for Sim {
@@ -1094,6 +1226,50 @@ fn body_object(request: &OperationRequest) -> Result<Object, DokployError> {
 /// unambiguous.
 fn held_fields(spec: &KindSpec, operation: &str, body: &Object) -> Object {
     let mut held = Value::Object(body.clone());
+    let carried: Vec<&str> = spec
+        .write
+        .iter()
+        .flat_map(|group| match group {
+            WriteGroup::Op { op, fields, .. } if op == operation => {
+                fields.iter().map(String::as_str).collect::<Vec<_>>()
+            }
+            WriteGroup::ByVariant {
+                by_variant,
+                fields,
+                ops,
+                ..
+            } if ops.values().any(|op| op == operation) => fields
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(by_variant.as_str()))
+                .collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    for property in spec.properties() {
+        if property.nested
+            || property.api == property.request
+            || property.api.contains('*')
+            || (!carried.is_empty()
+                && !carried
+                    .iter()
+                    .any(|field| declaration_covers(field, &property.path)))
+        {
+            continue;
+        }
+        let Some(value) = body.get(&property.request) else {
+            continue;
+        };
+        if let Value::Object(object) = &mut held {
+            object.remove(&property.request);
+        }
+        let pointer = if property.api.starts_with('/') {
+            property.api.clone()
+        } else {
+            format!("/{}", property.api)
+        };
+        set_pointer(&mut held, &pointer, value.clone());
+    }
     for (name, field) in &spec.fields {
         if field.list_api.is_none() {
             continue;
@@ -1143,6 +1319,13 @@ fn held_fields(spec: &KindSpec, operation: &str, body: &Object) -> Object {
     }
 
     held.as_object().cloned().unwrap_or_default()
+}
+
+fn declaration_covers(declaration: &str, property: &str) -> bool {
+    property == declaration
+        || property
+            .strip_prefix(declaration)
+            .is_some_and(|rest| rest.starts_with('.'))
 }
 
 fn operation_variant<'a>(spec: &'a KindSpec, operation: &str) -> Option<(&'a str, &'a str)> {

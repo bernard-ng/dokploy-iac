@@ -108,6 +108,10 @@ pub enum Command {
         /// Apply a complete plan without interactive confirmation.
         #[arg(long)]
         auto_approve: bool,
+
+        /// Permit disruptive changes during a non-interactive apply.
+        #[arg(long)]
+        allow_disruptive: bool,
     },
 
     /// Reconcile an interrupted apply from durable journal evidence.
@@ -417,7 +421,7 @@ mod tests {
             Cli::try_parse_from(["dokploy", "apply"]).expect("default apply command line is valid");
         assert!(matches!(
             default.command,
-            Command::Apply { file, auto_approve: false }
+            Command::Apply { file, auto_approve: false, allow_disruptive: false }
                 if file.as_path() == Path::new("dokploy.yaml")
         ));
 
@@ -426,7 +430,18 @@ mod tests {
                 .expect("explicit apply command line is valid");
         assert!(matches!(
             explicit.command,
-            Command::Apply { file, auto_approve: true } if file.as_path() == Path::new("stack.yaml")
+            Command::Apply { file, auto_approve: true, allow_disruptive: false } if file.as_path() == Path::new("stack.yaml")
+        ));
+        let disruptive =
+            Cli::try_parse_from(["dokploy", "apply", "--auto-approve", "--allow-disruptive"])
+                .expect("disruptive apply flags are valid");
+        assert!(matches!(
+            disruptive.command,
+            Command::Apply {
+                auto_approve: true,
+                allow_disruptive: true,
+                ..
+            }
         ));
         assert!(
             Cli::try_parse_from(["dokploy", "apply", "--parallelism", "4"]).is_err(),

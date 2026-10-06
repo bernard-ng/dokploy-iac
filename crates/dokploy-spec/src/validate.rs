@@ -297,6 +297,21 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
             "a singleton kind needs a singleton read",
         );
     }
+    if let Some(singleton) = &api.read.singleton {
+        for (field, read) in &singleton.merge {
+            if field.trim().is_empty() || field.contains('/') {
+                context.add(
+                    "api.read.singleton.merge",
+                    "merged response keys must be non-empty top-level fields",
+                );
+            }
+            check_operation(
+                context,
+                &format!("api.read.singleton.merge.{field}.op"),
+                &read.op,
+            );
+        }
+    }
     for parent in api.parent_field.keys() {
         if !spec.parents.contains(parent) {
             context.add(
@@ -522,6 +537,35 @@ fn check_field(
             "applies to a top-level env field only",
         );
     }
+    if let Some(entry) = &field.entry {
+        let keyed_files = matches!(parsed, Some(FieldType::Map(ref item)) if **item == FieldType::File)
+            && field.granularity == Some(Granularity::Key);
+        if !keyed_files {
+            context.add(
+                format!("{path}.entry"),
+                "applies to map<file> planned with granularity: key",
+            );
+        }
+        check_operation(context, &format!("{path}.entry.read.op"), &entry.read.op);
+        check_operation(context, &format!("{path}.entry.write.op"), &entry.write.op);
+        for (location, value) in [
+            ("read.key", entry.read.key.as_str()),
+            ("write.key", entry.write.key.as_str()),
+            ("write.value", entry.write.value.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                context.add(format!("{path}.entry.{location}"), "must not be empty");
+            }
+        }
+        if let Some(format) = &entry.key_format
+            && format.matches("{key}").count() != 1
+        {
+            context.add(
+                format!("{path}.entry.key_format"),
+                "must contain `{key}` exactly once",
+            );
+        }
+    }
 
     if field.class == ValueClass::Public
         && !matches!(parsed, Some(FieldType::Env))
@@ -739,7 +783,7 @@ fn check_type_rules(
 }
 
 fn check_write_groups(context: &mut Context<'_>, spec: &KindSpec) {
-    let mut carried: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut carried: BTreeMap<String, usize> = BTreeMap::new();
     for (index, group) in spec.write.iter().enumerate() {
         let path = format!("write[{index}]");
         match group {
@@ -802,44 +846,66 @@ fn check_write_groups(context: &mut Context<'_>, spec: &KindSpec) {
                     "applies to a set of selectors planned per member (`granularity: key`)",
                 );
             }
-            if carried.contains_key(name.as_str()) {
-                context.add(path, "a relation is in no write group");
+            if spec
+                .properties()
+                .iter()
+                .filter(|property| property.field_name() == name)
+                .any(|property| carried.contains_key(&property.path))
+            {
+                context.add(path, "a relation belongs in no write group");
             }
             continue;
         }
-        let writable = matches!(
-            field.mutability,
-            Mutability::InPlace | Mutability::Reparent | Mutability::WriteOnly
-        );
-        match (writable, carried.get(name.as_str()).copied().unwrap_or(0)) {
+        for property in spec
+            .properties()
+            .into_iter()
+            .filter(|property| property.field_name() == name)
+        {
+            if property.entry.is_some() {
+                if carried.contains_key(&property.path) {
+                    context.add(
+                        format!("fields.{}", property.path),
+                        "a per-entry map belongs in no write group",
+                    );
+                }
+                continue;
+            }
+            let writable = matches!(
+                property.mutability,
+                Mutability::InPlace | Mutability::Reparent | Mutability::WriteOnly
+            );
+            match (
+                writable,
+                carried.get(&property.path).copied().unwrap_or(0),
+            ) {
             (true, 0) => context.add(
-                format!("fields.{name}"),
+                format!("fields.{}", property.path),
                 "changeable but no write group carries it (make it create_only or add it to a group)",
             ),
             (_, count) if count > 1 => context.add(
-                format!("fields.{name}"),
+                format!("fields.{}", property.path),
                 "carried by more than one write group",
             ),
             _ => {}
+            }
         }
     }
 }
 
-fn carry<'a>(
+fn carry(
     context: &mut Context<'_>,
-    carried: &mut BTreeMap<&'a str, usize>,
-    spec: &'a KindSpec,
+    carried: &mut BTreeMap<String, usize>,
+    spec: &KindSpec,
     path: &str,
     name: &str,
 ) {
-    let Some((key, field)) = spec.fields.get_key_value(name) else {
-        context.add(path.to_owned(), format!("`{name}` is not a field"));
-        return;
-    };
-    if matches!(
-        field.mutability,
-        Mutability::CreateOnly | Mutability::Computed
-    ) {
+    let top_level = spec.fields.contains_key(name);
+    if let Some(field) = spec.fields.get(name)
+        && matches!(
+            field.mutability,
+            Mutability::CreateOnly | Mutability::Computed
+        )
+    {
         context.add(
             path.to_owned(),
             format!(
@@ -848,7 +914,43 @@ fn carry<'a>(
             ),
         );
     }
-    *carried.entry(key.as_str()).or_insert(0) += 1;
+    let properties: Vec<_> = if top_level {
+        spec.properties()
+            .into_iter()
+            .filter(|property| property.field_name() == name)
+            .filter(|property| {
+                !matches!(
+                    property.mutability,
+                    Mutability::CreateOnly | Mutability::Computed
+                )
+            })
+            .collect()
+    } else {
+        match spec.property(name) {
+            Ok(property) => vec![property],
+            Err(_) => {
+                context.add(path.to_owned(), format!("`{name}` is not a property"));
+                return;
+            }
+        }
+    };
+    for property in properties {
+        if !top_level
+            && matches!(
+                property.mutability,
+                Mutability::CreateOnly | Mutability::Computed
+            )
+        {
+            context.add(
+                path.to_owned(),
+                format!(
+                    "`{}` is {:?} and cannot be written by an update",
+                    property.path, property.mutability
+                ),
+            );
+        }
+        *carried.entry(property.path).or_insert(0) += 1;
+    }
 }
 
 fn check_children(context: &mut Context<'_>, spec: &KindSpec) {

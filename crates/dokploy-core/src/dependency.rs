@@ -80,6 +80,15 @@ impl DependencyOrdering {
     }
 
     fn change_key(&self, change: &PlannedChange) -> (u8, usize) {
+        if change.disruptive() {
+            return (
+                2,
+                self.desired_rank
+                    .get(change.address())
+                    .copied()
+                    .unwrap_or(usize::MAX),
+            );
+        }
         if matches!(change.kind(), ChangeKind::Delete | ChangeKind::Forget) {
             (
                 1,

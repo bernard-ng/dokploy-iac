@@ -164,6 +164,9 @@ fn operations_of(spec: &KindSpec) -> Vec<(String, String)> {
     }
     if let Some(singleton) = &spec.api.read.singleton {
         add("read.singleton", &singleton.op);
+        for read in singleton.merge.values() {
+            add("read.singleton.merge", &read.op);
+        }
     }
     if let Some(list) = &spec.api.read.list
         && let Some(op) = &list.op
@@ -180,11 +183,24 @@ fn operations_of(spec: &KindSpec) -> Vec<(String, String)> {
             }
         }
     }
-    for field in spec.fields.values() {
+    fn add_field_operations(field: &Field, add: &mut impl FnMut(&str, &str)) {
         if let Some(membership) = &field.membership {
             add("membership", &membership.add.op);
             add("membership", &membership.remove.op);
         }
+        if let Some(entry) = &field.entry {
+            add("entry.read", &entry.read.op);
+            add("entry.write", &entry.write.op);
+        }
+        for member in field.members.values() {
+            add_field_operations(member, add);
+        }
+        for member in field.arms.values().flat_map(BTreeMap::values) {
+            add_field_operations(member, add);
+        }
+    }
+    for field in spec.fields.values() {
+        add_field_operations(field, &mut add);
     }
     found.sort();
     found.dedup();
@@ -195,6 +211,11 @@ fn operations_of(spec: &KindSpec) -> Vec<(String, String)> {
 fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
     fn walk(name: &str, field: &Field, out: &mut BTreeSet<String>) {
         out.insert(field.request_name(name).to_owned());
+        if let Some(entry) = &field.entry {
+            out.insert(entry.read.key.clone());
+            out.insert(entry.write.key.clone());
+            out.insert(entry.write.value.clone());
+        }
         for (member, member_field) in &field.members {
             walk(member, member_field, out);
         }
@@ -482,5 +503,53 @@ fn check_mapped_fields_exist(
                 }
             }
         }
+    }
+
+    fn check_entries(
+        spec: &KindSpec,
+        owner: &str,
+        field: &Field,
+        operations: &BTreeMap<String, &OperationInfo>,
+        issues: &mut Vec<Issue>,
+    ) {
+        if let Some(entry) = &field.entry {
+            for (op, names) in [
+                (entry.read.op.as_str(), vec![entry.read.key.as_str()]),
+                (
+                    entry.write.op.as_str(),
+                    vec![entry.write.key.as_str(), entry.write.value.as_str()],
+                ),
+            ] {
+                let Some(info) = operations.get(op) else {
+                    continue;
+                };
+                for name in names {
+                    if !info.request_fields.contains(name) {
+                        issues.push(Issue::new(
+                            &spec.kind,
+                            format!("fields.{owner}.entry"),
+                            format!("maps to `{name}`, which `{op}` does not accept"),
+                        ));
+                    }
+                }
+            }
+        }
+        for (name, member) in &field.members {
+            check_entries(spec, &format!("{owner}.{name}"), member, operations, issues);
+        }
+        for (arm, members) in &field.arms {
+            for (name, member) in members {
+                check_entries(
+                    spec,
+                    &format!("{owner}.{arm}.{name}"),
+                    member,
+                    operations,
+                    issues,
+                );
+            }
+        }
+    }
+    for (name, field) in &spec.fields {
+        check_entries(spec, name, field, operations, issues);
     }
 }

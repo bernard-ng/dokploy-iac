@@ -129,6 +129,32 @@ fn an_env_field_is_a_collection_with_entries_named_by_the_document() {
 }
 
 #[test]
+fn a_per_entry_file_map_accepts_only_safe_logical_keys() {
+    let registry = registry();
+    let entry = registry
+        .property("web_server", "traefik.files.redirect-www")
+        .expect("a safe file key is valid");
+
+    assert_eq!(entry.shape, PathShape::CollectionEntry);
+    assert!(entry.entry.is_some());
+    assert!(entry.is_sensitive());
+
+    for bad in [
+        "traefik.files../outside",
+        "traefik.files.nested/file",
+        "traefik.files.redirect.www",
+    ] {
+        assert!(
+            matches!(
+                registry.property("web_server", bad),
+                Err(PathError::InvalidKey { .. } | PathError::Malformed(_))
+            ),
+            "{bad} should be rejected"
+        );
+    }
+}
+
+#[test]
 fn a_union_is_planned_per_member_by_its_tag_and_the_members_of_each_arm() {
     let registry = registry();
 

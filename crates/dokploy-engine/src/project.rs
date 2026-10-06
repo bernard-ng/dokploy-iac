@@ -457,6 +457,18 @@ fn observe_entry(
         .and_then(|root| info.path.strip_prefix(root))
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or_default();
+    if info.ty == FieldType::File {
+        return match lookup(item, &info.api).and_then(Json::as_object) {
+            None => PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
+            Some(values) => match values.get(key) {
+                Some(Json::String(_)) => {
+                    PropertyObservation::Unknown(PropertyUnknownReason::Sensitive)
+                }
+                Some(Json::Null) | None => PropertyObservation::KnownAbsent,
+                Some(_) => PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),
+            },
+        };
+    }
     match lookup(item, &info.api) {
         None => PropertyObservation::Unknown(PropertyUnknownReason::NotReturned),
         Some(Json::Null) => PropertyObservation::KnownAbsent,

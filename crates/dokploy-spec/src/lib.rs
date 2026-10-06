@@ -21,10 +21,11 @@ pub use error::{Issue, LoadError};
 pub use ledger::{KindLedger, LedgerReport, OperationIndex, check_ledger};
 pub use load::{embedded, load_dir, parse_spec};
 pub use model::{
-    Api, Authority, Child, Coverage, CreateIdentity, CreateOperation, Deploy, Embedded, Field,
-    Granularity, Hook, Identity, Ignored, KindClass, KindSpec, Ledger, ListRead, ListScope,
-    MadeWithParent, Membership, MembershipOp, Mutability, OneRead, Operation, Read, Scope, Shape,
-    SingletonRead, ValueClass, WriteGroup,
+    Api, Authority, Child, Coverage, CreateIdentity, CreateOperation, Deploy, Embedded,
+    EntryOperations, EntryRead, EntryWrite, Field, Granularity, Hook, Identity, Ignored, KindClass,
+    KindSpec, Ledger, ListRead, ListScope, MadeWithParent, Membership, MembershipOp, Mutability,
+    OneRead, Operation, Read, Scope, Shape, SingletonRead, SupplementalRead, ValueClass,
+    WriteGroup,
 };
 pub use paths::{PathError, PathShape, PropertyInfo, ValueRules};
 pub use registry::SpecRegistry;

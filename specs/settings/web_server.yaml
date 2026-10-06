@@ -1,0 +1,85 @@
+# The local Dokploy web server. Dokploy creates this row during bootstrap; configuration adopts
+# it and writes each setting through the operation that owns that setting.
+kind: web_server
+scope: settings
+section: web_server
+singleton: default
+title: Web server
+class: adopt_only
+identity:
+  key: null
+  collision: []
+  address: "web_server.{key}"
+api:
+  id: id
+  update_id: false
+  update: { op: settings.updateServerIp }
+  read:
+    singleton:
+      op: settings.getWebServerSettings
+      merge:
+        requestLogging: { op: settings.haveActivateRequests }
+        traefikDashboard: { op: settings.haveTraefikDashboardPortEnabled, fallback: false }
+        additionalPorts: { op: settings.getTraefikPorts, fallback: [] }
+        traefikEnv: { op: settings.readTraefikEnv, fallback: "" }
+        traefikConfig: { op: settings.readTraefikConfig }
+        webServerTraefikConfig: { op: settings.readWebServerTraefikConfig }
+        middlewareTraefikConfig: { op: settings.readMiddlewareTraefikConfig }
+fields:
+  domain:
+    type: struct
+    granularity: field
+    members:
+      host: { type: text, min_len: 1, nullable: true, disruptive: true }
+      https: { type: bool, disruptive: true }
+      certificate_type: { api: certificateType, request: certificateType, type: "enum[letsencrypt, none, custom]", disruptive: true }
+      letsencrypt_email: { api: letsEncryptEmail, request: letsEncryptEmail, type: text, nullable: true, disruptive: true }
+  server_ip: { api: serverIp, request: serverIp, type: text, min_len: 1, disruptive: true }
+  builds_concurrency: { api: buildsConcurrency, request: buildsConcurrency, type: int, min: 1, max: 100 }
+  request_logging: { api: requestLogging, request: enable, type: bool, disruptive: true }
+  cleanup:
+    type: struct
+    granularity: field
+    members:
+      docker: { api: enableDockerCleanup, request: enableDockerCleanup, type: bool }
+      logs_cron: { api: logCleanupCron, request: cronExpression, type: text, min_len: 1 }
+  traefik:
+    type: struct
+    granularity: field
+    members:
+      dashboard: { api: traefikDashboard, request: enableDashboard, type: bool, disruptive: true }
+      additional_ports: { api: additionalPorts, request: additionalPorts, type: blob(traefik_ports), disruptive: true }
+      env: { api: traefikEnv, request: env, type: file, class: content, nullable: true, disruptive: true }
+      static_config: { api: traefikConfig, request: traefikConfig, type: file, class: content, nullable: true, disruptive: true }
+      web_server_config: { api: webServerTraefikConfig, request: traefikConfig, type: file, class: content, nullable: true, disruptive: true }
+      middlewares_config: { api: middlewareTraefikConfig, request: traefikConfig, type: file, class: content, nullable: true, disruptive: true }
+      files:
+        api: traefikFiles
+        type: "map<text, file>"
+        granularity: key
+        disruptive: true
+        entry:
+          key_format: "/etc/dokploy/traefik/dynamic/{key}.yml"
+          read: { op: settings.readTraefikFile, key: path, missing: [404, 500] }
+          write: { op: settings.updateTraefikFile, key: path, value: traefikConfig }
+  ssh_private_key: { api: sshPrivateKey, request: sshPrivateKey, type: text, class: secret, mutability: write_only }
+write:
+  - { op: settings.assignDomainServer, fields: [domain], shape: full }
+  - { op: settings.updateServerIp, fields: [server_ip], shape: partial }
+  - { op: settings.updateBuildsConcurrency, fields: [builds_concurrency], shape: partial }
+  - { op: settings.toggleRequests, fields: [request_logging], shape: partial }
+  - { op: settings.updateDockerCleanup, fields: [cleanup.docker], shape: partial }
+  - { op: settings.updateLogCleanup, fields: [cleanup.logs_cron], shape: partial }
+  - { op: settings.toggleDashboard, fields: [traefik.dashboard], shape: partial }
+  - { op: settings.updateTraefikPorts, fields: [traefik.additional_ports], shape: partial }
+  - { op: settings.writeTraefikEnv, fields: [traefik.env], shape: partial }
+  - { op: settings.updateTraefikConfig, fields: [traefik.static_config], shape: partial }
+  - { op: settings.updateWebServerTraefikConfig, fields: [traefik.web_server_config], shape: partial }
+  - { op: settings.updateMiddlewareTraefikConfig, fields: [traefik.middlewares_config], shape: partial }
+  - { op: settings.saveSSHPrivateKey, fields: [ssh_private_key], shape: partial }
+ledger:
+  readonly: [createdAt, updatedAt, metricsConfig, whitelabelingConfig, cleanupCacheApplications, cleanupCacheOnPreviews, cleanupCacheOnCompose]
+  ignored:
+    - { field: serverId, reason: "the singleton manages the local web server" }
+    - { field: remoteServersOnly, reason: "requires an enterprise license and is outside the beta scope" }
+    - { field: enforceSSO, reason: "SSO requires an enterprise license and is outside the beta scope" }

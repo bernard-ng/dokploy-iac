@@ -160,13 +160,23 @@ fn confirm(
 fn approval(
     plan: &Plan,
     auto_approve: bool,
+    allow_disruptive: bool,
     terminal: &mut Terminal<'_>,
     diagnostics: &mut dyn Write,
     operation: &str,
     question: &str,
 ) -> Result<bool> {
     plan_output::render(plan, diagnostics).into_diagnostic()?;
-    if auto_approve || plan.changes().is_empty() || !plan.complete() || !plan.applyable() {
+    if plan.changes().is_empty() || !plan.complete() || !plan.applyable() {
+        return Ok(true);
+    }
+
+    if auto_approve {
+        if plan.has_disruptive_changes() && !allow_disruptive {
+            return Err(miette::miette!(
+                "apply includes disruptive changes; add --allow-disruptive to --auto-approve"
+            ));
+        }
         return Ok(true);
     }
 
@@ -178,6 +188,7 @@ pub async fn apply<T: Transport>(
     context: Context<'_, T>,
     destroy: bool,
     auto_approve: bool,
+    allow_disruptive: bool,
     mut terminal: Terminal<'_>,
     streams: &mut Streams<'_>,
 ) -> Result<CommandStatus> {
@@ -205,6 +216,7 @@ pub async fn apply<T: Transport>(
             match approval(
                 plan,
                 auto_approve,
+                allow_disruptive,
                 &mut terminal,
                 streams.diagnostics(),
                 operation,

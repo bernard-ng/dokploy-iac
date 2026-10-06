@@ -125,6 +125,9 @@ pub struct Identity {
 pub struct Api {
     /// The id field in requests and responses.
     pub id: String,
+    /// Whether update write groups carry the resource id. Singleton settings endpoints do not.
+    #[serde(default = "default_true")]
+    pub update_id: bool,
     /// Creates one.
     #[serde(default)]
     pub create: Option<CreateOperation>,
@@ -280,6 +283,20 @@ pub struct Read {
 pub struct SingletonRead {
     /// The operation.
     pub op: String,
+    /// Additional parameterless reads merged into the object under the named top-level key.
+    #[serde(default)]
+    pub merge: BTreeMap<String, SupplementalRead>,
+}
+
+/// One scalar or structured response merged into a singleton read.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SupplementalRead {
+    /// The operation.
+    pub op: String,
+    /// Value used when Dokploy reports that an optional backing file or port does not exist.
+    #[serde(default)]
+    pub fallback: Option<serde_json::Value>,
 }
 
 /// How absence is proven (ADR 0007).
@@ -531,6 +548,48 @@ pub struct Field {
     /// no write group, and its `api` is where the held ids are in the direct read.
     #[serde(default)]
     pub membership: Option<Membership>,
+    /// Reads and writes the entries of a keyed map one at a time. The map key is sent as a
+    /// parameter and each value is file content.
+    #[serde(default)]
+    pub entry: Option<EntryOperations>,
+}
+
+/// Operations for a `map<file>` whose entries have no collection endpoint.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EntryOperations {
+    /// Optional template that turns the document key into the API key. It contains one `{key}`.
+    #[serde(default)]
+    pub key_format: Option<String>,
+    /// Reads one entry.
+    pub read: EntryRead,
+    /// Writes one entry.
+    pub write: EntryWrite,
+}
+
+/// A direct read of one keyed map entry.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EntryRead {
+    /// `resource.operation`.
+    pub op: String,
+    /// Query parameter that carries the map key.
+    pub key: String,
+    /// HTTP statuses that mean the entry is absent.
+    #[serde(default)]
+    pub missing: Vec<u16>,
+}
+
+/// A write of one keyed map entry.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EntryWrite {
+    /// `resource.operation`.
+    pub op: String,
+    /// Body field that carries the map key.
+    pub key: String,
+    /// Body field that carries the entry value.
+    pub value: String,
 }
 
 /// How the members of a relation are added and removed, one request each.
@@ -676,4 +735,8 @@ where
         Some(OneOrMany::One(one)) => vec![one],
         Some(OneOrMany::Many(many)) => many,
     })
+}
+
+const fn default_true() -> bool {
+    true
 }

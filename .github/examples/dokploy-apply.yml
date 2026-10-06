@@ -76,4 +76,5 @@ jobs:
           source/target/release/dokploy apply \
             "$RUNNER_TEMP/dokploy-approved-plan/dokploy-saved-plan.json" \
             --file "$DOKPLOY_WORKSPACE/dokploy.yaml" \
-            --auto-approve
+            --auto-approve \
+            --allow-disruptive

@@ -1,0 +1,10 @@
+{
+  "code": "FORBIDDEN",
+  "data": {
+    "code": "FORBIDDEN",
+    "httpStatus": 403,
+    "path": "settings.updateEnforceSSO",
+    "zodError": null
+  },
+  "message": "Valid enterprise license required"
+}
