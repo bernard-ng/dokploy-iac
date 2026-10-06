@@ -63,6 +63,7 @@ pub(crate) async fn run<T: Transport>(
             .specs
             .get(change.address().kind().as_str())
             .and_then(|spec| spec.api.create.as_ref())
+            .and_then(dokploy_spec::CreateOperation::single)
             .is_some_and(|create| {
                 create
                     .attach

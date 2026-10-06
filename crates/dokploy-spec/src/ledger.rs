@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 
 use crate::error::Issue;
-use crate::model::{Coverage, Field, KindSpec, Mutability, WriteGroup};
+use crate::model::{Coverage, CreateOperation, Field, KindSpec, Mutability, WriteGroup};
 use crate::registry::SpecRegistry;
 use crate::types::{FieldType, parse_type};
 
@@ -145,8 +145,10 @@ impl LedgerReport {
 fn operations_of(spec: &KindSpec) -> Vec<(String, String)> {
     let mut found: Vec<(String, String)> = Vec::new();
     let mut add = |role: &str, op: &str| found.push((role.to_owned(), op.to_owned()));
-    if let Some(operation) = &spec.api.create {
-        add("create", &operation.op);
+    if let Some(create) = &spec.api.create {
+        for operation in create.operations() {
+            add("create", operation);
+        }
     }
     if let Some(operation) = &spec.api.update {
         add("update", &operation.op);
@@ -230,10 +232,17 @@ fn mapped_names(spec: &KindSpec) -> BTreeSet<String> {
             names.insert(membership.remove.member.clone());
         }
     }
-    for operation in [&spec.api.create, &spec.api.update, &spec.api.remove]
-        .into_iter()
-        .flatten()
-    {
+    for operation in [&spec.api.update, &spec.api.remove].into_iter().flatten() {
+        if let Some(param) = &operation.id_param {
+            names.insert(param.clone());
+        }
+        names.extend(operation.attach.keys().cloned());
+        names.extend(operation.send.keys().cloned());
+        for overrides in operation.attach_by_parent.values() {
+            names.extend(overrides.keys().cloned());
+        }
+    }
+    if let Some(operation) = spec.api.create.as_ref().and_then(CreateOperation::single) {
         if let Some(param) = &operation.id_param {
             names.insert(param.clone());
         }
@@ -426,12 +435,28 @@ fn check_mapped_fields_exist(
                 }
             }
             WriteGroup::ByVariant {
-                by_variant, ops, ..
+                by_variant,
+                fields,
+                ops,
+                ..
             } => {
                 let Some(field) = spec.fields.get(by_variant) else {
                     continue;
                 };
                 for (arm, op) in ops {
+                    for name in fields {
+                        let Some(common) = spec.fields.get(name) else {
+                            continue;
+                        };
+                        match parse_type(&common.ty) {
+                            Ok(FieldType::Struct) if common.api.is_none() => {
+                                for (member, member_field) in &common.members {
+                                    require(op, member, member_field, name);
+                                }
+                            }
+                            _ => require(op, name, common, name),
+                        }
+                    }
                     if let Some(members) = field.arms.get(arm) {
                         for (member, member_field) in members {
                             require(op, member, member_field, by_variant);
@@ -443,11 +468,13 @@ fn check_mapped_fields_exist(
     }
 
     if let Some(create) = &spec.api.create {
-        for (name, field) in &spec.fields {
-            if field.mutability == Mutability::CreateOnly
-                && matches!(parse_type(&field.ty), Ok(t) if !matches!(t, FieldType::Union{..} | FieldType::Struct))
-            {
-                require(&create.op, name, field, name);
+        for operation in create.operations() {
+            for (name, field) in &spec.fields {
+                if field.mutability == Mutability::CreateOnly
+                    && matches!(parse_type(&field.ty), Ok(t) if !matches!(t, FieldType::Union{..} | FieldType::Struct))
+                {
+                    require(operation, name, field, name);
+                }
             }
         }
     }

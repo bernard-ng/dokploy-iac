@@ -124,7 +124,7 @@ pub struct Api {
     pub id: String,
     /// Creates one.
     #[serde(default)]
-    pub create: Option<Operation>,
+    pub create: Option<CreateOperation>,
     /// Updates one.
     #[serde(default)]
     pub update: Option<Operation>,
@@ -159,8 +159,43 @@ impl KindSpec {
                 self.api
                     .create
                     .as_ref()
+                    .and_then(CreateOperation::single)
                     .and_then(|operation| operation.parent_id_field(Some(parent)))
             })
+    }
+}
+
+/// How a kind is created: by one operation, or by an operation selected from a union arm.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum CreateOperation {
+    /// Every instance uses the same operation.
+    Op(Operation),
+    /// The active arm of a union selects the operation.
+    ByVariant {
+        /// The union field whose tag selects the operation.
+        by_variant: String,
+        /// One create operation per arm.
+        ops: BTreeMap<String, String>,
+    },
+}
+
+impl CreateOperation {
+    /// The ordinary operation, when creation does not vary by union arm.
+    #[must_use]
+    pub const fn single(&self) -> Option<&Operation> {
+        match self {
+            Self::Op(operation) => Some(operation),
+            Self::ByVariant { .. } => None,
+        }
+    }
+
+    /// Every operation id this create declaration can select.
+    pub fn operations(&self) -> Box<dyn Iterator<Item = &str> + '_> {
+        match self {
+            Self::Op(operation) => Box::new(std::iter::once(operation.op.as_str())),
+            Self::ByVariant { ops, .. } => Box::new(ops.values().map(String::as_str)),
+        }
     }
 }
 
@@ -382,6 +417,9 @@ pub struct Field {
     /// The request/response field name or JSON pointer; defaults to the field name.
     #[serde(default)]
     pub api: Option<String>,
+    /// The top-level request field when it differs from the response field or pointer.
+    #[serde(default)]
+    pub request: Option<String>,
     /// The type expression (ADR 0004).
     #[serde(rename = "type")]
     pub ty: String,
@@ -511,6 +549,9 @@ pub enum WriteGroup {
     ByVariant {
         /// The union field whose tag selects the operation.
         by_variant: String,
+        /// Other fields carried by every variant operation.
+        #[serde(default)]
+        fields: Vec<String>,
         /// One operation per arm.
         ops: BTreeMap<String, String>,
         /// Partial or full body.
@@ -574,7 +615,11 @@ impl Field {
     /// field in a request body or query string. Defaults to the document name.
     #[must_use]
     pub fn request_name<'a>(&'a self, document_name: &'a str) -> &'a str {
-        let raw = self.api.as_deref().unwrap_or(document_name);
+        let raw = self
+            .request
+            .as_deref()
+            .or(self.api.as_deref())
+            .unwrap_or(document_name);
         let trimmed = raw.strip_prefix('/').unwrap_or(raw);
         trimmed.split('/').next().unwrap_or(trimmed)
     }

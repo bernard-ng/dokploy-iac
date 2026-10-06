@@ -8,7 +8,8 @@ use dokploy_api::{BodyShape, request_contract};
 use dokploy_core::{CheckpointValueRef, ExternalResolution, PropertyPath, ResourceCheckpoint};
 use dokploy_sdk::OperationRequest;
 use dokploy_spec::{
-    FieldType, KindSpec, Mutability, PathShape, Shape, ValueClass, WriteGroup, parse_type,
+    CreateOperation, FieldType, KindSpec, Mutability, Operation, PathShape, Shape, ValueClass,
+    WriteGroup, parse_type,
 };
 use dokploy_state::ResourceAddress;
 use serde_json::{Map, Value as Json};
@@ -16,6 +17,7 @@ use serde_json::{Map, Value as Json};
 use super::ApplyError;
 use crate::compile::Compiled;
 use crate::envtext::EnvText;
+use crate::project::lookup;
 use crate::selectors::SelectorIndex;
 
 /// What a request is built from besides the spec and the checkpoint: the document's secrets and
@@ -190,6 +192,40 @@ pub(crate) struct CreateRequest {
     pub(crate) deferred: Vec<PropertyPath>,
 }
 
+fn create_operation<'a>(
+    spec: &'a KindSpec,
+    address: &ResourceAddress,
+    checkpoint: &ResourceCheckpoint,
+) -> Result<(&'a str, Option<&'a Operation>), ApplyError> {
+    match spec.api.create.as_ref() {
+        Some(CreateOperation::Op(operation)) => Ok((&operation.op, Some(operation))),
+        Some(CreateOperation::ByVariant { by_variant, ops }) => {
+            let active = checkpoint.property_paths().into_iter().find_map(|path| {
+                (path.info().field_name() == by_variant && path.info().union_tag)
+                    .then(|| checkpoint.property(path))
+                    .flatten()
+                    .and_then(|value| match value {
+                        CheckpointValueRef::NonSensitive(Json::String(active)) => Some(active),
+                        _ => None,
+                    })
+            });
+            let operation = active.and_then(|active| ops.get(active));
+            operation
+                .map(|operation| (operation.as_str(), None))
+                .ok_or_else(|| ApplyError::Unsupported {
+                    address: address.clone(),
+                    property: None,
+                    reason: "has no create operation for the active union arm",
+                })
+        }
+        None => Err(ApplyError::Unsupported {
+            address: address.clone(),
+            property: None,
+            reason: "has no create operation",
+        }),
+    }
+}
+
 /// For a property of a union nested in an object: the key of the object, and the plain key of the
 /// property inside it.
 fn nested_key(spec: &KindSpec, path: &PropertyPath) -> Option<(String, String)> {
@@ -216,16 +252,12 @@ pub(crate) fn create_request(
     parent_id: Option<&str>,
     inputs: Inputs<'_>,
 ) -> Result<CreateRequest, ApplyError> {
-    let operation = spec
-        .api
-        .create
-        .as_ref()
-        .ok_or_else(|| ApplyError::Unsupported {
-            address: address.clone(),
-            property: None,
-            reason: "has no create operation",
-        })?;
-    let contract = request_contract(&operation.op);
+    let (operation_name, operation) = create_operation(spec, address, checkpoint)?;
+    let contract = request_contract(operation_name);
+    let implied_variant = match spec.api.create.as_ref() {
+        Some(CreateOperation::ByVariant { by_variant, .. }) => Some(by_variant.as_str()),
+        _ => None,
+    };
     let mut body = Map::new();
     let mut deferred = Vec::new();
     let mut nests: BTreeMap<String, Map<String, Json>> = BTreeMap::new();
@@ -243,6 +275,9 @@ pub(crate) fn create_request(
                     && contract.body_field(&target.wire).is_none()
             })
         {
+            if path.info().union_tag && implied_variant == Some(path.info().field_name()) {
+                continue;
+            }
             deferred.push(path.clone());
             continue;
         }
@@ -290,7 +325,10 @@ pub(crate) fn create_request(
     let parent_kind = checkpoint
         .containment()
         .map(|parent| parent.kind().as_str());
-    for (field, source) in operation.attachments(parent_kind) {
+    for (field, source) in operation
+        .into_iter()
+        .flat_map(|operation| operation.attachments(parent_kind))
+    {
         if source == "organization_id" {
             let id = inputs.organization.ok_or_else(|| ApplyError::Unsupported {
                 address: address.clone(),
@@ -311,8 +349,10 @@ pub(crate) fn create_request(
         }
     }
 
-    for (field, value) in &operation.send {
-        body.insert(field.clone(), value.clone());
+    if let Some(operation) = operation {
+        for (field, value) in &operation.send {
+            body.insert(field.clone(), value.clone());
+        }
     }
 
     if let Some(contract) = contract
@@ -326,7 +366,14 @@ pub(crate) fn create_request(
                 .fields
                 .iter()
                 .find(|(name, field)| field.request_name(name) == required.name())
-                .map(|(_, field)| field);
+                .map(|(_, field)| field)
+                .or_else(|| {
+                    spec.fields
+                        .values()
+                        .flat_map(|field| field.members.iter())
+                        .find(|(name, member)| member.request_name(name) == required.name())
+                        .map(|(_, member)| member)
+                });
             // A member of a union's arm: the arm decides whether it is needed, so the create
             // that the document gives no value for sends it empty.
             let arm_member = spec_field.is_none().then(|| {
@@ -355,7 +402,7 @@ pub(crate) fn create_request(
     }
 
     Ok(CreateRequest {
-        request: OperationRequest::new(&operation.op).body(Json::Object(body)),
+        request: OperationRequest::new(operation_name).body(Json::Object(body)),
         deferred,
     })
 }
@@ -395,22 +442,33 @@ pub(crate) fn groups(
     for group in &spec.write {
         if let WriteGroup::ByVariant {
             by_variant,
+            fields,
             ops,
             shape,
         } = group
         {
-            if names.contains(by_variant) {
+            if names.contains(by_variant) || fields.iter().any(|field| names.contains(field)) {
+                let mut group_fields = fields.clone();
+                group_fields.push(by_variant.clone());
                 requests.push(GroupRequest {
                     operation: String::new(),
                     variants: Some((by_variant.clone(), ops.clone())),
                     shape: *shape,
-                    changed: vec![by_variant.clone()],
+                    changed: group_fields
+                        .iter()
+                        .filter(|field| names.contains(field))
+                        .cloned()
+                        .collect(),
                     written: written
                         .iter()
-                        .filter(|path| path.info().field_name() == by_variant)
+                        .filter(|path| {
+                            group_fields
+                                .iter()
+                                .any(|field| field == path.info().field_name())
+                        })
                         .map(|path| path.to_string())
                         .collect(),
-                    fields: vec![by_variant.clone()],
+                    fields: group_fields,
                     reads_fresh: true,
                 });
             }
@@ -701,6 +759,38 @@ fn variant_body(
     if contract.is_some_and(|contract| contract.body_field(held_tag_key).is_some()) {
         body.insert(held_tag_key.to_owned(), Json::String(tag.clone()));
     }
+    for common in group.fields.iter().filter(|name| *name != field_name) {
+        let Some(common_field) = spec.fields.get(common) else {
+            continue;
+        };
+        let paths: Vec<String> = if matches!(parse_type(&common_field.ty), Ok(FieldType::Struct)) {
+            common_field
+                .members
+                .keys()
+                .map(|member| format!("{common}.{member}"))
+                .collect()
+        } else {
+            vec![common.clone()]
+        };
+        for dotted in paths {
+            let path =
+                PropertyPath::from_spec(spec, &dotted).map_err(|_| ApplyError::Unsupported {
+                    address: address.clone(),
+                    property: Some(dotted.clone()),
+                    reason: "is not a property of the kind",
+                })?;
+            let wire = path.info().request_key().to_owned();
+            if checkpoint.property(&path).is_some() {
+                body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
+                continue;
+            }
+            if let Some(held) = fresh.and_then(|fresh| lookup(fresh, &path.info().api)) {
+                body.insert(wire, held.clone());
+            } else if let Some(fallback) = &path.info().fallback {
+                body.insert(wire, fallback.clone());
+            }
+        }
+    }
     for (member, member_field) in arm {
         let dotted = format!("{field_name}.{tag}.{member}");
         let path = PropertyPath::from_spec(spec, &dotted).map_err(|_| ApplyError::Unsupported {
@@ -727,7 +817,7 @@ fn variant_body(
             continue;
         }
         let held = same_arm
-            .then(|| fresh.and_then(|fresh| fresh.get(&wire)))
+            .then(|| fresh.and_then(|fresh| lookup(fresh, &path.info().api)))
             .flatten();
         if let Some(held) = held {
             body.insert(wire, held.clone());
@@ -756,8 +846,15 @@ fn variant_body(
             if body.contains_key(&wire) || member_field.class != ValueClass::Public {
                 continue;
             }
+            let dotted = format!("{field_name}.{other}.{member}");
+            let path =
+                PropertyPath::from_spec(spec, &dotted).map_err(|_| ApplyError::Unsupported {
+                    address: address.clone(),
+                    property: Some(dotted),
+                    reason: "is not a property of the kind",
+                })?;
             let held = fresh
-                .and_then(|fresh| fresh.get(&wire))
+                .and_then(|fresh| lookup(fresh, &path.info().api))
                 .filter(|held| !held.is_null());
             if let Some(held) = held {
                 body.insert(wire, held.clone());

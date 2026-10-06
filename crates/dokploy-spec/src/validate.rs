@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::Issue;
 use crate::model::{
-    Api, Authority, CreateIdentity, Field, KindClass, KindSpec, Mutability, ValueClass, WriteGroup,
+    Api, Authority, CreateIdentity, CreateOperation, Field, KindClass, KindSpec, Mutability,
+    ValueClass, WriteGroup,
 };
 use crate::types::{FieldType, parse_type};
 
@@ -183,7 +184,6 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
         context.add("api.id", "must name the id field");
     }
     for (path, operation) in [
-        ("api.create.op", api.create.as_ref().map(|o| &o.op)),
         ("api.update.op", api.update.as_ref().map(|o| &o.op)),
         ("api.remove.op", api.remove.as_ref().map(|o| &o.op)),
         ("api.deploy.op", api.deploy.as_ref().map(|o| &o.op)),
@@ -191,6 +191,33 @@ fn check_api(context: &mut Context<'_>, spec: &KindSpec) {
     ] {
         if let Some(op) = operation {
             check_operation(context, path, op);
+        }
+    }
+    if let Some(create) = &api.create {
+        match create {
+            CreateOperation::Op(operation) => {
+                check_operation(context, "api.create.op", &operation.op);
+            }
+            CreateOperation::ByVariant { by_variant, ops } => {
+                let path = "api.create.by_variant";
+                match spec.fields.get(by_variant) {
+                    Some(field) if matches!(parse_type(&field.ty), Ok(FieldType::Union { .. })) => {
+                        let arms: BTreeSet<&str> = field.arms.keys().map(String::as_str).collect();
+                        let declared: BTreeSet<&str> = ops.keys().map(String::as_str).collect();
+                        if arms != declared {
+                            context.add(
+                                path,
+                                format!("must name exactly the arms of `{by_variant}`"),
+                            );
+                        }
+                    }
+                    Some(_) => context.add(path, format!("`{by_variant}` is not a union")),
+                    None => context.add(path, format!("`{by_variant}` is not a field")),
+                }
+                for (arm, operation) in ops {
+                    check_operation(context, &format!("api.create.ops.{arm}"), operation);
+                }
+            }
         }
     }
     match spec.class {
@@ -609,9 +636,15 @@ fn check_write_groups(context: &mut Context<'_>, spec: &KindSpec) {
                 }
             }
             WriteGroup::ByVariant {
-                by_variant, ops, ..
+                by_variant,
+                fields,
+                ops,
+                ..
             } => {
                 carry(context, &mut carried, spec, &path, by_variant);
+                for name in fields {
+                    carry(context, &mut carried, spec, &path, name);
+                }
                 let Some(field) = spec.fields.get(by_variant) else {
                     continue;
                 };

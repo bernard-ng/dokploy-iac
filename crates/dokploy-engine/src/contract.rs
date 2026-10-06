@@ -3,7 +3,7 @@
 
 use dokploy_api::{BodyShape, request_contract};
 use dokploy_core::{MutationContract, PropertyPath};
-use dokploy_spec::{KindSpec, PropertyInfo};
+use dokploy_spec::{CreateOperation, KindSpec, PropertyInfo};
 
 /// Whether the property must be given to create the kind: the spec has no default for it and the
 /// create operation requires it. A property the create operation does not require (it does not
@@ -18,12 +18,26 @@ fn create_requires(spec: &KindSpec, info: &PropertyInfo) -> bool {
     let Some(create) = &spec.api.create else {
         return true;
     };
-    match request_contract(&create.op) {
-        Some(contract) if matches!(contract.body(), BodyShape::Object(_)) => contract
-            .body_field(info.request_key())
-            .is_some_and(|field| field.required()),
-        _ => true,
-    }
+    let operations: Vec<&str> = match create {
+        CreateOperation::Op(operation) => vec![&operation.op],
+        CreateOperation::ByVariant { by_variant, ops }
+            if by_variant == info.field_name() && info.arm.is_some() =>
+        {
+            info.arm
+                .as_ref()
+                .and_then(|arm| ops.get(arm))
+                .map_or_else(Vec::new, |operation| vec![operation.as_str()])
+        }
+        CreateOperation::ByVariant { ops, .. } => ops.values().map(String::as_str).collect(),
+    };
+    operations
+        .into_iter()
+        .any(|operation| match request_contract(operation) {
+            Some(contract) if matches!(contract.body(), BodyShape::Object(_)) => contract
+                .body_field(info.request_key())
+                .is_some_and(|field| field.required()),
+            _ => true,
+        })
 }
 
 /// The planner's mutation contract for a kind: the spec's, with creation requirements narrowed

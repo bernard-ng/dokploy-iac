@@ -78,6 +78,7 @@ pub(crate) struct Ancestor {
 /// Everything a scenario needs to know about one kind.
 pub(crate) struct Case {
     pub(crate) spec: KindSpec,
+    pub(crate) create_op: String,
     /// The kind it is exercised under, for a kind that can live under several.
     pub(crate) parent_kind: Option<String>,
     pub(crate) key: String,
@@ -111,6 +112,7 @@ impl Case {
                 .api
                 .create
                 .as_ref()
+                .and_then(dokploy_spec::CreateOperation::single)
                 .and_then(|op| op.parent_id_field(parent_spec.parents.first().map(String::as_str)))
                 .map(str::to_owned);
             ancestors.push(Ancestor {
@@ -127,6 +129,24 @@ impl Case {
             return Err("a project-scoped kind without a parent is the project itself".to_owned());
         }
         let key = "conf-key".to_owned();
+        let first_arm = |field: &str| {
+            arms.get(field).cloned().or_else(|| {
+                spec.fields
+                    .get(field)
+                    .and_then(|f| f.arms.keys().next().cloned())
+            })
+        };
+        let create_op = match spec
+            .api
+            .create
+            .as_ref()
+            .ok_or("the kind has no create operation")?
+        {
+            dokploy_spec::CreateOperation::Op(operation) => operation.op.clone(),
+            dokploy_spec::CreateOperation::ByVariant { by_variant, ops } => first_arm(by_variant)
+                .and_then(|arm| ops.get(&arm).cloned())
+                .ok_or_else(|| format!("the create has no operation for `{by_variant}`"))?,
+        };
         let mut fields = Vec::new();
         for info in spec.properties() {
             let name = info.path.clone();
@@ -135,13 +155,6 @@ impl Case {
             }
             // A union is exercised through one arm: the one asked for, or else the first the
             // spec names.
-            let first_arm = |field: &str| {
-                arms.get(field).cloned().or_else(|| {
-                    spec.fields
-                        .get(field)
-                        .and_then(|f| f.arms.keys().next().cloned())
-                })
-            };
             if let Some(arm) = &info.arm
                 && first_arm(info.field_name()).as_ref() != Some(arm)
             {
@@ -161,11 +174,20 @@ impl Case {
                 }
                 WriteGroup::ByVariant {
                     by_variant,
+                    fields,
                     ops,
                     shape,
-                } if by_variant == info.field_name() => first_arm(by_variant)
-                    .and_then(|arm| ops.get(&arm))
-                    .map(|op| (op.clone(), *shape, vec![by_variant.clone()])),
+                } if by_variant == info.field_name()
+                    || fields.iter().any(|field| field == info.field_name()) =>
+                {
+                    first_arm(by_variant)
+                        .and_then(|arm| ops.get(&arm))
+                        .map(|op| {
+                            let mut carried = fields.clone();
+                            carried.push(by_variant.clone());
+                            (op.clone(), *shape, carried)
+                        })
+                }
                 _ => None,
             });
             let field_case = |a: Val, b: Option<Val>, secret: bool, default_key: bool| FieldCase {
@@ -306,6 +328,7 @@ impl Case {
         Ok(Self {
             parent_kind: ancestors.last().map(|parent| parent.spec.kind.clone()),
             spec: spec.clone(),
+            create_op,
             key,
             fields,
             ancestors,
@@ -383,6 +406,7 @@ impl Case {
             .api
             .create
             .as_ref()
+            .and_then(dokploy_spec::CreateOperation::single)
             .map(|op| {
                 op.attachments(self.parent_kind.as_deref())
                     .into_iter()

@@ -66,6 +66,7 @@ impl ProjectWorld {
                     .api
                     .create
                     .as_ref()
+                    .and_then(dokploy_spec::CreateOperation::single)
                     .and_then(|op| op.parent_id_field(spec.parents.first().map(String::as_str)))
                     .expect("an environment attaches to its project");
                 remote.insert(attach.to_owned(), Value::String(parent_id.clone()));

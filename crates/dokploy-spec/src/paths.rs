@@ -86,14 +86,15 @@ pub struct PropertyInfo {
     /// name. A struct member is a key of its own, not nested in the struct, and an entry of a
     /// keyed collection has its root's.
     pub api: String,
+    /// The top-level field used when writing this property.
+    pub request: String,
 }
 
 impl PropertyInfo {
     /// The key the value is sent under in a request body: the first segment of [`Self::api`].
     #[must_use]
     pub fn request_key(&self) -> &str {
-        let trimmed = self.api.strip_prefix('/').unwrap_or(&self.api);
-        trimmed.split('/').next().unwrap_or(trimmed)
+        &self.request
     }
 
     /// The name of the document field this property belongs to: the first segment of its path.
@@ -302,6 +303,7 @@ fn base(
         fallback: field.fallback.clone(),
         trim: field.trim,
         api: field.api.clone().unwrap_or_else(|| name.to_owned()),
+        request: field.request_name(name).to_owned(),
     }
 }
 
@@ -503,6 +505,7 @@ fn union_member_info(
     // The members of a nested union are read from inside the object they are written in.
     if let Some(nest) = nest {
         info.api = format!("/{nest}/{}", info.api);
+        info.request = nest.to_owned();
         info.nested = true;
     }
 

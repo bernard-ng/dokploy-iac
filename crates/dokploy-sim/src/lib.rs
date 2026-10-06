@@ -148,8 +148,10 @@ impl Sim {
         };
         for spec in specs.kinds() {
             let kind = spec.kind.as_str();
-            if let Some(op) = &spec.api.create {
-                add(&op.op, kind, Action::Create);
+            if let Some(create) = &spec.api.create {
+                for operation in create.operations() {
+                    add(operation, kind, Action::Create);
+                }
             }
             if let Some(op) = &spec.api.update {
                 add(&op.op, kind, Action::Update);
@@ -476,6 +478,7 @@ impl Sim {
                     return false;
                 };
                 create
+                    .and_then(dokploy_spec::CreateOperation::single)
                     .and_then(|op| op.parent_id_field(Some(parent)))
                     .and_then(|field| body.get(field))
                     .and_then(Value::as_str)
@@ -487,12 +490,24 @@ impl Sim {
             }
         }
         let mut object = new_object(spec, &body, inner);
+        if let Some(dokploy_spec::CreateOperation::ByVariant { by_variant, ops }) = &spec.api.create
+            && let Some((arm, _)) = ops
+                .iter()
+                .find(|(_, operation)| *operation == request.operation())
+            && let Some(field) = spec.fields.get(by_variant)
+        {
+            object.insert(
+                field.request_name(by_variant).to_owned(),
+                Value::String(arm.clone()),
+            );
+        }
         // The row names its parent in a column of its own, whatever the request called it.
         for parent in &spec.parents {
             let id = spec
                 .api
                 .create
                 .as_ref()
+                .and_then(dokploy_spec::CreateOperation::single)
                 .and_then(|op| op.parent_id_field(Some(parent)))
                 .and_then(|field| body.get(field))
                 .and_then(Value::as_str);

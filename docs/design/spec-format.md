@@ -60,6 +60,18 @@ api:
   deploy: null                 # { op: compose.deploy, wait: deployment } for deployable kinds
 ```
 
+When the endpoint that creates a resource depends on a union arm, creation uses the same
+variant dispatch as a write group:
+
+```yaml
+  create:
+    by_variant: config
+    ops: { slack: notification.createSlack, teams: notification.createTeams }
+```
+
+The selected operation implies the active arm, so the tag is not sent unless that endpoint accepts
+it.
+
 A collection embedded in a parent's response is declared on the child:
 
 ```yaml
@@ -101,6 +113,10 @@ fields:
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `trim`, `file_key`,
 `since`, `until`, `doc` (one line for the generated reference), `example`.
+
+`request` names the top-level request field when `api` is a different response field or a JSON
+pointer. Notification settings use this because Dokploy accepts `webhookUrl` but reads it below a
+provider object such as `/slack/webhookUrl`.
 
 `made_with_parent: { name, marker }` (on a kind, not a field) says Dokploy makes one of this kind
 by itself when it makes the parent: a project's `production` environment, flagged by the computed bool
@@ -183,7 +199,8 @@ operation may be listed for several arms (`build`: one `saveBuildType` for all).
 
 `shape` is `partial` or `full` (ADR 0008). `by_variant: source` selects the operation by a
 union tag, `ops: { arm: operation }`: one request per apply, to the operation of the arm the
-document names, carrying the members of that arm (see [`engine.md`](engine.md#unions)).
+document names, carrying the members of that arm (see [`engine.md`](engine.md#unions)). A variant
+group may also list `fields`: common fields carried by every arm's operation.
 
 ## Relations and keyed arrays
 

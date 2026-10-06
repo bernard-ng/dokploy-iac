@@ -28,14 +28,7 @@ fn skip(reason: &str) -> Check<Verdict> {
 }
 
 fn create_op(w: &World<'_>) -> String {
-    w.case
-        .spec
-        .api
-        .create
-        .as_ref()
-        .expect("a kind with a create")
-        .op
-        .clone()
+    w.case.create_op.clone()
 }
 
 /// The requests a create sends: the create operation, and then one write group for the fields

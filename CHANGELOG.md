@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Extend kind specs for notification-shaped resources: `api.create` can select an operation from a
+  union arm, a variant write group can carry common fields, and a field can name different request
+  and response paths. The engine, simulator, ledger, and conformance harness all follow those rules.
 - `env_file` for the application and the Compose (milestone M4, [ADR 0010](docs/decisions/0010-secrets-environment-and-content.md)):
   `env_file: { file: secrets/api.env }` adds the variables of a dotenv file to `environment`, the
   entries the map writes win, and the values are fingerprinted like any other and never reach state.

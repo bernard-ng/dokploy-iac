@@ -199,6 +199,55 @@ write:
 }
 
 #[test]
+fn a_union_can_select_create_and_update_operations_by_arm() {
+    let source = r#"
+kind: notification
+scope: settings
+section: notifications
+title: Notification
+identity: { key: name, collision: [name], address: "notification.{key}" }
+api:
+  id: notificationId
+  create:
+    by_variant: config
+    ops: { slack: notification.createSlack, teams: notification.createTeams }
+  remove: { op: notification.remove }
+  read: { list: { op: notification.all }, one: { op: notification.one, id_param: notificationId } }
+  create_identity: { diff_collection: { key: [name] } }
+fields:
+  name: { type: text, default: key }
+  config:
+    api: notificationType
+    type: union(type)
+    arms:
+      slack:
+        webhook_url: { api: /slack/webhookUrl, request: webhookUrl, type: text, class: secret, mutability: write_only }
+      teams:
+        webhook_url: { api: /teams/webhookUrl, request: webhookUrl, type: text, class: secret, mutability: write_only }
+write:
+  - by_variant: config
+    fields: [name]
+    ops: { slack: notification.updateSlack, teams: notification.updateTeams }
+"#;
+
+    assert_eq!(issues(source), Vec::<String>::new());
+    let parsed = spec(source);
+    let webhook = parsed.property("config.slack.webhook_url").unwrap();
+    assert_eq!(webhook.api, "/slack/webhookUrl");
+    assert_eq!(webhook.request_key(), "webhookUrl");
+
+    let incomplete = source.replace(
+        "ops: { slack: notification.createSlack, teams: notification.createTeams }",
+        "ops: { slack: notification.createSlack }",
+    );
+    assert!(
+        issues(&incomplete)
+            .iter()
+            .any(|issue| issue.contains("must name exactly the arms"))
+    );
+}
+
+#[test]
 fn the_ledger_fails_an_unclassified_request_field_for_full_coverage() {
     let mut document = openapi();
     document["components"]["schemas"]["WidgetUpdate"]["properties"]["surprise"] = json!({});
