@@ -33,6 +33,10 @@ use crate::project::{api_name, held_member_ids, item_id, lookup};
 use crate::secrets_out::render_dotenv;
 use crate::{CompileError, Engine, EngineError, Fingerprinter, SecretError, SecretReader};
 
+const DOKPLOY_DIRECTORY: &str = ".dokploy";
+const CONTENT_DIRECTORY: &str = ".dokploy/files";
+const MANIFEST_FILE: &str = "dokploy.workspace.yaml";
+
 /// Which documents an import returns.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ImportSelection {
@@ -220,7 +224,6 @@ pub struct ImportBundle {
     files: Vec<ImportedFile>,
     unsupported: Vec<UnsupportedItem>,
     secrets_directory: String,
-    write_manifest: bool,
 }
 
 impl ImportBundle {
@@ -242,7 +245,7 @@ impl ImportBundle {
         &self.unsupported
     }
 
-    /// A deterministic workspace manifest. `import all` callers persist it beside the documents.
+    /// A deterministic workspace manifest persisted as the workspace's public entry point.
     #[must_use]
     pub fn manifest(&self) -> String {
         let mut text = String::from("version: 1\ndocuments:\n");
@@ -291,7 +294,7 @@ impl ImportBundle {
                     fs::remove_file(path)
                 };
             }
-            let _ = fs::remove_dir_all(root.join(".dokploy"));
+            let _ = fs::remove_dir_all(root.join(DOKPLOY_DIRECTORY));
             match gitignore_before {
                 Some(bytes) => {
                     let _ = fs::write(&gitignore, bytes);
@@ -324,10 +327,8 @@ impl ImportBundle {
             .map(|document| root.join(document.path()))
             .chain(self.files.iter().map(|file| root.join(file.path())))
             .collect();
-        if self.write_manifest {
-            paths.push(root.join("dokploy.workspace.yaml"));
-        }
-        paths.push(root.join(".dokploy"));
+        paths.push(root.join(MANIFEST_FILE));
+        paths.push(root.join(DOKPLOY_DIRECTORY));
         if let Some(path) = paths
             .into_iter()
             .find(|path| path.symlink_metadata().is_ok())
@@ -381,11 +382,9 @@ impl ImportBundle {
             create_file(&path, document.render().as_bytes())?;
             created.push(path);
         }
-        if self.write_manifest {
-            let path = root.join("dokploy.workspace.yaml");
-            create_file(&path, self.manifest().as_bytes())?;
-            created.push(path);
-        }
+        let path = root.join(MANIFEST_FILE);
+        create_file(&path, self.manifest().as_bytes())?;
+        created.push(path);
         for document in &self.documents {
             let store = dokploy_state::StateStore::for_document(
                 root,
@@ -395,7 +394,7 @@ impl ImportBundle {
             let mut write = store.begin_write()?;
             write.checkpoint(dokploy_state::ExpectedState::absent(), document.state())?;
         }
-        created.push(root.join(".dokploy"));
+        created.push(root.join(DOKPLOY_DIRECTORY));
 
         Ok(())
     }
@@ -442,8 +441,8 @@ pub enum ImportPersistError {
 /// A remote instance that cannot be imported faithfully.
 #[derive(Debug, Error)]
 pub enum ImportError {
-    /// Secret artifacts must stay below one workspace-relative directory.
-    #[error("secret output directory `{path}` is not a safe workspace-relative path")]
+    /// Secret artifacts must stay below one workspace-relative `.dokploy` directory.
+    #[error("secret output directory `{path}` must be a safe path below `.dokploy/`")]
     SecretsDirectory { path: String },
     /// A secret value cannot be represented by the generated file format.
     #[error(transparent)]
@@ -641,7 +640,6 @@ impl<T: Transport> Engine<T> {
             files: build.files,
             unsupported: build.unsupported,
             secrets_directory: options.secrets_directory.clone(),
-            write_manifest: matches!(selection, ImportSelection::All),
         })
     }
 }
@@ -982,7 +980,7 @@ fn build_documents(
                 .insert(resource.key.clone(), resource);
         }
         built.push((
-            "settings.yaml".to_owned(),
+            format!("{DOKPLOY_DIRECTORY}/settings.yaml"),
             Document {
                 scope: Scope::Settings,
                 root: Root::Settings(sections),
@@ -1020,7 +1018,7 @@ fn build_documents(
             let resource = build_resource(project, context, &mut ids)?;
             let key = resource.key.clone();
             built.push((
-                format!("projects/{key}.yaml"),
+                format!("{DOKPLOY_DIRECTORY}/projects/{key}.yaml"),
                 Document {
                     scope: Scope::Project,
                     root: Root::Project(Box::new(resource)),
@@ -1227,7 +1225,7 @@ fn import_field(
             return unrepresentable(context, spec, dotted, "content is not text");
         };
         let path = format!(
-            "files/{}/{}-{}-{}.txt",
+            "{CONTENT_DIRECTORY}/{}/{}-{}-{}.txt",
             document_key(context, node),
             spec.kind,
             node.key.as_deref().unwrap_or("item"),
@@ -1298,7 +1296,7 @@ fn import_field(
                     return unrepresentable(context, spec, dotted, "file map entry is not text");
                 };
                 let path = format!(
-                    "files/{}/{}-{}-{}-{}.txt",
+                    "{CONTENT_DIRECTORY}/{}/{}-{}-{}-{}.txt",
                     document_key(context, node),
                     spec.kind,
                     node.key.as_deref().unwrap_or("item"),
@@ -1858,12 +1856,16 @@ fn redacted_sdk(error: SdkError) -> String {
 }
 
 fn safe_relative_directory(value: &str) -> bool {
-    !value.is_empty()
-        && !value.contains(['\\', '\0'])
-        && !Path::new(value).is_absolute()
-        && Path::new(value)
-            .components()
-            .all(|component| matches!(component, std::path::Component::Normal(_)))
+    if value.is_empty() || value.contains(['\\', '\0']) || Path::new(value).is_absolute() {
+        return false;
+    }
+
+    let mut components = Path::new(value).components();
+    matches!(
+        components.next(),
+        Some(std::path::Component::Normal(directory)) if directory == DOKPLOY_DIRECTORY
+    ) && components.next().is_some()
+        && components.all(|component| matches!(component, std::path::Component::Normal(_)))
 }
 
 fn create_file(path: &Path, bytes: &[u8]) -> Result<(), ImportPersistError> {

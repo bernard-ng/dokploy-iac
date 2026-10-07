@@ -192,7 +192,7 @@ settings:
     ops-gotify:   { config: { type: gotify, server_url: https://gotify.example.com, app_token: { env: GOTIFY_TOKEN }, priority: 5, decoration: true }, events: { app_deploy: true } }
     ops-ntfy:     { config: { type: ntfy, server_url: https://ntfy.sh, topic: leganews, access_token: { env: NTFY_TOKEN }, priority: 3 }, events: { app_deploy: true } }
     ops-mattermost: { config: { type: mattermost, webhook_url: { env: MM_WEBHOOK }, channel: ops, username: dokploy }, events: { app_deploy: true } }
-    ops-custom:   { config: { type: custom, endpoint: https://hooks.example.com/dokploy, headers: { file: secrets/custom-notification-headers.json } }, events: { app_deploy: true } }
+    ops-custom:   { config: { type: custom, endpoint: https://hooks.example.com/dokploy, headers: { file: .dokploy/secrets/custom-notification-headers.json } }, events: { app_deploy: true } }
     ops-lark:     { config: { type: lark, webhook_url: { env: LARK_WEBHOOK } }, events: { app_deploy: true } }
     ops-teams:    { config: { type: teams, webhook_url: { env: TEAMS_WEBHOOK } }, events: { app_deploy: true } }
     ops-pushover: { config: { type: pushover, user_key: { env: PUSHOVER_USER }, api_token: { env: PUSHOVER_TOKEN }, priority: 0, retry: 60, expire: 3600 }, events: { server_threshold: true } }

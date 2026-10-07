@@ -248,19 +248,19 @@ fn settings_state_lives_beside_project_state_and_never_blocks_it() {
     assert!(
         workspace
             .path()
-            .join(".dokploy/projects/shop/state.json")
+            .join(".dokploy/state/projects/shop/state.json")
             .is_file()
     );
     assert!(
         workspace
             .path()
-            .join(".dokploy/settings/state.json")
+            .join(".dokploy/state/settings/state.json")
             .is_file()
     );
     assert!(
         workspace
             .path()
-            .join(".dokploy/settings/state.lock")
+            .join(".dokploy/state/settings/state.lock")
             .is_file()
     );
     assert_eq!(
@@ -301,7 +301,7 @@ fn a_settings_store_alone_leaves_project_state_absent() {
     assert!(
         !workspace
             .path()
-            .join(".dokploy/projects/shop/state.json")
+            .join(".dokploy/state/projects/shop/state.json")
             .exists()
     );
 }
@@ -338,10 +338,12 @@ fn a_store_refuses_to_write_or_read_another_scope() {
         .expect("lock is acquired")
         .checkpoint(ExpectedState::absent(), &settings_state())
         .expect("settings state initializes");
-    fs::create_dir_all(workspace.path().join(".dokploy/projects/shop")).expect("directory");
+    fs::create_dir_all(workspace.path().join(".dokploy/state/projects/shop")).expect("directory");
     fs::copy(
-        workspace.path().join(".dokploy/settings/state.json"),
-        workspace.path().join(".dokploy/projects/shop/state.json"),
+        workspace.path().join(".dokploy/state/settings/state.json"),
+        workspace
+            .path()
+            .join(".dokploy/state/projects/shop/state.json"),
     )
     .expect("state file is copied");
     let project = StateStore::for_document(workspace.path(), instance(), project_document())
@@ -365,7 +367,7 @@ fn a_store_refuses_to_write_or_read_another_scope() {
 #[test]
 fn a_store_refuses_a_file_from_an_older_format_instead_of_upgrading_it() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let directory = workspace.path().join(".dokploy/projects/shop");
+    let directory = workspace.path().join(".dokploy/state/projects/shop");
     fs::create_dir_all(&directory).expect("state directory is created");
     fs::write(
         directory.join("state.json"),
@@ -398,7 +400,7 @@ fn the_settings_directory_is_hardened_and_never_follows_a_symlinked_parent() {
         .expect("lock is acquired")
         .checkpoint(ExpectedState::absent(), &settings_state())
         .expect("settings state initializes");
-    for directory in [".dokploy", ".dokploy/settings"] {
+    for directory in [".dokploy", ".dokploy/state", ".dokploy/state/settings"] {
         let mode = fs::metadata(workspace.path().join(directory))
             .expect("directory exists")
             .permissions()

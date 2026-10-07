@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted (2026-10-02). Replaces the first engine's configuration language (its ADRs 0006 and
-0007) and its two-document design.
+Accepted (2026-10-02), amended (2026-10-07). Replaces the first engine's configuration language
+(its ADRs 0006 and 0007) and its two-document design.
 
 ## Context
 
@@ -52,18 +52,21 @@ hierarchical addresses (ADR 0006).
 A **workspace** is a directory:
 
 ```
-dokploy.workspace.yaml     optional manifest: documents and their order
-settings.yaml              the settings document
-projects/<slug>.yaml       one project document each
-files/                     content referenced by `file` sources (compose, scripts, configs)
-secrets/                   dotenv files for secret sources; git-ignored
-.dokploy/                  state, journals, locks; one lineage per document
+dokploy.workspace.yaml     public entry point: documents and their order
+.dokploy/
+  settings.yaml            the settings document
+  projects/<slug>.yaml     one project document each
+  files/                   content referenced by `file` sources (compose, scripts, configs)
+  secrets/                 dotenv files for secret sources; git-ignored
+  state/                   state, journals, locks; one lineage per document
 ```
 
-With no manifest, the tool treats a single `dokploy.yaml` or `dokploy.settings.yaml`
-as before, so a one-project repository stays one file. With a manifest, documents
-are applied in the order **settings, then projects**, and a project may depend on
-settings objects through selectors. `dokploy import all` writes the manifest.
+The manifest is the only public Dokploy workspace entry point, so application-owned paths such as
+`settings.yaml`, `projects/`, `files/`, and `secrets/` never collide with Dokploy artifacts. Its
+document paths must be below `.dokploy/`. Documents are applied in the order **settings, then
+projects**, and a project may depend on settings objects through selectors. Every import selection
+writes the manifest. Explicit standalone document mode remains available outside a manifest-backed
+workspace.
 
 ### Version
 

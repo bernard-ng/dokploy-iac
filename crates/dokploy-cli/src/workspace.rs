@@ -14,8 +14,9 @@ use serde::Deserialize;
 pub const DEFAULT_PROJECT_FILE: &str = "dokploy.yaml";
 /// The default settings document.
 pub const DEFAULT_SETTINGS_FILE: &str = "dokploy.settings.yaml";
-/// The workspace manifest written by `import all`.
+/// The workspace manifest written by every import selection.
 pub const DEFAULT_MANIFEST_FILE: &str = "dokploy.workspace.yaml";
+const DOKPLOY_DIRECTORY: &str = ".dokploy";
 
 /// A validated multi-document workspace manifest.
 pub struct WorkspaceManifest {
@@ -68,6 +69,11 @@ impl WorkspaceManifest {
                     "workspace document `{document}` is not a relative path below the workspace"
                 ));
             }
+            if !document.starts_with(".dokploy/") {
+                return Err(miette::miette!(
+                    "workspace document `{document}` must be below `.dokploy/`"
+                ));
+            }
             if !seen.insert(document.clone()) {
                 return Err(miette::miette!(
                     "workspace document `{document}` is listed twice"
@@ -102,15 +108,26 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Reads the document at `file`. The directory holding it owns the state, the `files/`
-    /// and the secrets it names.
+    /// Reads the document at `file`. A document below `.dokploy/` uses that directory's parent as
+    /// its workspace root; a standalone document uses the directory holding the file.
     pub fn load(file: &Path) -> Result<Self> {
-        let directory = file
+        let canonical = fs::canonicalize(file)
+            .map_err(|error| miette::miette!("cannot read {}: {error}", file.display()))?;
+        let document_directory = canonical
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        let directory = fs::canonicalize(directory).into_diagnostic()?;
-        let handle = fs::File::open(file)
+        let directory = canonical
+            .ancestors()
+            .find(|ancestor| {
+                ancestor
+                    .file_name()
+                    .is_some_and(|name| name == DOKPLOY_DIRECTORY)
+            })
+            .and_then(Path::parent)
+            .unwrap_or(document_directory)
+            .to_path_buf();
+        let handle = fs::File::open(&canonical)
             .map_err(|error| miette::miette!("cannot read {}: {error}", file.display()))?;
         let mut text = String::new();
         let limit = u64::try_from(MAX_DOCUMENT_BYTES).unwrap_or(u64::MAX);

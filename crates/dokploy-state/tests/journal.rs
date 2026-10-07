@@ -453,7 +453,7 @@ fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() 
     let archives = fs::read_dir(
         workspace
             .path()
-            .join(".dokploy/projects/shop/journal/archive"),
+            .join(".dokploy/state/projects/shop/journal/archive"),
     )
     .unwrap()
     .map(|entry| entry.unwrap().path())
@@ -469,7 +469,7 @@ fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() 
             fs::metadata(
                 workspace
                     .path()
-                    .join(".dokploy/projects/shop/journal/archive")
+                    .join(".dokploy/state/projects/shop/journal/archive")
             )
             .unwrap()
             .permissions()
@@ -505,7 +505,9 @@ fn truncated_tail_is_archived_before_trim_and_partial_resolution_is_retryable() 
 #[test]
 fn durable_success_precedes_a_failed_checkpoint() {
     let (workspace, store, initial) = initialized_store();
-    let primary_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let primary_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let primary_before = fs::read(&primary_path).expect("state must exist");
     let mut invalid = initial.clone();
     add_application(&mut invalid, "one", "one");
@@ -934,7 +936,9 @@ fn scanner_rejects_sequence_gap_duplicate_or_missing_begin() {
     assert_journal_corrupt(&store);
 
     let (workspace, store, _initial) = initialized_store();
-    let directory = workspace.path().join(".dokploy/projects/shop/journal");
+    let directory = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/journal");
     fs::create_dir(&directory).expect("journal directory must be created");
     fs::write(
         directory.join(format!("{}.jsonl", Uuid::new_v4())),
@@ -994,7 +998,11 @@ fn journal_directory_and_file_are_owner_only() {
     let journal_path = begin_and_drop(&store, &workspace);
 
     assert_eq!(
-        mode(&workspace.path().join(".dokploy/projects/shop/journal")),
+        mode(
+            &workspace
+                .path()
+                .join(".dokploy/state/projects/shop/journal")
+        ),
         0o700
     );
     assert_eq!(mode(&journal_path), 0o600);
@@ -1093,12 +1101,12 @@ fn application_state(remote: &str, description: &str) -> ResourceState {
 
 fn journal_path(workspace: &Path, operation_id: Uuid) -> PathBuf {
     workspace
-        .join(".dokploy/projects/shop/journal")
+        .join(".dokploy/state/projects/shop/journal")
         .join(format!("{operation_id}.jsonl"))
 }
 
 fn journal_bytes(workspace: &Path) -> String {
-    let path = fs::read_dir(workspace.join(".dokploy/projects/shop/journal"))
+    let path = fs::read_dir(workspace.join(".dokploy/state/projects/shop/journal"))
         .expect("journal directory must exist")
         .next()
         .expect("journal file must exist")
@@ -1119,6 +1127,9 @@ fn append(path: &Path, bytes: &[u8]) {
 fn write_state_directly(workspace: &Path, state: &StateFile) {
     let mut bytes = serde_json::to_vec_pretty(state).expect("state must serialize");
     bytes.push(b'\n');
-    fs::write(workspace.join(".dokploy/projects/shop/state.json"), bytes)
-        .expect("non-cooperating writer must replace state");
+    fs::write(
+        workspace.join(".dokploy/state/projects/shop/state.json"),
+        bytes,
+    )
+    .expect("non-cooperating writer must replace state");
 }

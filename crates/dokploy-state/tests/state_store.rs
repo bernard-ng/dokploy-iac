@@ -30,13 +30,13 @@ fn initializes_absent_state_without_a_backup() {
     assert!(
         workspace
             .path()
-            .join(".dokploy/projects/shop/state.json")
+            .join(".dokploy/state/projects/shop/state.json")
             .is_file()
     );
     assert!(
         !workspace
             .path()
-            .join(".dokploy/projects/shop/state.backup.json")
+            .join(".dokploy/state/projects/shop/state.backup.json")
             .exists()
     );
 }
@@ -45,7 +45,9 @@ fn initializes_absent_state_without_a_backup() {
 fn initialization_refuses_to_replace_existing_state() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -69,7 +71,7 @@ fn initialization_refuses_to_replace_existing_state() {
     assert!(
         !workspace
             .path()
-            .join(".dokploy/projects/shop/state.backup.json")
+            .join(".dokploy/state/projects/shop/state.backup.json")
             .exists()
     );
 }
@@ -78,10 +80,12 @@ fn initialization_refuses_to_replace_existing_state() {
 fn checkpoint_backs_up_current_bytes_before_replacing_primary() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let backup_path = workspace
         .path()
-        .join(".dokploy/projects/shop/state.backup.json");
+        .join(".dokploy/state/projects/shop/state.backup.json");
     let initial = initial_state();
 
     store
@@ -114,10 +118,12 @@ fn checkpoint_backs_up_current_bytes_before_replacing_primary() {
 fn stale_competing_snapshot_leaves_primary_and_backup_unchanged() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let backup_path = workspace
         .path()
-        .join(".dokploy/projects/shop/state.backup.json");
+        .join(".dokploy/state/projects/shop/state.backup.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -183,7 +189,7 @@ fn writer_lock_is_fail_fast_and_released_by_drop() {
 #[test]
 fn malformed_primary_is_not_treated_as_absent_or_overwritten() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy/projects/shop");
+    let state_directory = workspace.path().join(".dokploy/state/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     let state_path = state_directory.join("state.json");
     let evidence = b"{ malformed state evidence\n";
@@ -212,7 +218,7 @@ fn malformed_primary_is_not_treated_as_absent_or_overwritten() {
 #[test]
 fn orphan_backup_fails_closed_without_overwriting_evidence() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy/projects/shop");
+    let state_directory = workspace.path().join(".dokploy/state/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     let backup_path = state_directory.join("state.backup.json");
     let evidence = b"previous durable state\n";
@@ -240,7 +246,7 @@ fn orphan_backup_fails_closed_without_overwriting_evidence() {
 #[test]
 fn oversized_state_is_rejected_before_parsing() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy/projects/shop");
+    let state_directory = workspace.path().join(".dokploy/state/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     fs::write(state_directory.join("state.json"), b"123456789")
         .expect("oversized state must be written");
@@ -269,7 +275,9 @@ fn oversized_proposed_state_is_rejected_before_backup_or_primary_changes() {
         initial_size + 128,
     )
     .expect("state store must bind to the workspace");
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     store
         .begin_write()
         .expect("the write lock must be acquired")
@@ -297,7 +305,7 @@ fn oversized_proposed_state_is_rejected_before_backup_or_primary_changes() {
     assert!(
         !workspace
             .path()
-            .join(".dokploy/projects/shop/state.backup.json")
+            .join(".dokploy/state/projects/shop/state.backup.json")
             .exists()
     );
 }
@@ -305,7 +313,7 @@ fn oversized_proposed_state_is_rejected_before_backup_or_primary_changes() {
 #[test]
 fn duplicate_resource_addresses_are_rejected_at_the_json_boundary() {
     let workspace = tempdir().expect("temporary workspace must be created");
-    let state_directory = workspace.path().join(".dokploy/projects/shop");
+    let state_directory = workspace.path().join(".dokploy/state/projects/shop");
     fs::create_dir_all(&state_directory).expect("state directory must be created");
     let mut state = initial_state();
     add_application(&mut state, "api");
@@ -346,10 +354,12 @@ fn duplicate_resource_addresses_are_rejected_at_the_json_boundary() {
 fn invalid_proposed_revision_is_rejected_before_backup_or_primary_changes() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let backup_path = workspace
         .path()
-        .join(".dokploy/projects/shop/state.backup.json");
+        .join(".dokploy/state/projects/shop/state.backup.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -386,7 +396,9 @@ fn invalid_proposed_revision_is_rejected_before_backup_or_primary_changes() {
 fn proposed_lineage_mismatch_is_rejected_before_writes() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -412,7 +424,7 @@ fn proposed_lineage_mismatch_is_rejected_before_writes() {
     assert!(
         !workspace
             .path()
-            .join(".dokploy/projects/shop/state.backup.json")
+            .join(".dokploy/state/projects/shop/state.backup.json")
             .exists()
     );
 }
@@ -421,7 +433,9 @@ fn proposed_lineage_mismatch_is_rejected_before_writes() {
 fn expected_and_proposed_instance_mismatches_are_rejected_before_writes() {
     let workspace = tempdir().expect("temporary workspace must be created");
     let store = state_store(workspace.path());
-    let state_path = workspace.path().join(".dokploy/projects/shop/state.json");
+    let state_path = workspace
+        .path()
+        .join(".dokploy/state/projects/shop/state.json");
     let initial = initial_state();
     store
         .begin_write()
@@ -467,7 +481,7 @@ fn expected_and_proposed_instance_mismatches_are_rejected_before_writes() {
     assert!(
         !workspace
             .path()
-            .join(".dokploy/projects/shop/state.backup.json")
+            .join(".dokploy/state/projects/shop/state.backup.json")
             .exists()
     );
 }
@@ -532,8 +546,10 @@ fn checkpoint_revalidates_state_directory_after_lock_acquisition() {
     let mut session = store
         .begin_write()
         .expect("the write lock must be acquired");
-    let state_directory = workspace.path().join(".dokploy/projects/shop");
-    let displaced = workspace.path().join(".dokploy/projects/shop-displaced");
+    let state_directory = workspace.path().join(".dokploy/state/projects/shop");
+    let displaced = workspace
+        .path()
+        .join(".dokploy/state/projects/shop-displaced");
     fs::rename(&state_directory, &displaced).expect("state directory must move");
     fs::create_dir(&state_directory).expect("replacement directory must be created");
 
@@ -561,7 +577,9 @@ fn symlinked_state_artifact_is_rejected_during_inspection_and_checkpoint() {
         .expect("the write lock must be acquired");
     symlink(
         &outside_state,
-        workspace.path().join(".dokploy/projects/shop/state.json"),
+        workspace
+            .path()
+            .join(".dokploy/state/projects/shop/state.json"),
     )
     .expect("state artifact symlink must be created");
 
@@ -603,12 +621,17 @@ fn state_directory_and_artifacts_use_owner_only_permissions() {
         .expect("state must checkpoint");
 
     assert_eq!(
-        mode(&workspace.path().join(".dokploy/projects/shop")),
+        mode(&workspace.path().join(".dokploy/state/projects/shop")),
         0o700
     );
     for name in ["state.json", "state.backup.json", "state.lock"] {
         assert_eq!(
-            mode(&workspace.path().join(".dokploy/projects/shop").join(name)),
+            mode(
+                &workspace
+                    .path()
+                    .join(".dokploy/state/projects/shop")
+                    .join(name)
+            ),
             0o600
         );
     }

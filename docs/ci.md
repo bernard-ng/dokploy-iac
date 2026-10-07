@@ -44,7 +44,7 @@ an explicit policy review.
 Headless reconciliation that resolves sensitive values must set
 `DOKPLOY_FINGERPRINT_KEY` from a masked secret. The value format is
 `<non-nil UUID>:<64 lowercase hexadecimal characters>`. The same value and the
-same protected `.dokploy` workspace state must be reused between planning and
+same protected `.dokploy/state` workspace state must be reused between planning and
 apply; a plan artifact alone does not replace either input.
 
 The example [plan workflow](../.github/examples/dokploy-plan.yml) treats exit

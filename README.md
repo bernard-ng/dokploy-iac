@@ -17,11 +17,13 @@ the dashboard: Docker Compose, but for Dokploy itself.
 
 ```
 workspace/
-  dokploy.workspace.yaml     documents and their order
-  settings.yaml              servers, registries, destinations, notifications, web server, ...
-  projects/leganews.yaml     environments, services, domains, env vars, backups, ...
-  files/                     compose files, configs, scripts
-  secrets/                   dotenv files, git-ignored
+  dokploy.workspace.yaml       the only public Dokploy entry point
+  .dokploy/
+    settings.yaml              servers, registries, destinations, notifications, web server, ...
+    projects/leganews.yaml     environments, services, domains, env vars, backups, ...
+    files/                     compose files, configs, scripts
+    secrets/                   dotenv files, git-ignored
+    state/                     state, journals, and locks by document
 ```
 
 ```bash

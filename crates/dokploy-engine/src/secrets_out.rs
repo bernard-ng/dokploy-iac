@@ -1,7 +1,7 @@
 //! Writing secrets out of Dokploy into the workspace (ADR 0010).
 //!
 //! An importer reads secret values in memory and has to put them somewhere the document can name
-//! with a `file` source. This is where: a directory below the workspace (`secrets/` by default),
+//! with a `file` source. This is where: a directory below the workspace (`.dokploy/secrets/` by default),
 //! files created with mode 0600 in directories with mode 0700, and a `.gitignore` that keeps the
 //! directory out of the repository, so the values are on the operator's disk and nowhere else.
 //! No error here ever holds a value.
@@ -16,7 +16,7 @@ use zeroize::Zeroizing;
 use crate::dotenv::Variable;
 
 /// The directory secrets go to unless the operator names another.
-pub const DEFAULT_SECRETS_DIRECTORY: &str = "secrets";
+pub const DEFAULT_SECRETS_DIRECTORY: &str = ".dokploy/secrets";
 
 /// A secret that could not be written.
 #[derive(Debug, Error)]

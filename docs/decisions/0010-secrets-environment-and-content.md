@@ -34,7 +34,7 @@ fields.
 
 ```yaml
 password: { env: PG_PASSWORD }                 # process environment
-password: { file: secrets/pg.password }        # a file, workspace-relative
+password: { file: .dokploy/secrets/pg.password } # a file, workspace-relative
 token:    { vault: { provider: infisical, secret: API_TOKEN } }   # Dokploy resolves it
 image:    registry.example.com/app:1.2         # public literal
 ```
@@ -51,7 +51,7 @@ variable or file fails the command before any change.
 
 `environment` is a map from name to value, where a value is `{value: ...}` (public),
 `{secret: <source>}`, or `{vault: ...}`; a bare string is shorthand for `value`.
-For long lists, `env_file: { file: secrets/staging/api.env }` expands a dotenv file
+For long lists, `env_file: { file: .dokploy/secrets/staging/api.env }` expands a dotenv file
 into the map; entries written explicitly win. Values that come from a file or
 `env` are **secret by default**; `env_file: { file: ..., public: true }` declares
 the file non-secret. Plans name the keys that change and never their values.
@@ -85,13 +85,13 @@ by an update (captured on 0.30.6 and 0.30.7). A content property Dokploy does no
 application's Traefik file) is not compared, so a change made there is not seen. The value of each
 environment variable is compared the same way, from the text Dokploy holds for the block. `plan --show-content` prints
 a unified diff because the local file is already on disk. Import writes content to
-`files/` by default. A secret scanner (pattern and entropy) warns when imported
+`.dokploy/files/` by default. A secret scanner (pattern and entropy) warns when imported
 content looks like it embeds credentials and offers `--content-secrets=extract` to
 move the matches to environment variables.
 
 ### Where secrets live in the repository
 
-By default: `secrets/` directory of dotenv and plain files, written mode 0600,
+By default: `.dokploy/secrets/` directory of dotenv and plain files, written mode 0600,
 with `.gitignore` entries added automatically, never committed. `SecretsWriter` (in the engine)
 does the writing for an importer: private directories and files, atomic, nothing replaced, a path
 that leaves the directory refused, a `.gitignore` inside the directory that ignores everything in it
@@ -115,7 +115,7 @@ address, property path, and value. Rotating the key re-sends every secret once.
    `(?i)(secret|token|key|pass|pwd|credential|dsn|private|auth|salt)` and its value
    is not high-entropy and not a URL with embedded credentials; otherwise **secret**.
 3. Public values are written inline; secret values go to
-   `secrets/<document>/<service>.env` and the document gets an `env_file`.
+   `.dokploy/secrets/<document>/<service>.env` and the document gets an `env_file`.
 
 `--env=inline` writes everything inline (with a warning), `--env=file` puts every
 variable in the dotenv file, `--env=skip` leaves environment unmanaged. The
@@ -125,7 +125,7 @@ classification is conservative and reported; reviewing it is part of the import.
 
 Registry passwords, S3 keys, notification tokens, DNS credentials, SSH private
 keys, Git provider secrets, and vault credentials follow the same path: read on
-import, written to `secrets/settings/*.env`, referenced by `{env: ...}` sources.
+import, written to `.dokploy/secrets/settings/*.env`, referenced by `{env: ...}` sources.
 
 ## Consequences
 

@@ -17,7 +17,8 @@ use crate::{DocumentId, InstanceIdentity, RecoveryStatus, StateFile, StateRevisi
 const DEFAULT_MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
 const DEFAULT_MAX_JOURNAL_BYTES: u64 = 16 * 1024 * 1024;
 const DEFAULT_MAX_JOURNAL_RECORDS: usize = 10_000;
-const STATE_DIRECTORY: &str = ".dokploy";
+const DOKPLOY_DIRECTORY: &str = ".dokploy";
+const STATE_DIRECTORY: &str = "state";
 const STATE_FILE: &str = "state.json";
 const BACKUP_FILE: &str = "state.backup.json";
 const LOCK_FILE: &str = "state.lock";
@@ -73,8 +74,8 @@ impl StateStore {
     /// Binds the state of one document below an existing workspace (ADR 0009).
     ///
     /// Each document has its own directory with its own lock, journal, and backup, so
-    /// a crash while applying one never blocks another: `.dokploy/settings/` for the
-    /// settings document and `.dokploy/projects/<slug>/` for each project.
+    /// a crash while applying one never blocks another: `.dokploy/state/settings/` for the
+    /// settings document and `.dokploy/state/projects/<slug>/` for each project.
     pub fn for_document(
         workspace: impl AsRef<Path>,
         instance: InstanceIdentity,
@@ -105,7 +106,7 @@ impl StateStore {
             return Err(StateStoreError::WorkspaceNotDirectory);
         }
 
-        let mut state_directory = workspace.join(STATE_DIRECTORY);
+        let mut state_directory = workspace.join(DOKPLOY_DIRECTORY).join(STATE_DIRECTORY);
         for component in document.directories() {
             state_directory.push(component);
         }
@@ -245,10 +246,13 @@ impl StateStore {
     }
 
     fn ensure_state_directory(&self) -> Result<DirectoryIdentity, StateStoreError> {
-        // `.dokploy/` first, then each directory below it, each created and hardened
-        // before the next. A document's directory is never reused by another.
+        // `.dokploy/` and `.dokploy/state/` first, then each document directory, each created and
+        // hardened before the next. A document's directory is never reused by another.
         let mut parent = self.workspace.clone();
-        let mut directory = parent.join(STATE_DIRECTORY);
+        let mut directory = parent.join(DOKPLOY_DIRECTORY);
+        self.ensure_directory(&directory, &parent)?;
+        parent = directory;
+        directory = parent.join(STATE_DIRECTORY);
         let mut identity = self.ensure_directory(&directory, &parent)?;
         for component in self.document.directories() {
             parent = directory;

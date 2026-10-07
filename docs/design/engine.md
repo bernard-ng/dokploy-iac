@@ -35,9 +35,10 @@ the first plan to be complete, applyable, and empty. A second inventory must hav
 and containment before the bundle can be persisted.
 
 The bundle holds documents, content and secret artifacts, state, and an unsupported ledger in memory.
-Persistence checks every destination before the first write, refuses existing documents or `.dokploy`
-state, writes secrets through `SecretsWriter`, and removes files created by the call if a later write
-fails. `import all` also writes `dokploy.workspace.yaml`. Environment import can classify likely
+Persistence checks every destination before the first write, refuses an existing `.dokploy`
+directory or manifest, writes secrets through `SecretsWriter`, and removes files created by the call
+if a later write fails. Every import writes `dokploy.workspace.yaml`; documents and artifacts live
+below `.dokploy/`, and durable state lives below `.dokploy/state/`. Environment import can classify likely
 credentials automatically, keep values inline, put every value in files, or leave the field unmanaged.
 The ledger reports deliberate omissions, unsupported fields, and values that do not fit the spec.
 `Engine::import_with_progress` reports redaction-safe inventory and convergence milestones. The CLI

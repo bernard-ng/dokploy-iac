@@ -199,7 +199,7 @@ pub enum ImportCommand {
         #[command(flatten)]
         options: ImportOptions,
     },
-    /// Import settings and every project, plus a workspace manifest.
+    /// Import settings and every project into one manifest-backed workspace.
     All {
         #[command(flatten)]
         options: ImportOptions,
@@ -221,7 +221,7 @@ pub struct ImportOptions {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Workspace-relative directory for imported secret files.
+    /// Directory below `.dokploy/` for imported secret files.
     #[arg(long, default_value = dokploy_engine::DEFAULT_SECRETS_DIRECTORY, value_name = "DIR")]
     pub secrets_out: String,
 }

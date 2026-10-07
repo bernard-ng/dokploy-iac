@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 - Complete M6 with spec-driven `import settings`, `import project <id>`, and `import all`. Import
   allocates deterministic keys, writes secret and content artifacts, reports an unsupported ledger,
   proves every generated document converges before writing, detects topology changes, and persists
-  adopted state without overwriting an existing workspace. `import all` writes a validated workspace
+  adopted state without overwriting an existing workspace. Every import writes a validated workspace
   manifest that `plan --all` reads in order. Add the top-level `adopt` directive for enrolling one
   matching managed resource into existing state while preserving its remote identity. SSO and
   licensing remain outside the beta scope.
@@ -57,7 +57,7 @@ All notable changes to this project will be documented in this file.
   union arm, a variant write group can carry common fields, and a field can name different request
   and response paths. The engine, simulator, ledger, and conformance harness all follow those rules.
 - `env_file` for the application and the Compose (milestone M4, [ADR 0010](docs/decisions/0010-secrets-environment-and-content.md)):
-  `env_file: { file: secrets/api.env }` adds the variables of a dotenv file to `environment`, the
+  `env_file: { file: .dokploy/secrets/api.env }` adds the variables of a dotenv file to `environment`, the
   entries the map writes win, and the values are fingerprinted like any other and never reach state.
   A spec opts in with the new `file_key` attribute of an `env` field (a spec-grammar addition).
   Problems in the file are named by line, never by value. The vision ratchet's project list is empty.
@@ -125,6 +125,12 @@ All notable changes to this project will be documented in this file.
   ports, schedules, mounts, redirects, backups, volume backups, and basic-auth entries.
 
 ### Changed
+
+- **Breaking: imported workspaces expose only `dokploy.workspace.yaml` at their root.** Documents,
+  content, and secrets now live below `.dokploy/`, while state, journals, and locks live below
+  `.dokploy/state/`. Manifest document paths must point below `.dokploy/`, and custom import secret
+  directories must stay there. This prevents collisions with application-owned `settings.yaml`,
+  `projects/`, `files/`, and `secrets/` paths.
 
 - Milestone M2 is complete ([`docs/design/cost-gate.md`](docs/design/cost-gate.md)): `tag`,
   `registry`, and `redirect` run end to end with no per-kind Rust or test code (specs of 42, 66, and
@@ -463,7 +469,7 @@ All notable changes to this project will be documented in this file.
 
 - Add a second document type for instance settings. A file with a top-level
   `settings:` key (default `dokploy.settings.yaml`) is planned, applied,
-  recovered, and inspected against its own state lineage in `.dokploy/settings/`,
+  recovered, and inspected against its own state lineage in `.dokploy/state/settings/`,
   so it never blocks or reads project state. A document with both `project:` and
   `settings:` is rejected with `DOKCFG070`. `dokploy init --settings` writes a
   starter, `dokploy schema --document settings` prints its schema, and

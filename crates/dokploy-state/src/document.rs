@@ -28,7 +28,7 @@ impl DocumentId {
         }
     }
 
-    /// Returns the directories below `.dokploy/` that hold this document's state.
+    /// Returns the directories below `.dokploy/state/` that hold this document's state.
     pub(crate) fn directories(&self) -> Vec<String> {
         match self {
             Self::Settings => vec!["settings".to_owned()],

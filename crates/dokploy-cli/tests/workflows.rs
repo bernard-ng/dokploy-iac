@@ -324,7 +324,7 @@ async fn import_all_then_plan_all_is_empty_for_the_workspace() {
         "{diagnostics}"
     );
     assert!(
-        diagnostics.contains("Import: proving convergence [1/2] settings.yaml"),
+        diagnostics.contains("Import: proving convergence [1/2] .dokploy/settings.yaml"),
         "{diagnostics}"
     );
     assert!(
@@ -365,14 +365,30 @@ async fn import_all_then_plan_all_is_empty_for_the_workspace() {
     assert_eq!(status, CommandStatus::Success);
     let output = String::from_utf8(output).unwrap();
     assert!(
-        output.contains("settings.yaml:\nPlan: 0 change(s), 0 drift record(s)"),
+        output.contains(".dokploy/settings.yaml:\nPlan: 0 change(s), 0 drift record(s)"),
         "{output}"
     );
     assert!(
-        output.contains("projects/portal.yaml:\nPlan: 0 change(s), 0 drift record(s)"),
+        output.contains(".dokploy/projects/portal.yaml:\nPlan: 0 change(s), 0 drift record(s)"),
         "{output}"
     );
     assert!(fixture.sim.mutations().is_empty());
+}
+
+#[test]
+fn workspace_manifest_refuses_public_document_paths() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("dokploy.workspace.yaml"),
+        "version: 1\ndocuments:\n  - settings.yaml\n",
+    )
+    .unwrap();
+
+    let error = WorkspaceManifest::load(directory.path())
+        .err()
+        .expect("a public document path is refused");
+
+    assert!(format!("{error:?}").contains("must be below `.dokploy/`"));
 }
 
 #[tokio::test]

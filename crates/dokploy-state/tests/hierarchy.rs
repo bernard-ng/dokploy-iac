@@ -478,8 +478,8 @@ fn store(workspace: &std::path::Path, document: DocumentId) -> StateStore {
 fn every_document_has_its_own_directory() {
     let workspace = tempdir().unwrap();
     let cases = [
-        (DocumentId::Settings, ".dokploy/settings"),
-        (project("shop"), ".dokploy/projects/shop"),
+        (DocumentId::Settings, ".dokploy/state/settings"),
+        (project("shop"), ".dokploy/state/projects/shop"),
     ];
     for (document, directory) in cases {
         let store = store(workspace.path(), document.clone());
@@ -528,10 +528,12 @@ fn a_store_refuses_state_recorded_for_another_document() {
         .unwrap();
 
     // The shop file is copied into the blog directory by hand.
-    let blog_directory = workspace.path().join(".dokploy/projects/blog");
+    let blog_directory = workspace.path().join(".dokploy/state/projects/blog");
     fs::create_dir_all(&blog_directory).unwrap();
     fs::copy(
-        workspace.path().join(".dokploy/projects/shop/state.json"),
+        workspace
+            .path()
+            .join(".dokploy/state/projects/shop/state.json"),
         blog_directory.join("state.json"),
     )
     .unwrap();

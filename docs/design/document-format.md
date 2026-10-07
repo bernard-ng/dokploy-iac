@@ -92,17 +92,19 @@ of something nothing tracks does nothing.
 
 ## Workspace manifest
 
-`dokploy import all` writes one settings document, one document per project, and this manifest:
+An import writes this root manifest as the workspace's only public Dokploy entry point. `import all`
+adds one settings document and one document per project below `.dokploy/`:
 
 ```yaml
 version: 1
 documents:
-  - settings.yaml
-  - projects/customer-portal.yaml
+  - .dokploy/settings.yaml
+  - .dokploy/projects/customer-portal.yaml
 ```
 
-Manifest paths are unique, relative paths below the workspace. `dokploy plan --all` reads them in
-the listed order while keeping files, secrets, and per-document state relative to the workspace root.
+Manifest paths are unique paths below the workspace's `.dokploy/` directory. `dokploy plan --all`
+reads them in the listed order while keeping content in `.dokploy/files/`, secrets in
+`.dokploy/secrets/`, and per-document state in `.dokploy/state/`.
 
 An `env` field that its spec gives a `file_key` accepts that key beside it: `env_file: { file: path }`
 or `{ file: path, public: true }` (ADR 0010). The model records the path (`Resource::env_files`) and

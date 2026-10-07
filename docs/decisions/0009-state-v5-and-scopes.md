@@ -28,8 +28,8 @@ protection flag, last-applied non-sensitive inputs, keyed fingerprints for
 permissions, the advisory writer lock, and the operation journal with recoverable
 steps.
 
-**Layout.** One directory per document under `.dokploy/`:
-`.dokploy/settings/` and `.dokploy/projects/<slug>/`. Lock, journal, and backup are
+**Layout.** One directory per document under `.dokploy/state/`:
+`.dokploy/state/settings/` and `.dokploy/state/projects/<slug>/`. Lock, journal, and backup are
 per directory, so a crash while applying one project never blocks another.
 
 **What state never holds.** Secret values, secret-derived text, file contents,

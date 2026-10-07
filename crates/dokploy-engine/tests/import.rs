@@ -102,7 +102,10 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
             .iter()
             .map(|document| document.path())
             .collect::<Vec<_>>(),
-        ["settings.yaml", "projects/customer-portal.yaml"]
+        [
+            ".dokploy/settings.yaml",
+            ".dokploy/projects/customer-portal.yaml"
+        ]
     );
     let settings = bundle.documents()[0].render();
     let project = bundle.documents()[1].render();
@@ -136,7 +139,7 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
         bundle
             .files()
             .iter()
-            .any(|file| file.path().starts_with("secrets/settings/"))
+            .any(|file| file.path().starts_with(".dokploy/secrets/settings/"))
     );
     assert_eq!(
         bundle
@@ -148,7 +151,7 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
     );
     assert_eq!(
         bundle.manifest(),
-        "version: 1\ndocuments:\n  - settings.yaml\n  - projects/customer-portal.yaml\n"
+        "version: 1\ndocuments:\n  - .dokploy/settings.yaml\n  - .dokploy/projects/customer-portal.yaml\n"
     );
     assert!(
         bundle
@@ -160,6 +163,10 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
 
     let destination = tempfile::tempdir().unwrap();
     let workspace = destination.path().join("workspace");
+    std::fs::create_dir_all(workspace.join("projects")).unwrap();
+    std::fs::create_dir_all(workspace.join("files")).unwrap();
+    std::fs::create_dir_all(workspace.join("secrets")).unwrap();
+    std::fs::write(workspace.join("settings.yaml"), "application settings").unwrap();
     bundle
         .persist(&workspace)
         .expect("the proved bundle persists");
@@ -167,16 +174,24 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
         std::fs::read_to_string(workspace.join("dokploy.workspace.yaml")).unwrap(),
         bundle.manifest()
     );
-    assert!(workspace.join(".dokploy/settings/state.json").is_file());
     assert!(
         workspace
-            .join(".dokploy/projects/customer-portal/state.json")
+            .join(".dokploy/state/settings/state.json")
             .is_file()
     );
     assert!(
-        std::fs::read_to_string(workspace.join("settings.yaml"))
+        workspace
+            .join(".dokploy/state/projects/customer-portal/state.json")
+            .is_file()
+    );
+    assert!(
+        std::fs::read_to_string(workspace.join(".dokploy/settings.yaml"))
             .unwrap()
             .contains("password:\n        file:")
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("settings.yaml")).unwrap(),
+        "application settings"
     );
     assert!(
         bundle
@@ -253,10 +268,14 @@ async fn project_import_allocates_a_domain_key_from_its_host() {
         document.contains("domains:\n            api-example-test:"),
         "{document}"
     );
+    assert_eq!(
+        bundle.manifest(),
+        "version: 1\ndocuments:\n  - .dokploy/projects/shop.yaml\n"
+    );
 }
 
 #[tokio::test]
-async fn import_rejects_a_secret_directory_outside_the_workspace_before_inventory() {
+async fn import_rejects_a_secret_directory_outside_dot_dokploy_before_inventory() {
     let specs = Arc::new(common::specs());
     let sim = Sim::new(specs);
     let engine = common::engine(&sim);
@@ -273,9 +292,27 @@ async fn import_rejects_a_secret_directory_outside_the_workspace_before_inventor
         .await
         .expect_err("secret output stays below the workspace");
 
-    assert!(error.to_string().contains("workspace-relative"));
+    assert!(error.to_string().contains("below `.dokploy/`"));
     assert!(
         sim.requests().is_empty(),
         "validation runs before inventory"
+    );
+
+    let error = engine
+        .import(
+            ImportSelection::All,
+            &engine.fingerprinter(common::key()),
+            &ImportOptions {
+                secrets_directory: "secrets".to_owned(),
+                ..ImportOptions::default()
+            },
+        )
+        .await
+        .expect_err("secret output stays below the private Dokploy directory");
+
+    assert!(error.to_string().contains("below `.dokploy/`"));
+    assert!(
+        sim.requests().is_empty(),
+        "layout validation runs before inventory"
     );
 }

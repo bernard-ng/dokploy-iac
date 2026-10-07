@@ -52,13 +52,13 @@ under another document, and refuses to write one.
 
 ## Layout
 
-One directory per document under `.dokploy/`, each with its own lock, journal, and backup, so a
+One directory per document under `.dokploy/state/`, each with its own lock, journal, and backup, so a
 crash while applying one project never blocks another:
 
 | Document | Directory |
 |----------|-----------|
-| `settings` | `.dokploy/settings/` |
-| `project.<slug>` | `.dokploy/projects/<slug>/` |
+| `settings` | `.dokploy/state/settings/` |
+| `project.<slug>` | `.dokploy/state/projects/<slug>/` |
 
 ## What state holds
 

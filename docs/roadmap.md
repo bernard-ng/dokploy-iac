@@ -159,7 +159,9 @@ unrepresentable values are reported by category. SSO and licensing remain outsid
 Before writing, import renders, parses, compiles, and proves that each document has an empty first
 plan, then repeats the inventory to detect topology changes. Persistence preflights every destination,
 refuses an existing document or state directory, and rolls back files created by a failed write.
-`import all` writes `dokploy.workspace.yaml`, and `dokploy plan --all` plans its documents in order.
+Every import writes `dokploy.workspace.yaml` as the public entry point and keeps its documents,
+artifacts, secrets, and state below `.dokploy/`. `dokploy plan --all` plans the manifest documents in
+order.
 The simulator acceptance test imports settings and a nested project, loads the manifest, and proves
 that every plan is empty without sending a mutation. The top-level `adopt` directive enrolls one
 matching managed resource into an existing workspace while preserving its remote identity.
@@ -213,7 +215,7 @@ commit `96cab73`.
 
 1. Children nest under their service; addresses are hierarchical (ADRs 0005, 0006).
 2. Key, remote name, and `app_name` are separate (ADR 0006).
-3. Secrets: git-ignored `secrets/` dotenv files plus `env` and `vault` sources (ADR 0010).
+3. Secrets: git-ignored `.dokploy/secrets/` dotenv files plus `env` and `vault` sources (ADR 0010).
 4. Beta kinds: members, custom roles, SSO, and the other identity features are out
    for now; AI providers stay in (ADR 0001).
 5. Deploy is its own verb with a per-resource policy (ADR 0012).
