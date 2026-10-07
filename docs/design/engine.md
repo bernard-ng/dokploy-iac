@@ -40,6 +40,8 @@ state, writes secrets through `SecretsWriter`, and removes files created by the 
 fails. `import all` also writes `dokploy.workspace.yaml`. Environment import can classify likely
 credentials automatically, keep values inline, put every value in files, or leave the field unmanaged.
 The ledger reports deliberate omissions, unsupported fields, and values that do not fit the spec.
+`Engine::import_with_progress` reports redaction-safe inventory and convergence milestones. The CLI
+writes them to its diagnostic stream and flushes every line, leaving structured result output clean.
 
 Fingerprints are an HMAC-SHA-256 over instance, address, path, and value, checked against an
 independently computed vector, so a change to the framing cannot pass by agreeing with itself.

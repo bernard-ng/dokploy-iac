@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Show line-based import progress for both inventory passes, document construction and convergence
+  checks, and workspace persistence. Progress uses the diagnostic stream so structured command output
+  remains machine-readable.
+
 - Complete M6 with spec-driven `import settings`, `import project <id>`, and `import all`. Import
   allocates deterministic keys, writes secret and content artifacts, reports an unsupported ledger,
   proves every generated document converges before writing, detects topology changes, and persists

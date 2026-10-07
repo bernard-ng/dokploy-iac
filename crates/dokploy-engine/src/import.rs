@@ -58,6 +58,49 @@ pub enum EnvironmentImportMode {
     Skip,
 }
 
+/// The inventory pass currently reading Dokploy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImportInventoryPass {
+    /// The first pass used to construct the imported documents.
+    Initial,
+    /// The final pass used to prove that the remote topology stayed stable.
+    Verification,
+}
+
+/// A redaction-safe import milestone suitable for terminal and CI progress output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImportProgress {
+    /// A remote inventory pass is about to begin.
+    InventoryStarted {
+        /// Why the inventory is running.
+        pass: ImportInventoryPass,
+        /// Number of resource kinds that will be visited.
+        total_kinds: usize,
+    },
+    /// One resource kind is about to be read from Dokploy.
+    InventoryKind {
+        /// Why the inventory is running.
+        pass: ImportInventoryPass,
+        /// One-based position of this kind in the pass.
+        current: usize,
+        /// Number of resource kinds in the pass.
+        total: usize,
+        /// Declarative kind name. Remote identities and values are never included.
+        kind: String,
+    },
+    /// The importer is converting the inventory into canonical documents.
+    BuildingDocuments,
+    /// One generated document is about to be compiled and checked for convergence.
+    ProvingDocument {
+        /// One-based position of this document in the proof.
+        current: usize,
+        /// Number of documents in the proof.
+        total: usize,
+        /// Workspace-relative document path.
+        path: String,
+    },
+}
+
 /// Import behavior that does not depend on the destination filesystem.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportOptions {
@@ -481,15 +524,37 @@ impl<T: Transport> Engine<T> {
         fingerprinter: &Fingerprinter,
         options: &ImportOptions,
     ) -> Result<ImportBundle, ImportError> {
+        self.import_with_progress(selection, fingerprinter, options, |_| {})
+            .await
+    }
+
+    /// Inventories and proves an import while reporting redaction-safe progress milestones.
+    pub async fn import_with_progress<F>(
+        &self,
+        selection: ImportSelection,
+        fingerprinter: &Fingerprinter,
+        options: &ImportOptions,
+        mut progress: F,
+    ) -> Result<ImportBundle, ImportError>
+    where
+        F: FnMut(&ImportProgress),
+    {
         if !safe_relative_directory(&options.secrets_directory) {
             return Err(ImportError::SecretsDirectory {
                 path: options.secrets_directory.clone(),
             });
         }
-        let mut nodes = inventory(&self.transport, &self.specs).await?;
+        let mut nodes = inventory(
+            &self.transport,
+            &self.specs,
+            ImportInventoryPass::Initial,
+            &mut progress,
+        )
+        .await?;
         allocate(&self.specs, &mut nodes)?;
         let topology = topology_fingerprint(&nodes);
 
+        progress(&ImportProgress::BuildingDocuments);
         let mut build = BuildContext {
             specs: &self.specs,
             nodes: &nodes,
@@ -500,7 +565,13 @@ impl<T: Transport> Engine<T> {
         let built = build_documents(&selection, &mut build)?;
         let secrets = ArtifactSecrets::new(&build.files);
         let mut documents = Vec::new();
-        for (path, document, ids) in built {
+        let total_documents = built.len();
+        for (index, (path, document, ids)) in built.into_iter().enumerate() {
+            progress(&ImportProgress::ProvingDocument {
+                current: index + 1,
+                total: total_documents,
+                path: path.clone(),
+            });
             let text = document.render();
             let reparsed = self.parse(&text).map_err(|error| ImportError::Generated {
                 path: path.clone(),
@@ -546,7 +617,13 @@ impl<T: Transport> Engine<T> {
             });
         }
 
-        let mut checked = inventory(&self.transport, &self.specs).await?;
+        let mut checked = inventory(
+            &self.transport,
+            &self.specs,
+            ImportInventoryPass::Verification,
+            &mut progress,
+        )
+        .await?;
         allocate(&self.specs, &mut checked)?;
         if topology != topology_fingerprint(&checked) {
             return Err(ImportError::TopologyChanged);
@@ -572,12 +649,23 @@ impl<T: Transport> Engine<T> {
 async fn inventory<T: Transport>(
     transport: &T,
     specs: &dokploy_spec::SpecRegistry,
+    pass: ImportInventoryPass,
+    progress: &mut impl FnMut(&ImportProgress),
 ) -> Result<Vec<RemoteNode>, ImportError> {
     let mut nodes = Vec::new();
     let mut ordered: Vec<&KindSpec> = specs.kinds().collect();
     ordered.sort_by_key(|spec| (kind_depth(specs, &spec.kind), spec.kind.as_str()));
 
-    for spec in ordered {
+    let total_kinds = ordered.len();
+    progress(&ImportProgress::InventoryStarted { pass, total_kinds });
+
+    for (index, spec) in ordered.into_iter().enumerate() {
+        progress(&ImportProgress::InventoryKind {
+            pass,
+            current: index + 1,
+            total: total_kinds,
+            kind: spec.kind.clone(),
+        });
         if let Some(singleton) = &spec.api.read.singleton {
             let mut raw = singleton_read(transport, singleton)
                 .await

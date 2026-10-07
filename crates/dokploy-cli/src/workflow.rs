@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use dokploy_core::Plan;
 use dokploy_engine::{
-    ApplyError, Compiled, Engine, FingerprintKey, ImportOptions, ImportSelection, RecoverError,
-    UnsupportedCategory, WorkspaceSecrets,
+    ApplyError, Compiled, Engine, FingerprintKey, ImportInventoryPass, ImportOptions,
+    ImportProgress, ImportSelection, RecoverError, UnsupportedCategory, WorkspaceSecrets,
 };
 use dokploy_sdk::Transport;
 use dokploy_state::StateStore;
@@ -387,6 +387,52 @@ fn capitalized(word: &str) -> String {
         .unwrap_or_default()
 }
 
+fn write_import_progress(progress: &ImportProgress, output: &mut dyn Write) -> std::io::Result<()> {
+    match progress {
+        ImportProgress::InventoryStarted { pass, total_kinds } => match pass {
+            ImportInventoryPass::Initial => {
+                writeln!(
+                    output,
+                    "Import: reading Dokploy inventory ({total_kinds} kinds)"
+                )?;
+            }
+            ImportInventoryPass::Verification => {
+                writeln!(
+                    output,
+                    "Import: verifying remote topology ({total_kinds} kinds)"
+                )?;
+            }
+        },
+        ImportProgress::InventoryKind {
+            pass,
+            current,
+            total,
+            kind,
+        } => {
+            let action = match pass {
+                ImportInventoryPass::Initial => "Reading",
+                ImportInventoryPass::Verification => "Checking",
+            };
+            writeln!(output, "  [{current}/{total}] {action} {kind}")?;
+        }
+        ImportProgress::BuildingDocuments => {
+            writeln!(output, "Import: building canonical documents")?;
+        }
+        ImportProgress::ProvingDocument {
+            current,
+            total,
+            path,
+        } => {
+            writeln!(
+                output,
+                "Import: proving convergence [{current}/{total}] {path}"
+            )?;
+        }
+    }
+
+    output.flush()
+}
+
 /// `import`: inventory and prove a new workspace, then persist it unless this is a dry run.
 pub async fn import<T: Transport>(
     engine: &Engine<T>,
@@ -404,10 +450,18 @@ pub async fn import<T: Transport>(
         )
         .into_diagnostic()?;
     }
+    let mut progress_error = None;
     let bundle = engine
-        .import(selection, &engine.fingerprinter(key), options)
-        .await
-        .into_diagnostic()?;
+        .import_with_progress(selection, &engine.fingerprinter(key), options, |progress| {
+            if progress_error.is_none() {
+                progress_error = write_import_progress(progress, streams.diagnostics()).err();
+            }
+        })
+        .await;
+    if let Some(error) = progress_error {
+        return Err(error).into_diagnostic();
+    }
+    let bundle = bundle.into_diagnostic()?;
     let documents = bundle.documents().len();
     let resources: usize = bundle
         .documents()
@@ -454,6 +508,8 @@ pub async fn import<T: Transport>(
         )
         .into_diagnostic()?;
     } else {
+        writeln!(streams.diagnostics(), "Import: writing workspace").into_diagnostic()?;
+        streams.diagnostics().flush().into_diagnostic()?;
         bundle.persist(destination).into_diagnostic()?;
         writeln!(
             streams.result(),

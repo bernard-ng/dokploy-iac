@@ -41,8 +41,9 @@ pub use contract::required_at_creation;
 pub use dotenv::DotenvError;
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
 pub use import::{
-    EnvironmentImportMode, ImportBundle, ImportError, ImportOptions, ImportPersistError,
-    ImportSelection, ImportedDocument, ImportedFile, UnsupportedCategory, UnsupportedItem,
+    EnvironmentImportMode, ImportBundle, ImportError, ImportInventoryPass, ImportOptions,
+    ImportPersistError, ImportProgress, ImportSelection, ImportedDocument, ImportedFile,
+    UnsupportedCategory, UnsupportedItem,
 };
 pub use recover::{RecoverError, RecoveryAction, RecoveryPreview, RecoverySummary};
 pub use secrets::{MAX_SOURCE_BYTES, SecretError, SecretReader, WorkspaceSecrets};

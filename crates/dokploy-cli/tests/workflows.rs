@@ -310,10 +310,42 @@ async fn import_all_then_plan_all_is_empty_for_the_workspace() {
     .await
     .expect("import succeeds");
     assert_eq!(status, CommandStatus::Success);
+    let result = String::from_utf8(result).unwrap();
+    assert!(result.contains("Import complete"));
+    assert!(!result.contains("Import: reading"), "{result}");
+
+    let diagnostics = String::from_utf8(diagnostics).unwrap();
     assert!(
-        String::from_utf8(result)
-            .unwrap()
-            .contains("Import complete")
+        diagnostics.contains("Import: reading Dokploy inventory"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("Import: building canonical documents"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("Import: proving convergence [1/2] settings.yaml"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("Import: verifying remote topology"),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics
+            .lines()
+            .any(|line| line.starts_with("  [") && line.contains(" Reading ")),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics
+            .lines()
+            .any(|line| line.starts_with("  [") && line.contains(" Checking ")),
+        "{diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("Import: writing workspace"),
+        "{diagnostics}"
     );
 
     let manifest = WorkspaceManifest::load(&destination).expect("manifest loads");
