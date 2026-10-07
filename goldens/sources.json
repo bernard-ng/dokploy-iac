@@ -262,6 +262,14 @@
       "reason": "Imperative command catalog; carries over."
     },
     {
+      "path": "crates/dokploy-cli/src/compatibility.rs",
+      "reason": "The v2 runtime version policy; not legacy."
+    },
+    {
+      "path": "crates/dokploy-cli/src/doctor.rs",
+      "reason": "The v2 diagnostic command; not legacy."
+    },
+    {
       "path": "crates/dokploy-cli/tests/",
       "reason": "The v2 command and workflow tests; not legacy."
     }

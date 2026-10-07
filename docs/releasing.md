@@ -23,7 +23,8 @@ commit hashes. The cargo-dist installer URL is pinned to version 0.33.0.
 
 ## Prepare and publish
 
-1. Update the crate version and changelog in the release commit.
+1. Update the crate version and changelog in the release commit. The first beta uses
+   `0.1.0-beta.1` and tag `v0.1.0-beta.1`.
 2. Regenerate and verify the release workflow with the pinned cargo-dist
    version.
 3. Merge the release commit, then push a version tag such as `v0.2.0` whose

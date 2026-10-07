@@ -104,6 +104,7 @@ impl WorkspaceManifest {
 /// A document file and the directory that owns its state.
 pub struct Workspace {
     pub(crate) directory: PathBuf,
+    file: PathBuf,
     text: String,
 }
 
@@ -142,7 +143,11 @@ impl Workspace {
             ));
         }
 
-        Ok(Self { directory, text })
+        Ok(Self {
+            directory,
+            file: canonical,
+            text,
+        })
     }
 
     /// Reads a manifest-owned document while keeping file, content, secret, and state paths
@@ -174,7 +179,17 @@ impl Workspace {
             ));
         }
 
-        Ok(Self { directory, text })
+        Ok(Self {
+            directory,
+            file: canonical,
+            text,
+        })
+    }
+
+    /// Canonical path of the document file.
+    #[must_use]
+    pub fn file(&self) -> &Path {
+        &self.file
     }
 
     /// Parses and validates the document against the kind specs.

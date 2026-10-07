@@ -1,9 +1,11 @@
 //! Presentation and local configuration for the `dokploy` command-line interface.
 
 pub mod cli;
+mod compatibility;
 pub mod config;
 pub mod credentials;
 mod declarative;
+mod doctor;
 mod fingerprint_key;
 mod imperative;
 mod imperative_generated;
@@ -120,6 +122,7 @@ async fn execute_inner(
     let Cli {
         url,
         api_key,
+        allow_unsupported_version,
         command,
     } = cli;
 
@@ -127,6 +130,8 @@ async fn execute_inner(
         Command::Init { .. }
         | Command::Schema { .. }
         | Command::Validate { .. }
+        | Command::Coverage { .. }
+        | Command::Fmt { .. }
         | Command::Completions { .. } => {
             unreachable!("offline commands return before connection dispatch")
         }
@@ -150,9 +155,19 @@ async fn execute_inner(
                 }
                 ImportCommand::All { options } => (dokploy_engine::ImportSelection::All, options),
             };
-            let client = client(url, api_key, config, credentials)?;
+            let (client, server_version) = checked_client(
+                url,
+                api_key,
+                config,
+                credentials,
+                compatibility::Policy::new(compatibility::Access::Read, allow_unsupported_version),
+                streams.diagnostics(),
+            )
+            .await?;
             let specs = dokploy_spec::embedded().into_diagnostic()?;
-            let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+            let engine = dokploy_engine::Engine::new(specs, client)
+                .into_diagnostic()?
+                .with_server_version(server_version);
             let key = fingerprint_key::load(engine.instance())?;
             let environment = match options.env {
                 ImportEnvironment::Auto => dokploy_engine::EnvironmentImportMode::Auto,
@@ -195,9 +210,22 @@ async fn execute_inner(
             detailed_exitcode,
         } => {
             if all || file.is_none() {
-                let client = client(url, api_key, config, credentials)?;
+                let (client, server_version) = checked_client(
+                    url,
+                    api_key,
+                    config,
+                    credentials,
+                    compatibility::Policy::new(
+                        compatibility::Access::Read,
+                        allow_unsupported_version,
+                    ),
+                    streams.diagnostics(),
+                )
+                .await?;
                 let specs = dokploy_spec::embedded().into_diagnostic()?;
-                let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+                let engine = dokploy_engine::Engine::new(specs, client)
+                    .into_diagnostic()?
+                    .with_server_version(server_version);
                 let key = fingerprint_key::load(engine.instance())?;
                 let manifest = workspace::WorkspaceManifest::load(std::path::Path::new("."))?;
 
@@ -213,7 +241,16 @@ async fn execute_inner(
                 .await;
             }
             let file = file.expect("an explicit plan file is present outside workspace mode");
-            let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
+            let (engine, workspace) = connect_checked(
+                url,
+                api_key,
+                config,
+                credentials,
+                &file,
+                compatibility::Policy::new(compatibility::Access::Read, allow_unsupported_version),
+                streams.diagnostics(),
+            )
+            .await?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::plan(
                 workflow::Context {
@@ -236,9 +273,22 @@ async fn execute_inner(
             deploy,
         } => {
             if all || file.is_none() {
-                let client = client(url, api_key, config, credentials)?;
+                let (client, server_version) = checked_client(
+                    url,
+                    api_key,
+                    config,
+                    credentials,
+                    compatibility::Policy::new(
+                        compatibility::Access::Mutate,
+                        allow_unsupported_version,
+                    ),
+                    streams.diagnostics(),
+                )
+                .await?;
                 let specs = dokploy_spec::embedded().into_diagnostic()?;
-                let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+                let engine = dokploy_engine::Engine::new(specs, client)
+                    .into_diagnostic()?
+                    .with_server_version(server_version);
                 let key = fingerprint_key::load(engine.instance())?;
                 let manifest = workspace::WorkspaceManifest::load(std::path::Path::new("."))?;
                 let environment = process_environment();
@@ -280,7 +330,19 @@ async fn execute_inner(
                 return Ok(CommandStatus::Success);
             }
             let file = file.expect("an explicit apply file is present outside workspace mode");
-            let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
+            let (engine, workspace) = connect_checked(
+                url,
+                api_key,
+                config,
+                credentials,
+                &file,
+                compatibility::Policy::new(
+                    compatibility::Access::Mutate,
+                    allow_unsupported_version,
+                ),
+                streams.diagnostics(),
+            )
+            .await?;
             let key = fingerprint_key::load(engine.instance())?;
             let environment = process_environment();
             let mut terminal = workflow::Terminal {
@@ -347,9 +409,22 @@ async fn execute_inner(
                 available: terminal_available,
             };
             if all || file.is_none() {
-                let client = client(url, api_key, config, credentials)?;
+                let (client, server_version) = checked_client(
+                    url,
+                    api_key,
+                    config,
+                    credentials,
+                    compatibility::Policy::new(
+                        compatibility::Access::Mutate,
+                        allow_unsupported_version,
+                    ),
+                    streams.diagnostics(),
+                )
+                .await?;
                 let specs = dokploy_spec::embedded().into_diagnostic()?;
-                let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+                let engine = dokploy_engine::Engine::new(specs, client)
+                    .into_diagnostic()?
+                    .with_server_version(server_version);
                 let key = fingerprint_key::load(engine.instance())?;
                 let manifest = workspace::WorkspaceManifest::load(std::path::Path::new("."))?;
                 return workflow::deploy_all(
@@ -367,7 +442,19 @@ async fn execute_inner(
                 .await;
             }
             let file = file.expect("an explicit deploy file is present outside workspace mode");
-            let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
+            let (engine, workspace) = connect_checked(
+                url,
+                api_key,
+                config,
+                credentials,
+                &file,
+                compatibility::Policy::new(
+                    compatibility::Access::Mutate,
+                    allow_unsupported_version,
+                ),
+                streams.diagnostics(),
+            )
+            .await?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::deploy(
                 workflow::Context {
@@ -384,7 +471,19 @@ async fn execute_inner(
             .await
         }
         Command::Destroy { file, auto_approve } => {
-            let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
+            let (engine, workspace) = connect_checked(
+                url,
+                api_key,
+                config,
+                credentials,
+                &file,
+                compatibility::Policy::new(
+                    compatibility::Access::Mutate,
+                    allow_unsupported_version,
+                ),
+                streams.diagnostics(),
+            )
+            .await?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::apply(
                 workflow::Context {
@@ -405,7 +504,19 @@ async fn execute_inner(
             .await
         }
         Command::Recover { file, auto_approve } => {
-            let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
+            let (engine, workspace) = connect_checked(
+                url,
+                api_key,
+                config,
+                credentials,
+                &file,
+                compatibility::Policy::new(
+                    compatibility::Access::Mutate,
+                    allow_unsupported_version,
+                ),
+                streams.diagnostics(),
+            )
+            .await?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::recover(
                 workflow::Context {
@@ -423,6 +534,11 @@ async fn execute_inner(
             )
             .await
         }
+        Command::Doctor => {
+            let client = client(url, api_key, config, credentials)?;
+            let specs = dokploy_spec::embedded().into_diagnostic()?;
+            doctor::run(&client, &specs, streams.result()).await
+        }
         Command::Api { command } => {
             let invocation = command.into_invocation()?;
             let client = client(url, api_key, config, credentials)?;
@@ -439,6 +555,26 @@ async fn execute_inner(
             Ok(CommandStatus::Success)
         }
     }
+}
+
+async fn checked_client(
+    url: Option<String>,
+    api_key: Option<String>,
+    config: &ConfigRepository,
+    credentials: &dyn CredentialStore,
+    policy: compatibility::Policy,
+    diagnostics: &mut dyn Write,
+) -> Result<(Dokploy, Option<String>)> {
+    let client = client(url, api_key, config, credentials)?;
+    let server_version = compatibility::enforce(
+        &client,
+        policy.access,
+        policy.allow_unsupported,
+        diagnostics,
+    )
+    .await?;
+
+    Ok((client, server_version))
 }
 
 fn process_environment() -> workflow::Environment {
@@ -469,18 +605,23 @@ fn client(
         .into_diagnostic()
 }
 
-/// The engine over the connection, and the document it will work on.
-fn connect(
+/// The checked engine over the connection, and the document it will work on.
+async fn connect_checked(
     url: Option<String>,
     api_key: Option<String>,
     config: &ConfigRepository,
     credentials: &dyn CredentialStore,
     file: &std::path::Path,
+    policy: compatibility::Policy,
+    diagnostics: &mut dyn Write,
 ) -> Result<(dokploy_engine::Engine<Dokploy>, workspace::Workspace)> {
     let workspace = workspace::Workspace::load(file)?;
-    let client = client(url, api_key, config, credentials)?;
+    let (client, server_version) =
+        checked_client(url, api_key, config, credentials, policy, diagnostics).await?;
     let specs = dokploy_spec::embedded().into_diagnostic()?;
-    let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+    let engine = dokploy_engine::Engine::new(specs, client)
+        .into_diagnostic()?
+        .with_server_version(server_version);
 
     Ok((engine, workspace))
 }

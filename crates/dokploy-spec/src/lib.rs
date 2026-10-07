@@ -31,4 +31,11 @@ pub use paths::{PathError, PathShape, PropertyInfo, ValueRules};
 pub use registry::SpecRegistry;
 pub use types::{FieldType, TypeError, parse_type};
 pub use validate::validate_spec;
-pub use versions::{DokployVersion, VersionStatus, Versions};
+pub use versions::{
+    DokployVersion, VersionCompatibility, VersionStatus, Versions, embedded_versions,
+};
+
+/// The pinned OpenAPI contract compiled into the binary for `dokploy coverage`.
+pub fn embedded_openapi() -> Result<serde_json::Value, serde_json::Error> {
+    serde_json::from_str(include_str!("../../../openapi/dokploy.json"))
+}

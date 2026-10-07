@@ -1,4 +1,4 @@
-use dokploy_spec::{VersionStatus, Versions};
+use dokploy_spec::{VersionCompatibility, VersionStatus, Versions, embedded_versions};
 
 const DIGEST: &str = "1d6bd69ba58c1b4e305a9a33d77d8c3e0ee34707169f680cc600ab7ef1c3e6d8";
 
@@ -11,6 +11,39 @@ fn entry(version: &str, status: &str, openapi: bool) -> String {
     format!(
         "  - version: \"{version}\"\n    status: {status}\n    image: dokploy/dokploy:v{version}@sha256:{DIGEST}\n{openapi}"
     )
+}
+
+#[test]
+fn embedded_versions_drive_runtime_compatibility() {
+    let versions = embedded_versions().expect("embedded versions are valid");
+
+    assert_eq!(
+        versions.compatibility("v0.30.6").unwrap(),
+        VersionCompatibility::Supported
+    );
+    assert_eq!(
+        versions.compatibility("0.30.8").unwrap(),
+        VersionCompatibility::NewerPatch
+    );
+    assert_eq!(
+        versions.compatibility("0.31.0").unwrap(),
+        VersionCompatibility::Unsupported
+    );
+    assert!(versions.compatibility("unknown").is_err());
+}
+
+#[test]
+fn a_newer_patch_is_accepted_for_each_supported_minor_line() {
+    let versions = parse(&[
+        entry("0.29.4", "supported", true),
+        entry("0.30.7", "supported", true),
+    ])
+    .unwrap();
+
+    assert_eq!(
+        versions.compatibility("0.29.5").unwrap(),
+        VersionCompatibility::NewerPatch
+    );
 }
 
 fn parse(entries: &[String]) -> Result<Versions, String> {

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.0-beta.1] - 2026-10-07
+
 ### Fixed
 
 - Normalize the random six-character suffix Dokploy appends to application `appName` values. An
@@ -14,6 +16,12 @@ All notable changes to this project will be documented in this file.
   `--file` for an explicit standalone document and `--all` as a compatibility alias.
 
 ### Added
+
+- Complete the M8 beta interface with `dokploy doctor`, `dokploy coverage [KIND]`, and `dokploy fmt`.
+  Declarative commands check `settings.getDokployVersion`; unsupported reads warn, while mutations
+  require `--allow-unsupported-version`. Apply journals record the checked server version. Generate
+  the CLI usage and resource reference from Clap and the kind specs, and verify both in CI. Prepare
+  the cargo-dist package version `0.1.0-beta.1` for tag `v0.1.0-beta.1`.
 
 - Vendor the official Dokploy 0.30.7 SDK contract, promote 0.30.7 to supported after its live
   round-trip passed, and let `cargo xtask specs --check --against FILE` verify the kind ledger

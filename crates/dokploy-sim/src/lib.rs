@@ -474,6 +474,9 @@ impl Sim {
         if operation == "deployment.queueList" {
             return Ok(Value::Array(Vec::new()));
         }
+        if operation == "settings.getDokployVersion" {
+            return Ok(Value::String("v0.30.6".to_owned()));
+        }
         let Some(routes) = self.routes.get(operation) else {
             return Err(api_error(
                 404,

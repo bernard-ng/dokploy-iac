@@ -99,6 +99,7 @@ pub struct Engine<T> {
     specs: SpecRegistry,
     transport: T,
     instance: InstanceIdentity,
+    server_version: Option<String>,
 }
 
 impl<T: Transport> Engine<T> {
@@ -111,7 +112,15 @@ impl<T: Transport> Engine<T> {
             specs,
             transport,
             instance,
+            server_version: None,
         })
+    }
+
+    /// Records the checked Dokploy release in journals created by this engine.
+    #[must_use]
+    pub fn with_server_version(mut self, server_version: Option<String>) -> Self {
+        self.server_version = server_version;
+        self
     }
 
     /// The kind specs this engine runs.

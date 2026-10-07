@@ -5,13 +5,12 @@ repository, and rebuild it from that description instead of re-creating it throu
 the dashboard: Docker Compose, but for Dokploy itself.
 
 > [!IMPORTANT]
-> **Pre-release, mid re-engineering.** The first engine has been deleted (it is preserved at
+> **Beta preview.** The first engine has been deleted (it is preserved at
 > commit `96cab73`, a reference point in history, not a release) and replaced by the spec-driven
 > engine for the beta project and settings kinds. `dokploy validate`, `schema`, `plan`, `apply`,
 > `deploy`, `recover`, `destroy`, and `import` work on version 2 documents. SSO, licensing, and the other
 > identity features listed outside the beta in [ADR 0001](docs/decisions/0001-product-goal-and-scope.md)
-> remain excluded. The live round-trip gate follows in the remaining milestone in
-> [`docs/roadmap.md`](docs/roadmap.md).
+> remain excluded. The live round-trip gate passes on Dokploy 0.30.6 and 0.30.7.
 
 ## Where this is going
 
@@ -28,6 +27,7 @@ workspace/
 
 ```bash
 dokploy import all           # adopt an existing instance into this workspace
+dokploy doctor               # check the connection and selector catalogs
 dokploy plan                 # what would change, secret-free
 dokploy apply --deploy       # reconcile settings, then projects, then deploy
 ```
@@ -61,6 +61,9 @@ Architecture and rules: [`ARCHITECTURE.md`](ARCHITECTURE.md). Vocabulary:
 
 - [Roadmap](docs/roadmap.md): milestones, gates, risks, open decisions.
 - [Architecture decisions](docs/decisions/) and [kind spec format](docs/design/spec-format.md).
+- [CLI usage](docs/generated/cli-usage.md) and
+  [resource reference](docs/generated/resource-reference.md), generated from the command tree and
+  kind specs.
 - [Vision maps](docs/vision/): every Dokploy field, annotated.
 - [CI and dependency policy](docs/ci.md), [Releasing](docs/releasing.md),
   [Shell completions](docs/shell-completions.md).
@@ -83,6 +86,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked
 cargo xtask codegen --check
+cargo xtask docs --check
 ```
 
 ## Status of the design

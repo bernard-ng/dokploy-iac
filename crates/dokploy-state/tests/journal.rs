@@ -77,6 +77,20 @@ fn begin_only_requires_recovery_and_blocks_same_session_mutations() {
 }
 
 #[test]
+fn begin_records_the_checked_dokploy_version_for_recovery() {
+    let (_workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    let journal = OperationJournal::begin_for_server(&mut session, digest(), Some("v0.30.7"))
+        .expect("journal must begin");
+    drop(journal);
+    drop(session);
+
+    let summary = recovery_summary(&store);
+
+    assert_eq!(summary.server_version(), Some("v0.30.7"));
+}
+
+#[test]
 fn an_open_step_is_reported_as_uncertain() {
     let (_workspace, store, _initial) = initialized_store();
     let mut session = store.begin_write().expect("writer must start");

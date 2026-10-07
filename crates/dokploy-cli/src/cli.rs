@@ -16,6 +16,10 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "KEY")]
     pub api_key: Option<String>,
 
+    /// Permit mutations against a Dokploy version outside the supported set.
+    #[arg(long, global = true)]
+    pub allow_unsupported_version: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -28,6 +32,8 @@ impl Cli {
             Command::Init { .. }
                 | Command::Schema { .. }
                 | Command::Validate { .. }
+                | Command::Coverage { .. }
+                | Command::Fmt { .. }
                 | Command::Completions { .. }
         )
     }
@@ -68,6 +74,30 @@ pub enum Command {
         )]
         file: PathBuf,
     },
+
+    /// Show the effective resource specification and API coverage ledger.
+    Coverage {
+        /// Limit output to one resource kind.
+        kind: Option<String>,
+    },
+
+    /// Rewrite declarative documents in canonical form.
+    Fmt {
+        /// Format one explicit document instead of the workspace manifest.
+        #[arg(long, value_name = "PATH", conflicts_with = "all")]
+        file: Option<PathBuf>,
+
+        /// Format the workspace manifest documents. Kept as an explicit compatibility alias.
+        #[arg(long)]
+        all: bool,
+
+        /// Report documents that need formatting without changing them.
+        #[arg(long)]
+        check: bool,
+    },
+
+    /// Check the connection, Dokploy version, access, organization, and selector catalogs.
+    Doctor,
 
     /// Generate a shell completion script on standard output.
     Completions {

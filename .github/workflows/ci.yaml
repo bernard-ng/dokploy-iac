@@ -48,6 +48,9 @@ jobs:
       - name: Check the supported Dokploy versions
         run: cargo xtask versions --check
 
+      - name: Check generated documentation
+        run: cargo xtask docs --check
+
   generated-sdk:
     name: Generated SDK compilation
     runs-on: ubuntu-24.04

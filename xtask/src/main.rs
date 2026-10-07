@@ -1,9 +1,10 @@
 use std::process::ExitCode;
 
 use xtask::{
-    CodegenMode, ProcessGenerator, repository_imperative_paths, repository_paths, repository_root,
-    run_codegen, run_goldens_check, run_goldens_extract, run_imperative_codegen, run_specs_check,
-    run_specs_check_against, run_versions_check, version_image,
+    CodegenMode, DocsMode, ProcessGenerator, repository_imperative_paths, repository_paths,
+    repository_root, run_codegen, run_docs, run_goldens_check, run_goldens_extract,
+    run_imperative_codegen, run_specs_check, run_specs_check_against, run_versions_check,
+    version_image,
 };
 
 fn main() -> ExitCode {
@@ -20,12 +21,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args().skip(1);
     let Some(command) = arguments.next() else {
         return Err(
-            "usage: cargo xtask codegen [--check] | specs --check [--against FILE] | goldens [--check] | versions [--check | --image VERSION]"
+            "usage: cargo xtask codegen [--check] | docs [--check] | specs --check [--against FILE] | goldens [--check] | versions [--check | --image VERSION]"
                 .into(),
         );
     };
     if command == "specs" {
         return run_specs(arguments);
+    }
+    if command == "docs" {
+        return run_documentation(arguments);
     }
     if command == "goldens" {
         return run_goldens(arguments);
@@ -35,7 +39,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if command != "codegen" {
         return Err(format!(
-            "unknown xtask command `{command}`; expected `codegen`, `specs`, `goldens`, or `versions`"
+            "unknown xtask command `{command}`; expected `codegen`, `docs`, `specs`, `goldens`, or `versions`"
         )
         .into());
     }
@@ -71,6 +75,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         imperative_report.operation_count,
         imperative_report.resource_count,
         imperative_report.input_count
+    );
+
+    Ok(())
+}
+
+fn run_documentation(
+    mut arguments: impl Iterator<Item = String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mode = match arguments.next().as_deref() {
+        None => DocsMode::Write,
+        Some("--check") => DocsMode::Check,
+        Some(argument) => return Err(format!("unexpected docs argument `{argument}`").into()),
+    };
+    if let Some(argument) = arguments.next() {
+        return Err(format!("unexpected argument `{argument}`").into());
+    }
+    let report = run_docs(&repository_root(), mode)?;
+    let verb = match mode {
+        DocsMode::Write => "generated",
+        DocsMode::Check => "verified",
+    };
+    println!(
+        "{verb} {} reference kinds and {} documented commands",
+        report.kind_count, report.command_count
     );
 
     Ok(())

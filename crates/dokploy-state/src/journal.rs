@@ -476,6 +476,15 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
         session: &'journal mut WriteSession<'store>,
         plan_digest: PlanDigest,
     ) -> Result<Self, JournalError> {
+        Self::begin_for_server(session, plan_digest, None)
+    }
+
+    /// Creates a journal whose begin record identifies the Dokploy release being changed.
+    pub fn begin_for_server(
+        session: &'journal mut WriteSession<'store>,
+        plan_digest: PlanDigest,
+        server_version: Option<&str>,
+    ) -> Result<Self, JournalError> {
         session.reserve_journal().map_err(JournalError::state)?;
         session
             .revalidate_state_directory()
@@ -514,6 +523,7 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             lineage: journal.current_state.lineage(),
             starting_serial: journal.current_state.serial(),
             plan_digest,
+            server_version: server_version.map(str::to_owned),
         })?;
         sync_directory(&journal_directory).map_err(journal_directory_sync_unknown)?;
 
@@ -845,6 +855,8 @@ enum JournalRecord {
         lineage: Uuid,
         starting_serial: u64,
         plan_digest: PlanDigest,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        server_version: Option<String>,
     },
     StepStarted {
         sequence: u64,
@@ -1087,6 +1099,7 @@ pub struct RecoverySummary {
     format_version: u32,
     operation_id: Uuid,
     plan_digest: PlanDigest,
+    server_version: Option<String>,
     lineage: Uuid,
     starting_serial: u64,
     durable_serial: u64,
@@ -1113,6 +1126,12 @@ impl RecoverySummary {
     #[must_use]
     pub const fn plan_digest(&self) -> &PlanDigest {
         &self.plan_digest
+    }
+
+    /// Dokploy release recorded when the operation began, when available.
+    #[must_use]
+    pub fn server_version(&self) -> Option<&str> {
+        self.server_version.as_deref()
     }
 
     #[must_use]
@@ -1856,7 +1875,7 @@ fn validate_records(
     state: Option<&StateFile>,
     trailing_tail: bool,
 ) -> Result<ScannedJournal, RecoveryScanError> {
-    let (format_version, operation_id, lineage, starting_serial, plan_digest) =
+    let (format_version, operation_id, lineage, starting_serial, plan_digest, server_version) =
         match records.first() {
             Some(JournalRecord::Begin {
                 format_version,
@@ -1864,12 +1883,14 @@ fn validate_records(
                 lineage,
                 starting_serial,
                 plan_digest,
+                server_version,
             }) => (
                 *format_version,
                 *operation_id,
                 *lineage,
                 *starting_serial,
                 plan_digest.clone(),
+                server_version.clone(),
             ),
             _ => return Err(RecoveryScanError::Corrupt),
         };
@@ -2070,6 +2091,7 @@ fn validate_records(
         format_version,
         operation_id: filename_operation_id,
         plan_digest,
+        server_version,
         lineage,
         starting_serial,
         durable_serial,

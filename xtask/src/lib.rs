@@ -8,11 +8,13 @@ use std::{
 use serde_json::Value;
 use thiserror::Error;
 
+mod docs;
 mod goldens;
 mod imperative;
 mod specs;
 mod versions;
 
+pub use docs::{DocsMode, DocsReport, run_docs};
 pub use goldens::{GoldensExtractReport, GoldensReport, run_goldens_check, run_goldens_extract};
 pub use imperative::{
     ImperativeCodegenError, ImperativeCodegenPaths, ImperativeCodegenReport, run_imperative_codegen,

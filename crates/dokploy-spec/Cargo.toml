@@ -7,6 +7,7 @@ publish = false
 description = "Declarative kind specs for the Dokploy IaC engine and their OpenAPI coverage ledger."
 
 [dependencies]
+semver.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true

@@ -8,6 +8,8 @@ repository = "https://github.com/bernard-ng/dokploy-iac"
 publish = false
 
 [dependencies]
+clap.workspace = true
+dokploy-cli.workspace = true
 proc-macro2 = "1.0"
 quote = "1.0"
 serde = { version = "1.0", features = ["derive"] }

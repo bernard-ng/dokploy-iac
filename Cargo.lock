@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-api"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "http",
@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-cli"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "clap",
  "clap_complete",
@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-conformance"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "dokploy-api",
  "dokploy-core",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-core"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "dokploy-spec",
  "dokploy-state",
@@ -890,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-engine"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "dokploy-api",
  "dokploy-core",
@@ -915,7 +915,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-model"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "dokploy-spec",
  "regex",
@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-sdk"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "dokploy-api",
@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-sim"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "anyhow",
  "dokploy-api",
@@ -956,8 +956,9 @@ dependencies = [
 
 [[package]]
 name = "dokploy-spec"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
+ "semver",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -966,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "dokploy-state"
-version = "0.1.0"
+version = "0.1.0-beta.1"
 dependencies = [
  "fs4",
  "semver",
@@ -3889,6 +3890,8 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "clap",
+ "dokploy-cli",
  "dokploy-spec",
  "proc-macro2",
  "quote",

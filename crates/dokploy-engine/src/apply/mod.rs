@@ -182,7 +182,11 @@ impl<T: Transport> Engine<T> {
                 fresh
             }
         };
-        let journal = OperationJournal::begin(&mut session, plan_digest(&plan))?;
+        let journal = OperationJournal::begin_for_server(
+            &mut session,
+            plan_digest(&plan),
+            self.server_version.as_deref(),
+        )?;
 
         run::run(self, compiled, &plan, state, journal).await
     }

@@ -4,6 +4,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
+use semver::Version;
 use serde::Deserialize;
 
 use crate::error::LoadError;
@@ -17,6 +18,17 @@ pub enum VersionStatus {
     Supported,
     /// Captures may be taken against it; it is not yet trusted for mutations.
     Candidate,
+}
+
+/// How a running Dokploy release relates to the supported set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VersionCompatibility {
+    /// The exact release passed the live suite.
+    Supported,
+    /// The release is a newer patch in the newest supported minor line.
+    NewerPatch,
+    /// The release is outside the supported set and its newest minor line.
+    Unsupported,
 }
 
 impl fmt::Display for VersionStatus {
@@ -83,6 +95,33 @@ impl Versions {
             .find(|version| version.version == requested)
     }
 
+    /// Classifies a server version using the runtime policy from ADR 0014.
+    pub fn compatibility(&self, requested: &str) -> Result<VersionCompatibility, semver::Error> {
+        let requested = Version::parse(requested.strip_prefix('v').unwrap_or(requested))?;
+        let mut supported = self
+            .versions
+            .iter()
+            .filter(|entry| entry.status == VersionStatus::Supported)
+            .map(|entry| Version::parse(&entry.version))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if supported.iter().any(|version| version == &requested) {
+            return Ok(VersionCompatibility::Supported);
+        }
+        supported.sort();
+        let newer_patch = supported
+            .iter()
+            .rev()
+            .find(|version| requested.major == version.major && requested.minor == version.minor)
+            .is_some_and(|latest| requested.patch > latest.patch && requested.pre.is_empty());
+
+        Ok(if newer_patch {
+            VersionCompatibility::NewerPatch
+        } else {
+            VersionCompatibility::Unsupported
+        })
+    }
+
     /// Parses and validates the contents of `versions.yaml`.
     pub fn parse(source: &str) -> Result<Self, String> {
         let versions: Self = parse_strict(source)?;
@@ -115,6 +154,11 @@ impl Versions {
         })?;
         Self::parse(&source).map_err(|message| LoadError::Parse { path, message })
     }
+}
+
+/// The supported-version registry compiled into the binary.
+pub fn embedded_versions() -> Result<Versions, String> {
+    Versions::parse(include_str!("../../../specs/versions.yaml"))
 }
 
 impl DokployVersion {

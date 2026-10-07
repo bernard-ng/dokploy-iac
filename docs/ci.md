@@ -40,6 +40,9 @@ downloads the matching immutable SDK contract, and runs
 `cargo xtask specs --check --against <file>`. It never changes specs. An unclassified operation or
 field opens or updates a release-specific issue and fails the workflow.
 
+`cargo xtask docs --check` regenerates the CLI usage page from Clap and the resource reference from
+the kind specs in memory. CI fails when either committed page differs.
+
 GitHub Actions are referenced by immutable commit hashes. The independently
 installed security and release tools are pinned to versions published by their
 official upstream projects. Dependency policy is deliberately narrow: the
@@ -153,6 +156,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked
 cargo check --package dokploy-api --all-targets --all-features --locked
 cargo xtask codegen --check
+cargo xtask docs --check
 scripts/audit-openapi.sh
 docker compose --file compose.integration.yaml config --quiet
 cargo deny --all-features --locked check

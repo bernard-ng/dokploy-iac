@@ -175,6 +175,20 @@ failures skip dependents and close their journal cleanly; lost queue responses r
 unique deployment title. Simulator scenarios cover ordering, change sensitivity, idempotence,
 failure skips, timeouts, and recovery, with an ignored live test for a real application deployment.
 
+## M8 status
+
+Complete. CI runs the live engine and a full apply, deploy, import, rebuild, and digest comparison on
+Dokploy 0.30.6 and 0.30.7. The same specs drive simulator conformance, both vendored contracts, the
+`coverage` command, and the generated resource reference. A weekly job checks the latest upstream
+contract without modifying the repository.
+
+`doctor` checks the URL, API key, server version, active organization, read rights, and global
+selector catalogs. Declarative reads warn on an unsupported version. Mutations stop unless the
+operator supplies `--allow-unsupported-version`, and apply journals record the checked server
+version. `fmt` rewrites one document or every manifest document in canonical form. The first engine
+was already removed in M2. Cargo-dist 0.33.0 prepares the `0.1.0-beta.1` release artifacts; publishing
+starts when `v0.1.0-beta.1` is pushed.
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured

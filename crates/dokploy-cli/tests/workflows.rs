@@ -592,3 +592,31 @@ fn schema_describes_both_documents_from_the_specs() {
         assert!(schema.contains(kind), "{document} schema lacks {kind}");
     }
 }
+
+#[test]
+fn coverage_reports_the_effective_kind_ledger() {
+    let output = offline(&["coverage", "registry"]).unwrap();
+
+    assert!(output.contains("registry\tFull"), "{output}");
+    assert!(output.contains("Container registry (registry)"), "{output}");
+    assert!(output.contains("password: type=text"), "{output}");
+}
+
+#[test]
+fn fmt_rewrites_one_document_canonically() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("settings.yaml");
+    std::fs::write(
+        &file,
+        "settings:\n  tags:\n    blue:\n      color: '#0000ff'\nversion: 2\n",
+    )
+    .unwrap();
+
+    let output = offline(&["fmt", "--file", file.to_str().unwrap()]).unwrap();
+
+    assert!(output.contains("Formatted 1 document(s)."), "{output}");
+    assert_eq!(
+        std::fs::read_to_string(file).unwrap(),
+        "version: 2\nsettings:\n  tags:\n    blue:\n      color: \"#0000ff\"\n"
+    );
+}

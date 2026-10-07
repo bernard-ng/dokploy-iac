@@ -14,6 +14,7 @@ cargo xtask codegen --check
 cargo xtask specs --check
 cargo xtask goldens --check
 cargo xtask versions --check
+cargo xtask docs --check
 ```
 
 ## Rules
