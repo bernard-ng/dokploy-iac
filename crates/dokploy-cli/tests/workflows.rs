@@ -9,9 +9,9 @@ use std::sync::Arc;
 use clap::Parser;
 use dokploy_cli::cli::Cli;
 use dokploy_cli::workflow::{self, Context, Environment, Streams, Terminal};
-use dokploy_cli::workspace::Workspace;
+use dokploy_cli::workspace::{Workspace, WorkspaceManifest};
 use dokploy_cli::{CommandStatus, execute_offline};
-use dokploy_engine::{Engine, FingerprintKey};
+use dokploy_engine::{Engine, FingerprintKey, ImportOptions, ImportSelection};
 use dokploy_sim::{Fault, FaultKind, Sim};
 
 const KEY: &str = "0199a0c8-2351-7c31-8899-2c8f81983ea5:0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b";
@@ -248,6 +248,99 @@ async fn plan_shows_paths_never_values_and_reports_changes_through_the_exit_stat
         fixture.sim.mutations().is_empty(),
         "planning changed something"
     );
+}
+
+#[tokio::test]
+async fn import_all_then_plan_all_is_empty_for_the_workspace() {
+    let fixture = Fixture::without_live_fixtures();
+    let organization = fixture.sim.objects("organization").remove(0);
+    fixture.sim.patch(
+        "organization",
+        organization["id"].as_str().unwrap(),
+        &serde_json::json!({ "name": "Legalter" }),
+    );
+    let web_server = fixture.sim.objects("web_server").remove(0);
+    fixture.sim.patch(
+        "web_server",
+        web_server["id"].as_str().unwrap(),
+        &serde_json::json!({
+            "host": null,
+            "https": false,
+            "certificateType": "none",
+            "letsEncryptEmail": null,
+            "serverIp": "127.0.0.1",
+            "buildsConcurrency": 2,
+            "requestLogging": false,
+            "enableDockerCleanup": true,
+            "logCleanupCron": "0 0 * * *",
+            "traefikDashboard": false,
+            "additionalPorts": [],
+            "traefikEnv": null,
+            "traefikConfig": null,
+            "webServerTraefikConfig": null,
+            "middlewareTraefikConfig": null
+        }),
+    );
+    fixture.sim.seed(
+        "registry",
+        &serde_json::json!({
+            "registryName": "GHCR",
+            "registryType": "cloud",
+            "registryUrl": "ghcr.io",
+            "username": "ci",
+            "password": TOKEN
+        }),
+    );
+    fixture.sim.seed(
+        "project",
+        &serde_json::json!({ "name": "Portal", "description": "Imported" }),
+    );
+    let engine = fixture.engine();
+    let destination = fixture.directory.path().join("imported");
+    let (mut result, mut diagnostics) = (Vec::new(), Vec::new());
+    let status = workflow::import(
+        &engine,
+        key(),
+        ImportSelection::All,
+        &ImportOptions::default(),
+        &destination,
+        false,
+        &mut Streams::split(&mut result, &mut diagnostics),
+    )
+    .await
+    .expect("import succeeds");
+    assert_eq!(status, CommandStatus::Success);
+    assert!(
+        String::from_utf8(result)
+            .unwrap()
+            .contains("Import complete")
+    );
+
+    let manifest = WorkspaceManifest::load(&destination).expect("manifest loads");
+    let mut output = Vec::new();
+    let status = workflow::plan_all(
+        &engine,
+        &manifest,
+        key(),
+        &environment(),
+        false,
+        true,
+        &mut Streams::unified(&mut output),
+    )
+    .await
+    .expect("workspace plans");
+
+    assert_eq!(status, CommandStatus::Success);
+    let output = String::from_utf8(output).unwrap();
+    assert!(
+        output.contains("settings.yaml:\nPlan: 0 change(s), 0 drift record(s)"),
+        "{output}"
+    );
+    assert!(
+        output.contains("projects/portal.yaml:\nPlan: 0 change(s), 0 drift record(s)"),
+        "{output}"
+    );
+    assert!(fixture.sim.mutations().is_empty());
 }
 
 #[tokio::test]

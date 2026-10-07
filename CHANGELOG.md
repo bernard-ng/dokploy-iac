@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Complete M6 with spec-driven `import settings`, `import project <id>`, and `import all`. Import
+  allocates deterministic keys, writes secret and content artifacts, reports an unsupported ledger,
+  proves every generated document converges before writing, detects topology changes, and persists
+  adopted state without overwriting an existing workspace. `import all` writes a validated workspace
+  manifest that `plan --all` reads in order. Add the top-level `adopt` directive for enrolling one
+  matching managed resource into existing state while preserving its remote identity. SSO and
+  licensing remain outside the beta scope.
+
 - Complete the M5 settings surface with the adopt-only `web_server` singleton. It composes the
   split Dokploy reads, writes endpoint-owned struct members and named Traefik dynamic files,
   orders disruptive work last, labels disruptive plans, and requires `--allow-disruptive` beside

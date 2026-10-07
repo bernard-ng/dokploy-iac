@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use dokploy_core::Plan;
 use dokploy_engine::{
-    ApplyError, Compiled, Engine, FingerprintKey, RecoverError, WorkspaceSecrets,
+    ApplyError, Compiled, Engine, FingerprintKey, ImportOptions, ImportSelection, RecoverError,
+    UnsupportedCategory, WorkspaceSecrets,
 };
 use dokploy_sdk::Transport;
 use dokploy_state::StateStore;
@@ -129,6 +130,63 @@ pub async fn plan<T: Transport>(
     Ok(if !plan.complete() || !plan.applyable() {
         CommandStatus::Failure
     } else if detailed_exitcode && !plan.changes().is_empty() {
+        CommandStatus::ChangesPresent
+    } else {
+        CommandStatus::Success
+    })
+}
+
+/// `plan --all`: plan every manifest document in order against its own state lineage.
+pub async fn plan_all<T: Transport>(
+    engine: &Engine<T>,
+    manifest: &crate::workspace::WorkspaceManifest,
+    key: FingerprintKey,
+    environment: &Environment,
+    json: bool,
+    detailed_exitcode: bool,
+    streams: &mut Streams<'_>,
+) -> Result<CommandStatus> {
+    let mut json_plans = Vec::new();
+    let mut failure = false;
+    let mut changes = false;
+    for relative in manifest.documents() {
+        let workspace = Workspace::load_in(manifest.directory(), relative)?;
+        let prepared = prepare(
+            Context {
+                engine,
+                workspace: &workspace,
+                key: key.clone(),
+                environment,
+            },
+            true,
+        )?;
+        let state = prepared.store.inspect().into_diagnostic()?;
+        let plan = engine
+            .plan(&prepared.compiled, state.as_ref())
+            .await
+            .into_diagnostic()?;
+        failure |= !plan.complete() || !plan.applyable();
+        changes |= !plan.changes().is_empty();
+        if json {
+            let value: serde_json::Value =
+                serde_json::from_slice(&plan.to_json_bytes()).expect("a plan serializes as JSON");
+            json_plans.push(serde_json::json!({
+                "document": relative.to_string_lossy(),
+                "plan": value,
+            }));
+        } else {
+            writeln!(streams.result(), "{}:", relative.display()).into_diagnostic()?;
+            plan_output::render(&plan, streams.result()).into_diagnostic()?;
+        }
+    }
+    if json {
+        serde_json::to_writer_pretty(&mut *streams.result(), &json_plans).into_diagnostic()?;
+        writeln!(streams.result()).into_diagnostic()?;
+    }
+
+    Ok(if failure {
+        CommandStatus::Failure
+    } else if detailed_exitcode && changes {
         CommandStatus::ChangesPresent
     } else {
         CommandStatus::Success
@@ -327,4 +385,82 @@ fn capitalized(word: &str) -> String {
         .next()
         .map(|first| first.to_ascii_uppercase().to_string() + chars.as_str())
         .unwrap_or_default()
+}
+
+/// `import`: inventory and prove a new workspace, then persist it unless this is a dry run.
+pub async fn import<T: Transport>(
+    engine: &Engine<T>,
+    key: FingerprintKey,
+    selection: ImportSelection,
+    options: &ImportOptions,
+    destination: &std::path::Path,
+    dry_run: bool,
+    streams: &mut Streams<'_>,
+) -> Result<CommandStatus> {
+    if options.environment == dokploy_engine::EnvironmentImportMode::Inline {
+        writeln!(
+            streams.diagnostics(),
+            "Warning: --env=inline writes every environment value into declarative YAML."
+        )
+        .into_diagnostic()?;
+    }
+    let bundle = engine
+        .import(selection, &engine.fingerprinter(key), options)
+        .await
+        .into_diagnostic()?;
+    let documents = bundle.documents().len();
+    let resources: usize = bundle
+        .documents()
+        .iter()
+        .map(|document| document.state().resources().len())
+        .sum();
+    let files = bundle.files().len();
+
+    for category in [
+        UnsupportedCategory::UnmanagedByChoice,
+        UnsupportedCategory::Unsupported,
+        UnsupportedCategory::Unrepresentable,
+    ] {
+        let entries: Vec<_> = bundle
+            .unsupported()
+            .iter()
+            .filter(|entry| entry.category == category)
+            .collect();
+        if entries.is_empty() {
+            continue;
+        }
+        let title = match category {
+            UnsupportedCategory::UnmanagedByChoice => "Unmanaged by choice",
+            UnsupportedCategory::Unsupported => "Unsupported",
+            UnsupportedCategory::Unrepresentable => "Unrepresentable",
+        };
+        writeln!(streams.diagnostics(), "{title}:").into_diagnostic()?;
+        for entry in entries {
+            writeln!(
+                streams.diagnostics(),
+                "  {}.{}: {}",
+                entry.kind,
+                entry.item,
+                entry.reason
+            )
+            .into_diagnostic()?;
+        }
+    }
+
+    if dry_run {
+        writeln!(
+            streams.result(),
+            "Import dry run complete: {documents} document(s), {resources} resource(s), {files} file(s); nothing written."
+        )
+        .into_diagnostic()?;
+    } else {
+        bundle.persist(destination).into_diagnostic()?;
+        writeln!(
+            streams.result(),
+            "Import complete: {documents} document(s), {resources} resource(s), {files} file(s)."
+        )
+        .into_diagnostic()?;
+    }
+
+    Ok(CommandStatus::Success)
 }

@@ -385,6 +385,7 @@ pub fn document(seed: u64, registry: &SpecRegistry, scope: Scope) -> Document {
         scope,
         root,
         moves: Vec::new(),
+        adopt: Vec::new(),
         removed: Vec::new(),
     }
 }

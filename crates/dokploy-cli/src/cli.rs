@@ -86,6 +86,10 @@ pub enum Command {
         )]
         file: PathBuf,
 
+        /// Plan every document in `dokploy.workspace.yaml` from the current directory.
+        #[arg(long)]
+        all: bool,
+
         /// Print the deterministic redaction-safe JSON plan.
         #[arg(long)]
         json: bool,
@@ -164,6 +168,12 @@ pub enum Command {
         command: ContextCommand,
     },
 
+    /// Adopt existing Dokploy resources into a new declarative workspace.
+    Import {
+        #[command(subcommand)]
+        command: ImportCommand,
+    },
+
     /// Call one operation from the pinned Dokploy API contract directly.
     ///
     /// Usage: `dokploy api <resource> <operation> [options]`. These commands act
@@ -172,6 +182,61 @@ pub enum Command {
         #[command(subcommand)]
         command: Box<ImperativeCommand>,
     },
+}
+
+/// Documents selected for import.
+#[derive(Subcommand)]
+pub enum ImportCommand {
+    /// Import the instance settings document.
+    Settings {
+        #[command(flatten)]
+        options: ImportOptions,
+    },
+    /// Import one project selected by its remote id.
+    Project {
+        /// Dokploy's remote project id.
+        id: String,
+        #[command(flatten)]
+        options: ImportOptions,
+    },
+    /// Import settings and every project, plus a workspace manifest.
+    All {
+        #[command(flatten)]
+        options: ImportOptions,
+    },
+}
+
+/// Options shared by every import selection.
+#[derive(Clone, Debug, clap::Args)]
+pub struct ImportOptions {
+    /// Directory that will own the imported workspace.
+    #[arg(long, default_value = ".", value_name = "PATH")]
+    pub directory: PathBuf,
+
+    /// How remote environment variables are represented.
+    #[arg(long, value_enum, default_value_t = ImportEnvironment::Auto)]
+    pub env: ImportEnvironment,
+
+    /// Run inventory and convergence proof without writing the workspace.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Workspace-relative directory for imported secret files.
+    #[arg(long, default_value = dokploy_engine::DEFAULT_SECRETS_DIRECTORY, value_name = "DIR")]
+    pub secrets_out: String,
+}
+
+/// Environment classification for import.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+pub enum ImportEnvironment {
+    /// Keep ordinary values inline and put likely credentials in secret files.
+    Auto,
+    /// Keep every value inline.
+    Inline,
+    /// Put every value in a secret file.
+    File,
+    /// Leave environment fields unmanaged.
+    Skip,
 }
 
 /// Document kinds that have a JSON Schema.
@@ -246,7 +311,10 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{Cli, Command, ContextCommand, SchemaDocument, StateCommand};
+    use super::{
+        Cli, Command, ContextCommand, ImportCommand, ImportEnvironment, ImportOptions,
+        SchemaDocument, StateCommand,
+    };
 
     #[test]
     fn parses_context_use() {
@@ -369,10 +437,15 @@ mod tests {
             cli.command,
             Command::Plan {
                 file,
+                all: false,
                 json: true,
                 detailed_exitcode: true,
             } if file.as_path() == Path::new("stack.yaml")
         ));
+
+        let all = Cli::try_parse_from(["dokploy", "plan", "--all"])
+            .expect("workspace plan command line is valid");
+        assert!(matches!(all.command, Command::Plan { all: true, .. }));
     }
 
     #[test]
@@ -450,8 +523,32 @@ mod tests {
     }
 
     #[test]
-    fn the_first_engines_import_and_saved_plans_are_gone() {
-        assert!(Cli::try_parse_from(["dokploy", "import", "settings"]).is_err());
+    fn import_returns_with_all_three_selections_and_saved_plans_stay_gone() {
+        let settings = Cli::try_parse_from([
+            "dokploy",
+            "import",
+            "settings",
+            "--directory",
+            "workspace",
+            "--env",
+            "skip",
+            "--dry-run",
+        ])
+        .expect("settings import is valid");
+        assert!(matches!(
+            settings.command,
+            Command::Import {
+                command: ImportCommand::Settings {
+                    options: ImportOptions {
+                        env: ImportEnvironment::Skip,
+                        dry_run: true,
+                        ..
+                    }
+                }
+            }
+        ));
+        assert!(Cli::try_parse_from(["dokploy", "import", "project", "project-1"]).is_ok());
+        assert!(Cli::try_parse_from(["dokploy", "import", "all"]).is_ok());
         assert!(Cli::try_parse_from(["dokploy", "plan", "--out", "plan.json"]).is_err());
         assert!(Cli::try_parse_from(["dokploy", "apply", "plan.json"]).is_err());
     }

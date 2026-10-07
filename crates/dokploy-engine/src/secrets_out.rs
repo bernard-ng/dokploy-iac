@@ -81,31 +81,7 @@ impl SecretsWriter {
         relative: &str,
         variables: &[Variable],
     ) -> Result<String, SecretsOutError> {
-        let mut text = Zeroizing::new(Vec::new());
-        let mut seen: Vec<&str> = Vec::new();
-        for (name, value) in variables {
-            let unwritable = |reason| SecretsOutError::Unwritable {
-                name: name.clone(),
-                reason,
-            };
-            if !valid_name(name) {
-                return Err(unwritable("it is not a variable name"));
-            }
-            if seen.contains(&name.as_str()) {
-                return Err(unwritable("it is set twice"));
-            }
-            seen.push(name);
-            let Ok(value) = std::str::from_utf8(value) else {
-                return Err(unwritable("its value is not UTF-8 text"));
-            };
-            if value.contains(['\n', '\r']) {
-                return Err(unwritable("its value spans lines"));
-            }
-            text.extend_from_slice(name.as_bytes());
-            text.push(b'=');
-            text.extend_from_slice(quoted(value).as_bytes());
-            text.push(b'\n');
-        }
+        let text = render_dotenv(variables)?;
 
         self.write_file(relative, &text)
     }
@@ -226,6 +202,36 @@ impl SecretsWriter {
             .display()
             .to_string()
     }
+}
+
+pub(crate) fn render_dotenv(variables: &[Variable]) -> Result<Zeroizing<Vec<u8>>, SecretsOutError> {
+    let mut text = Zeroizing::new(Vec::new());
+    let mut seen: Vec<&str> = Vec::new();
+    for (name, value) in variables {
+        let unwritable = |reason| SecretsOutError::Unwritable {
+            name: name.clone(),
+            reason,
+        };
+        if !valid_name(name) {
+            return Err(unwritable("it is not a variable name"));
+        }
+        if seen.contains(&name.as_str()) {
+            return Err(unwritable("it is set twice"));
+        }
+        seen.push(name);
+        let Ok(value) = std::str::from_utf8(value) else {
+            return Err(unwritable("its value is not UTF-8 text"));
+        };
+        if value.contains(['\n', '\r']) {
+            return Err(unwritable("its value spans lines"));
+        }
+        text.extend_from_slice(name.as_bytes());
+        text.push(b'=');
+        text.extend_from_slice(quoted(value).as_bytes());
+        text.push(b'\n');
+    }
+
+    Ok(text)
 }
 
 /// A path of plain segments, as the document format has it: no `..`, no root, no empty or `.`

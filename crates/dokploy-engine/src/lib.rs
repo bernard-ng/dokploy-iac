@@ -7,7 +7,8 @@
 //!
 //! It compiles documents, plans kinds that have a collection read, and applies the plan:
 //! create, update by write group, remove, replace, and rename, each journaled, never
-//! retried, and read back. Recovery, nested kinds, and deploy follow.
+//! retried, and read back. Recovery, nested kinds, and import use the same contracts; deploy
+//! follows.
 
 mod apply;
 mod canonical;
@@ -17,6 +18,7 @@ mod discover;
 mod dotenv;
 mod envtext;
 mod fingerprint;
+mod import;
 mod project;
 mod recover;
 mod secrets;
@@ -38,6 +40,10 @@ pub use compile::{AddressError, CompileError, Compiled, DirectiveError};
 pub use contract::required_at_creation;
 pub use dotenv::DotenvError;
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
+pub use import::{
+    EnvironmentImportMode, ImportBundle, ImportError, ImportOptions, ImportPersistError,
+    ImportSelection, ImportedDocument, ImportedFile, UnsupportedCategory, UnsupportedItem,
+};
 pub use recover::{RecoverError, RecoveryAction, RecoveryPreview, RecoverySummary};
 pub use secrets::{MAX_SOURCE_BYTES, SecretError, SecretReader, WorkspaceSecrets};
 pub use secrets_out::{DEFAULT_SECRETS_DIRECTORY, SecretsOutError, SecretsWriter};
@@ -72,7 +78,7 @@ pub enum EngineError {
     /// The remote snapshot could not be assembled.
     #[error(transparent)]
     Remote(RemoteStateError),
-    /// A `moves` or `removed` entry does not name exactly one address.
+    /// A `moves`, `adopt`, or `removed` entry does not name exactly one address.
     #[error(transparent)]
     Directive(#[from] DirectiveError),
     /// A vault source names no unique provider in fresh settings state.

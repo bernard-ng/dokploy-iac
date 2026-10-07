@@ -24,14 +24,32 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 | **plan** | The planner, unchanged: deterministic, value-free |
 | **apply** | Executes the plan under the writer lock, one journaled step per change (below) |
 
+## Import
+
+`Engine::import` implements ADR 0011 as a spec-driven reverse path. It inventories parents before
+children, combines collection and direct reads, allocates stable document keys, and maps every
+supported property through the same field metadata used by compile and apply. It renders each
+document, parses it again, compiles it, materializes state with the observed remote ids, and requires
+the first plan to be complete, applyable, and empty. A second inventory must have the same identities
+and containment before the bundle can be persisted.
+
+The bundle holds documents, content and secret artifacts, state, and an unsupported ledger in memory.
+Persistence checks every destination before the first write, refuses existing documents or `.dokploy`
+state, writes secrets through `SecretsWriter`, and removes files created by the call if a later write
+fails. `import all` also writes `dokploy.workspace.yaml`. Environment import can classify likely
+credentials automatically, keep values inline, put every value in files, or leave the field unmanaged.
+The ledger reports deliberate omissions, unsupported fields, and values that do not fit the spec.
+
 Fingerprints are an HMAC-SHA-256 over instance, address, path, and value, checked against an
 independently computed vector, so a change to the framing cannot pass by agreeing with itself.
 
-## Moves and removals
+## Moves, adoption, and removals
 
-`moves` and `removed` (see [`document-format.md`](document-format.md)) are resolved when the plan is
+`moves`, `adopt`, and `removed` (see [`document-format.md`](document-format.md)) are resolved when the plan is
 made, because what an address suffix means depends on state: `Compiled::desired_for(state)` turns
-them into the planner's directives. Discovery treats the resource being moved as the one it is:
+them into planner input. An explicit adoption resolves against a declared address and permits a
+matching unmanaged remote object to be checkpointed without changing its identity. Discovery treats
+the resource being moved as the one it is:
 the new address is not a collision with the identity it came from. A move that changes nothing else
 is a state-only step; one that also changes properties is a state-only move first (the resource as
 state has it, at its new address) and then an update of that resource, each journaled. A resource

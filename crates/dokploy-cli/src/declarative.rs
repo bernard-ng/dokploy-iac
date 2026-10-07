@@ -93,6 +93,7 @@ pub fn execute(cli: Cli, output: &mut dyn Write, _terminal_available: bool) -> R
         | Command::Destroy { .. }
         | Command::State { .. }
         | Command::Context { .. }
+        | Command::Import { .. }
         | Command::Api { .. } => Err(miette::miette!("command requires connection dispatch")),
     }
 }

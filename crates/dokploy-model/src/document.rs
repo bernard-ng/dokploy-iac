@@ -18,8 +18,19 @@ pub struct Document {
     pub root: Root,
     /// Addresses that were renamed: the resource keeps its remote identity.
     pub moves: Vec<Move>,
+    /// Declared resources that should take ownership of an existing remote identity.
+    pub adopt: Vec<Adoption>,
     /// Resources the document stops managing, or deletes.
     pub removed: Vec<Removal>,
+}
+
+/// `adopt`: a declared resource that should take ownership of its remote match.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Adoption {
+    /// The declared address, as the user wrote it (a suffix of the full address).
+    pub address: String,
+    /// Where the entry is written.
+    pub span: Span,
 }
 
 /// `moves`: a resource now has another address, and is still the same resource.

@@ -59,6 +59,10 @@ pub fn json_schema(registry: &SpecRegistry, scope: Scope) -> Value {
                     "properties": { "from": address(), "to": address() },
                 },
             },
+            "adopt": {
+                "type": "array",
+                "items": address(),
+            },
             "removed": {
                 "type": "array",
                 "items": {

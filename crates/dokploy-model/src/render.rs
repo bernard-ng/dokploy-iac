@@ -56,6 +56,19 @@ impl Document {
                 ),
             ));
         }
+        if !self.adopt.is_empty() {
+            let mut addresses: Vec<_> = self.adopt.iter().map(|entry| &entry.address).collect();
+            addresses.sort();
+            top.push((
+                "adopt".to_owned(),
+                Out::Seq(
+                    addresses
+                        .into_iter()
+                        .map(|address| Out::Scalar(scalar(address)))
+                        .collect(),
+                ),
+            ));
+        }
         if !self.removed.is_empty() {
             let mut removed: Vec<_> = self.removed.iter().collect();
             removed.sort_by(|a, b| a.from.cmp(&b.from));

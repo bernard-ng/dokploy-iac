@@ -37,7 +37,7 @@ pub struct Compiled {
     pub(crate) secrets: BTreeMap<(ResourceAddress, String), zeroize::Zeroizing<Vec<u8>>>,
     /// Vault sources the document names: each provider must resolve uniquely before planning.
     pub(crate) vault_references: Vec<(ResourceAddress, String, String)>,
-    /// The document's `moves` and `removed`, as written: they name addresses by suffix, and
+    /// The document's `moves`, `adopt`, and `removed`, as written: they name addresses by suffix, and
     /// what a suffix means depends on what state tracks.
     pub(crate) directives: Directives,
     /// The fingerprinter the receipts were made with: discovery makes the receipt of what Dokploy
@@ -46,11 +46,13 @@ pub struct Compiled {
     pub(crate) fingerprinter: Option<Fingerprinter>,
 }
 
-/// `moves` and `removed` of a document, unresolved.
+/// `moves`, `adopt`, and `removed` of a document, unresolved.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Directives {
     /// (from, to)
     pub(crate) moves: Vec<(String, String)>,
+    /// Declared addresses to adopt.
+    pub(crate) adopt: Vec<String>,
     /// (from, destroy)
     pub(crate) removed: Vec<(String, bool)>,
 }
@@ -93,7 +95,7 @@ impl Compiled {
         &self.desired
     }
 
-    /// The planner's input with `moves` and `removed` resolved against what `state` tracks.
+    /// The planner's input with `moves`, `adopt`, and `removed` resolved.
     ///
     /// The address a move leaves is looked up among the tracked and declared addresses; once the
     /// move has happened it no longer exists, and a bare `kind.key` then means a sibling of the
@@ -150,11 +152,20 @@ impl Compiled {
                 Err(source) => return Err(err("removed", source)),
             }
         }
+        let mut adoptions = Vec::new();
+        for address in &self.directives.adopt {
+            adoptions.push(
+                ResourceAddress::resolve_suffix(declared.iter().copied(), address)
+                    .map_err(|source| err("adopt", source))?
+                    .clone(),
+            );
+        }
 
         Ok(self
             .desired
             .clone()
             .with_moves(moves)
+            .with_adoptions(adoptions)
             .with_removals(removals))
     }
 
@@ -533,6 +544,11 @@ impl Compiler<'_> {
                     .moves
                     .iter()
                     .map(|m| (m.from.clone(), m.to.clone()))
+                    .collect(),
+                adopt: document
+                    .adopt
+                    .iter()
+                    .map(|entry| entry.address.clone())
                     .collect(),
                 removed: document
                     .removed

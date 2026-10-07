@@ -8,7 +8,10 @@ use sha2::Sha256;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{ComparableValue, OwnedValue, PropertyPath, SensitiveIntent, spec_property};
+use crate::{
+    CheckpointMaterializationError, ComparableValue, OwnedValue, PropertyPath, ResourceCheckpoint,
+    SensitiveIntent, spec_property,
+};
 
 /// A lowercase SHA-256 digest of the configuration used to build desired state.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -64,6 +67,7 @@ pub enum ProtectionIntent {
 #[derive(Clone)]
 pub struct DesiredResource {
     pub(crate) properties: BTreeMap<PropertyPath, OwnedValue>,
+    pub(crate) adopt: bool,
     pub(crate) protection: ProtectionIntent,
     pub(crate) containment: Option<ResourceAddress>,
     pub(crate) dependencies: Vec<ResourceAddress>,
@@ -77,12 +81,26 @@ impl DesiredResource {
     pub fn new(properties: BTreeMap<PropertyPath, OwnedValue>) -> Self {
         Self {
             properties,
+            adopt: false,
             protection: ProtectionIntent::Unmanaged,
             containment: None,
             dependencies: Vec::new(),
             ignore_changes: Vec::new(),
             replace_on_changes: Vec::new(),
         }
+    }
+
+    /// Requests ownership of a matching remote resource that state does not track yet.
+    #[must_use]
+    pub fn with_adoption(mut self, adopt: bool) -> Self {
+        self.adopt = adopt;
+        self
+    }
+
+    /// Whether the document explicitly requests adoption.
+    #[must_use]
+    pub const fn adoption_requested(&self) -> bool {
+        self.adopt
     }
 
     /// Sets ownership-aware protection intent.
@@ -155,6 +173,30 @@ impl DesiredResource {
     pub fn ignored_changes(&self) -> &[PropertyPath] {
         &self.ignore_changes
     }
+
+    /// Materializes this exact desired snapshot as newly adopted durable state.
+    ///
+    /// Import has already proved the remote object is this resource, so it needs the same
+    /// sensitivity-aware checkpoint conversion as the planner without inventing a change. An
+    /// omitted protection directive starts unprotected because there is no earlier state whose
+    /// value could be retained.
+    pub fn materialize_adopted(
+        &self,
+        address: &ResourceAddress,
+        remote_id: RemoteId,
+    ) -> Result<dokploy_state::ResourceState, CheckpointMaterializationError> {
+        let protected = match self.protection {
+            ProtectionIntent::Unmanaged => false,
+            ProtectionIntent::Set(value) => value,
+        };
+        ResourceCheckpoint {
+            protected,
+            containment: self.containment.clone(),
+            dependencies: self.dependencies.clone(),
+            properties: self.properties.clone(),
+        }
+        .materialize(address, remote_id)
+    }
 }
 
 impl fmt::Debug for DesiredResource {
@@ -162,6 +204,7 @@ impl fmt::Debug for DesiredResource {
         formatter
             .debug_struct("DesiredResource")
             .field("property_count", &self.properties.len())
+            .field("adopt", &self.adopt)
             .field("protection", &self.protection)
             .field("containment", &self.containment)
             .field("dependency_count", &self.dependencies.len())
@@ -271,6 +314,17 @@ impl DesiredState {
     pub fn with_moves(mut self, mut moves: Vec<MoveDirective>) -> Self {
         moves.sort();
         self.moves = moves;
+        self
+    }
+
+    /// Marks declared resources for identity-preserving adoption.
+    #[must_use]
+    pub fn with_adoptions(mut self, adoptions: Vec<ResourceAddress>) -> Self {
+        for address in adoptions {
+            if let Some(resource) = self.resources.get_mut(&address) {
+                resource.adopt = true;
+            }
+        }
         self
     }
 

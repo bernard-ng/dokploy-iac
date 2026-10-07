@@ -10,6 +10,7 @@ use common::{compile, engine, specs};
 use dokploy_engine::{ApplyError, Engine};
 use dokploy_sim::Sim;
 use dokploy_state::{DocumentId, StateStore};
+use serde_json::json;
 
 fn sim() -> Sim {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/api/live/v0.30.6");
@@ -77,6 +78,28 @@ impl World {
 }
 
 const MOVE: &str = "moves:\n  - { from: registry.old, to: registry.new }\n";
+
+#[tokio::test]
+async fn adopt_takes_ownership_of_a_matching_managed_resource() {
+    let world = World::new();
+    let id = world.sim.seed(
+        "registry",
+        &json!({
+            "registryName": "shared-registry",
+            "registryType": "cloud",
+            "registryUrl": "ghcr.io",
+            "username": "ci",
+            "password": "old-token"
+        }),
+    );
+    let document = registry("existing", "ci", "adopt:\n  - registry.existing\n");
+
+    world.apply(&document).await.expect("adopts");
+
+    assert_eq!(world.addresses(), ["registry.existing"]);
+    assert_eq!(world.sim.objects("registry")[0]["registryId"], id);
+    assert_eq!(world.plan_changes(&document).await, 0);
+}
 
 fn tag(key: &str, extra: &str) -> String {
     format!(

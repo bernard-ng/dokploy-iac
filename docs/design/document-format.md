@@ -69,11 +69,13 @@ settings:
 - Every resource may also carry `lifecycle: { protect, ignore_changes }` (each path must be a
   legal property of the kind) and `depends_on: [address]`.
 
-Two top-level lists record changes of address, in either kind of document:
+Three top-level lists control identity and ownership, in either kind of document:
 
 ```yaml
 moves:
   - { from: application.web, to: application.api }   # the same resource, a new address
+adopt:
+  - registry.ghcr                                     # take ownership of the remote match
 removed:
   - { from: redis.legacy }                            # stop managing it, leave it at Dokploy
   - { from: postgres.old, destroy: true }             # delete it
@@ -83,7 +85,24 @@ An address is a suffix of the full one (`application.web`, or `environment.stagi
 resolved by the engine against what the document declares and what state tracks, so it names the
 directive when it matches nothing or several. `to` must be declared in the document. Once a move
 has happened `from` is gone from state, and a bare `kind.key` then means a sibling of `to`, which
-keeps the declaration harmless to leave in. A removal of something nothing tracks does nothing.
+keeps the declaration harmless to leave in. `adopt` resolves only against declared resources and
+allows a managed resource with the same natural key to enter state without recreating it. Adoption
+refuses a create-only mismatch because preserving the remote identity would be impossible. A removal
+of something nothing tracks does nothing.
+
+## Workspace manifest
+
+`dokploy import all` writes one settings document, one document per project, and this manifest:
+
+```yaml
+version: 1
+documents:
+  - settings.yaml
+  - projects/customer-portal.yaml
+```
+
+Manifest paths are unique, relative paths below the workspace. `dokploy plan --all` reads them in
+the listed order while keeping files, secrets, and per-document state relative to the workspace root.
 
 An `env` field that its spec gives a `file_key` accepts that key beside it: `env_file: { file: path }`
 or `{ file: path, public: true }` (ADR 0010). The model records the path (`Resource::env_files`) and

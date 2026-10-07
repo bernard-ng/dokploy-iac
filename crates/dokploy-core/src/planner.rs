@@ -637,7 +637,7 @@ fn plan_present_resource(
 ) {
     let Some(stored) = stored else {
         if let Some(desired) = desired {
-            if contract.lifecycle() == ResourceLifecycle::AdoptOnly {
+            if contract.lifecycle() == ResourceLifecycle::AdoptOnly || desired.adopt {
                 plan_adoption(address, desired, remote, contract, changes, diagnostics);
             } else {
                 diagnostics.push(diagnostic(
@@ -778,16 +778,27 @@ fn plan_adoption(
         containment: None,
         dependencies: Vec::new(),
     };
-    if classify_mutation(
+    let Some((kind, _)) = classify_mutation(
         &address,
         desired,
         &baseline,
         contract,
         &mutations,
         diagnostics,
-    )
-    .is_none()
-    {
+    ) else {
+        return;
+    };
+    if kind == ChangeKind::Replace {
+        let mut issue = diagnostic(
+            PlanDiagnosticCode::UnsupportedMutation,
+            Some(address.clone()),
+        );
+        issue.property = mutations.iter().find_map(|(property, clear)| {
+            (desired.replace_on_changes.contains(property)
+                || contract.property_mode(property, *clear) == MutationMode::Replace)
+                .then_some(property.clone())
+        });
+        diagnostics.push(issue);
         return;
     }
 

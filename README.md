@@ -6,11 +6,12 @@ the dashboard: Docker Compose, but for Dokploy itself.
 
 > [!IMPORTANT]
 > **Pre-release, mid re-engineering.** The first engine has been deleted (it is preserved at
-> commit `96cab73`, a reference point in history, not a release) and the spec-driven engine that
-> replaces it is being built kind by kind. Today `dokploy validate`, `schema`, `plan`, `apply`,
-> `recover`, and `destroy` work on version 2 documents for `tag`, `registry`, and `redirect`
-> (`dokploy init` writes a starter). The rest of the dashboard arrives with the milestones in
-> [`docs/roadmap.md`](docs/roadmap.md); `import` returns in M6.
+> commit `96cab73`, a reference point in history, not a release) and replaced by the spec-driven
+> engine for the beta project and settings kinds. `dokploy validate`, `schema`, `plan`, `apply`,
+> `recover`, `destroy`, and `import` work on version 2 documents. SSO, licensing, and the other
+> identity features listed outside the beta in [ADR 0001](docs/decisions/0001-product-goal-and-scope.md)
+> remain excluded. Deployment and the live round-trip gate follow in the remaining milestones in
+> [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Where this is going
 

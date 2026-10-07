@@ -25,7 +25,7 @@ pub enum CommandStatus {
 
 use std::io::{BufRead, Write};
 
-use cli::{Cli, Command, ContextCommand};
+use cli::{Cli, Command, ContextCommand, ImportCommand, ImportEnvironment};
 use config::ConfigRepository;
 use credentials::{ApiKey, CredentialStore};
 use dokploy_sdk::Dokploy;
@@ -140,6 +140,40 @@ async fn execute_inner(
             }
             Ok(CommandStatus::Success)
         }
+        Command::Import { command } => {
+            let (selection, options) = match command {
+                ImportCommand::Settings { options } => {
+                    (dokploy_engine::ImportSelection::Settings, options)
+                }
+                ImportCommand::Project { id, options } => {
+                    (dokploy_engine::ImportSelection::Project(id), options)
+                }
+                ImportCommand::All { options } => (dokploy_engine::ImportSelection::All, options),
+            };
+            let client = client(url, api_key, config, credentials)?;
+            let specs = dokploy_spec::embedded().into_diagnostic()?;
+            let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+            let key = fingerprint_key::load(engine.instance())?;
+            let environment = match options.env {
+                ImportEnvironment::Auto => dokploy_engine::EnvironmentImportMode::Auto,
+                ImportEnvironment::Inline => dokploy_engine::EnvironmentImportMode::Inline,
+                ImportEnvironment::File => dokploy_engine::EnvironmentImportMode::File,
+                ImportEnvironment::Skip => dokploy_engine::EnvironmentImportMode::Skip,
+            };
+            workflow::import(
+                &engine,
+                key,
+                selection,
+                &dokploy_engine::ImportOptions {
+                    environment,
+                    secrets_directory: options.secrets_out,
+                },
+                &options.directory,
+                options.dry_run,
+                &mut streams,
+            )
+            .await
+        }
         Command::State { file, command } => {
             let configuration = config.load()?;
             let url = resolve_instance_url(url, &ProcessEnvironment, &configuration)?;
@@ -156,9 +190,28 @@ async fn execute_inner(
         }
         Command::Plan {
             file,
+            all,
             json,
             detailed_exitcode,
         } => {
+            if all {
+                let client = client(url, api_key, config, credentials)?;
+                let specs = dokploy_spec::embedded().into_diagnostic()?;
+                let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+                let key = fingerprint_key::load(engine.instance())?;
+                let manifest = workspace::WorkspaceManifest::load(std::path::Path::new("."))?;
+
+                return workflow::plan_all(
+                    &engine,
+                    &manifest,
+                    key,
+                    &process_environment(),
+                    json,
+                    detailed_exitcode,
+                    &mut streams,
+                )
+                .await;
+            }
             let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::plan(

@@ -148,6 +148,22 @@ omit their `server` field because Dokploy does not store or list it. `custom_rol
 `sso_providers`, `profile`, `cluster`, `license`, whitelabeling, and the licensed web-server
 `enforce_sso` and `remote_servers_only` controls remain outside the beta.
 
+## M6 status
+
+Complete. `dokploy import settings`, `import project <id>`, and `import all` inventory resources
+through the kind specs, allocate deterministic keys, render canonical version 2 documents, and
+create adopted state. Secret and content values are written as git-ignored files. Environment
+classification supports `auto`, `inline`, `file`, and `skip`; skipped, unsupported, and
+unrepresentable values are reported by category. SSO and licensing remain outside the beta.
+
+Before writing, import renders, parses, compiles, and proves that each document has an empty first
+plan, then repeats the inventory to detect topology changes. Persistence preflights every destination,
+refuses an existing document or state directory, and rolls back files created by a failed write.
+`import all` writes `dokploy.workspace.yaml`, and `dokploy plan --all` plans its documents in order.
+The simulator acceptance test imports settings and a nested project, loads the manifest, and proves
+that every plan is empty without sending a mutation. The top-level `adopt` directive enrolls one
+matching managed resource into an existing workspace while preserving its remote identity.
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured

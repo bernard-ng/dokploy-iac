@@ -648,6 +648,8 @@ project:
         api: {}
 moves:
   - { from: application.web, to: application.api }
+adopt:
+  - application.api
 removed:
   - { from: redis.legacy }
   - { from: environment.staging/postgres.old, destroy: true }
@@ -660,6 +662,8 @@ fn moves_and_removed_are_read_with_their_defaults() {
     assert_eq!(document.moves.len(), 1);
     assert_eq!(document.moves[0].from, "application.web");
     assert_eq!(document.moves[0].to, "application.api");
+    assert_eq!(document.adopt.len(), 1);
+    assert_eq!(document.adopt[0].address, "application.api");
     assert_eq!(document.removed.len(), 2);
     assert!(!document.removed[0].destroy, "stop managing is the default");
     assert_eq!(document.removed[1].from, "environment.staging/postgres.old");
@@ -673,8 +677,10 @@ fn directives_render_canonically_and_read_back_the_same() {
 
     assert!(text.contains("moves:\n  -\n    from: application.web\n    to: application.api"));
     assert!(text.contains("removed:\n"));
+    assert!(text.contains("adopt:\n  - application.api"));
     let again = parse(&text).expect("the canonical text is valid");
     assert_eq!(again.moves.len(), 1);
+    assert_eq!(again.adopt.len(), 1);
     assert_eq!(again.removed.len(), 2);
     assert_eq!(again.render(), text);
 }
@@ -694,6 +700,9 @@ moves:
 removed:
   - { from: redis.legacy, destroy: maybe }
   - not-a-mapping
+adopt:
+  - nowhere
+  - 42
 ",
     ));
 
@@ -704,6 +713,8 @@ removed:
     assert!(paths.contains(&"moves[3].extra"), "{paths:?}");
     assert!(paths.contains(&"removed[0].destroy"), "{paths:?}");
     assert!(paths.contains(&"removed[1]"), "{paths:?}");
+    assert!(paths.contains(&"adopt[0]"), "{paths:?}");
+    assert!(paths.contains(&"adopt[1]"), "{paths:?}");
     assert!(found.iter().all(|(code, _)| matches!(
         code,
         DiagnosticCode::Directive | DiagnosticCode::UnknownField

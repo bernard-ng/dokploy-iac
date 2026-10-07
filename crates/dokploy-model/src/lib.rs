@@ -17,7 +17,9 @@ mod span;
 mod value;
 
 pub use diagnostic::{Diagnostic, DiagnosticCode, Diagnostics};
-pub use document::{Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections};
+pub use document::{
+    Adoption, Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections,
+};
 pub use parse::MAX_DOCUMENT_BYTES;
 pub use read::FORMAT_VERSION;
 pub use schema::json_schema;

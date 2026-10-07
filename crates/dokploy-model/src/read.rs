@@ -9,7 +9,9 @@ use dokploy_spec::{
 };
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
-use crate::document::{Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections};
+use crate::document::{
+    Adoption, Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections,
+};
 use crate::raw::{Key, Node, Raw};
 use crate::value::{EnvValue, Selector, Source, Value};
 use crate::{Field, Span};
@@ -81,6 +83,7 @@ impl<'a> Reader<'a> {
         let mut project = None;
         let mut settings = None;
         let mut moves = Vec::new();
+        let mut adopt = Vec::new();
         let mut removed = Vec::new();
         for (key, node) in entries {
             match key.name.as_str() {
@@ -88,13 +91,14 @@ impl<'a> Reader<'a> {
                 "project" => project = Some((key, node)),
                 "settings" => settings = Some((key, node)),
                 "moves" => moves = self.moves(node),
+                "adopt" => adopt = self.adoptions(node),
                 "removed" => removed = self.removed(node),
                 other => self.error(
                     DiagnosticCode::UnknownField,
                     other,
                     key.span,
                     format!(
-                        "unknown top-level key `{other}`; a document has `version`, one of `project` or `settings`, and optionally `moves` and `removed`"
+                        "unknown top-level key `{other}`; a document has `version`, one of `project` or `settings`, and optionally `moves`, `adopt`, and `removed`"
                     ),
                 ),
             }
@@ -135,6 +139,7 @@ impl<'a> Reader<'a> {
             .flatten()
             .map(|document| Document {
                 moves,
+                adopt,
                 removed,
                 ..document
             })
@@ -164,6 +169,30 @@ impl<'a> Reader<'a> {
         }
 
         moves
+    }
+
+    /// `adopt: [address]`.
+    fn adoptions(&mut self, node: &Node) -> Vec<Adoption> {
+        let mut adoptions = Vec::new();
+        for (entry, path) in self.directive_entries(node, "adopt") {
+            match &entry.value {
+                Raw::Text(address) if address_like(address) => adoptions.push(Adoption {
+                    address: address.clone(),
+                    span: entry.span,
+                }),
+                other => self.error(
+                    DiagnosticCode::Directive,
+                    &path,
+                    entry.span,
+                    format!(
+                        "an adoption is a resource address, found {}",
+                        other.describe()
+                    ),
+                ),
+            }
+        }
+
+        adoptions
     }
 
     /// `removed: [{ from, destroy }]`; `destroy` defaults to `false`: stop managing, keep it.
@@ -349,6 +378,7 @@ impl<'a> Reader<'a> {
             scope: Scope::Settings,
             root: Root::Settings(document),
             moves: Vec::new(),
+            adopt: Vec::new(),
             removed: Vec::new(),
         })
     }
@@ -392,6 +422,7 @@ impl<'a> Reader<'a> {
             scope: Scope::Project,
             root: Root::Project(Box::new(resource)),
             moves: Vec::new(),
+            adopt: Vec::new(),
             removed: Vec::new(),
         })
     }
