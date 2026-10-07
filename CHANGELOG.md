@@ -114,6 +114,12 @@ All notable changes to this project will be documented in this file.
   The live engine test (`scripts/integration/test-engine-live.sh`) now also runs `network` and
   `destination` through the engine.
 
+### Fixed
+
+- Derive imported document keys from the collision fields of resources whose identity key is
+  intentionally logical. Domains now use their host, and the same generic path covers patches,
+  ports, schedules, mounts, redirects, backups, volume backups, and basic-auth entries.
+
 ### Changed
 
 - Milestone M2 is complete ([`docs/design/cost-gate.md`](docs/design/cost-gate.md)): `tag`,

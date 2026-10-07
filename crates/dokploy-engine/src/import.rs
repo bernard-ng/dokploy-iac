@@ -22,6 +22,7 @@ use dokploy_spec::{
 use dokploy_state::{RemoteId, ResourceAddress, ResourceKind, ResourceName, StateFile};
 use semver::Version;
 use serde_json::Value as Json;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -805,13 +806,10 @@ fn allocate(
             let spec = specs.get(&node.kind).expect("inventory kinds have specs");
             let base = match spec.singleton.as_deref() {
                 Some(key) => key.to_owned(),
-                None => remote_name(spec, &node.raw)
-                    .map(|name| slug(&name))
-                    .filter(|key| !key.is_empty())
-                    .ok_or_else(|| ImportError::Key {
-                        kind: node.kind.clone(),
-                        remote_id: node.id.as_str().to_owned(),
-                    })?,
+                None => remote_key_base(spec, &node.raw).ok_or_else(|| ImportError::Key {
+                    kind: node.kind.clone(),
+                    remote_id: node.id.as_str().to_owned(),
+                })?,
             };
             groups
                 .entry((node.parent.clone(), node.kind.clone(), base))
@@ -1510,6 +1508,48 @@ fn remote_name(spec: &KindSpec, raw: &Json) -> Option<String> {
     .map(str::to_owned)
 }
 
+fn remote_key_base(spec: &KindSpec, raw: &Json) -> Option<String> {
+    let names: Vec<&str> = spec.identity.key.as_deref().map_or_else(
+        || spec.identity.collision.iter().map(String::as_str).collect(),
+        |key| vec![key],
+    );
+    if names.is_empty() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for name in names {
+        let field = spec.fields.get(name)?;
+        let ty = parse_type(&field.ty).ok()?;
+        let value = canonical_remote(lookup(raw, api_name(name, field))?, &ty)?;
+        let part = match value {
+            Json::Bool(value) => value.to_string(),
+            Json::Number(value) => value.to_string(),
+            Json::String(value) => value,
+            _ => return None,
+        };
+        parts.push(part);
+    }
+    let source = parts.join("-");
+    let mut key = slug(&source);
+    let digest = Sha256::digest(source.as_bytes());
+    let suffix: String = digest[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if key.is_empty() {
+        key = format!("{}-{suffix}", spec.kind);
+    } else if !key.starts_with(|character: char| character.is_ascii_lowercase()) {
+        key = format!("{}-{key}", spec.kind);
+    }
+    if key.len() > 112 {
+        key.truncate(112);
+        key.push('-');
+        key.push_str(&suffix);
+    }
+
+    Some(key)
+}
+
 fn json_to_value(value: Json) -> Option<Value> {
     match value {
         Json::Null => Some(Value::Null),
@@ -1759,4 +1799,32 @@ fn create_file(path: &Path, bytes: &[u8]) -> Result<(), ImportPersistError> {
             path: path.display().to_string(),
             source,
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_key_base;
+
+    #[test]
+    fn keyless_kinds_derive_valid_keys_from_every_collision_field() {
+        let specs = dokploy_spec::embedded().expect("repository specs load");
+        let domain = specs.get("domain").expect("domain spec");
+        let port = specs.get("port").expect("port spec");
+        let redirect = specs.get("redirect").expect("redirect spec");
+
+        assert_eq!(
+            remote_key_base(domain, &serde_json::json!({ "host": "api.example.test" })),
+            Some("api-example-test".to_owned())
+        );
+        assert_eq!(
+            remote_key_base(
+                port,
+                &serde_json::json!({ "publishedPort": 443, "protocol": "tcp" })
+            ),
+            Some("item-443-tcp".to_owned())
+        );
+        let punctuation = remote_key_base(redirect, &serde_json::json!({ "regex": ".*" }))
+            .expect("punctuation-only collision values get a stable fallback");
+        assert!(punctuation.starts_with("redirect-"), "{punctuation}");
+    }
 }

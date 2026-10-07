@@ -206,6 +206,56 @@ async fn project_import_requires_the_selected_remote_identity() {
 }
 
 #[tokio::test]
+async fn project_import_allocates_a_domain_key_from_its_host() {
+    let specs = Arc::new(common::specs());
+    let sim = Sim::new(specs);
+    let project = sim.seed("project", &json!({ "name": "Shop" }));
+    let environment = sim.seed(
+        "environment",
+        &json!({ "projectId": project, "name": "Production" }),
+    );
+    let application = sim.seed(
+        "application",
+        &json!({ "environmentId": environment, "name": "API" }),
+    );
+    sim.seed(
+        "domain",
+        &json!({
+            "applicationId": application,
+            "domainType": "application",
+            "host": "api.example.test",
+            "path": "/",
+            "internalPath": "/",
+            "stripPath": false,
+            "port": 3000,
+            "https": false,
+            "certificateType": "none",
+            "customCertResolver": null,
+            "customEntrypoint": null,
+            "middlewares": [],
+            "forwardAuthEnabled": false,
+            "enabled": true
+        }),
+    );
+    let engine = common::engine(&sim);
+
+    let bundle = engine
+        .import(
+            ImportSelection::Project(project),
+            &engine.fingerprinter(common::key()),
+            &ImportOptions::default(),
+        )
+        .await
+        .expect("a keyless domain uses its natural collision value as its document key");
+
+    let document = bundle.documents()[0].render();
+    assert!(
+        document.contains("domains:\n            api-example-test:"),
+        "{document}"
+    );
+}
+
+#[tokio::test]
 async fn import_rejects_a_secret_directory_outside_the_workspace_before_inventory() {
     let specs = Arc::new(common::specs());
     let sim = Sim::new(specs);

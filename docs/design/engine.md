@@ -27,8 +27,9 @@ let plan = engine.plan(&compiled, state.as_ref()).await?;
 ## Import
 
 `Engine::import` implements ADR 0011 as a spec-driven reverse path. It inventories parents before
-children, combines collection and direct reads, allocates stable document keys, and maps every
-supported property through the same field metadata used by compile and apply. It renders each
+children, combines collection and direct reads, allocates stable document keys from the identity
+field or the ordered collision fields of a logically keyed kind, and maps every supported property
+through the same field metadata used by compile and apply. It renders each
 document, parses it again, compiles it, materializes state with the observed remote ids, and requires
 the first plan to be complete, applyable, and empty. A second inventory must have the same identities
 and containment before the bundle can be persisted.
