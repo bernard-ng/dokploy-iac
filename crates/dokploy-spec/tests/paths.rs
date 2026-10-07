@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use dokploy_spec::{
-    FieldType, KindSpec, Mutability, PathError, PathShape, SpecRegistry, ValueClass, load_dir,
-    parse_spec,
+    FieldType, KindSpec, Mutability, PathError, PathShape, ReadNormalization, SpecRegistry,
+    ValueClass, load_dir, parse_spec,
 };
 
 fn registry() -> SpecRegistry {
@@ -85,6 +85,10 @@ fn flags_follow_the_class_mutability_and_type() {
 
     let app_name = registry.property("application", "app_name").unwrap();
     assert_eq!(app_name.mutability, Mutability::CreateOnly);
+    assert_eq!(
+        app_name.read_normalization,
+        Some(ReadNormalization::GeneratedSuffix)
+    );
     assert!(!app_name.is_required_on_create(), "nullable");
 }
 

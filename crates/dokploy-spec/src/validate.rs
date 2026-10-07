@@ -497,6 +497,14 @@ fn check_field(
             "JSON decoding applies only to a write_only secret text field",
         );
     }
+    if field.read_normalization.is_some()
+        && (!matches!(parsed, Some(FieldType::Text)) || field.class != ValueClass::Public)
+    {
+        context.add(
+            format!("{path}.read_normalization"),
+            "read normalization applies only to a public text field",
+        );
+    }
     if let Some(nest) = &field.nest {
         let tag_pointer = field.api.as_deref().unwrap_or_default();
         if !matches!(parsed, Some(FieldType::Union { .. })) || !top_level {

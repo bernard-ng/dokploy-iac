@@ -2,7 +2,7 @@
 //! returns compare equal exactly when they mean the same (ADR 0004, "Comparison").
 
 use dokploy_model::{Selector, Value};
-use dokploy_spec::FieldType;
+use dokploy_spec::{FieldType, PropertyInfo, ReadNormalization};
 use serde_json::Value as Json;
 
 /// Why a document value has no canonical comparable form yet.
@@ -116,5 +116,43 @@ pub(crate) fn canonical_remote(value: &Json, ty: &FieldType) -> Option<Json> {
         | FieldType::File
         | FieldType::Selector(_)
         | FieldType::Shared(_) => None,
+    }
+}
+
+/// Canonicalizes a remote value and removes any server-generated decoration declared by its
+/// property spec.
+pub(crate) fn canonical_property_remote(value: &Json, info: &PropertyInfo) -> Option<Json> {
+    let canonical = canonical_remote(value, &info.ty)?;
+    match (info.read_normalization, canonical) {
+        (Some(ReadNormalization::GeneratedSuffix), Json::String(value)) => Some(Json::String(
+            ReadNormalization::GeneratedSuffix
+                .normalize_text(&value)
+                .to_owned(),
+        )),
+        (_, canonical) => Some(canonical),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dokploy_spec::ReadNormalization;
+
+    #[test]
+    fn generated_suffix_requires_exactly_six_lowercase_alphanumeric_characters() {
+        let normalization = ReadNormalization::GeneratedSuffix;
+        assert_eq!(
+            normalization.normalize_text("customer-api-a1b2c3"),
+            "customer-api"
+        );
+        assert_eq!(normalization.normalize_text("customer-api"), "customer-api");
+        assert_eq!(
+            normalization.normalize_text("customer-api-a1b2c"),
+            "customer-api-a1b2c"
+        );
+        assert_eq!(
+            normalization.normalize_text("customer-api-A1B2C3"),
+            "customer-api-A1B2C3"
+        );
+        assert_eq!(normalization.normalize_text("-a1b2c3"), "-a1b2c3");
     }
 }

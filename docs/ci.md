@@ -24,7 +24,9 @@ does not pull images, create secrets, access the Docker socket, or start the
 Dokploy integration environment. The separate `engine-live` job starts the
 disposable stack, runs `scripts/integration/test-engine-live.sh`, and always invokes
 `scripts/integration/reset.sh` so containers, volumes, generated credentials,
-and local integration state do not survive the job.
+and local integration state do not survive the job. The same matrix then runs
+`scripts/integration/test-round-trip-live.sh`, which rebuilds the imported workspace on a second
+fresh instance and compares path-and-content digests while excluding instance-bound state.
 
 SDK transport tests enforce the 16 MiB `MAX_JSON_RESPONSE_BYTES` boundary for
 typed and imperative JSON responses. They cover declared lengths rejected
@@ -154,6 +156,7 @@ dist generate --mode=ci --check
 dist plan
 scripts/integration/up.sh
 scripts/integration/test-engine-live.sh
+scripts/integration/test-round-trip-live.sh
 scripts/integration/reset.sh
 ```
 

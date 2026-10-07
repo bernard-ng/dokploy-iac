@@ -59,7 +59,7 @@ For a supported Dokploy version V and an instance I containing only supported ki
 2. applying `D` (then deploying) to a fresh instance of V, after the documented
    manual steps, yields `I'`;
 3. `import(I')` is equal to `D` after normalisation, which removes only: remote ids,
-   timestamps, status fields, generated `app_name` suffixes that `D` did not pin, and
+   timestamps, status fields, generated `app_name` suffixes, and
    values Dokploy generates for secrets that `D` did not declare.
 
 The test is automated against the simulator on every change and against live

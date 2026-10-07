@@ -77,6 +77,7 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
         &json!({
             "environmentId": environment,
             "name": "Web API",
+            "appName": "customer-portal-web-abc123",
             "description": "Imported application",
             "replicas": 2,
             "env": "PUBLIC_MODE=enabled\nAPP_TOKEN=application-secret-canary"
@@ -119,6 +120,11 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
         project.contains("applications:\n        web-api:"),
         "{project}"
     );
+    assert!(
+        project.contains("app_name: customer-portal-web"),
+        "{project}"
+    );
+    assert!(!project.contains("customer-portal-web-abc123"), "{project}");
     assert!(project.contains("deploy: on_change"), "{project}");
     assert_eq!(
         bundle.documents()[1].state().deployments().len(),

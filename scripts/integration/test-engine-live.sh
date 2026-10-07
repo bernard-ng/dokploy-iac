@@ -14,6 +14,8 @@ script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$script_directory/common.sh"
 
+ensure_swarm_manager
+
 api_key_file="$state_directory/api-key"
 if [[ ! -s "$api_key_file" ]]; then
     echo "Run scripts/integration/up.sh before the live engine test." >&2

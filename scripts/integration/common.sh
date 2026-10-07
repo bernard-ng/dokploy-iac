@@ -34,3 +34,20 @@ prepare_runtime() {
     create_secret_file "$secret_directory/postgres_password"
     create_secret_file "$secret_directory/auth_secret"
 }
+
+ensure_swarm_manager() {
+    local swarm_state
+    local control_available
+
+    swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
+    control_available="$(docker info --format '{{.Swarm.ControlAvailable}}')"
+    if [[ "$swarm_state" == "inactive" ]]; then
+        docker swarm init --advertise-addr 127.0.0.1 >/dev/null
+        echo "Initialized a single-node Docker Swarm for deployment tests."
+        return
+    fi
+    if [[ "$swarm_state" != "active" || "$control_available" != "true" ]]; then
+        echo "The integration host must be a Docker Swarm manager." >&2
+        exit 1
+    fi
+}

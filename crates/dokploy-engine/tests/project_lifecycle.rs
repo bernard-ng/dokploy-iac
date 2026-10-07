@@ -41,6 +41,32 @@ async fn a_project_is_created_with_its_variables_and_tags_and_the_next_plan_is_e
 }
 
 #[tokio::test]
+async fn an_application_app_name_converges_after_dokploy_adds_its_generated_suffix() {
+    let world = ProjectWorld::bare();
+    let document = r#"version: 2
+project:
+  slug: shop
+  environments:
+    staging:
+      applications:
+        api:
+          app_name: customer-api
+          source:
+            type: docker
+            image: nginx:alpine
+            password: null
+"#;
+
+    world.apply_text(document, &[]).await.expect("applies");
+
+    let application = world.sim.objects("application").remove(0);
+    assert_eq!(application["appName"], "customer-api-sim001");
+    let plan = world.plan_text(document, &[]).await;
+    assert!(plan.applyable(), "{:?}", plan.diagnostics());
+    assert!(plan.changes().is_empty(), "converged: {plan:?}");
+}
+
+#[tokio::test]
 async fn a_changed_description_is_one_update_that_carries_only_the_description() {
     let world = ProjectWorld::bare();
     let before = project("Storefront", "", "");

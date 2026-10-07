@@ -38,7 +38,8 @@ fields:
     type: text
     mutability: create_only
     nullable: true
-    doc: Dokploy's Docker-level name; generated when omitted.
+    read_normalization: generated_suffix
+    doc: Stable base of Dokploy's Docker-level name; Dokploy appends a generated suffix.
   description:
     type: text
     nullable: true

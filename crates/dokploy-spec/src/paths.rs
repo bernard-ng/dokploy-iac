@@ -12,7 +12,7 @@
 
 use thiserror::Error;
 
-use crate::model::{Granularity, KindSpec, Mutability, ValueClass};
+use crate::model::{Granularity, KindSpec, Mutability, ReadNormalization, ValueClass};
 use crate::registry::SpecRegistry;
 use crate::types::{FieldType, parse_type};
 
@@ -84,6 +84,8 @@ pub struct PropertyInfo {
     pub fallback: Option<serde_json::Value>,
     /// Whether surrounding whitespace is ignored when the text is compared (`trim`).
     pub trim: bool,
+    /// How Dokploy's stored value is normalized back to the declarative value.
+    pub read_normalization: Option<ReadNormalization>,
     /// Whether changing this property can restart Traefik or the server.
     pub disruptive: bool,
     /// Whether changing this property requires a deployment to take effect.
@@ -314,6 +316,7 @@ fn base(
         tag_api: None,
         fallback: field.fallback.clone(),
         trim: field.trim,
+        read_normalization: field.read_normalization,
         disruptive: field.disruptive,
         needs_deploy: field.needs_deploy,
         entry: field.entry.clone(),

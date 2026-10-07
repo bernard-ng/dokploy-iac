@@ -65,10 +65,12 @@ round-trips.
 
 ### `app_name`
 
-`app_name` is optional and create-only. Import writes it so a rebuilt instance
-reproduces Docker service names, which Compose files and network aliases often
-depend on. When omitted, Dokploy generates one and the plan records it as a
-computed value after creation.
+`app_name` is optional and create-only. It is the stable base of the Docker service
+name. Dokploy appends a random six-character suffix even when the base is supplied.
+Projection and import remove that suffix, so importing and rebuilding preserve the
+base while allowing each instance to generate its own suffix. Compose files and
+network aliases must use Dokploy's resulting service name when they refer to an
+application service directly.
 
 ## Consequences
 

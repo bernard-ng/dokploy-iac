@@ -1,0 +1,22 @@
+version: 2
+project:
+  slug: roundtrip
+  description: Live round trip fixture
+  env:
+    SHARED_MODE: live
+  tags:
+    - { name: roundtrip }
+  environments:
+    production:
+      applications:
+        web:
+          source: { type: docker, image: "nginx:alpine", password: null }
+          environment:
+            PUBLIC_MODE: roundtrip
+            API_TOKEN: { secret: { env: ROUNDTRIP_API_TOKEN } }
+          lifecycle: { deploy: on_change }
+          patches:
+            index:
+              file_path: README.md
+              type: create
+              content: { file: .dokploy/files/roundtrip-readme.txt }

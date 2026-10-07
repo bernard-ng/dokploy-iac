@@ -157,9 +157,13 @@ fields:
 ```
 
 Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
-`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `entry`, `trim`, `file_key`,
-`request`, `list_api`, `json`, `key_selector`, `since`, `until`, `doc` (one line for the generated
-reference), `example`.
+`needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `entry`, `trim`,
+`read_normalization`, `file_key`, `request`, `list_api`, `json`, `key_selector`, `since`, `until`,
+`doc` (one line for the generated reference), `example`.
+
+`read_normalization: generated_suffix` applies to a public text field when Dokploy stores the
+requested base with a random six-character lowercase alphanumeric suffix. Projection and import
+remove that suffix, while create requests continue to send the declarative base.
 
 `request` names the top-level request field when `api` is a different response field or a JSON
 pointer. Notification settings use this because Dokploy accepts `webhookUrl` but reads it below a

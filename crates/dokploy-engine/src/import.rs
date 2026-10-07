@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use crate::canonical::canonical_remote;
+use crate::canonical::{canonical_property_remote, canonical_remote};
 use crate::discover::{MAX_COLLECTION_ITEMS, read_collection};
 use crate::envtext::EnvText;
 use crate::project::{api_name, held_member_ids, item_id, lookup};
@@ -1329,7 +1329,7 @@ fn import_field(
             }
             Ok(Some(Value::Map(values)))
         }
-        _ => match canonical_remote(raw, &ty).and_then(json_to_value) {
+        _ => match canonical_property_remote(raw, &info).and_then(json_to_value) {
             Some(value) => Ok(Some(value)),
             None => unrepresentable(
                 context,

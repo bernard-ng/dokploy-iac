@@ -1,0 +1,4 @@
+version: 1
+documents:
+  - .dokploy/settings.yaml
+  - .dokploy/projects/roundtrip.yaml

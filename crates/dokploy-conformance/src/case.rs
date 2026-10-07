@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use dokploy_spec::{
-    FieldType, KindSpec, Mutability, PathShape, Scope, SpecRegistry, ValueClass, WriteGroup,
+    FieldType, KindSpec, Mutability, PathShape, ReadNormalization, Scope, SpecRegistry, ValueClass,
+    WriteGroup,
 };
 use dokploy_state::{DocumentId, ResourceName};
 use serde_json::{Value as Json, json};
@@ -60,6 +61,7 @@ pub(crate) struct FieldCase {
     pub(crate) content: bool,
     pub(crate) required: bool,
     pub(crate) default_key: bool,
+    pub(crate) read_normalization: Option<ReadNormalization>,
     /// The value the first document gives, and a different one for changes.
     pub(crate) a: Val,
     pub(crate) b: Option<Val>,
@@ -220,6 +222,7 @@ impl Case {
                         && !info.has_default
                         && info.fallback.is_none()),
                 default_key,
+                read_normalization: info.read_normalization,
                 a,
                 b,
                 group: group.clone(),

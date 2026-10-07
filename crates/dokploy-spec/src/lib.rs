@@ -24,8 +24,8 @@ pub use model::{
     Api, Authority, Child, Coverage, CreateIdentity, CreateOperation, Deploy, DeployWait, Embedded,
     EntryOperations, EntryRead, EntryWrite, Field, Granularity, Hook, Identity, Ignored, KindClass,
     KindSpec, Ledger, ListRead, ListScope, MadeWithParent, Membership, MembershipOp, Mutability,
-    OneRead, Operation, Read, Scope, Shape, SingletonRead, SupplementalRead, ValueClass,
-    WriteGroup,
+    OneRead, Operation, Read, ReadNormalization, Scope, Shape, SingletonRead, SupplementalRead,
+    ValueClass, WriteGroup,
 };
 pub use paths::{PathError, PathShape, PropertyInfo, ValueRules};
 pub use registry::SpecRegistry;

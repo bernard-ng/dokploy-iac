@@ -460,6 +460,38 @@ pub enum Granularity {
     Key,
 }
 
+/// Normalization applied when a public value is read from Dokploy.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadNormalization {
+    /// Remove the random six-character suffix Dokploy appends to a supplied base name.
+    GeneratedSuffix,
+}
+
+impl ReadNormalization {
+    /// Converts a text value stored by Dokploy back to its declarative form.
+    #[must_use]
+    pub fn normalize_text(self, value: &str) -> &str {
+        match self {
+            Self::GeneratedSuffix => {
+                let Some((base, suffix)) = value.rsplit_once('-') else {
+                    return value;
+                };
+                if !base.is_empty()
+                    && suffix.len() == 6
+                    && suffix
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                {
+                    base
+                } else {
+                    value
+                }
+            }
+        }
+    }
+}
+
 /// One configurable field.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -520,6 +552,9 @@ pub struct Field {
     /// Whether surrounding whitespace is ignored when comparing text.
     #[serde(default)]
     pub trim: bool,
+    /// How Dokploy's stored value is normalized back to the declarative value.
+    #[serde(default)]
+    pub read_normalization: Option<ReadNormalization>,
     /// For a union whose arms Dokploy keeps under one nested object (`dnsProvider.create` takes
     /// `config: { providerType, apiToken }`): the key of that object. The members keep their plain
     /// names; the engine writes them inside the object and reads them through `/<nest>/<name>`, and

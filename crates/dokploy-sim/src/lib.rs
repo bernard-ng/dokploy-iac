@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use dokploy_api::{BodyShape, EndpointMethod, endpoint_by_operation, request_contract};
 use dokploy_sdk::{DokployError, Error, OperationRequest, Transport};
-use dokploy_spec::{CreateIdentity, KindSpec, SpecRegistry, WriteGroup};
+use dokploy_spec::{CreateIdentity, KindSpec, ReadNormalization, SpecRegistry, WriteGroup};
 use serde_json::{Map, Value};
 use url::Url;
 
@@ -685,6 +685,7 @@ impl Sim {
                 }
             }
         }
+        apply_read_normalizations(spec, &mut object);
         // A relation the kind holds is an array, empty until a member is added.
         for field in spec.fields.values() {
             let base = field
@@ -1206,6 +1207,23 @@ impl Sim {
             Some(template) => fill(&template, object),
             None => Value::Object(object.clone()),
         })
+    }
+}
+
+/// Reproduces server-generated decorations so engine tests compare against the same shape as a
+/// live Dokploy instance.
+fn apply_read_normalizations(spec: &KindSpec, object: &mut Object) {
+    for (name, field) in &spec.fields {
+        if field.read_normalization != Some(ReadNormalization::GeneratedSuffix) {
+            continue;
+        }
+        let api = field.api.as_deref().unwrap_or(name);
+        if api.starts_with('/') {
+            continue;
+        }
+        if let Some(Value::String(value)) = object.get_mut(api) {
+            value.push_str("-sim001");
+        }
     }
 }
 

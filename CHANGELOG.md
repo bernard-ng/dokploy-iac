@@ -6,10 +6,18 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Normalize the random six-character suffix Dokploy appends to application `appName` values. An
+  imported `app_name` now reapplies and verifies against a fresh instance, and the simulator
+  reproduces the live behavior for round-trip coverage.
+
 - Make bare `dokploy plan` load `dokploy.workspace.yaml` and plan every listed document. Keep
   `--file` for an explicit standalone document and `--all` as a compatibility alias.
 
 ### Added
+
+- Add the M8 live round-trip gate. A manifest-backed fixture is applied and deployed, imported,
+  rebuilt on a fresh instance, imported again, and compared by path and content digest. CI runs the
+  gate against the digest-pinned Dokploy 0.30.6 and 0.30.7 images.
 
 - Complete M7 deployment support. Deployable resources accept `lifecycle.deploy` with `never`,
   `on_create`, or `on_change`; deployment plans use only spec fields marked `needs_deploy`, honor

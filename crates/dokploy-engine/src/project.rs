@@ -9,10 +9,10 @@ use std::collections::BTreeMap;
 use dokploy_core::{
     ComparableValue, ExternalResolution, PropertyObservation, PropertyPath, PropertyUnknownReason,
 };
-use dokploy_spec::{Field, FieldType, KindSpec, PathShape, parse_type};
+use dokploy_spec::{Field, FieldType, KindSpec, PathShape};
 use serde_json::Value as Json;
 
-use crate::canonical::canonical_remote;
+use crate::canonical::{canonical_property_remote, canonical_remote};
 use crate::envtext::EnvText;
 use crate::selectors::SelectorIndex;
 
@@ -44,19 +44,19 @@ pub(crate) fn list_item_id<'v>(spec: &KindSpec, item: &'v Json) -> Option<&'v st
 /// The canonical value of one field of a response item, when it is readable.
 pub(crate) fn field_value(spec: &KindSpec, name: &str, item: &Json) -> Option<Json> {
     let field = spec.fields.get(name)?;
-    let ty = parse_type(&field.ty).ok()?;
-    canonical_remote(lookup(item, api_name(name, field))?, &ty)
+    let info = spec.property(name).ok()?;
+    canonical_property_remote(lookup(item, api_name(name, field))?, &info)
 }
 
 /// The canonical value of a field in a collection item, honoring its list-specific mapping.
 pub(crate) fn list_field_value(spec: &KindSpec, name: &str, item: &Json) -> Option<Json> {
     let field = spec.fields.get(name)?;
-    let ty = parse_type(&field.ty).ok()?;
+    let info = spec.property(name).ok()?;
     let pointer = field
         .list_api
         .as_deref()
         .unwrap_or_else(|| api_name(name, field));
-    canonical_remote(lookup(item, pointer)?, &ty)
+    canonical_property_remote(lookup(item, pointer)?, &info)
 }
 
 /// Projects an item onto every property of the kind, and onto the entries of keyed
@@ -146,7 +146,7 @@ fn observe(
     match lookup(item, &info.api) {
         None => not_returned,
         Some(Json::Null) => PropertyObservation::KnownAbsent,
-        Some(value) => canonical_remote(value, &info.ty)
+        Some(value) => canonical_property_remote(value, info)
             .and_then(|canonical| ComparableValue::try_from_json(canonical).ok())
             .map_or(
                 PropertyObservation::Unknown(PropertyUnknownReason::InvalidResponse),

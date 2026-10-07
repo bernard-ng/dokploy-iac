@@ -167,6 +167,12 @@ fn holds(w: &World<'_>, values: &Values) -> Check {
             .fields
             .iter()
             .any(|f| f.wire == wire && matches!(f.a, crate::case::Val::SelectorSet { .. }));
+        let read_normalization = w
+            .case
+            .fields
+            .iter()
+            .find(|field| field.wire == wire)
+            .and_then(|field| field.read_normalization);
         let same = if is_set {
             let sorted = |value: Option<&Json>| {
                 let mut items: Vec<String> = value
@@ -177,6 +183,12 @@ fn holds(w: &World<'_>, values: &Values) -> Check {
                 items
             };
             sorted(crate::case::json_at(&object, &wire)) == sorted(Some(&want))
+        } else if let (Some(normalization), Some(held), Some(wanted)) = (
+            read_normalization,
+            crate::case::json_at(&object, &wire).and_then(Json::as_str),
+            want.as_str(),
+        ) {
+            normalization.normalize_text(held) == wanted
         } else {
             crate::case::json_at(&object, &wire) == Some(&want)
         };
