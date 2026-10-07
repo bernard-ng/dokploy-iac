@@ -10,7 +10,7 @@ use std::io::Write as _;
 use std::process::{Command, Stdio};
 
 use common::{compile_in, compile_with, specs};
-use dokploy_engine::{ApplyError, DeployOptions, Engine, RecoveryAction};
+use dokploy_engine::{ApplyError, DeployOptions, DeploySummary, Engine, RecoveryAction};
 use dokploy_sdk::{Dokploy, OperationRequest, Transport};
 use dokploy_state::{DocumentId, StateStore};
 use serde_json::{Value, json};
@@ -708,7 +708,7 @@ settings:
     );
 }
 
-const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    production:\n      applications:\n        api:\n          source: { type: docker, image: \"nginx:alpine\", username: ci, password: { env: LIVE_DOCKER_PASSWORD } }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          lifecycle: { deploy: on_change }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
+const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    production:\n      applications:\n        api:\n          source: { type: docker, image: \"nginx:alpine\", password: null }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          lifecycle: { deploy: on_change }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
 
 /// A project document applied through the engine, its workspace holding the files it names.
 struct LiveProject {
@@ -767,7 +767,7 @@ impl LiveProject {
         plan.changes().len()
     }
 
-    async fn deploy(&self, text: &str, env: &[(&str, &str)]) -> usize {
+    async fn deploy(&self, text: &str, env: &[(&str, &str)]) -> DeploySummary {
         let compiled = self.compiled(text, env);
         self.engine
             .deploy(
@@ -782,7 +782,14 @@ impl LiveProject {
             )
             .await
             .expect("deploys")
-            .deployed()
+    }
+
+    async fn destroy(&self, text: &str, env: &[(&str, &str)]) {
+        let compiled = self.compiled(text, env).cleared();
+        self.engine
+            .apply(&compiled, &self.store, |_| true)
+            .await
+            .expect("destroys the live project");
     }
 }
 
@@ -792,15 +799,16 @@ async fn an_application_reaches_done_through_the_deployment_engine() {
     guard();
     let live = LiveProject::new();
     let raw = client();
-    let env = [
-        ("LIVE_API_TOKEN", "live-token-canary-1"),
-        ("LIVE_DOCKER_PASSWORD", "live-docker-canary-1"),
-    ];
+    let env = [("LIVE_API_TOKEN", "live-token-canary-1")];
     live.write("patches/motd.txt", "hello from the repository");
     live.apply(PROJECT, &env).await;
 
-    assert_eq!(live.deploy(PROJECT, &env).await, 1);
-    assert_eq!(live.deploy(PROJECT, &env).await, 0, "the receipt converges");
+    let first = live.deploy(PROJECT, &env).await;
+    assert!(first.successful(), "the live deployment succeeds");
+    assert_eq!(first.deployed(), 1);
+    let converged = live.deploy(PROJECT, &env).await;
+    assert!(converged.successful(), "the converged deployment succeeds");
+    assert_eq!(converged.deployed(), 0, "the receipt converges");
     let projects = call(&raw, OperationRequest::new("project.all")).await;
     let application = projects
         .as_array()
@@ -812,8 +820,7 @@ async fn an_application_reaches_done_through_the_deployment_engine() {
         .expect("the deployed application exists");
     assert_eq!(application["applicationStatus"], "done");
 
-    live.apply("version: 2\nproject:\n  slug: iac-live\n", &env)
-        .await;
+    live.destroy(PROJECT, &env).await;
 }
 
 #[tokio::test]
@@ -822,10 +829,7 @@ async fn an_environment_value_and_a_content_edited_at_dokploy_are_drift_the_engi
     guard();
     let live = LiveProject::new();
     let raw = client();
-    let env = [
-        ("LIVE_API_TOKEN", "live-token-canary-1"),
-        ("LIVE_DOCKER_PASSWORD", "live-docker-canary-1"),
-    ];
+    let env = [("LIVE_API_TOKEN", "live-token-canary-1")];
     live.write("patches/motd.txt", "hello from the repository");
 
     live.apply(PROJECT, &env).await;
@@ -937,8 +941,7 @@ async fn an_environment_value_and_a_content_edited_at_dokploy_are_drift_the_engi
     assert_eq!(live.changes(PROJECT, &env).await, 0);
 
     // The project goes away with its application.
-    let empty = "version: 2\nproject:\n  slug: iac-live\n";
-    live.apply(empty, &env).await;
+    live.destroy(PROJECT, &env).await;
 }
 
 #[tokio::test]
