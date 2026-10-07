@@ -136,7 +136,7 @@ pub async fn plan<T: Transport>(
     })
 }
 
-/// `plan --all`: plan every manifest document in order against its own state lineage.
+/// Plan every manifest document in order against its own state lineage.
 pub async fn plan_all<T: Transport>(
     engine: &Engine<T>,
     manifest: &crate::workspace::WorkspaceManifest,

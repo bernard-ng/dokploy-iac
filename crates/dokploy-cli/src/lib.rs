@@ -194,7 +194,7 @@ async fn execute_inner(
             json,
             detailed_exitcode,
         } => {
-            if all {
+            if all || file.is_none() {
                 let client = client(url, api_key, config, credentials)?;
                 let specs = dokploy_spec::embedded().into_diagnostic()?;
                 let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
@@ -212,6 +212,7 @@ async fn execute_inner(
                 )
                 .await;
             }
+            let file = file.expect("an explicit plan file is present outside workspace mode");
             let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
             let key = fingerprint_key::load(engine.instance())?;
             workflow::plan(

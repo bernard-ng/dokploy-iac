@@ -160,8 +160,7 @@ Before writing, import renders, parses, compiles, and proves that each document 
 plan, then repeats the inventory to detect topology changes. Persistence preflights every destination,
 refuses an existing document or state directory, and rolls back files created by a failed write.
 Every import writes `dokploy.workspace.yaml` as the public entry point and keeps its documents,
-artifacts, secrets, and state below `.dokploy/`. `dokploy plan --all` plans the manifest documents in
-order.
+artifacts, secrets, and state below `.dokploy/`. `dokploy plan` plans the manifest documents in order.
 The simulator acceptance test imports settings and a nested project, loads the manifest, and proves
 that every plan is empty without sending a mutation. The top-level `adopt` directive enrolls one
 matching managed resource into an existing workspace while preserving its remote identity.

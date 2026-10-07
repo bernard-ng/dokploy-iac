@@ -102,7 +102,7 @@ documents:
   - .dokploy/projects/customer-portal.yaml
 ```
 
-Manifest paths are unique paths below the workspace's `.dokploy/` directory. `dokploy plan --all`
+Manifest paths are unique paths below the workspace's `.dokploy/` directory. `dokploy plan`
 reads them in the listed order while keeping content in `.dokploy/files/`, secrets in
 `.dokploy/secrets/`, and per-document state in `.dokploy/state/`.
 

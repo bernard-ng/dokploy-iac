@@ -78,15 +78,11 @@ pub enum Command {
 
     /// Compare configuration, durable state, and fresh Dokploy state without mutating anything.
     Plan {
-        /// Configuration file to plan.
-        #[arg(
-            long,
-            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
-            value_name = "PATH"
-        )]
-        file: PathBuf,
+        /// Plan one explicit document instead of the workspace manifest.
+        #[arg(long, value_name = "PATH", conflicts_with = "all")]
+        file: Option<PathBuf>,
 
-        /// Plan every document in `dokploy.workspace.yaml` from the current directory.
+        /// Plan the workspace manifest. Kept as an explicit compatibility alias.
         #[arg(long)]
         all: bool,
 
@@ -436,16 +432,31 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Plan {
-                file,
+                file: Some(file),
                 all: false,
                 json: true,
                 detailed_exitcode: true,
             } if file.as_path() == Path::new("stack.yaml")
         ));
 
+        let workspace =
+            Cli::try_parse_from(["dokploy", "plan"]).expect("workspace plan command line is valid");
+        assert!(matches!(
+            workspace.command,
+            Command::Plan {
+                file: None,
+                all: false,
+                json: false,
+                detailed_exitcode: false,
+            }
+        ));
+
         let all = Cli::try_parse_from(["dokploy", "plan", "--all"])
             .expect("workspace plan command line is valid");
         assert!(matches!(all.command, Command::Plan { all: true, .. }));
+
+        let ambiguous = Cli::try_parse_from(["dokploy", "plan", "--all", "--file", "stack.yaml"]);
+        assert!(ambiguous.is_err());
     }
 
     #[test]

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Make bare `dokploy plan` load `dokploy.workspace.yaml` and plan every listed document. Keep
+  `--file` for an explicit standalone document and `--all` as a compatibility alias.
+
 ### Added
 
 - Show line-based import progress for both inventory passes, document construction and convergence

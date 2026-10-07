@@ -28,7 +28,7 @@ workspace/
 
 ```bash
 dokploy import all           # adopt an existing instance into this workspace
-dokploy plan --all           # what would change, secret-free
+dokploy plan                 # what would change, secret-free
 dokploy apply --all --deploy # reconcile settings, then projects, then deploy
 ```
 
