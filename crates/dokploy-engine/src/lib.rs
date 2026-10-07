@@ -14,6 +14,7 @@ mod apply;
 mod canonical;
 mod compile;
 mod contract;
+mod deploy;
 mod discover;
 mod dotenv;
 mod envtext;
@@ -38,6 +39,9 @@ use thiserror::Error;
 pub use apply::{ApplyError, ApplySummary};
 pub use compile::{AddressError, CompileError, Compiled, DirectiveError};
 pub use contract::required_at_creation;
+pub use deploy::{
+    DeployError, DeployOptions, DeployReason, DeploySummary, DeploymentPlan, PlannedDeployment,
+};
 pub use dotenv::DotenvError;
 pub use fingerprint::{FingerprintKey, FingerprintKeyError, Fingerprinter};
 pub use import::{

@@ -10,7 +10,7 @@ use dokploy_spec::{
 
 use crate::diagnostic::{Diagnostic, DiagnosticCode};
 use crate::document::{
-    Adoption, Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections,
+    Adoption, DeployPolicy, Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections,
 };
 use crate::raw::{Key, Node, Raw};
 use crate::value::{EnvValue, Selector, Source, Value};
@@ -633,7 +633,7 @@ impl<'a> Reader<'a> {
                 DiagnosticCode::Directive,
                 path,
                 node.span,
-                "`lifecycle` is a mapping with `protect` and `ignore_changes`",
+                "`lifecycle` is a mapping with `deploy`, `protect`, and `ignore_changes`",
             );
             return lifecycle;
         };
@@ -675,11 +675,44 @@ impl<'a> Reader<'a> {
                     value.span,
                     format!("`ignore_changes` is a list, found {}", other.describe()),
                 ),
+                ("deploy", Raw::Text(policy)) => {
+                    lifecycle.deploy = match policy.as_str() {
+                        "never" => DeployPolicy::Never,
+                        "on_create" if spec.api.deploy.is_some() => DeployPolicy::OnCreate,
+                        "on_change" if spec.api.deploy.is_some() => DeployPolicy::OnChange,
+                        "on_create" | "on_change" => {
+                            self.error(
+                                DiagnosticCode::Directive,
+                                &entry_path,
+                                value.span,
+                                format!("a `{}` cannot be deployed", spec.kind),
+                            );
+                            DeployPolicy::Never
+                        }
+                        _ => {
+                            self.error(
+                                DiagnosticCode::Directive,
+                                &entry_path,
+                                value.span,
+                                "`deploy` is `never`, `on_create`, or `on_change`",
+                            );
+                            DeployPolicy::Never
+                        }
+                    };
+                }
+                ("deploy", other) => self.error(
+                    DiagnosticCode::Directive,
+                    &entry_path,
+                    value.span,
+                    format!("`deploy` is text, found {}", other.describe()),
+                ),
                 (other, _) => self.error(
                     DiagnosticCode::UnknownField,
                     &entry_path,
                     key.span,
-                    format!("`lifecycle` has no `{other}`; it has: ignore_changes, protect"),
+                    format!(
+                        "`lifecycle` has no `{other}`; it has: deploy, ignore_changes, protect"
+                    ),
                 ),
             }
         }

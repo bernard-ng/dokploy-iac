@@ -579,6 +579,24 @@ fn constrained_failure_is_terminal_and_requires_recovery() {
 }
 
 #[test]
+fn only_a_deployment_operation_can_close_with_known_failures() {
+    let (_workspace, store, _initial) = initialized_store();
+    let mut session = store.begin_write().expect("writer must start");
+    let mut journal = OperationJournal::begin(&mut session, digest()).expect("journal must begin");
+    let token = journal
+        .start_step(address("api"), JournalAction::Create)
+        .expect("step must start");
+    journal
+        .fail(token, FailureCode::RemoteRejected)
+        .expect("failure must be durable");
+
+    assert!(
+        journal.complete_with_failures().is_err(),
+        "ordinary apply failures must still require recovery"
+    );
+}
+
+#[test]
 fn concurrent_steps_checkpoint_successes_that_finish_after_a_sibling_failure() {
     let (_workspace, store, initial) = initialized_store();
     let mut session = store.begin_write().expect("writer must start");

@@ -5,9 +5,9 @@ use std::str::FromStr;
 use support::{kinds, project_document};
 
 use dokploy_state::{
-    FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
-    ResourceState, SensitiveFingerprint, SensitiveInputs, SensitivePropertyPath, StateError,
-    StateFile,
+    DeploymentDigest, FingerprintKeyId, InstanceIdentity, ManagedInputs, RemoteId, ResourceAddress,
+    ResourceKind, ResourceState, SensitiveFingerprint, SensitiveInputs, SensitivePropertyPath,
+    StateError, StateFile,
 };
 use semver::Version;
 use serde_json::json;
@@ -577,6 +577,30 @@ fn state_mutations_advance_one_lineage_serial() {
     );
     assert_eq!(state.serial(), 2);
     assert_eq!(state.lineage(), lineage);
+}
+
+#[test]
+fn deployment_receipts_round_trip_and_leave_with_the_resource() {
+    kinds();
+    let mut state = StateFile::new(Version::new(0, 1, 0), instance(), project_document());
+    let address: ResourceAddress = "application.api".parse().unwrap();
+    state
+        .upsert_resource(
+            address.clone(),
+            resource_state(kinds().application, "application-1"),
+        )
+        .unwrap();
+    let digest = DeploymentDigest::parse("ab".repeat(32)).unwrap();
+    state
+        .mark_deployed(address.clone(), digest.clone())
+        .unwrap();
+    assert_eq!(state.deployment(&address), Some(&digest));
+
+    let encoded = serde_json::to_vec(&state).unwrap();
+    let mut decoded = StateFile::from_json_slice(&encoded).unwrap();
+    assert_eq!(decoded.deployment(&address), Some(&digest));
+    decoded.remove_resource(&address).unwrap();
+    assert!(decoded.deployment(&address).is_none());
 }
 
 #[test]

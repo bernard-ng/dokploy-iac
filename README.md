@@ -8,9 +8,9 @@ the dashboard: Docker Compose, but for Dokploy itself.
 > **Pre-release, mid re-engineering.** The first engine has been deleted (it is preserved at
 > commit `96cab73`, a reference point in history, not a release) and replaced by the spec-driven
 > engine for the beta project and settings kinds. `dokploy validate`, `schema`, `plan`, `apply`,
-> `recover`, `destroy`, and `import` work on version 2 documents. SSO, licensing, and the other
+> `deploy`, `recover`, `destroy`, and `import` work on version 2 documents. SSO, licensing, and the other
 > identity features listed outside the beta in [ADR 0001](docs/decisions/0001-product-goal-and-scope.md)
-> remain excluded. Deployment and the live round-trip gate follow in the remaining milestones in
+> remain excluded. The live round-trip gate follows in the remaining milestone in
 > [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Where this is going
@@ -29,7 +29,7 @@ workspace/
 ```bash
 dokploy import all           # adopt an existing instance into this workspace
 dokploy plan                 # what would change, secret-free
-dokploy apply --all --deploy # reconcile settings, then projects, then deploy
+dokploy apply --deploy       # reconcile settings, then projects, then deploy
 ```
 
 Applying the workspace to a fresh instance, after a few documented manual steps
@@ -51,6 +51,8 @@ acceptance test. The field-level target is the pair of annotated maps in
   instance-binding protection.
 - **Honest about secrets**: configuration holds references; state holds fingerprints;
   import writes secrets to git-ignored files and never into YAML.
+- **Explicit deployment**: `lifecycle.deploy` selects initial or configuration-driven deploys;
+  `dokploy deploy` orders them by dependency and can wait for queued work to finish.
 
 Architecture and rules: [`ARCHITECTURE.md`](ARCHITECTURE.md). Vocabulary:
 [`CONTEXT.md`](CONTEXT.md). Decisions: [`docs/decisions/`](docs/decisions/).

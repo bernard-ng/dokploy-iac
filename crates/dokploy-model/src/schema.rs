@@ -339,6 +339,7 @@ fn lifecycle() -> Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
+            "deploy": { "enum": ["never", "on_create", "on_change"] },
             "protect": { "type": "boolean" },
             "ignore_changes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         }

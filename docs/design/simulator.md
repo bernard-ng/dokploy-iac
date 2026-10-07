@@ -15,7 +15,7 @@ sim.inject(Fault::new("tag.create", FaultKind::DropAfter));
 ## It knows no kind
 
 The simulator reads the same specs as the engine and answers exactly the operations they
-reference (`create`, `update`, each write group's operation, `remove`, the list, the direct
+reference (`create`, `update`, each write group's operation, `remove`, `deploy`, the list, the direct
 read). Adding a flat kind adds a spec file; nothing in the simulator changes.
 
 | Operation | Behavior |
@@ -26,6 +26,7 @@ read). Adding a flat kind adds a spec file; nothing in the simulator changes.
 | remove | deletes the object and what is attached below it, as the database cascade does |
 | list | the collection; a query parameter that names a field filters by it (`byProjectId`); an object can be hidden to model a role filter |
 | one | the object, with the child collections the specs say are embedded in it (`application.one` carries `redirects`) |
+| deploy | marks synchronous databases done; application and Compose deploys create a titled `deployment.allByType` record |
 
 ## Response shapes come from fixtures
 
@@ -54,5 +55,4 @@ A fault fires once; `on_call(n)` targets the nth call of that operation.
 It does not replace live acceptance: the same scenarios run against a real Dokploy in CI, and any
 scenario whose result differs fails and is fixed in the simulator or the spec. It does not
 enforce unique names (Dokploy does for tags and not for registries; the engine's collision
-handling is what the conformance suite tests), and it does not model deploy, logs, or background
-work.
+handling is what the conformance suite tests), stream logs, or run real background work.

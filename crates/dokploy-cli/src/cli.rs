@@ -97,13 +97,13 @@ pub enum Command {
 
     /// Preview and reconcile configuration against fresh Dokploy state.
     Apply {
-        /// Configuration file to apply.
-        #[arg(
-            long,
-            default_value = crate::workspace::DEFAULT_PROJECT_FILE,
-            value_name = "PATH"
-        )]
-        file: PathBuf,
+        /// Apply one explicit document instead of the workspace manifest.
+        #[arg(long, value_name = "PATH", conflicts_with = "all")]
+        file: Option<PathBuf>,
+
+        /// Apply the workspace manifest. Kept as an explicit compatibility alias.
+        #[arg(long)]
+        all: bool,
 
         /// Apply a complete plan without interactive confirmation.
         #[arg(long)]
@@ -112,6 +112,45 @@ pub enum Command {
         /// Permit disruptive changes during a non-interactive apply.
         #[arg(long)]
         allow_disruptive: bool,
+
+        /// Deploy eligible resources after configuration converges.
+        #[arg(long)]
+        deploy: bool,
+    },
+
+    /// Deploy converged applications, Compose services, and databases.
+    Deploy {
+        /// Deploy resources from one explicit document instead of the workspace manifest.
+        #[arg(long, value_name = "PATH", conflicts_with = "all")]
+        file: Option<PathBuf>,
+
+        /// Deploy the workspace manifest. Kept as an explicit compatibility alias.
+        #[arg(long)]
+        all: bool,
+
+        /// Force one resource selected by its full address or unique suffix. Repeatable.
+        #[arg(long, value_name = "ADDR")]
+        target: Vec<String>,
+
+        /// Wait for queued application and Compose deployments to finish.
+        #[arg(long, conflicts_with = "no_wait")]
+        wait: bool,
+
+        /// Return after Dokploy accepts queued deployments.
+        #[arg(long, conflicts_with = "wait")]
+        no_wait: bool,
+
+        /// Maximum wait for each asynchronous deployment (`30s`, `20m`, `2h`).
+        #[arg(long, default_value = "20m", value_parser = parse_duration)]
+        timeout: std::time::Duration,
+
+        /// Maximum independent deployments to run at once.
+        #[arg(long, default_value_t = 4, value_parser = parse_parallelism)]
+        parallelism: usize,
+
+        /// Deploy without interactive confirmation.
+        #[arg(long)]
+        auto_approve: bool,
     },
 
     /// Reconcile an interrupted apply from durable journal evidence.
@@ -178,6 +217,38 @@ pub enum Command {
         #[command(subcommand)]
         command: Box<ImperativeCommand>,
     },
+}
+
+fn parse_duration(value: &str) -> Result<std::time::Duration, String> {
+    let (number, multiplier) = match value.as_bytes().last().copied() {
+        Some(b's') => (&value[..value.len() - 1], 1_u64),
+        Some(b'm') => (&value[..value.len() - 1], 60_u64),
+        Some(b'h') => (&value[..value.len() - 1], 60_u64 * 60),
+        Some(byte) if byte.is_ascii_digit() => (value, 1_u64),
+        _ => return Err("duration must use seconds, minutes, or hours (for example `20m`)".into()),
+    };
+    let number = number
+        .parse::<u64>()
+        .map_err(|_| "duration must start with a whole number".to_owned())?;
+    let seconds = number
+        .checked_mul(multiplier)
+        .ok_or_else(|| "duration is too large".to_owned())?;
+    if seconds == 0 {
+        return Err("duration must be greater than zero".to_owned());
+    }
+
+    Ok(std::time::Duration::from_secs(seconds))
+}
+
+fn parse_parallelism(value: &str) -> Result<usize, String> {
+    let value = value
+        .parse::<usize>()
+        .map_err(|_| "parallelism must be a whole number".to_owned())?;
+    if value == 0 {
+        return Err("parallelism must be greater than zero".to_owned());
+    }
+
+    Ok(value)
 }
 
 /// Documents selected for import.
@@ -505,8 +576,13 @@ mod tests {
             Cli::try_parse_from(["dokploy", "apply"]).expect("default apply command line is valid");
         assert!(matches!(
             default.command,
-            Command::Apply { file, auto_approve: false, allow_disruptive: false }
-                if file.as_path() == Path::new("dokploy.yaml")
+            Command::Apply {
+                file: None,
+                all: false,
+                auto_approve: false,
+                allow_disruptive: false,
+                deploy: false,
+            }
         ));
 
         let explicit =
@@ -514,7 +590,13 @@ mod tests {
                 .expect("explicit apply command line is valid");
         assert!(matches!(
             explicit.command,
-            Command::Apply { file, auto_approve: true, allow_disruptive: false } if file.as_path() == Path::new("stack.yaml")
+            Command::Apply {
+                file: Some(file),
+                all: false,
+                auto_approve: true,
+                allow_disruptive: false,
+                deploy: false,
+            } if file.as_path() == Path::new("stack.yaml")
         ));
         let disruptive =
             Cli::try_parse_from(["dokploy", "apply", "--auto-approve", "--allow-disruptive"])
@@ -531,6 +613,49 @@ mod tests {
             Cli::try_parse_from(["dokploy", "apply", "--parallelism", "4"]).is_err(),
             "parallelism returns when the executor can run steps concurrently"
         );
+    }
+
+    #[test]
+    fn deploy_defaults_to_the_manifest_and_parses_runtime_controls() {
+        let default = Cli::try_parse_from(["dokploy", "deploy"]).expect("default deploy is valid");
+        assert!(matches!(
+            default.command,
+            Command::Deploy {
+                file: None,
+                all: false,
+                wait: false,
+                no_wait: false,
+                auto_approve: false,
+                ..
+            }
+        ));
+
+        let explicit = Cli::try_parse_from([
+            "dokploy",
+            "deploy",
+            "--file",
+            "stack.yaml",
+            "--target",
+            "application.web",
+            "--wait",
+            "--timeout",
+            "30s",
+            "--auto-approve",
+        ])
+        .expect("explicit deploy is valid");
+        assert!(matches!(
+            explicit.command,
+            Command::Deploy {
+                file: Some(file),
+                target,
+                wait: true,
+                timeout,
+                auto_approve: true,
+                ..
+            } if file.as_path() == Path::new("stack.yaml")
+                && target == ["application.web"]
+                && timeout == std::time::Duration::from_secs(30)
+        ));
     }
 
     #[test]

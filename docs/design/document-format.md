@@ -66,8 +66,10 @@ settings:
   name, so a member removed from the list is detached; `[]` detaches all of them, and leaving the field
   out leaves the attachments unmanaged. A Compose stack's `service_networks` is a map from a service
   name (without a dot) to such a list.
-- Every resource may also carry `lifecycle: { protect, ignore_changes }` (each path must be a
-  legal property of the kind) and `depends_on: [address]`.
+- Every resource may also carry `lifecycle: { protect, ignore_changes, deploy }` (each ignored
+  path must be a legal property of the kind). `deploy` is `never` (the default), `on_create`, or
+  `on_change`, and the latter two are accepted only for a kind with a spec deploy operation.
+  `depends_on: [address]` supplies configuration and deployment ordering.
 
 Three top-level lists control identity and ownership, in either kind of document:
 
@@ -110,8 +112,8 @@ An `env` field that its spec gives a `file_key` accepts that key beside it: `env
 or `{ file: path, public: true }` (ADR 0010). The model records the path (`Resource::env_files`) and
 reads nothing; the engine reads the dotenv file when it compiles.
 
-Not read yet: `lifecycle.deploy`, shared types, and checking that a `file` exists or that a
-`depends_on` address resolves. Those belong to the workspace and the engine.
+The model records file sources and dependency addresses without touching the filesystem. The
+engine checks files while compiling and resolves `depends_on` against the complete document.
 
 ## Diagnostics
 

@@ -119,6 +119,12 @@ async fn import_all_builds_settings_and_nested_project_documents_that_converge()
         project.contains("applications:\n        web-api:"),
         "{project}"
     );
+    assert!(project.contains("deploy: on_change"), "{project}");
+    assert_eq!(
+        bundle.documents()[1].state().deployments().len(),
+        1,
+        "the imported running application is the deployment baseline"
+    );
     assert!(
         project.contains("PUBLIC_ORIGIN: \"https://example.test\""),
         "{project}"

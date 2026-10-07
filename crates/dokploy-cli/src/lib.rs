@@ -230,25 +230,155 @@ async fn execute_inner(
         }
         Command::Apply {
             file,
+            all,
             auto_approve,
             allow_disruptive,
+            deploy,
         } => {
+            if all || file.is_none() {
+                let client = client(url, api_key, config, credentials)?;
+                let specs = dokploy_spec::embedded().into_diagnostic()?;
+                let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+                let key = fingerprint_key::load(engine.instance())?;
+                let manifest = workspace::WorkspaceManifest::load(std::path::Path::new("."))?;
+                let environment = process_environment();
+                let mut terminal = workflow::Terminal {
+                    input,
+                    available: terminal_available,
+                };
+                workflow::apply_all(
+                    &engine,
+                    &manifest,
+                    key.clone(),
+                    &environment,
+                    &workflow::ApplyAllOptions {
+                        auto_approve,
+                        allow_disruptive,
+                    },
+                    &mut terminal,
+                    &mut streams,
+                )
+                .await?;
+                if deploy {
+                    return workflow::deploy_all(
+                        &engine,
+                        &manifest,
+                        key,
+                        &environment,
+                        &workflow::DeployAllOptions {
+                            deploy: &dokploy_engine::DeployOptions {
+                                wait: terminal_available,
+                                ..Default::default()
+                            },
+                            auto_approve,
+                        },
+                        &mut terminal,
+                        &mut streams,
+                    )
+                    .await;
+                }
+                return Ok(CommandStatus::Success);
+            }
+            let file = file.expect("an explicit apply file is present outside workspace mode");
             let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
             let key = fingerprint_key::load(engine.instance())?;
+            let environment = process_environment();
+            let mut terminal = workflow::Terminal {
+                input,
+                available: terminal_available,
+            };
             workflow::apply(
                 workflow::Context {
                     engine: &engine,
                     workspace: &workspace,
-                    key,
-                    environment: &process_environment(),
+                    key: key.clone(),
+                    environment: &environment,
                 },
                 false,
                 auto_approve,
                 allow_disruptive,
                 workflow::Terminal {
-                    input,
-                    available: terminal_available,
+                    input: &mut *terminal.input,
+                    available: terminal.available,
                 },
+                &mut streams,
+            )
+            .await?;
+            if deploy {
+                return workflow::deploy(
+                    workflow::Context {
+                        engine: &engine,
+                        workspace: &workspace,
+                        key,
+                        environment: &environment,
+                    },
+                    &dokploy_engine::DeployOptions {
+                        wait: terminal_available,
+                        ..Default::default()
+                    },
+                    auto_approve,
+                    &mut terminal,
+                    &mut streams,
+                )
+                .await;
+            }
+            Ok(CommandStatus::Success)
+        }
+        Command::Deploy {
+            file,
+            all,
+            target,
+            wait,
+            no_wait,
+            timeout,
+            parallelism,
+            auto_approve,
+        } => {
+            let wait = wait || (!no_wait && terminal_available);
+            let options = dokploy_engine::DeployOptions {
+                targets: target,
+                wait,
+                timeout,
+                parallelism,
+            };
+            let environment = process_environment();
+            let mut terminal = workflow::Terminal {
+                input,
+                available: terminal_available,
+            };
+            if all || file.is_none() {
+                let client = client(url, api_key, config, credentials)?;
+                let specs = dokploy_spec::embedded().into_diagnostic()?;
+                let engine = dokploy_engine::Engine::new(specs, client).into_diagnostic()?;
+                let key = fingerprint_key::load(engine.instance())?;
+                let manifest = workspace::WorkspaceManifest::load(std::path::Path::new("."))?;
+                return workflow::deploy_all(
+                    &engine,
+                    &manifest,
+                    key,
+                    &environment,
+                    &workflow::DeployAllOptions {
+                        deploy: &options,
+                        auto_approve,
+                    },
+                    &mut terminal,
+                    &mut streams,
+                )
+                .await;
+            }
+            let file = file.expect("an explicit deploy file is present outside workspace mode");
+            let (engine, workspace) = connect(url, api_key, config, credentials, &file)?;
+            let key = fingerprint_key::load(engine.instance())?;
+            workflow::deploy(
+                workflow::Context {
+                    engine: &engine,
+                    workspace: &workspace,
+                    key,
+                    environment: &environment,
+                },
+                &options,
+                auto_approve,
+                &mut terminal,
                 &mut streams,
             )
             .await

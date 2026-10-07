@@ -16,8 +16,8 @@ use uuid::Uuid;
 use crate::storage::{harden_directory_permissions, harden_path_permissions, sync_directory};
 use crate::strict_json::reject_duplicate_keys;
 use crate::{
-    ExpectedState, ManagedInputs, RemoteId, ResourceAddress, ResourceKind, ResourceState,
-    SensitiveInputs, StateFile, StateStore, StateStoreError, WriteSession,
+    DeploymentDigest, ExpectedState, ManagedInputs, RemoteId, ResourceAddress, ResourceKind,
+    ResourceState, SensitiveInputs, StateFile, StateStore, StateStoreError, WriteSession,
 };
 
 const JOURNAL_DIRECTORY: &str = "journal";
@@ -98,6 +98,8 @@ pub struct ExpectedCheckpoint {
     after: Option<ExpectedResource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     move_from: Option<ResourceAddress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    deployment: Option<DeploymentDigest>,
 }
 
 impl ExpectedCheckpoint {
@@ -107,6 +109,7 @@ impl ExpectedCheckpoint {
             before: None,
             after: Some(ExpectedResource::from_resource(&target)),
             move_from: None,
+            deployment: None,
         })
     }
 
@@ -123,7 +126,19 @@ impl ExpectedCheckpoint {
             before: Some(before),
             after: Some(ExpectedResource::from_resource(&after)),
             move_from: None,
+            deployment: None,
         })
+    }
+
+    /// Describes a successful deployment without changing managed configuration.
+    #[must_use]
+    pub fn deploy(before: ResourceState, deployment: DeploymentDigest) -> Self {
+        Self {
+            after: Some(ExpectedResource::from_resource(&before)),
+            before: Some(before),
+            move_from: None,
+            deployment: Some(deployment),
+        }
     }
 
     /// Describes a remote deletion or state-only forget checkpoint.
@@ -133,6 +148,7 @@ impl ExpectedCheckpoint {
             before: Some(before),
             after: None,
             move_from: None,
+            deployment: None,
         }
     }
 
@@ -153,6 +169,7 @@ impl ExpectedCheckpoint {
             before: Some(before),
             after: Some(ExpectedResource::from_resource(&after)),
             move_from: Some(from),
+            deployment: None,
         })
     }
 
@@ -161,6 +178,7 @@ impl ExpectedCheckpoint {
             JournalAction::Create => {
                 self.before.is_none()
                     && self.move_from.is_none()
+                    && self.deployment.is_none()
                     && self.after.as_ref().is_some_and(|after| {
                         after.kind == address.kind()
                             && after
@@ -171,13 +189,26 @@ impl ExpectedCheckpoint {
                                 .is_ok()
                     })
             }
-            JournalAction::Update | JournalAction::Deploy => {
+            JournalAction::Update => {
                 self.move_from.is_none()
+                    && self.deployment.is_none()
                     && self.before.as_ref().is_some_and(|before| {
                         before.kind() == address.kind()
                             && self.after.as_ref().is_some_and(|after| {
                                 after.kind == before.kind()
                                     && after.materialize(before.remote_id().clone()).is_ok()
+                            })
+                    })
+            }
+            JournalAction::Deploy => {
+                self.move_from.is_none()
+                    && self.deployment.is_some()
+                    && self.before.as_ref().is_some_and(|before| {
+                        before.kind() == address.kind()
+                            && self.after.as_ref().is_some_and(|after| {
+                                after.kind == before.kind()
+                                    && after.materialize(before.remote_id().clone()).ok().as_ref()
+                                        == Some(before)
                             })
                     })
             }
@@ -187,20 +218,26 @@ impl ExpectedCheckpoint {
                     .is_some_and(|before| before.kind() == address.kind())
                     && self.after.is_none()
                     && self.move_from.is_none()
+                    && self.deployment.is_none()
             }
-            JournalAction::Move => self.move_from.as_ref().is_some_and(|from| {
-                from != address
-                    && from.kind() == address.kind()
-                    && self.before.as_ref().is_some_and(|before| {
-                        before.kind() == address.kind()
-                            && self.after.as_ref().is_some_and(|after| {
-                                after.kind == before.kind()
-                                    && after
-                                        .materialize(before.remote_id().clone())
-                                        .is_ok_and(|after| after.remote_id() == before.remote_id())
+            JournalAction::Move => {
+                self.deployment.is_none()
+                    && self.move_from.as_ref().is_some_and(|from| {
+                        from != address
+                            && from.kind() == address.kind()
+                            && self.before.as_ref().is_some_and(|before| {
+                                before.kind() == address.kind()
+                                    && self.after.as_ref().is_some_and(|after| {
+                                        after.kind == before.kind()
+                                            && after
+                                                .materialize(before.remote_id().clone())
+                                                .is_ok_and(|after| {
+                                                    after.remote_id() == before.remote_id()
+                                                })
+                                    })
                             })
                     })
-            }),
+            }
         }
     }
 
@@ -223,7 +260,7 @@ impl ExpectedCheckpoint {
                         .as_ref()
                         .is_some_and(|after| after.kind == address.kind())
             }
-            JournalAction::Update | JournalAction::Deploy => {
+            JournalAction::Update => {
                 stored == self.before.as_ref()
                     && self.after.as_ref().is_some_and(|after| {
                         after.kind == address.kind()
@@ -232,6 +269,16 @@ impl ExpectedCheckpoint {
                                     && after.materialize(before.remote_id().clone()).is_ok()
                             })
                     })
+            }
+            JournalAction::Deploy => {
+                stored == self.before.as_ref()
+                    && self.after.as_ref().is_some_and(|after| {
+                        self.before.as_ref().is_some_and(|before| {
+                            after.materialize(before.remote_id().clone()).ok().as_ref()
+                                == Some(before)
+                        })
+                    })
+                    && self.deployment.is_some()
             }
             JournalAction::Delete | JournalAction::Forget => {
                 stored == self.before.as_ref() && self.after.is_none()
@@ -260,13 +307,18 @@ impl ExpectedCheckpoint {
                     after.materialize(remote_id.clone()).ok().as_ref() == proposed.resource(address)
                 })
             }),
-            JournalAction::Update | JournalAction::Deploy => {
-                self.before.as_ref().is_some_and(|before| {
-                    self.after.as_ref().is_some_and(|after| {
-                        after.materialize(before.remote_id().clone()).ok().as_ref()
-                            == proposed.resource(address)
-                    })
+            JournalAction::Update => self.before.as_ref().is_some_and(|before| {
+                self.after.as_ref().is_some_and(|after| {
+                    after.materialize(before.remote_id().clone()).ok().as_ref()
+                        == proposed.resource(address)
                 })
+            }),
+            JournalAction::Deploy => {
+                proposed.resource(address) == self.before.as_ref()
+                    && self
+                        .deployment
+                        .as_ref()
+                        .is_some_and(|deployment| proposed.deployment(address) == Some(deployment))
             }
             JournalAction::Delete | JournalAction::Forget => proposed.resource(address).is_none(),
             JournalAction::Move => self.move_from.as_ref().is_some_and(|from| {
@@ -289,6 +341,7 @@ impl fmt::Debug for ExpectedCheckpoint {
             .field("before", &self.before.as_ref().map(|_| "[REDACTED]"))
             .field("after", &self.after)
             .field("move_from", &self.move_from)
+            .field("deployment", &self.deployment)
             .finish()
     }
 }
@@ -393,6 +446,14 @@ impl fmt::Debug for StepToken {
     }
 }
 
+impl StepToken {
+    /// Returns the sequence that identifies this step within its operation.
+    #[must_use]
+    pub const fn sequence(&self) -> u64 {
+        self.sequence
+    }
+}
+
 /// A journal coupled to the exclusive state writer that it checkpoints.
 pub struct OperationJournal<'journal, 'store> {
     session: &'journal mut WriteSession<'store>,
@@ -401,6 +462,7 @@ pub struct OperationJournal<'journal, 'store> {
     current_state: StateFile,
     next_sequence: u64,
     open_steps: BTreeMap<u64, StepToken>,
+    deployment_only: bool,
     failed: bool,
     poisoned: bool,
     record_count: usize,
@@ -439,6 +501,7 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             current_state,
             next_sequence: 1,
             open_steps: BTreeMap::new(),
+            deployment_only: true,
             failed: false,
             poisoned: false,
             record_count: 0,
@@ -504,6 +567,7 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
             action,
             expected_checkpoint,
         };
+        self.deployment_only &= action == JournalAction::Deploy;
         self.append_or_poison(&JournalRecord::StepStarted {
             sequence: token.sequence,
             address: token.address.clone(),
@@ -582,6 +646,30 @@ impl<'journal, 'store> OperationJournal<'journal, 'store> {
         }
 
         self.append_or_poison(&JournalRecord::Commit {
+            final_serial: self.current_state.serial(),
+        })?;
+        self.session.complete_journal();
+
+        Ok(())
+    }
+
+    /// Closes a deployment operation after every selected action has reached a
+    /// known success, failure, timeout, or dependency-skip outcome.
+    pub fn complete_with_failures(mut self) -> Result<(), JournalError> {
+        if self.poisoned || !self.failed || !self.deployment_only {
+            return Err(JournalError::Terminal);
+        }
+        if !self.open_steps.is_empty() {
+            return Err(JournalError::StepStillOpen);
+        }
+        if let Err(error) = self
+            .session
+            .assert_current_revision(self.current_state.revision())
+        {
+            self.poisoned = true;
+            return Err(JournalError::state(error));
+        }
+        self.append_or_poison(&JournalRecord::CompletedWithFailures {
             final_serial: self.current_state.serial(),
         })?;
         self.session.complete_journal();
@@ -698,7 +786,7 @@ fn validate_state_transition(
                 let mut expected = current.clone();
                 expected.move_resource(from, token.address.clone()).is_ok() && &expected == proposed
             }),
-        JournalAction::Update | JournalAction::Deploy => {
+        JournalAction::Update => {
             current_resource.is_some_and(|current_resource| {
                 proposed_resource.is_some_and(|proposed_resource| {
                     current_resource.remote_id() == proposed_resource.remote_id()
@@ -707,6 +795,21 @@ fn validate_state_transition(
                 })
             }) && current.resources().len() == proposed.resources().len()
                 && unchanged_resources(current, proposed, &token.address)
+        }
+        JournalAction::Deploy => {
+            current_resource == proposed_resource
+                && current.resources() == proposed.resources()
+                && token.expected_checkpoint.as_ref().is_some_and(|expected| {
+                    expected.deployment.as_ref().is_some_and(|deployment| {
+                        proposed.deployment(&token.address) == Some(deployment)
+                    })
+                })
+                && current.deployments().iter().all(|(address, deployment)| {
+                    address == &token.address || proposed.deployment(address) == Some(deployment)
+                })
+                && proposed.deployments().iter().all(|(address, deployment)| {
+                    address == &token.address || current.deployment(address) == Some(deployment)
+                })
         }
     };
     if !valid {
@@ -768,6 +871,9 @@ enum JournalRecord {
         action: JournalAction,
     },
     Commit {
+        final_serial: u64,
+    },
+    CompletedWithFailures {
         final_serial: u64,
     },
     RecoveryResolved {
@@ -1148,7 +1254,7 @@ impl RecoverySession<'_> {
                     )
                     .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?;
             }
-            (Some(after), JournalAction::Update | JournalAction::Deploy) => {
+            (Some(after), JournalAction::Update) => {
                 let before = expected
                     .before
                     .as_ref()
@@ -1160,6 +1266,15 @@ impl RecoverySession<'_> {
                             .materialize(before.remote_id().clone())
                             .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?,
                     )
+                    .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?;
+            }
+            (Some(_), JournalAction::Deploy) => {
+                let deployment = expected
+                    .deployment
+                    .clone()
+                    .ok_or(RecoveryError::InvalidExpectedCheckpoint)?;
+                proposed
+                    .mark_deployed(step.address.clone(), deployment)
                     .map_err(|_| RecoveryError::InvalidExpectedCheckpoint)?;
             }
             (Some(_), JournalAction::Move) => {
@@ -1772,6 +1887,7 @@ fn validate_records(
     let mut steps = BTreeMap::<u64, RecoveryStep>::new();
     let mut succeeded = Vec::<u64>::new();
     let mut failed: Option<(ScannedStep, FailureCode)> = None;
+    let mut deployment_only = true;
     let mut terminal = None;
     for record in records.into_iter().skip(1) {
         if terminal.is_some() {
@@ -1795,6 +1911,7 @@ fn validate_records(
                 {
                     return Err(RecoveryScanError::Corrupt);
                 }
+                deployment_only &= action == JournalAction::Deploy;
                 open.insert(
                     sequence,
                     ScannedStep {
@@ -1857,6 +1974,16 @@ fn validate_records(
             }
             JournalRecord::Commit { final_serial } => {
                 if !open.is_empty() || failed.is_some() || final_serial != journal_serial {
+                    return Err(RecoveryScanError::Corrupt);
+                }
+                terminal = Some(final_serial);
+            }
+            JournalRecord::CompletedWithFailures { final_serial } => {
+                if !open.is_empty()
+                    || failed.is_none()
+                    || !deployment_only
+                    || final_serial != journal_serial
+                {
                     return Err(RecoveryScanError::Corrupt);
                 }
                 terminal = Some(final_serial);

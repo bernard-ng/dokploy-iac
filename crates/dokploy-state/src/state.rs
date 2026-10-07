@@ -16,6 +16,47 @@ use crate::{
 /// state tracks (ADR 0009). Older formats are refused, not migrated: re-import.
 const CURRENT_FORMAT_VERSION: u32 = 5;
 
+/// A canonical digest of the deployment-sensitive configuration last deployed.
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DeploymentDigest(String);
+
+impl DeploymentDigest {
+    /// Validates a lowercase SHA-256 digest.
+    pub fn parse(value: impl Into<String>) -> Result<Self, DeploymentDigestError> {
+        let value = value.into();
+        if value.len() != 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        {
+            return Err(DeploymentDigestError);
+        }
+
+        Ok(Self(value))
+    }
+
+    /// Returns the canonical hexadecimal representation.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for DeploymentDigest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("DeploymentDigest")
+            .field(&self.0)
+            .finish()
+    }
+}
+
+/// A malformed deployment digest.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("deployment digest must be 64 lowercase hexadecimal characters")]
+pub struct DeploymentDigestError;
+
 const SENSITIVE_KEY_SUFFIXES: &[&str] = &[
     "password",
     "apikey",
@@ -611,6 +652,8 @@ pub struct StateFile {
     serial: u64,
     instance: InstanceIdentity,
     resources: BTreeMap<ResourceAddress, ResourceState>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    deployments: BTreeMap<ResourceAddress, DeploymentDigest>,
 }
 
 impl fmt::Debug for StateFile {
@@ -639,6 +682,8 @@ struct SerializedStateFile {
     serial: u64,
     instance: InstanceIdentity,
     resources: BTreeMap<ResourceAddress, ResourceState>,
+    #[serde(default)]
+    deployments: BTreeMap<ResourceAddress, DeploymentDigest>,
 }
 
 /// The optimistic-concurrency identity of one durable state snapshot.
@@ -674,6 +719,7 @@ impl StateFile {
             serial: 0,
             instance,
             resources: BTreeMap::new(),
+            deployments: BTreeMap::new(),
         }
     }
 
@@ -683,6 +729,23 @@ impl StateFile {
         instance: InstanceIdentity,
         document: DocumentId,
         resources: BTreeMap<ResourceAddress, ResourceState>,
+    ) -> Result<Self, StateError> {
+        Self::with_resources_and_deployments(
+            cli_version,
+            instance,
+            document,
+            resources,
+            BTreeMap::new(),
+        )
+    }
+
+    /// Starts a new imported lineage with resource and deployment baselines at serial zero.
+    pub fn with_resources_and_deployments(
+        cli_version: Version,
+        instance: InstanceIdentity,
+        document: DocumentId,
+        resources: BTreeMap<ResourceAddress, ResourceState>,
+        deployments: BTreeMap<ResourceAddress, DeploymentDigest>,
     ) -> Result<Self, StateError> {
         let mut identities = BTreeMap::new();
         for (address, resource) in &resources {
@@ -720,6 +783,7 @@ impl StateFile {
             serial: 0,
             instance,
             resources,
+            deployments,
         })
     }
 
@@ -795,6 +859,34 @@ impl StateFile {
         self.resources.get(address)
     }
 
+    /// Returns the deployment-sensitive configuration last deployed for a resource.
+    #[must_use]
+    pub fn deployment(&self, address: &ResourceAddress) -> Option<&DeploymentDigest> {
+        self.deployments.get(address)
+    }
+
+    /// All deployment receipts keyed by their logical resource address.
+    #[must_use]
+    pub const fn deployments(&self) -> &BTreeMap<ResourceAddress, DeploymentDigest> {
+        &self.deployments
+    }
+
+    /// Records a successful deployment and advances the state serial exactly once.
+    pub fn mark_deployed(
+        &mut self,
+        address: ResourceAddress,
+        digest: DeploymentDigest,
+    ) -> Result<Option<DeploymentDigest>, StateError> {
+        if !self.resources.contains_key(&address) {
+            return Err(StateError::ResourceNotFound { address });
+        }
+        let next_serial = self.next_serial()?;
+        let previous = self.deployments.insert(address, digest);
+        self.serial = next_serial;
+
+        Ok(previous)
+    }
+
     /// Refuses to use this lineage with another Dokploy instance.
     pub fn ensure_instance(&self, current: &InstanceIdentity) -> Result<(), StateError> {
         if self.instance == *current {
@@ -846,6 +938,7 @@ impl StateFile {
 
         let next_serial = self.next_serial()?;
         let removed = self.resources.remove(address);
+        self.deployments.remove(address);
         self.serial = next_serial;
 
         Ok(removed)
@@ -937,6 +1030,11 @@ impl StateFile {
         }
 
         self.resources = resources;
+        self.deployments = self
+            .deployments
+            .iter()
+            .map(|(address, digest)| (rename(address), digest.clone()))
+            .collect();
         self.serial = next_serial;
 
         Ok(())
@@ -996,6 +1094,7 @@ impl StateFile {
 
         let next_serial = self.next_serial()?;
         let removed = self.resources.remove(address);
+        self.deployments.remove(address);
         self.serial = next_serial;
 
         Ok(removed)
@@ -1033,6 +1132,15 @@ impl StateFile {
             }
             validate_hierarchy(address, resource, &state.resources)?;
         }
+        if let Some(address) = state
+            .deployments
+            .keys()
+            .find(|address| !state.resources.contains_key(*address))
+        {
+            return Err(StateError::ResourceNotFound {
+                address: address.clone(),
+            });
+        }
 
         Ok(Self {
             format_version: CURRENT_FORMAT_VERSION,
@@ -1042,6 +1150,7 @@ impl StateFile {
             serial: state.serial,
             instance: state.instance,
             resources: state.resources,
+            deployments: state.deployments,
         })
     }
 }

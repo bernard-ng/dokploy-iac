@@ -6,7 +6,8 @@
 //! records that nothing changed, or says that a person must decide.
 
 use dokploy_core::{RemoteObservation, ResourceObservationMatch, compare_resource_observation};
-use dokploy_sdk::Transport;
+use dokploy_sdk::{OperationRequest, Transport};
+use dokploy_spec::DeployWait;
 use dokploy_state::{
     JournalAction, RecoveryError, RecoveryStep, RecoveryStepOutcome, RemoteId, ResourceAddress,
     StateFile, StateStore, StateStoreError,
@@ -29,6 +30,8 @@ pub enum RecoveryAction {
     CheckpointConfirmedSuccess,
     /// Record that the interrupted mutation changed nothing.
     ConfirmNoChange,
+    /// Settle several concurrently started deployment actions from fresh evidence.
+    SettleInterruptedSteps,
 }
 
 /// The decision shown to the caller before durable state changes.
@@ -119,11 +122,11 @@ impl<T: Transport> Engine<T> {
         approve: impl FnOnce(&RecoveryPreview) -> bool,
     ) -> Result<RecoverySummary, RecoverError> {
         let mut recovery = store.begin_recovery()?;
-        let unresolved = recovery
+        let unresolved: Vec<RecoveryStep> = recovery
             .evidence()
             .steps()
             .iter()
-            .find(|step| {
+            .filter(|step| {
                 matches!(
                     step.outcome(),
                     RecoveryStepOutcome::InProgress
@@ -133,52 +136,65 @@ impl<T: Transport> Engine<T> {
                         }
                 )
             })
-            .cloned();
+            .cloned()
+            .collect();
 
-        let decision = match &unresolved {
-            None => Decision::ResolveOnly,
-            Some(step) => self.decide(compiled, &recovery, step).await?,
-        };
+        let mut decisions = Vec::new();
+        if unresolved.is_empty() {
+            decisions.push(Decision::ResolveOnly);
+        } else {
+            for step in &unresolved {
+                decisions.push(self.decide(compiled, &recovery, step).await?);
+            }
+        }
         let preview = RecoveryPreview {
-            address: unresolved.as_ref().map(|step| step.address().clone()),
-            action: match &decision {
-                Decision::ResolveOnly => RecoveryAction::ResolveOperation,
-                Decision::CheckpointRecorded { .. } => RecoveryAction::CheckpointRecordedSuccess,
-                Decision::Checkpoint { action, .. } => *action,
-                Decision::NoChange { .. } => RecoveryAction::ConfirmNoChange,
+            address: (unresolved.len() == 1).then(|| unresolved[0].address().clone()),
+            action: if decisions.len() > 1 {
+                RecoveryAction::SettleInterruptedSteps
+            } else {
+                match &decisions[0] {
+                    Decision::ResolveOnly => RecoveryAction::ResolveOperation,
+                    Decision::CheckpointRecorded { .. } => {
+                        RecoveryAction::CheckpointRecordedSuccess
+                    }
+                    Decision::Checkpoint { action, .. } => *action,
+                    Decision::NoChange { .. } => RecoveryAction::ConfirmNoChange,
+                }
             },
         };
         if !approve(&preview) {
             return Err(RecoverError::Declined);
         }
 
-        match decision {
-            Decision::ResolveOnly => {}
-            Decision::CheckpointRecorded { sequence } => {
-                let remote_id = recovery
-                    .evidence()
-                    .steps()
-                    .iter()
-                    .find(|step| step.sequence() == sequence)
-                    .and_then(|step| step.outcome().remote_id())
-                    .cloned();
-                let proposed = recovery.expected_proposed_state(sequence, remote_id)?;
-                recovery.checkpoint_recorded_success(sequence, &proposed)?;
+        for decision in decisions {
+            match decision {
+                Decision::ResolveOnly => {}
+                Decision::CheckpointRecorded { sequence } => {
+                    let remote_id = recovery
+                        .evidence()
+                        .steps()
+                        .iter()
+                        .find(|step| step.sequence() == sequence)
+                        .and_then(|step| step.outcome().remote_id())
+                        .cloned();
+                    let proposed = recovery.expected_proposed_state(sequence, remote_id)?;
+                    recovery.checkpoint_recorded_success(sequence, &proposed)?;
+                }
+                Decision::Checkpoint {
+                    sequence,
+                    remote_id,
+                    ..
+                } => {
+                    let proposed = recovery.expected_proposed_state(sequence, remote_id.clone())?;
+                    recovery.checkpoint_uncertain_success(sequence, remote_id, &proposed)?;
+                }
+                Decision::NoChange { sequence } => recovery.confirm_no_change(sequence)?,
             }
-            Decision::Checkpoint {
-                sequence,
-                remote_id,
-                ..
-            } => {
-                let proposed = recovery.expected_proposed_state(sequence, remote_id.clone())?;
-                recovery.checkpoint_uncertain_success(sequence, remote_id, &proposed)?;
-            }
-            Decision::NoChange { sequence } => recovery.confirm_no_change(sequence)?,
         }
         recovery.resolve()?;
 
         Ok(RecoverySummary {
-            recovered_steps: usize::from(unresolved.is_some()),
+            recovered_steps: unresolved.len(),
         })
     }
 
@@ -208,6 +224,10 @@ impl<T: Transport> Engine<T> {
                 remote_id: None,
                 action: RecoveryAction::CheckpointConfirmedSuccess,
             });
+        }
+
+        if step.action() == JournalAction::Deploy {
+            return self.decide_deploy(compiled, recovery, step).await;
         }
 
         let current: &StateFile = recovery.current_state();
@@ -267,7 +287,7 @@ impl<T: Transport> Engine<T> {
                     Err(RecoverError::ManualIntervention)
                 }
             },
-            JournalAction::Update | JournalAction::Deploy => {
+            JournalAction::Update => {
                 let proposed = recovery.expected_proposed_state(sequence, None)?;
                 match compare(&proposed)? {
                     ResourceObservationMatch::Exact => Ok(Decision::Checkpoint {
@@ -294,13 +314,7 @@ impl<T: Transport> Engine<T> {
                     // A secret cannot be read back. When the update did not change any secret,
                     // everything that can be compared agrees, and that is proof enough.
                     ResourceObservationMatch::ExactExceptSensitive
-                        if step.action() == JournalAction::Update
-                            && secrets_unchanged(
-                                &self.specs,
-                                current,
-                                &proposed,
-                                step.address(),
-                            ) =>
+                        if secrets_unchanged(&self.specs, current, &proposed, step.address()) =>
                     {
                         Ok(Decision::Checkpoint {
                             sequence,
@@ -314,9 +328,106 @@ impl<T: Transport> Engine<T> {
                     }
                 }
             }
+            JournalAction::Deploy => unreachable!("deployment recovery returned before discovery"),
             JournalAction::Forget | JournalAction::Move => {
                 unreachable!("state-only action returned before discovery")
             }
+        }
+    }
+
+    async fn decide_deploy(
+        &self,
+        compiled: &Compiled,
+        recovery: &dokploy_state::RecoverySession<'_>,
+        step: &RecoveryStep,
+    ) -> Result<Decision, RecoverError> {
+        let sequence = step.sequence();
+        let metadata = compiled
+            .resources
+            .get(step.address())
+            .ok_or(RecoverError::UnsafeEvidence)?;
+        let spec = self
+            .specs
+            .get(&metadata.spec_kind)
+            .ok_or(RecoverError::UnsafeEvidence)?;
+        let deploy = spec
+            .api
+            .deploy
+            .as_ref()
+            .ok_or(RecoverError::UnsafeEvidence)?;
+        if deploy.wait != Some(DeployWait::Deployment) {
+            // A synchronous database request with a lost response has no unique
+            // deployment record. Its prior status cannot prove this call ran.
+            return Err(RecoverError::ManualIntervention);
+        }
+        let remote_id = recovery
+            .current_state()
+            .resource(step.address())
+            .map(|resource| resource.remote_id().as_str())
+            .ok_or(RecoverError::UnsafeEvidence)?;
+        let deployment_type = match metadata.spec_kind.as_str() {
+            "application" => "application",
+            "compose" => "compose",
+            _ => return Err(RecoverError::UnsafeEvidence),
+        };
+        let title =
+            crate::deploy::deployment_title(recovery.evidence().operation_id(), step.sequence());
+        let records = self
+            .transport
+            .call(
+                OperationRequest::new("deployment.allByType")
+                    .query("id", remote_id)
+                    .query("type", deployment_type),
+            )
+            .await
+            .map_err(|_| RecoverError::ManualIntervention)?;
+        if let Some(status) = records
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|record| record.get("title").and_then(serde_json::Value::as_str) == Some(&title))
+            .and_then(|record| record.get("status"))
+            .and_then(serde_json::Value::as_str)
+        {
+            return match status {
+                "running" | "done" => Ok(Decision::Checkpoint {
+                    sequence,
+                    remote_id: None,
+                    action: RecoveryAction::CheckpointConfirmedSuccess,
+                }),
+                "error" | "cancelled" => Ok(Decision::NoChange { sequence }),
+                _ => Err(RecoverError::ManualIntervention),
+            };
+        }
+
+        let queued = self
+            .transport
+            .call(OperationRequest::new("deployment.queueList"))
+            .await
+            .map_err(|_| RecoverError::ManualIntervention)?;
+        if json_contains_string(&queued, &title) {
+            return Ok(Decision::Checkpoint {
+                sequence,
+                remote_id: None,
+                action: RecoveryAction::CheckpointConfirmedSuccess,
+            });
+        }
+
+        Ok(Decision::NoChange { sequence })
+    }
+}
+
+fn json_contains_string(value: &serde_json::Value, wanted: &str) -> bool {
+    match value {
+        serde_json::Value::String(value) => value == wanted,
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|value| json_contains_string(value, wanted)),
+        serde_json::Value::Object(values) => values
+            .values()
+            .any(|value| json_contains_string(value, wanted)),
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {
+            false
         }
     }
 }

@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, fmt};
 
 use dokploy_spec::SpecRegistry;
-use dokploy_state::{InstanceIdentity, RemoteId, ResourceAddress, StateFile};
+use dokploy_state::{DeploymentDigest, InstanceIdentity, RemoteId, ResourceAddress, StateFile};
 use hmac::{Hmac, Mac};
 use serde::Serialize;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -166,6 +166,52 @@ impl DesiredResource {
     #[must_use]
     pub fn dependencies(&self) -> &[ResourceAddress] {
         &self.dependencies
+    }
+
+    /// Digests only inputs whose spec says a deployment consumes them.
+    ///
+    /// Sensitive values contribute their opaque intent receipt. The receipt can
+    /// detect a changed secret without exposing that secret in state or output.
+    #[must_use]
+    pub fn deployment_digest(&self) -> DeploymentDigest {
+        let mut digest = Sha256::new();
+        digest.update(b"dokploy-iac\0deployment\0v1\0");
+        for (path, value) in self
+            .properties
+            .iter()
+            .filter(|(path, _)| path.info().needs_deploy)
+        {
+            let path_bytes = path.as_str().as_bytes();
+            digest.update((path_bytes.len() as u64).to_be_bytes());
+            digest.update(path_bytes);
+            match value {
+                OwnedValue::Null => digest.update([0]),
+                OwnedValue::EmptyCollection => digest.update([1]),
+                OwnedValue::Value(value) => {
+                    digest.update([2]);
+                    let bytes = serde_json::to_vec(value.as_json())
+                        .expect("a JSON value always serializes");
+                    digest.update((bytes.len() as u64).to_be_bytes());
+                    digest.update(bytes);
+                }
+                OwnedValue::Sensitive(value) => {
+                    digest.update([3]);
+                    let bytes = serde_json::to_vec(value.fingerprint())
+                        .expect("a sensitive fingerprint always serializes");
+                    digest.update((bytes.len() as u64).to_be_bytes());
+                    digest.update(bytes);
+                }
+            }
+        }
+        let bytes: [u8; 32] = digest.finalize().into();
+        let mut encoded = String::with_capacity(64);
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        for byte in bytes {
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 0x0f) as usize] as char);
+        }
+
+        DeploymentDigest::parse(encoded).expect("a SHA-256 digest is valid")
     }
 
     /// Returns lifecycle paths that must retain their previous ownership baseline.

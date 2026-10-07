@@ -42,7 +42,8 @@ knows. Registration is bounded and idempotent.
   "lineage": "...",
   "serial": 12,
   "instance": "https://deploy.example.com/",
-  "resources": { "project.shop": { "kind": "project", "remoteId": "...", ... } }
+  "resources": { "project.shop": { "kind": "project", "remoteId": "...", ... } },
+  "deployments": { "project.shop/environment.production/application.api": "<sha256>" }
 }
 ```
 
@@ -69,3 +70,7 @@ decides which paths exist and are sensitive. Managed inputs follow one structura
 looks secret, or the environment collection, may only be *cleared* (`null`, or an object of
 `null`s). A value under such a key is rejected wherever it appears, so a secret cannot hide in
 nested JSON. Whether a field may be cleared is the spec's `nullable`.
+
+For deployable resources, `deployments` stores the digest of deployment-sensitive desired inputs
+from the last successful deploy. Secret inputs contribute their opaque fingerprint. The receipt is
+removed with a resource and rebased with an address move.

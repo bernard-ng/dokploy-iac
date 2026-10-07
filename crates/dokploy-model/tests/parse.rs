@@ -124,6 +124,7 @@ project:
                 secret: MAIL_KEY
           depends_on: [postgres.main]
           lifecycle:
+            deploy: on_change
             ignore_changes: [replicas]
           redirects:
             www:
@@ -145,6 +146,8 @@ fn a_project_document_nests_children_inside_their_parent() {
     assert_eq!(api.fields["server"].value, Value::Selector(Selector::Local));
     assert_eq!(api.depends_on, ["postgres.main"]);
     assert_eq!(api.lifecycle.ignore_changes, ["replicas"]);
+    assert_eq!(api.lifecycle.deploy, dokploy_model::DeployPolicy::OnChange);
+    assert!(document.render().contains("deploy: on_change"));
 
     let Value::Env(variables) = &api.fields["environment"].value else {
         panic!("environment is an env block");
@@ -521,7 +524,7 @@ fn lifecycle_and_depends_on_are_validated() {
     );
     assert_eq!(
         wrong("      lifecycle: { deploy: x }\n"),
-        [(DiagnosticCode::UnknownField, at("lifecycle.deploy"))]
+        [(DiagnosticCode::Directive, at("lifecycle.deploy"))]
     );
     assert_eq!(
         wrong("      depends_on: registry.main\n"),

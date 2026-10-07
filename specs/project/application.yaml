@@ -20,7 +20,7 @@ api:
     attach: { environmentId: parent_id }
   update: { op: application.update }
   remove: { op: application.delete }
-  deploy: { op: application.deploy }
+  deploy: { op: application.deploy, wait: deployment }
   read:
     list:
       embedded_in: { parent_op: environment.one, pointer: /applications }

@@ -6,7 +6,9 @@ use dokploy_core::{
     ComparableValue, ConfigDigest, DesiredResource, DesiredState, DesiredStateError, OwnedValue,
     PropertyPath, ProtectionIntent, SensitiveIntent,
 };
-use dokploy_model::{Document, EnvFile, EnvValue, Resource, Root, Sections, Source, Value};
+use dokploy_model::{
+    DeployPolicy, Document, EnvFile, EnvValue, Resource, Root, Sections, Source, Value,
+};
 use dokploy_spec::{FieldType, Granularity, KindSpec, PathError, Scope, SpecRegistry, parse_type};
 use dokploy_state::{
     AddressSuffixError, DocumentId, ResourceAddress, ResourceAddressParseError, ResourceKind,
@@ -61,6 +63,8 @@ pub(crate) struct Directives {
 #[derive(Debug)]
 pub(crate) struct CompiledResource {
     pub(crate) spec_kind: String,
+    /// When this resource should be deployed after its configuration converges.
+    pub(crate) deploy_policy: DeployPolicy,
     /// The values of the kind's collision fields, in canonical form.
     pub(crate) collision: BTreeMap<String, serde_json::Value>,
     /// The selectors the document sets (and does not ignore): `{ name }` or `{ local: true }`.
@@ -509,6 +513,7 @@ impl Compiler<'_> {
                 address.clone(),
                 CompiledResource {
                     spec_kind: resource.kind.clone(),
+                    deploy_policy: resource.lifecycle.deploy,
                     collision: collision_values(spec, resource),
                     selectors,
                     declared_sets,

@@ -44,6 +44,7 @@ enum Action {
     Create,
     Update,
     Remove,
+    Deploy,
     List,
     One,
     Singleton,
@@ -114,6 +115,7 @@ struct Inner {
     faults: Vec<Fault>,
     log: Vec<Logged>,
     hidden: BTreeSet<(String, String)>,
+    deployments: Vec<Object>,
 }
 
 /// An in-memory Dokploy.
@@ -194,6 +196,9 @@ impl Sim {
             }
             if let Some(op) = &spec.api.remove {
                 add(&op.op, kind, Action::Remove);
+            }
+            if let Some(deploy) = &spec.api.deploy {
+                add(&deploy.op, kind, Action::Deploy);
             }
             if let Some(op) = spec
                 .api
@@ -463,6 +468,12 @@ impl Sim {
     ) -> Result<Value, DokployError> {
         let operation = request.operation();
         check_contract(operation, request)?;
+        if operation == "deployment.allByType" {
+            return self.deployments(inner, request);
+        }
+        if operation == "deployment.queueList" {
+            return Ok(Value::Array(Vec::new()));
+        }
         let Some(routes) = self.routes.get(operation) else {
             return Err(api_error(
                 404,
@@ -501,6 +512,7 @@ impl Sim {
                 Action::Create => self.create(inner, spec, request),
                 Action::Update => self.update(inner, spec, request),
                 Action::Remove => self.remove(inner, spec, request),
+                Action::Deploy => self.deploy(inner, spec, request),
                 Action::List => Ok(self.list(inner, spec, request)),
                 Action::One => self.one(inner, spec, request),
                 Action::Singleton => self.singleton(inner, spec, request),
@@ -512,6 +524,88 @@ impl Sim {
         }
 
         last
+    }
+
+    fn deploy(
+        &self,
+        inner: &mut Inner,
+        spec: &KindSpec,
+        request: &OperationRequest,
+    ) -> Result<Value, DokployError> {
+        let body = body_object(request)?;
+        let id = body
+            .get(&spec.api.id)
+            .and_then(Value::as_str)
+            .ok_or_else(|| api_error(400, "BAD_REQUEST", format!("{} is required", spec.api.id)))?
+            .to_owned();
+        let object = inner
+            .objects
+            .get_mut(&spec.kind)
+            .and_then(|all| {
+                all.iter_mut()
+                    .find(|object| id_of(spec, object).as_deref() == Some(&id))
+            })
+            .ok_or_else(|| not_found(spec))?;
+        object.insert(
+            "applicationStatus".to_owned(),
+            Value::String("done".to_owned()),
+        );
+
+        if spec.api.deploy.as_ref().and_then(|deploy| deploy.wait)
+            == Some(dokploy_spec::DeployWait::Deployment)
+        {
+            inner.next_id += 1;
+            let mut deployment = Object::new();
+            deployment.insert(
+                "deploymentId".to_owned(),
+                Value::String(format!("sim-deployment-{}", inner.next_id)),
+            );
+            deployment.insert(spec.api.id.clone(), Value::String(id));
+            deployment.insert(
+                "title".to_owned(),
+                body.get("title").cloned().unwrap_or(Value::Null),
+            );
+            deployment.insert(
+                "description".to_owned(),
+                body.get("description").cloned().unwrap_or(Value::Null),
+            );
+            deployment.insert("status".to_owned(), Value::String("done".to_owned()));
+            deployment.insert("createdAt".to_owned(), Value::String(CREATED_AT.to_owned()));
+            inner.deployments.push(deployment);
+        }
+
+        Ok(Value::Bool(true))
+    }
+
+    fn deployments(
+        &self,
+        inner: &Inner,
+        request: &OperationRequest,
+    ) -> Result<Value, DokployError> {
+        let id = request
+            .query_parameters()
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| api_error(400, "BAD_REQUEST", "id is required".to_owned()))?;
+        let kind = request
+            .query_parameters()
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(|| api_error(400, "BAD_REQUEST", "type is required".to_owned()))?;
+        let id_field = match kind {
+            "application" => "applicationId",
+            "compose" => "composeId",
+            _ => return Ok(Value::Array(Vec::new())),
+        };
+        Ok(Value::Array(
+            inner
+                .deployments
+                .iter()
+                .filter(|deployment| deployment.get(id_field).and_then(Value::as_str) == Some(id))
+                .cloned()
+                .map(Value::Object)
+                .collect(),
+        ))
     }
 
     fn create(

@@ -139,6 +139,12 @@ fn resource_entries(resource: &Resource) -> Vec<(String, Out)> {
         ));
     }
     let mut lifecycle = Vec::new();
+    if resource.lifecycle.deploy != crate::DeployPolicy::Never {
+        lifecycle.push((
+            "deploy".to_owned(),
+            Out::Scalar(resource.lifecycle.deploy.as_str().to_owned()),
+        ));
+    }
     if let Some(protect) = resource.lifecycle.protect {
         lifecycle.push(("protect".to_owned(), Out::Scalar(protect.to_string())));
     }

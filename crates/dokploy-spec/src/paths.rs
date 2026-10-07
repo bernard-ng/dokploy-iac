@@ -86,6 +86,8 @@ pub struct PropertyInfo {
     pub trim: bool,
     /// Whether changing this property can restart Traefik or the server.
     pub disruptive: bool,
+    /// Whether changing this property requires a deployment to take effect.
+    pub needs_deploy: bool,
     /// Per-entry operations for a keyed map with no collection endpoint.
     pub entry: Option<crate::model::EntryOperations>,
     /// The response key or JSON pointer the value is read from: the field's `api`, or its own
@@ -313,6 +315,7 @@ fn base(
         fallback: field.fallback.clone(),
         trim: field.trim,
         disruptive: field.disruptive,
+        needs_deploy: field.needs_deploy,
         entry: field.entry.clone(),
         api: field.api.clone().unwrap_or_else(|| name.to_owned()),
         request: field.request_name(name).to_owned(),

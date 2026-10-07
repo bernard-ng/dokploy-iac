@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use dokploy_core::CheckpointMaterializationError;
 use dokploy_model::{
-    Document, EnvFile, EnvValue, Field as DocumentField, Lifecycle, Resource, Root, Sections,
-    Selector, Source, Span, Value,
+    DeployPolicy, Document, EnvFile, EnvValue, Field as DocumentField, Lifecycle, Resource, Root,
+    Sections, Selector, Source, Span, Value,
 };
 use dokploy_sdk::{Error as SdkError, OperationRequest, Transport};
 use dokploy_spec::{
@@ -578,6 +578,19 @@ impl<T: Transport> Engine<T> {
             })?;
             let compiled = self.compile(&reparsed, fingerprinter, &secrets)?;
             let mut resources = BTreeMap::new();
+            let deployments = compiled
+                .desired()
+                .resources()
+                .iter()
+                .filter(|(address, _)| {
+                    compiled
+                        .resources
+                        .get(*address)
+                        .and_then(|resource| self.specs.get(&resource.spec_kind))
+                        .is_some_and(|spec| spec.api.deploy.is_some())
+                })
+                .map(|(address, desired)| (address.clone(), desired.deployment_digest()))
+                .collect();
             for (address, desired) in compiled.desired().resources() {
                 let remote_id =
                     ids.get(address)
@@ -595,11 +608,12 @@ impl<T: Transport> Engine<T> {
                         })?;
                 resources.insert(address.clone(), adopted);
             }
-            let state = StateFile::with_resources(
+            let state = StateFile::with_resources_and_deployments(
                 Version::parse(env!("CARGO_PKG_VERSION")).expect("package version is semver"),
                 self.instance.clone(),
                 compiled.document().clone(),
                 resources,
+                deployments,
             )
             .map_err(EngineError::from)?;
             let plan = self.plan(&compiled, Some(&state)).await?;
@@ -1123,7 +1137,14 @@ fn build_resource(
         span: Span::default(),
         fields,
         env_files,
-        lifecycle: Lifecycle::default(),
+        lifecycle: Lifecycle {
+            deploy: if spec.api.deploy.is_some() {
+                DeployPolicy::OnChange
+            } else {
+                DeployPolicy::Never
+            },
+            ..Lifecycle::default()
+        },
         depends_on: Vec::new(),
         children: sections,
     })

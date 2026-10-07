@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use dokploy_core::Plan;
 use dokploy_engine::{
-    ApplyError, Compiled, Engine, FingerprintKey, ImportInventoryPass, ImportOptions,
-    ImportProgress, ImportSelection, RecoverError, UnsupportedCategory, WorkspaceSecrets,
+    ApplyError, Compiled, DeployError, DeployOptions, DeploymentPlan, Engine, FingerprintKey,
+    ImportInventoryPass, ImportOptions, ImportProgress, ImportSelection, RecoverError,
+    UnsupportedCategory, WorkspaceSecrets,
 };
 use dokploy_sdk::Transport;
 use dokploy_state::StateStore;
@@ -58,6 +59,18 @@ impl<'a> Streams<'a> {
 pub struct Terminal<'a> {
     pub input: &'a mut dyn BufRead,
     pub available: bool,
+}
+
+/// Approval controls shared by a manifest apply.
+pub struct ApplyAllOptions {
+    pub auto_approve: bool,
+    pub allow_disruptive: bool,
+}
+
+/// Execution and approval controls shared by a manifest deploy.
+pub struct DeployAllOptions<'a> {
+    pub deploy: &'a DeployOptions,
+    pub auto_approve: bool,
 }
 
 /// Everything a command needs: the engine, the document, and how to read its secrets.
@@ -313,6 +326,204 @@ pub async fn apply<T: Transport>(
         }
         Err(error) => Err(error).into_diagnostic(),
     }
+}
+
+/// Applies every manifest document in dependency order.
+pub async fn apply_all<T: Transport>(
+    engine: &Engine<T>,
+    manifest: &crate::workspace::WorkspaceManifest,
+    key: FingerprintKey,
+    environment: &Environment,
+    options: &ApplyAllOptions,
+    terminal: &mut Terminal<'_>,
+    streams: &mut Streams<'_>,
+) -> Result<CommandStatus> {
+    for relative in manifest.documents() {
+        let workspace = Workspace::load_in(manifest.directory(), relative)?;
+        writeln!(streams.diagnostics(), "{}:", relative.display()).into_diagnostic()?;
+        apply(
+            Context {
+                engine,
+                workspace: &workspace,
+                key: key.clone(),
+                environment,
+            },
+            false,
+            options.auto_approve,
+            options.allow_disruptive,
+            Terminal {
+                input: &mut *terminal.input,
+                available: terminal.available,
+            },
+            streams,
+        )
+        .await?;
+    }
+
+    Ok(CommandStatus::Success)
+}
+
+fn render_deployment_plan(plan: &DeploymentPlan, output: &mut dyn Write) -> std::io::Result<()> {
+    writeln!(output, "Deploy: {} resource(s)", plan.deployments().len())?;
+    for deployment in plan.deployments() {
+        writeln!(
+            output,
+            "  deploy {} ({:?})",
+            deployment.address(),
+            deployment.reason()
+        )?;
+    }
+
+    Ok(())
+}
+
+/// `deploy`: deploy eligible resources after proving configuration convergence.
+pub async fn deploy<T: Transport>(
+    context: Context<'_, T>,
+    options: &DeployOptions,
+    auto_approve: bool,
+    terminal: &mut Terminal<'_>,
+    streams: &mut Streams<'_>,
+) -> Result<CommandStatus> {
+    let engine = context.engine;
+    let prepared = prepare(context, true)?;
+    deploy_prepared(engine, prepared, options, auto_approve, terminal, streams).await
+}
+
+async fn deploy_prepared<T: Transport>(
+    engine: &Engine<T>,
+    prepared: Prepared,
+    options: &DeployOptions,
+    auto_approve: bool,
+    terminal: &mut Terminal<'_>,
+    streams: &mut Streams<'_>,
+) -> Result<CommandStatus> {
+    let mut asking_failed = None;
+    let outcome = engine
+        .deploy(&prepared.compiled, &prepared.store, options, |plan| {
+            let shown = render_deployment_plan(plan, streams.diagnostics()).into_diagnostic();
+            let approved = shown.and_then(|()| {
+                if plan.deployments().is_empty() || auto_approve {
+                    Ok(true)
+                } else {
+                    confirm(
+                        terminal,
+                        streams.diagnostics(),
+                        "deploy",
+                        "Deploy these resources?",
+                    )
+                }
+            });
+            match approved {
+                Ok(approved) => approved,
+                Err(error) => {
+                    asking_failed = Some(error);
+                    false
+                }
+            }
+        })
+        .await;
+    if let Some(error) = asking_failed {
+        return Err(error);
+    }
+
+    match outcome {
+        Ok(summary) => {
+            writeln!(
+                streams.result(),
+                "Deploy complete: {} succeeded, {} failed, {} skipped, {} timed out.",
+                summary.deployed(),
+                summary.failed(),
+                summary.skipped(),
+                summary.timed_out()
+            )
+            .into_diagnostic()?;
+            Ok(if summary.successful() {
+                CommandStatus::Success
+            } else {
+                CommandStatus::Failure
+            })
+        }
+        Err(DeployError::Declined) => {
+            writeln!(streams.diagnostics(), "Deploy cancelled.").into_diagnostic()?;
+            Ok(CommandStatus::Success)
+        }
+        Err(error) => Err(error).into_diagnostic(),
+    }
+}
+
+/// Deploys every manifest document in order, resolving explicit targets globally.
+pub async fn deploy_all<T: Transport>(
+    engine: &Engine<T>,
+    manifest: &crate::workspace::WorkspaceManifest,
+    key: FingerprintKey,
+    environment: &Environment,
+    options: &DeployAllOptions<'_>,
+    terminal: &mut Terminal<'_>,
+    streams: &mut Streams<'_>,
+) -> Result<CommandStatus> {
+    let mut documents = Vec::new();
+    for relative in manifest.documents() {
+        let workspace = Workspace::load_in(manifest.directory(), relative)?;
+        let prepared = prepare(
+            Context {
+                engine,
+                workspace: &workspace,
+                key: key.clone(),
+                environment,
+            },
+            true,
+        )?;
+        documents.push((relative.clone(), prepared));
+    }
+
+    let mut document_targets: Vec<Vec<String>> = vec![Vec::new(); documents.len()];
+    for target in &options.deploy.targets {
+        let matches = documents
+            .iter()
+            .enumerate()
+            .flat_map(|(index, (_, prepared))| {
+                prepared
+                    .compiled
+                    .addresses()
+                    .filter(move |address| {
+                        let address = address.to_string();
+                        address == *target || address.ends_with(&format!("/{target}"))
+                    })
+                    .map(move |address| (index, address.to_string()))
+            })
+            .collect::<Vec<_>>();
+        if matches.len() != 1 {
+            return Err(miette::miette!(
+                "deployment target `{target}` does not name exactly one declared resource"
+            ));
+        }
+        let (index, address) = matches.into_iter().next().expect("one match was checked");
+        document_targets[index].push(address);
+    }
+
+    let mut failure = false;
+    for (index, (relative, prepared)) in documents.into_iter().enumerate() {
+        writeln!(streams.diagnostics(), "{}:", relative.display()).into_diagnostic()?;
+        let mut document_options = options.deploy.clone();
+        document_options.targets = document_targets[index].clone();
+        let status = deploy_prepared(
+            engine,
+            prepared,
+            &document_options,
+            options.auto_approve,
+            terminal,
+            streams,
+        )
+        .await?;
+        failure |= status == CommandStatus::Failure;
+    }
+
+    Ok(if failure {
+        CommandStatus::Failure
+    } else {
+        CommandStatus::Success
+    })
 }
 
 /// `recover`: settle an interrupted apply from fresh evidence.

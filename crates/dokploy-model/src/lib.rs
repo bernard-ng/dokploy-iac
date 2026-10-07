@@ -18,7 +18,7 @@ mod value;
 
 pub use diagnostic::{Diagnostic, DiagnosticCode, Diagnostics};
 pub use document::{
-    Adoption, Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections,
+    Adoption, DeployPolicy, Document, EnvFile, Lifecycle, Move, Removal, Resource, Root, Sections,
 };
 pub use parse::MAX_DOCUMENT_BYTES;
 pub use read::FORMAT_VERSION;

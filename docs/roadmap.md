@@ -165,6 +165,16 @@ The simulator acceptance test imports settings and a nested project, loads the m
 that every plan is empty without sending a mutation. The top-level `adopt` directive enrolls one
 matching managed resource into an existing workspace while preserving its remote identity.
 
+## M7 status
+
+Complete. Deployable resources support `never`, `on_create`, and `on_change`; the latter hashes only
+fields marked `needs_deploy` in the kind spec. `dokploy deploy` and `dokploy apply --deploy` use the
+workspace manifest by default, honor explicit targets and dependencies, wait for titled application
+and Compose deployment records, report timeouts, and persist deployment receipts in state. Known
+failures skip dependents and close their journal cleanly; lost queue responses recover from the
+unique deployment title. Simulator scenarios cover ordering, change sensitivity, idempotence,
+failure skips, timeouts, and recovery, with an ignored live test for a real application deployment.
+
 ## Cost gate (end of M2)
 
 After three kinds of different shapes (flat, leaf, union) the following are measured

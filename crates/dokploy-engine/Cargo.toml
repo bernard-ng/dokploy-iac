@@ -14,10 +14,13 @@ dokploy-model.workspace = true
 dokploy-sdk.workspace = true
 dokploy-spec.workspace = true
 dokploy-state.workspace = true
+futures-util.workspace = true
 hmac.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 uuid.workspace = true
 zeroize.workspace = true
 

@@ -407,6 +407,17 @@ pub enum CreateIdentity {
 pub struct Deploy {
     /// The operation.
     pub op: String,
+    /// How an asynchronous deployment is observed after it is queued.
+    #[serde(default)]
+    pub wait: Option<DeployWait>,
+}
+
+/// How Dokploy exposes the completion of a deployment action.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeployWait {
+    /// Poll `deployment.allByType` for the uniquely titled deployment record.
+    Deployment,
 }
 
 /// Whether a value is public, secret, or content (ADR 0010).

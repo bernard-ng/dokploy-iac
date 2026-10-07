@@ -89,6 +89,7 @@ pub fn execute(cli: Cli, output: &mut dyn Write, _terminal_available: bool) -> R
         }
         Command::Plan { .. }
         | Command::Apply { .. }
+        | Command::Deploy { .. }
         | Command::Recover { .. }
         | Command::Destroy { .. }
         | Command::State { .. }

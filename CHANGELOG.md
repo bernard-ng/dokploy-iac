@@ -11,6 +11,17 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Complete M7 deployment support. Deployable resources accept `lifecycle.deploy` with `never`,
+  `on_create`, or `on_change`; deployment plans use only spec fields marked `needs_deploy`, honor
+  explicit dependencies, skip failed dependents, and persist durable deployment receipts. Add the
+  manifest-first `dokploy deploy` command with explicit targets, waiting, timeout reporting,
+  approval, and bounded parallelism controls, plus `dokploy apply --deploy`. Application and
+  Compose queue actions use unique journal titles for recovery, database deploys use their
+  synchronous endpoints, and the simulator and ignored live suite cover deployment completion.
+
+- Make bare `dokploy apply` use `dokploy.workspace.yaml`, with `--file` for an explicit document
+  and `--all` retained as a compatibility alias.
+
 - Show line-based import progress for both inventory passes, document construction and convergence
   checks, and workspace persistence. Progress uses the diagnostic stream so structured command output
   remains machine-readable.

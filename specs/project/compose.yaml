@@ -27,7 +27,7 @@ api:
   remove:
     op: compose.delete
     send: { deleteVolumes: false }
-  deploy: { op: compose.deploy }
+  deploy: { op: compose.deploy, wait: deployment }
   read:
     list:
       embedded_in: { parent_op: environment.one, pointer: /compose }

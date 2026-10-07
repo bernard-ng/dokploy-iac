@@ -71,6 +71,32 @@ pub struct Lifecycle {
     pub protect: Option<bool>,
     /// Properties whose remote changes are ignored.
     pub ignore_changes: Vec<String>,
+    /// When this resource is deployed after configuration converges.
+    pub deploy: DeployPolicy,
+}
+
+/// Declarative deployment policy for a deployable resource.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DeployPolicy {
+    /// Never deploy automatically.
+    #[default]
+    Never,
+    /// Deploy once after the resource is created or adopted.
+    OnCreate,
+    /// Deploy after creation and deployment-sensitive configuration changes.
+    OnChange,
+}
+
+impl DeployPolicy {
+    /// Returns the canonical document spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Never => "never",
+            Self::OnCreate => "on_create",
+            Self::OnChange => "on_change",
+        }
+    }
 }
 
 /// A dotenv file the document expands into an `env` field (`env_file`, ADR 0010).
