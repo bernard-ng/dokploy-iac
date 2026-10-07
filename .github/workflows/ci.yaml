@@ -38,7 +38,9 @@ jobs:
         run: cargo test --workspace --all-targets --all-features --locked
 
       - name: Check kind specs against the OpenAPI contract
-        run: cargo xtask specs --check
+        run: |
+          cargo xtask specs --check
+          cargo xtask specs --check --against openapi/v0.30.7.json
 
       - name: Check the legacy-test ledger
         run: cargo xtask goldens --check

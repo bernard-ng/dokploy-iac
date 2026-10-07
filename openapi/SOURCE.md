@@ -16,3 +16,11 @@ is stale; Dokploy generates and synchronizes a fresh document in CI. The
 immutable commit URL and checksum keep generator tests reproducible. Do not
 replace this document from a moving branch without updating the Phase 0 report
 and rerunning both generator evaluations.
+
+`v0.30.7.json` is vendored from the official Dokploy SDK release tag.
+
+- Repository: <https://github.com/Dokploy/sdk>
+- Tag commit: `adf2b50326411cf5b692b5c78d87ae4ab8fd5312`
+- Dokploy release: `v0.30.7` (`531b2c7`)
+- Source: <https://raw.githubusercontent.com/Dokploy/sdk/v0.30.7/openapi.json>
+- SHA-256: `eb3ac8489cd4c9595cfe51314504457554aa6630ad00e3688b206f8cfff10b4c`

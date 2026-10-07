@@ -35,6 +35,11 @@ under-limit successes, redaction-safe oversized HTTP errors, and uncertain
 malformed or oversized mutation successes. This is a transport memory bound;
 resource adapters still apply their stricter collection and model invariants.
 
+The weekly **Upstream Dokploy contract watch** resolves the latest official Dokploy release,
+downloads the matching immutable SDK contract, and runs
+`cargo xtask specs --check --against <file>`. It never changes specs. An unclassified operation or
+field opens or updates a release-specific issue and fails the workflow.
+
 GitHub Actions are referenced by immutable commit hashes. The independently
 installed security and release tools are pinned to versions published by their
 official upstream projects. Dependency policy is deliberately narrow: the

@@ -3,7 +3,7 @@ use std::process::ExitCode;
 use xtask::{
     CodegenMode, ProcessGenerator, repository_imperative_paths, repository_paths, repository_root,
     run_codegen, run_goldens_check, run_goldens_extract, run_imperative_codegen, run_specs_check,
-    run_versions_check, version_image,
+    run_specs_check_against, run_versions_check, version_image,
 };
 
 fn main() -> ExitCode {
@@ -20,7 +20,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args().skip(1);
     let Some(command) = arguments.next() else {
         return Err(
-            "usage: cargo xtask codegen [--check] | specs --check | goldens [--check] | versions [--check | --image VERSION]"
+            "usage: cargo xtask codegen [--check] | specs --check [--against FILE] | goldens [--check] | versions [--check | --image VERSION]"
                 .into(),
         );
     };
@@ -81,12 +81,26 @@ fn run_specs(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match arguments.next().as_deref() {
         Some("--check") => {}
-        _ => return Err("usage: cargo xtask specs --check".into()),
+        _ => return Err("usage: cargo xtask specs --check [--against FILE]".into()),
     }
+    let against: Option<std::path::PathBuf> = match arguments.next().as_deref() {
+        None => None,
+        Some("--against") => Some(
+            arguments
+                .next()
+                .ok_or("--against needs an OpenAPI file")?
+                .into(),
+        ),
+        Some(argument) => return Err(format!("unexpected argument `{argument}`").into()),
+    };
     if let Some(argument) = arguments.next() {
         return Err(format!("unexpected argument `{argument}`").into());
     }
-    let report = run_specs_check(&repository_root())?;
+    let root = repository_root();
+    let report = match against {
+        Some(path) => run_specs_check_against(&root, &path)?,
+        None => run_specs_check(&root)?,
+    };
     print!("{}", report.table);
     if report.failures.is_empty() {
         println!("specs ok");

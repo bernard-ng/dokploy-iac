@@ -15,6 +15,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Vendor the official Dokploy 0.30.7 SDK contract, promote 0.30.7 to supported after its live
+  round-trip passed, and let `cargo xtask specs --check --against FILE` verify the kind ledger
+  against any pinned or newly downloaded OpenAPI document. Add a weekly upstream watch that opens
+  or updates a release-specific issue when the latest official contract contains unclassified
+  operations or fields.
+
 - Add the M8 live round-trip gate. A manifest-backed fixture is applied and deployed, imported,
   rebuilt on a fresh instance, imported again, and compared by path and content digest. CI runs the
   gate against the digest-pinned Dokploy 0.30.6 and 0.30.7 images.

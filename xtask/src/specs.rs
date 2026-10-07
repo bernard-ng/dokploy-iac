@@ -17,6 +17,14 @@ pub struct SpecsReport {
 
 /// Loads `specs/` and checks it against `openapi/dokploy.json` below `root`.
 pub fn run_specs_check(root: &Path) -> Result<SpecsReport, Box<dyn std::error::Error>> {
+    run_specs_check_against(root, &root.join("openapi/dokploy.json"))
+}
+
+/// Loads `specs/` and checks them against one OpenAPI document.
+pub fn run_specs_check_against(
+    root: &Path,
+    openapi_path: &Path,
+) -> Result<SpecsReport, Box<dyn std::error::Error>> {
     let registry = match load_dir(&root.join("specs")) {
         Ok(registry) => registry,
         Err(error) => {
@@ -26,8 +34,7 @@ pub fn run_specs_check(root: &Path) -> Result<SpecsReport, Box<dyn std::error::E
             });
         }
     };
-    let openapi: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(root.join("openapi/dokploy.json"))?)?;
+    let openapi: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(openapi_path)?)?;
     let report = check_ledger(&registry, &OperationIndex::from_openapi(&openapi));
 
     let mut table = String::new();

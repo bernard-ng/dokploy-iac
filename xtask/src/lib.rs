@@ -17,7 +17,7 @@ pub use goldens::{GoldensExtractReport, GoldensReport, run_goldens_check, run_go
 pub use imperative::{
     ImperativeCodegenError, ImperativeCodegenPaths, ImperativeCodegenReport, run_imperative_codegen,
 };
-pub use specs::{SpecsReport, run_specs_check};
+pub use specs::{SpecsReport, run_specs_check, run_specs_check_against};
 pub use versions::{VersionsReport, load_versions, run_versions_check, version_image};
 
 pub const GENERATOR_VERSION: &str = "oas3-gen 0.28.0";
