@@ -77,12 +77,4 @@ write:
     fields: [mount_path, host_path, volume_name, file_path, content]
     shape: partial
 ledger:
-  ignored:
-    - { field: applicationId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: composeId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: libsqlId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: mariadbId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: mongoId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: mysqlId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: postgresId, reason: the id of the service it belongs to; a mount never changes service }
-    - { field: redisId, reason: the id of the service it belongs to; a mount never changes service }
+  derived: [applicationId, composeId, libsqlId, mariadbId, mongoId, mysqlId, postgresId, redisId]

@@ -120,6 +120,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep null ignored fields and structurally represented mount parent ids out of the import
+  unsupported ledger. The report now reserves those lines for non-null remote configuration that
+  the generated workspace cannot represent.
+
 - Derive imported document keys from the collision fields of resources whose identity key is
   intentionally logical. Domains now use their host, and the same generic path covers patches,
   ports, schedules, mounts, redirects, backups, volume backups, and basic-auth entries.

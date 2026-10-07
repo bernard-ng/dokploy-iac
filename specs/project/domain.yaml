@@ -99,4 +99,4 @@ write:
 ledger:
   readonly: [createdAt, uniqueConfigKey]
   ignored:
-    - { field: previewDeploymentId, reason: a domain of a preview deployment is not configuration }
+    - { field: previewDeploymentId, reason: a non-null value belongs to a preview deployment and is not configuration }

@@ -1758,7 +1758,10 @@ fn ignored_remote_fields(
             continue;
         };
         for ignored in &spec.ledger.ignored {
-            if lookup(&node.raw, &ignored.field).is_none() {
+            let Some(value) = lookup(&node.raw, &ignored.field) else {
+                continue;
+            };
+            if value.is_null() {
                 continue;
             }
             let address = node
@@ -1893,7 +1896,9 @@ fn create_file(path: &Path, bytes: &[u8]) -> Result<(), ImportPersistError> {
 
 #[cfg(test)]
 mod tests {
-    use super::remote_key_base;
+    use dokploy_state::RemoteId;
+
+    use super::{RemoteNode, ignored_remote_fields, remote_key_base};
 
     #[test]
     fn keyless_kinds_derive_valid_keys_from_every_collision_field() {
@@ -1916,5 +1921,24 @@ mod tests {
         let punctuation = remote_key_base(redirect, &serde_json::json!({ "regex": ".*" }))
             .expect("punctuation-only collision values get a stable fallback");
         assert!(punctuation.starts_with("redirect-"), "{punctuation}");
+    }
+
+    #[test]
+    fn unsupported_report_excludes_null_and_structural_metadata() {
+        let specs = dokploy_spec::embedded().expect("repository specs load");
+        let nodes = [RemoteNode {
+            kind: "domain".to_owned(),
+            id: RemoteId::new("domain-1").unwrap(),
+            parent: None,
+            raw: serde_json::json!({ "previewDeploymentId": null }),
+            key: None,
+            address: None,
+        }];
+
+        assert!(ignored_remote_fields(&specs, &nodes).is_empty());
+
+        let mount = specs.get("mount").expect("mount spec");
+        assert!(mount.ledger.ignored.is_empty());
+        assert!(mount.ledger.derived.contains(&"postgresId".to_owned()));
     }
 }
