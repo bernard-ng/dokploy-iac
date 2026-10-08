@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps invariants 5, 6, 15, 16, and 19 and the journal design of the
+Accepted (2026-10-08). Keeps invariants 5, 6, 15, 16, and 19 and the journal design of the
 first engine's ADR 0005.
 
 ## Context

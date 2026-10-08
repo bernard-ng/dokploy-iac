@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the first engine's invariants 1 to 4 and its ADR 0035 (bounded
+Accepted (2026-10-08). Keeps the first engine's invariants 1 to 4 and its ADR 0035 (bounded
 response bodies) and 0037 (sanitised error bodies).
 
 ## Context

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the first engine's stream separation, explicit-approval rules, and
+Accepted (2026-10-08). Keeps the first engine's stream separation, explicit-approval rules, and
 generated imperative commands.
 
 ## Decision

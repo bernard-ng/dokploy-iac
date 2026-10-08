@@ -21,8 +21,8 @@ flat settings kind adds a spec file and nothing else: the new kind is enrolled t
 For each field the suite makes a sample value of its type (a second one for changes), notes the write
 group that carries it, and treats a `secret` or `write_only` field as a secret read from an
 environment variable. A field that defaults to the key is left out of the first document so the
-default is exercised. A selector field gets two seeded targets (`{ name }` values the suite resolves
-to ids); unions, structs, keyed collections, `env`, and `file` fields are not exercised yet.
+default is exercised. Selector targets, union arms, structs, keyed collections, environment maps,
+and file sources are derived from their spec metadata and exercised where the kind supports them.
 
 ## Scenarios
 
@@ -63,10 +63,9 @@ the secret scan has a test that it can fail.
 
 ## What it does not replace
 
-The same scenarios must run against a real Dokploy (the live contract suite, ADR 0015), because
-the simulator is only as true as the fixtures it copies: a scenario whose result differs between the
-two is a bug in the simulator or the spec. The scenarios that need two resources (dependency
-ordering) or an importer (import then plan is empty) are not generated yet.
+The live engine and round-trip suites cover the remote behaviors that an in-memory simulator cannot
+prove. Focused engine and CLI tests cover dependency ordering, import convergence, workspace
+persistence, and deployment workflows.
 
 ## Nested kinds
 

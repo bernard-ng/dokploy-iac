@@ -2,8 +2,7 @@
 
 ## Status
 
-Proposed (2026-10-03). Decided while finishing milestone M3 on the owner's instruction to finish it,
-and put to review with the pull request that carries it. It amends [ADR 0018](0018-several-parents-and-per-member-unions.md)
+Accepted (2026-10-08). Decided while completing the project resource model on the owner's instruction. It amends [ADR 0018](0018-several-parents-and-per-member-unions.md)
 (a scoped list may serve several parents) and the grammar of [`spec-format.md`](../design/spec-format.md).
 
 ## Context

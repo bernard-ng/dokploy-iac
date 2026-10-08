@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Reframe the README around product use cases, adoption, the workspace, and the safe apply loop.
+  Retire the completed roadmap, vision ratchet, cost-gate report, and their obsolete test; mark the
+  implemented architecture decisions as accepted and refresh technical references that still
+  described unfinished milestones.
+
 ## [0.1.0-beta.1] - 2026-10-07
 
 ### Fixed
@@ -174,7 +181,7 @@ All notable changes to this project will be documented in this file.
   directories must stay there. This prevents collisions with application-owned `settings.yaml`,
   `projects/`, `files/`, and `secrets/` paths.
 
-- Milestone M2 is complete ([`docs/design/cost-gate.md`](docs/design/cost-gate.md)): `tag`,
+- The M2 cost gate confirmed that `tag`,
   `registry`, and `redirect` run end to end with no per-kind Rust or test code (specs of 42, 66, and
   41 lines), against the simulator and the live Dokploy on 0.30.6 and 0.30.7. The union shape is not
   measured yet.
@@ -335,7 +342,7 @@ All notable changes to this project will be documented in this file.
 
 - The leaf kinds `port` and `security` (milestone M3): two specs of 48 and 44 lines, no Rust. Both pass
   the full conformance suite (26 and 22 scenarios) as children of an application, the vision's
-  `ports:` and `security:` blocks now validate (two lines closed in `docs/vision/gaps/project.txt`),
+  `ports:` and `security:` blocks now validate, closing their field-coverage gaps,
   and 38 of their 39 legacy ledger scenarios are classified `covered` (the other is the live suite).
 
 - Follow-up writes after a create (milestone M3, ADR 0008). A property the create operation does not
@@ -350,11 +357,10 @@ All notable changes to this project will be documented in this file.
   `api_key`, `content`, `script`, `document`, and so on); declare `class: secret` or `class: content`.
   This is the rule the state's name check enforced at runtime, now stated where the classes live.
 
-- The vision ratchet (milestone M3; `crates/dokploy-model/tests/vision.rs`,
-  [`docs/vision/README.md`](docs/vision/README.md)). The two vision documents are now version 2
-  files, parsed against the repository's specs on every test run; what the parser rejects is
-  recorded in `docs/vision/gaps/` and the test fails when it changes, so each spec that learns a
-  field shows up as a closed line. Today: 43 gaps in the project document, 19 in the settings one.
+- The former field-coverage ratchet parsed two complete target documents against the repository's
+  specs on every test run. Every parser diagnostic was recorded and the test failed when it changed,
+  so each spec that learned a field visibly closed the list. It began with 43 project gaps and 19
+  settings gaps.
 
 - A live acceptance test of the engine (`crates/dokploy-engine/tests/live.rs`,
   `scripts/integration/test-engine-live.sh`, CI job `engine-live`; milestone M2, ADR 0015). Against the
@@ -507,7 +513,7 @@ All notable changes to this project will be documented in this file.
   structural lint, cross-spec registry, and an OpenAPI coverage ledger, plus working
   specs for `registry`, `redirect`, and partial `application`, `environment`, and
   `project`. `cargo xtask specs --check` runs in CI. Nothing in the engine reads the
-  specs yet (milestone M0 of `docs/roadmap.md`).
+  specs yet at the start of the v2 work.
 
 - Add a second document type for instance settings. A file with a top-level
   `settings:` key (default `dokploy.settings.yaml`) is planned, applied,

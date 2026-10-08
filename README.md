@@ -1,95 +1,116 @@
-# Dokploy infrastructure as code
+# Dokploy IaC
 
-Describe a [Dokploy](https://dokploy.com/) instance in YAML, keep it in a
-repository, and rebuild it from that description instead of re-creating it through
-the dashboard: Docker Compose, but for Dokploy itself.
+Manage [Dokploy](https://dokploy.com/) infrastructure from reviewable YAML.
+Dokploy IaC can adopt an existing instance, show proposed changes, reconcile its
+configuration, and deploy its workloads. The workspace can then rebuild the same
+setup on a fresh Dokploy installation.
 
 > [!IMPORTANT]
-> **Beta preview.** The first engine has been deleted (it is preserved at
-> commit `96cab73`, a reference point in history, not a release) and replaced by the spec-driven
-> engine for the beta project and settings kinds. `dokploy validate`, `schema`, `plan`, `apply`,
-> `deploy`, `recover`, `destroy`, and `import` work on version 2 documents. SSO, licensing, and the other
-> identity features listed outside the beta in [ADR 0001](docs/decisions/0001-product-goal-and-scope.md)
-> remain excluded. The live round-trip gate passes on Dokploy 0.30.6 and 0.30.7.
+> This project is in beta. Dokploy 0.30.6 and 0.30.7 are supported. SSO,
+> licensing, SCIM, user management, roles, billing, and whitelabeling are outside
+> the current scope.
 
-## Where this is going
+## Use cases
 
-```
-workspace/
-  dokploy.workspace.yaml       the only public Dokploy entry point
-  .dokploy/
-    settings.yaml              servers, registries, destinations, notifications, web server, ...
-    projects/leganews.yaml     environments, services, domains, env vars, backups, ...
-    files/                     compose files, configs, scripts
-    secrets/                   dotenv files, git-ignored
-    state/                     state, journals, and locks by document
-```
+- **Bring an existing instance under version control.** Import settings, projects,
+  services, domains, environment variables, and content into one workspace.
+- **Review infrastructure changes before applying them.** `dokploy plan` produces
+  a deterministic preview without secret values, suitable for local review or CI.
+- **Rebuild or migrate an instance.** Apply the same workspace to a fresh Dokploy
+  installation and deploy the resulting services.
+- **Detect and repair drift.** Compare YAML and local state with a fresh read from
+  Dokploy, then restore the declared configuration.
+- **Manage settings and projects together.** Reconcile instance settings first,
+  then projects and deployments in dependency order.
+
+## Get started
+
+Install the CLI from the repository:
 
 ```bash
-dokploy import all           # adopt an existing instance into this workspace
-dokploy doctor               # check the connection and selector catalogs
-dokploy plan                 # what would change, secret-free
-dokploy apply --deploy       # reconcile settings, then projects, then deploy
+cargo install --git https://github.com/bernard-ng/dokploy-iac --locked dokploy-cli
 ```
 
-Applying the workspace to a fresh instance, after a few documented manual steps
-(install Dokploy, create the admin and an API key), reproduces the instance;
-importing the result gives an equivalent workspace. That round trip is the beta's
-acceptance test. The field-level target is the pair of annotated maps in
-[`docs/vision/`](docs/vision/): [`dokploy.full.yaml`](docs/vision/dokploy.full.yaml)
-(a project) and [`dokploy.settings.full.yaml`](docs/vision/dokploy.settings.full.yaml)
-(instance settings).
+Set the connection for the current shell and check it:
 
-## How it works
+```bash
+export DOKPLOY_URL="https://dokploy.example.com"
+export DOKPLOY_API_KEY="your-api-key"
+dokploy doctor
+```
 
-- **Kind specs** describe every Dokploy resource once, as data: fields, types,
-  secrets, mutability, endpoints, write groups. The engine is generic over them, so
-  parsing, planning, applying, importing, schema, docs, and tests all come from one
-  source. A CI ledger checks that every API field is classified.
-- **A safe kernel**: a pure three-way planner, durable
-  state with journals and recovery, fingerprinted secrets, and stale-state and
-  instance-binding protection.
-- **Honest about secrets**: configuration holds references; state holds fingerprints;
-  import writes secrets to git-ignored files and never into YAML.
-- **Explicit deployment**: `lifecycle.deploy` selects initial or configuration-driven deploys;
-  `dokploy deploy` orders them by dependency and can wait for queued work to finish.
+In an empty directory, adopt the current instance:
 
-Architecture and rules: [`ARCHITECTURE.md`](ARCHITECTURE.md). Vocabulary:
-[`CONTEXT.md`](CONTEXT.md). Decisions: [`docs/decisions/`](docs/decisions/).
+```bash
+dokploy import all
+```
+
+The import reads the instance in visible steps, writes a canonical workspace,
+and proves that the first plan is empty. Commit the public configuration and keep
+the generated secret files out of Git.
+
+Use the normal review and apply loop from the workspace root:
+
+```bash
+dokploy plan
+dokploy apply --deploy
+```
+
+`apply` asks for confirmation before making changes. Use `dokploy deploy` when
+configuration is already converged and only deployment is required.
+
+## Workspace
+
+The root contains one public entry point:
+
+```text
+dokploy.workspace.yaml
+.dokploy/
+  settings.yaml
+  projects/
+    shop.yaml
+  files/
+  secrets/
+  state/
+```
+
+`dokploy.workspace.yaml` lists the settings and project documents in apply order:
+
+```yaml
+version: 1
+documents:
+  - .dokploy/settings.yaml
+  - .dokploy/projects/shop.yaml
+```
+
+Files in `.dokploy/files/` hold managed content such as Compose files and
+scripts. `.dokploy/secrets/` is git-ignored and stores imported secret values.
+`.dokploy/state/` holds the state, journals, and locks that make reconciliation
+and recovery safe.
+
+## Safety model
+
+- Every plan reads the current Dokploy state.
+- Resources outside the workspace stay untouched.
+- Secrets are referenced by source and never written to plans, state, logs, or
+  diagnostics.
+- Each remote change is journaled and verified before state is updated.
+- Interrupted operations are settled with `dokploy recover` from fresh remote
+  evidence.
+- Applying configuration deploys workloads only when `--deploy` or
+  `dokploy deploy` requests it.
 
 ## Documentation
 
-- [Roadmap](docs/roadmap.md): milestones, gates, risks, open decisions.
-- [Architecture decisions](docs/decisions/) and [kind spec format](docs/design/spec-format.md).
-- [CLI usage](docs/generated/cli-usage.md) and
-  [resource reference](docs/generated/resource-reference.md), generated from the command tree and
-  kind specs.
-- [Vision maps](docs/vision/): every Dokploy field, annotated.
-- [CI and dependency policy](docs/ci.md), [Releasing](docs/releasing.md),
-  [Shell completions](docs/shell-completions.md).
+- [CLI usage](docs/generated/cli-usage.md)
+- [Resource reference](docs/generated/resource-reference.md)
+- [Shell completions](docs/shell-completions.md)
+- [Architecture](ARCHITECTURE.md) and [architecture decisions](docs/decisions/)
+- [Continuous integration](docs/ci.md) and [release process](docs/releasing.md)
 
-## Building today
+The CLI can also print its effective schema and resource coverage:
 
 ```bash
-cargo build --release -p dokploy-cli
-target/release/dokploy --help
+dokploy schema --document project
+dokploy coverage
 ```
-
-The imperative commands (`dokploy api <resource> <operation>`, generated from the Dokploy
-OpenAPI document) act on Dokploy directly. The declarative commands read `version: 2`
-documents; a first-engine `version: 1` document is refused with a message to rewrite it.
-
-Before committing:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --all-targets --all-features --locked
-cargo xtask codegen --check
-cargo xtask docs --check
-```
-
-## Status of the design
-
-ADRs 0001, 0005, 0006, and 0016 are Accepted; the rest are **Proposed** and awaiting review. The product is
-unreleased, so any of this can change without migration (ADR 0001).

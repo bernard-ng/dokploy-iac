@@ -12,8 +12,7 @@ through the dashboard. The first engine delivered a safe reconciliation core and
 eleven resource kinds, but covered roughly a quarter of the project-side fields
 and one of about twenty instance-settings kinds, dropped environment variables,
 Compose documents, and Compose domains on import, never deployed anything, and
-had no test proving that an exported instance can be rebuilt. See
-[`docs/vision/`](../vision/) for the field-level map.
+had no test proving that an exported instance can be rebuilt.
 
 ## Decision
 

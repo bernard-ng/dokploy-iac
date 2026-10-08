@@ -151,8 +151,7 @@ document's name for the planner (`Resolved(id)`, `Unmatched`, `Ambiguous`, or `U
 that is not exactly one resource blocks the plan with `DOKPLAN019` and a typed reason), and apply
 reads it again before the first write so the id sent is the one that exists now. No id at Dokploy
 reads as `{ local: true }` for a server and as absent for anything else; a document's `null` for a
-server selector means the same and is compiled as `{ local: true }`. A kind with no spec yet (`server`
-until its settings milestone) is not read, so its selectors stay unresolved and block the plan.
+server selector means the same and is compiled as `{ local: true }`.
 
 ## Apply
 
@@ -205,26 +204,6 @@ meant to produce, and decides.
 
 A secret cannot be read back, so an update that rotates one is never proven by observation alone.
 `approve` sees the value-free action before anything is recorded.
-
-## What it does not do yet
-
-- **Deploy.**
-- **Writing files**: refused in the preflight with a message naming the property; a file waits for
-  the secrets milestone (M4). Structs planned per member, `env` blocks, and unions are written
-  (above).
-- **Create-before-delete replacement**, moving to another parent, and a rename combined with a
-  change: refused in the preflight.
-- **Paged collections.** `application.search` and its siblings answer `{items, total}` and are not
-  read: a project kind is found in the collection its environment's direct read embeds. A kind with
-  neither is found by its recorded identity only and one that is not recorded is unavailable, never
-  guessed to be absent.
-- **Plain `map` collections** read as "not returned", which blocks planning for a property the
-  document manages.
-- **Secrets inside a struct member or a plain collection** are refused at compile time. A secret
-  inside a union arm works.
-- **Recovering a lost response to a union write that carries a scalar secret**: the secret cannot be
-  read back, so everything observable can agree and recovery still does not call it a success; a
-  person decides.
 
 ## Cost
 

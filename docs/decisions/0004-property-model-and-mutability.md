@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the conclusions of the first engine's ADR 0006 (field presence
+Accepted (2026-10-08). Keeps the conclusions of the first engine's ADR 0006 (field presence
 semantics) and ADR 0008 (pure property planner seam).
 
 ## Context

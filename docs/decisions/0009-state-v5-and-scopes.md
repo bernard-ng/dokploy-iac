@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps invariants 7, 13, 14, 15, and 18 and the storage, locking, and
+Accepted (2026-10-08). Keeps invariants 7, 13, 14, 15, and 18 and the storage, locking, and
 journal design of the first engine's ADRs 0004, 0005, and 0012.
 
 ## Context

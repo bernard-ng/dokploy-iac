@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed.
+Accepted (2026-10-08).
 
 ## Context
 
@@ -50,8 +50,7 @@ Each field in either input must be classified as exactly one of: `mapped` (a spe
 field), `readonly` (status, ids, timestamps), `action` (not configuration),
 `ignored` (with a written reason), or `derived`. CI fails on an unclassified field,
 an unknown operation, or a spec field that no longer exists. This makes "every
-field Dokploy exposes" checkable, and it replaces the hand maintained `✔/✘`
-markers in `docs/vision/`. A response field can only be classified once a fixture
+field Dokploy exposes" checkable. A response field can only be classified once a fixture
 shows it, so a kind is not complete until its live capture exists (ADR 0015).
 
 **Hooks.** Behavior a spec cannot express goes in a Rust hook registered by kind
@@ -72,5 +71,4 @@ binary at build time and validated at startup in debug builds and in CI.
 - Behavior is not discoverable by reading Rust alone. Mitigation: `dokploy
   coverage` prints the effective spec per kind, and the reference docs are
   generated from the same files.
-- The spec grammar is a public design surface; it is settled by the M0 prototype
-  and changed only by ADR.
+- The spec grammar is a public design surface and changes only through an ADR.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the first engine's offline convergence proof and its refusal to
+Accepted (2026-10-08). Keeps the first engine's offline convergence proof and its refusal to
 overwrite an existing workspace; replaces its per-kind builders.
 
 ## Context

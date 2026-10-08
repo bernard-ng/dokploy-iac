@@ -1,14 +1,8 @@
 # Architecture decision records
 
-The decisions behind the v2 engine. Numbering restarted at 0001 when the project
-re-centred on its original goal (see [ADR 0001](0001-product-goal-and-scope.md)).
-The 50 records of the first engine remain in git history at commit `96cab73`
-(`docs/decisions/`); they are superseded, not deleted knowledge, and individual
-ones are cited where a v2 decision keeps their conclusion.
-
-Status values: **Proposed** (written, awaiting review), **Accepted**, **Superseded**.
-ADRs 0001, 0005, 0006, 0010, 0012, and 0016 are Accepted; the rest follow from them
-and are confirmed by the milestone that first implements them.
+These records explain the structure and behavior of the current engine. All
+decisions listed here are accepted and implemented in the beta. The superseded
+records for the first engine remain available in Git history at commit `96cab73`.
 
 | ADR | Decision |
 |-----|----------|

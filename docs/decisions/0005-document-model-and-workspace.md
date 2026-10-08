@@ -36,8 +36,8 @@ project:
             main: { host: api.example.com, https: true }
 ```
 
-The shape of every kind is exactly what [`docs/vision/`](../vision/) shows,
-adjusted by the review of those files. The nesting rule: **a resource is written
+The generated [resource reference](../generated/resource-reference.md) describes
+the shape of every kind. The nesting rule: **a resource is written
 inside the resource that contains it**; references that cross containment use
 `ref(kind)` (inside the document) or `selector(kind)` (outside it).
 

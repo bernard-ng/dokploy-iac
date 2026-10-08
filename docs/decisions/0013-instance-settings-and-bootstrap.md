@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the first engine's settings-document, state-scope, and
+Accepted (2026-10-08). Keeps the first engine's settings-document, state-scope, and
 external-selector decisions.
 
 ## Context
@@ -17,8 +17,8 @@ cut the connection that is applying them.
 
 ### The settings document
 
-`settings:` holds the kinds in the beta list that are instance-wide
-(`docs/vision/dokploy.settings.full.yaml`). Collection kinds are flat-keyed; an instance-wide
+`settings:` holds the instance-wide kinds in the generated
+[resource reference](../generated/resource-reference.md). Collection kinds are flat-keyed; an instance-wide
 singleton stores a fixed internal key while its document section contains the fields directly.
 Both use the same spec machinery as project kinds. Apply order within the document follows `ref`s
 (a server references its SSH key; a registry may reference a server).

@@ -8,7 +8,7 @@ below were put to them. It amends ADR 0004 (what a union is as a property) and t
 
 ## Context
 
-Building the project kinds (milestone M3) met two shapes the first grammar did not have.
+Building the project kinds exposed two shapes the first grammar did not have.
 
 1. **A kind that lives under several parents.** A mount belongs to an application, a Compose, or any
    of six databases; a domain to an application or a Compose; a backup to a database or a Compose;
@@ -16,8 +16,8 @@ Building the project kinds (milestone M3) met two shapes the first grammar did n
 2. **A union that holds a secret, or whose members are optional.** The application `source` is one of
    github, gitlab, bitbucket, gitea, git, or docker, written by a different operation each. ADR 0004
    plans a union as one atomic value. That cannot hold a secret (the registry password of a Docker
-   image), and it contradicts "an omitted field is unmanaged": the vision documents leave
-   `build_path`, `trigger_type`, and `watch_paths` out of some applications.
+   image), and it contradicts "an omitted field is unmanaged": valid application documents may
+   leave `build_path`, `trigger_type`, and `watch_paths` unmanaged.
 
 ## Decision
 
@@ -57,8 +57,7 @@ A `union(tag)` is planned like a `struct` with `granularity: field` whose member
   write is the arm's operation (`by_variant`), sent with the members the arm needs.
 - Reading a union back reads the tag from the response and the members of that arm.
 
-This is implemented after the several-parents change; until then `source` and `build` stay out of
-the specs, and the vision ratchet records them.
+The same model covers `source` and `build` in the application specs.
 
 ## Consequences
 

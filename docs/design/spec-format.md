@@ -1,14 +1,11 @@
 # Kind spec format
 
 The grammar of the files in `specs/`, decided by
-[ADR 0002](../decisions/0002-kind-specs-are-the-source-of-truth.md). **Grammar v0 is
-implemented** by the `dokploy-spec` crate (`crates/dokploy-spec`), and the specs under
-`specs/` are the working reference: `registry` (flat), `redirect` (leaf),
-`application` (union and `env`, partial), plus the partial `project` and
-`environment` that complete the hierarchy. `cargo xtask specs --check` lints them and
-checks the request side of the coverage ledger against `openapi/dokploy.json`. The
-rest of the engine does not read specs yet (milestone M1 onwards); changes to the
-grammar after M0 go through an ADR.
+[ADR 0002](../decisions/0002-kind-specs-are-the-source-of-truth.md). The
+`dokploy-spec` crate implements the grammar, and the engine, importer, schema,
+reference generator, simulator, and conformance suite all read the same specs.
+`cargo xtask specs --check` lints them and checks their API coverage against the
+pinned Dokploy contracts. Grammar changes require an ADR.
 
 ## Files
 

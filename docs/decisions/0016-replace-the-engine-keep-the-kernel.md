@@ -25,14 +25,13 @@ dispatch, and no dual state support.
    conformance fixtures that the spec engine must satisfy for the same kind. This is
    the *parity oracle*: the old tests define done for a ported kind.
 3. **Build the new layers** (specs, model, engine, simulator) beside the kernel and
-   switch the CLI to them kind by kind: the CLI and the format are allowed to be
-   incomplete between milestones.
+   switch the CLI once the beta surface passes its acceptance gates.
 4. **Delete as you replace.** When a layer's replacement passes the extracted
    goldens, its old code and tests are deleted in the same change. No dead code is
-   kept "for reference"; the tag is the reference.
+   kept "for reference"; commit `96cab73` is the reference.
 5. **Order.** Foundations and flat settings kinds first, to prove the cost model;
    then project kinds from the leaves up; then the cross-cutting features (secrets,
-   import all, deploy); then the live round-trip gate (the roadmap has the detail).
+   import all, deploy); then the live round-trip gate.
 
 **Cost-model gate.** After the first three kinds (a flat settings kind, a leaf
 kind, a union-bearing kind) the cost per kind is measured against the targets of
@@ -51,7 +50,6 @@ removed).
 
 ## Consequences
 
-- The tree has one engine at all times after M1 begins; CI always builds one path.
-- Between milestones the CLI may not support every kind. That is accepted under the
-  pre-release policy; the roadmap states what works at each milestone.
-- The tag preserves the old behavior for comparison at zero maintenance cost.
+- The tree has one engine; CI always builds one path.
+- The supported CLI surface is generated and tested from the current specs.
+- Commit `96cab73` preserves the old behavior for comparison at zero maintenance cost.

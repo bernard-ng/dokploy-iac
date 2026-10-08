@@ -1,8 +1,7 @@
 # Architecture
 
-How the v2 engine is built and the rules it must not break. Decisions are in
-[`docs/decisions/`](docs/decisions/); the field-level target is in
-[`docs/vision/`](docs/vision/); the grammar of kind specs is in
+How the engine is built and the rules it must preserve. Decisions are in
+[`docs/decisions/`](docs/decisions/), and the grammar of kind specs is in
 [`docs/design/spec-format.md`](docs/design/spec-format.md).
 
 ## Shape
@@ -28,7 +27,7 @@ How the v2 engine is built and the rules it must not break. Decisions are in
                               └───────────┘ └──────────┘          (thin shell)
 ```
 
-`dokploy-engine` is the only crate that talks to Dokploy (its skeleton exists: see
+`dokploy-engine` is the only crate that coordinates Dokploy reconciliation (see
 [`docs/design/engine.md`](docs/design/engine.md)). `dokploy-core` has no
 transport, runtime, or CLI dependency; it reads `dokploy-spec` for property paths and
 mutation contracts. `dokploy-sim` is an in-memory Dokploy behind the same `Transport` for

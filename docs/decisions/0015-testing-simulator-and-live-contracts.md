@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Keeps the first engine's practice of path-routed doubles and live
+Accepted (2026-10-08). Keeps the first engine's practice of path-routed doubles and live
 acceptance, and its canary-secret scans.
 
 ## Context
