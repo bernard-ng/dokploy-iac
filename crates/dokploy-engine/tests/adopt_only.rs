@@ -150,7 +150,6 @@ version: 2
 settings:
   organization:
     name: After
-    logo: https://example.invalid/logo.svg
     default_role: member
 "#,
         &[],
@@ -176,8 +175,14 @@ settings:
     assert_eq!(result.unwrap().applied(), 1);
     let held = sim.object("organization", &id).unwrap();
     assert_eq!(held["name"], "After");
-    assert_eq!(held["logo"], "https://example.invalid/logo.svg");
+    assert_eq!(held["logo"], json!(null));
     assert_eq!(held["defaultRole"], "member");
+    assert!(
+        sim.mutations()
+            .iter()
+            .all(|request| request.body().and_then(|body| body.get("logo")).is_none()),
+        "a remote null that the update endpoint rejects is omitted"
+    );
     assert!(
         engine
             .plan(&compiled, store.inspect().unwrap().as_ref())

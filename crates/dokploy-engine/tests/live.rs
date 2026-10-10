@@ -153,11 +153,10 @@ impl Live {
     }
 }
 
-fn organization_document(name: &Value, logo: &Value, default_role: &Value) -> String {
+fn organization_document(name: &Value, default_role: &Value) -> String {
     format!(
-        "version: 2\nsettings:\n  organization:\n    name: {}\n    logo: {}\n    default_role: {}\n",
+        "version: 2\nsettings:\n  organization:\n    name: {}\n    default_role: {}\n",
         serde_json::to_string(name).unwrap(),
-        serde_json::to_string(logo).unwrap(),
         serde_json::to_string(default_role).unwrap(),
     )
 }
@@ -256,27 +255,17 @@ async fn the_active_organization_is_adopted_updated_restored_and_forgotten() {
     let live = Live::new();
     let raw = client();
     let original = call(&raw, OperationRequest::new("organization.active")).await;
-    let changed = organization_document(
-        &json!("Organization Live Contract"),
-        &json!("https://example.invalid/organization-live.svg"),
-        &Value::Null,
-    );
+    let changed = organization_document(&json!("Organization Live Contract"), &json!("member"));
 
     assert_eq!(live.apply(&changed, &[]).await.unwrap(), 1);
     let active = call(&raw, OperationRequest::new("organization.active")).await;
     assert_eq!(active["id"], original["id"]);
     assert_eq!(active["name"], "Organization Live Contract");
-    assert_eq!(
-        active["logo"],
-        "https://example.invalid/organization-live.svg"
-    );
+    assert_eq!(active["logo"], original["logo"]);
+    assert_eq!(active["defaultRole"], "member");
     assert_eq!(live.changes(&changed, &[]).await, 0);
 
-    let restored = organization_document(
-        &original["name"],
-        &original["logo"],
-        &original["defaultRole"],
-    );
+    let restored = organization_document(&original["name"], &original["defaultRole"]);
     assert_eq!(live.apply(&restored, &[]).await.unwrap(), 1);
     assert_eq!(
         live.apply("version: 2\nsettings: {}\n", &[]).await.unwrap(),
@@ -708,7 +697,7 @@ settings:
     );
 }
 
-const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    production:\n      applications:\n        api:\n          source: { type: docker, image: \"nginx:alpine\", password: null }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          lifecycle: { deploy: on_change }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
+const PROJECT: &str = "version: 2\nproject:\n  slug: iac-live\n  environments:\n    production:\n      applications:\n        api:\n          source: { type: docker, image: \"registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373\", password: null }\n          environment:\n            LOG_LEVEL: info\n            API_TOKEN: { secret: { env: LIVE_API_TOKEN } }\n          lifecycle: { deploy: on_change }\n          patches:\n            motd:\n              file_path: README.md\n              type: create\n              content: { file: patches/motd.txt }\n";
 
 /// A project document applied through the engine, its workspace holding the files it names.
 struct LiveProject {

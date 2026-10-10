@@ -72,7 +72,6 @@ version: 2
 settings:
   organization:
     name: Legalter
-    logo: null
 ";
     let document = parse(source).expect("valid singleton");
     let organization = settings_resource(&document, "organization", "active");
@@ -86,7 +85,7 @@ settings:
     );
     assert_eq!(
         document.render(),
-        "version: 2\nsettings:\n  organization:\n    logo: null\n    name: Legalter\n"
+        "version: 2\nsettings:\n  organization:\n    name: Legalter\n"
     );
 }
 

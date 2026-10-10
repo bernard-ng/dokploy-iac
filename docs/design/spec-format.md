@@ -138,6 +138,7 @@ fields:
     class: public              # public | secret | content   (ADR 0010)
     mutability: in_place       # in_place | create_only | reparent | write_only | computed
     nullable: false
+    read_nullable: false       # remote null is valid but cannot be written
     default: key               # `key` = remote name defaults to the document key
     needs_deploy: false
   password:
@@ -153,7 +154,7 @@ fields:
     mutability: in_place
 ```
 
-Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
+Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `read_nullable`, `default`,
 `needs_deploy`, `disruptive`, `fallback`, `granularity` (`field` or `key`), `entry`, `trim`,
 `read_normalization`, `file_key`, `request`, `list_api`, `json`, `key_selector`, `since`, `until`,
 `doc` (one line for the generated reference), `example`.
@@ -161,6 +162,10 @@ Attributes: `api`, `type`, `class`, `mutability`, `nullable`, `default`,
 `read_normalization: generated_suffix` applies to a public text field when Dokploy stores the
 requested base with a random six-character lowercase alphanumeric suffix. Projection and import
 remove that suffix, while create requests continue to send the declarative base.
+
+`read_nullable: true` accepts `null` from Dokploy without making `null` a configurable value. A
+full update omits that remote null when the document does not manage the field. Use `nullable`
+when the update endpoint accepts null as a clear operation. See ADR 0020.
 
 `request` names the top-level request field when `api` is a different response field or a JSON
 pointer. Notification settings use this because Dokploy accepts `webhookUrl` but reads it below a

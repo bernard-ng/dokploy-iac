@@ -17,7 +17,7 @@ api:
     singleton: { op: organization.active }
 fields:
   name: { type: text, min_len: 1 }
-  logo: { type: text, nullable: true }
+  logo: { type: text, read_nullable: true }
   default_role: { api: defaultRole, request: defaultRole, type: text, nullable: true }
 write:
   - { op: organization.update, fields: [name, logo, default_role], shape: full }

@@ -1037,6 +1037,7 @@ pub(crate) fn group_body(
                 body.insert(wire, body_value(inputs, address, checkpoint, &path)?);
             } else if group.shape == Shape::Full
                 && let Some(current) = fresh.and_then(|fresh| lookup(fresh, &path.info().api))
+                && (!current.is_null() || path.info().nullable)
             {
                 body.insert(wire, current.clone());
             }
@@ -1176,7 +1177,10 @@ pub(crate) fn group_body(
                     }
                     _ => {}
                 }
-            } else if let Some(current) = fresh.and_then(|fresh| lookup(fresh, &path.info().api)) {
+            } else if let Some(current) = fresh
+                .and_then(|fresh| lookup(fresh, &path.info().api))
+                .filter(|current| !current.is_null() || path.info().nullable)
+            {
                 body.insert(wire, current.clone());
             }
         }

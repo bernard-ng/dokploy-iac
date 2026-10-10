@@ -521,6 +521,9 @@ pub struct Field {
     /// Whether `null` clears the value.
     #[serde(default)]
     pub nullable: bool,
+    /// Whether Dokploy may return `null` even though the update endpoint cannot accept it.
+    #[serde(default)]
+    pub read_nullable: bool,
     /// A default: `key` means the document key.
     #[serde(default)]
     pub default: Option<String>,

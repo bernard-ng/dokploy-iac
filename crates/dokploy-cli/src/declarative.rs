@@ -86,7 +86,18 @@ pub fn execute(cli: Cli, output: &mut dyn Write, _terminal_available: bool) -> R
         Command::Coverage { kind } => coverage(kind.as_deref(), output),
         Command::Fmt { file, all, check } => format_documents(file, all, check, output),
         Command::Completions { shell } => {
-            clap_complete::generate(shell, &mut Cli::command(), "dokploy", output);
+            let generated = std::thread::Builder::new()
+                .name("dokploy-completions".to_owned())
+                .stack_size(16 * 1024 * 1024)
+                .spawn(move || {
+                    let mut generated = Vec::new();
+                    clap_complete::generate(shell, &mut Cli::command(), "dokploy", &mut generated);
+                    generated
+                })
+                .into_diagnostic()?
+                .join()
+                .map_err(|_| miette::miette!("completion generation failed"))?;
+            output.write_all(&generated).into_diagnostic()?;
             Ok(())
         }
         Command::Plan { .. }

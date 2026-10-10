@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Make CI install the Linux keyring dependencies before static contract validation, generate shell
+  completions on an explicit stack sized for the generated command tree, and keep live deployment
+  checks independent from floating Docker Hub tags.
+- Distinguish values that Dokploy may return as `null` from values its update endpoint accepts as
+  `null` with the `read_nullable` spec attribute. Organization updates now omit an unmanaged null
+  logo, while configuration rejects an explicit null logo before apply.
+
 ### Changed
 
 - Reframe the README around product use cases, adoption, the workspace, valid settings and project

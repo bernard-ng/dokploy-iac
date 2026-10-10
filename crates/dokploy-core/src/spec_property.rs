@@ -66,7 +66,9 @@ pub(crate) fn observation_valid(
     match observation {
         PropertyObservation::Unknown(reason) => *reason != PropertyUnknownReason::Sensitive,
         // A column of an arm Dokploy never saved is null whatever the arm requires of a save.
-        PropertyObservation::KnownAbsent => info.nullable || info.arm.is_some(),
+        PropertyObservation::KnownAbsent => {
+            info.nullable || info.read_nullable || info.arm.is_some()
+        }
         PropertyObservation::Receipt(_) => false,
         PropertyObservation::Known(value) => {
             if info.shape == PathShape::CollectionRoot {

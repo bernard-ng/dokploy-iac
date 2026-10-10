@@ -25,3 +25,4 @@ records for the first engine remain available in Git history at commit `96cab73`
 | [0017](0017-cli-surface.md) | CLI surface |
 | [0018](0018-several-parents-and-per-member-unions.md) | Kinds with several parents, and unions planned per member |
 | [0019](0019-sets-of-selectors-relations-and-per-parent-operations.md) | Sets of selectors, relations, and per-parent operations |
+| [0020](0020-asymmetric-nullability.md) | Asymmetric nullability between reads and writes |

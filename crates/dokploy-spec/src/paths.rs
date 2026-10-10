@@ -58,6 +58,8 @@ pub struct PropertyInfo {
     pub mutability: Mutability,
     /// Whether `null` clears it.
     pub nullable: bool,
+    /// Whether a remote `null` is valid even though the document cannot own one.
+    pub read_nullable: bool,
     /// The kind this property selects, for a `selector(kind)` property.
     pub selector: Option<String>,
     /// The collection root, for an entry.
@@ -300,6 +302,7 @@ fn base(
         class: field.class,
         mutability,
         nullable: field.nullable,
+        read_nullable: field.read_nullable,
         selector: selector_of(parsed),
         root: None,
         key_selector: field.key_selector.clone(),
