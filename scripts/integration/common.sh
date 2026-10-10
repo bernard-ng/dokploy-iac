@@ -38,16 +38,30 @@ prepare_runtime() {
 ensure_swarm_manager() {
     local swarm_state
     local control_available
+    local network_contract
 
     swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
     control_available="$(docker info --format '{{.Swarm.ControlAvailable}}')"
     if [[ "$swarm_state" == "inactive" ]]; then
         docker swarm init --advertise-addr 127.0.0.1 >/dev/null
         echo "Initialized a single-node Docker Swarm for deployment tests."
-        return
+        swarm_state="$(docker info --format '{{.Swarm.LocalNodeState}}')"
+        control_available="$(docker info --format '{{.Swarm.ControlAvailable}}')"
     fi
     if [[ "$swarm_state" != "active" || "$control_available" != "true" ]]; then
         echo "The integration host must be a Docker Swarm manager." >&2
+        exit 1
+    fi
+
+    network_contract="$(
+        docker network inspect \
+            --format '{{.Driver}} {{.Scope}} {{.Attachable}}' dokploy-network 2>/dev/null || true
+    )"
+    if [[ -z "$network_contract" ]]; then
+        docker network create --driver overlay --attachable dokploy-network >/dev/null
+        echo "Created the Dokploy overlay network for deployment tests."
+    elif [[ "$network_contract" != "overlay swarm true" ]]; then
+        echo "The existing dokploy-network must be an attachable Swarm overlay." >&2
         exit 1
     fi
 }
