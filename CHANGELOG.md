@@ -6,7 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Reframe the README around product use cases, adoption, the workspace, and the safe apply loop.
+- Reframe the README around product use cases, adoption, the workspace, valid settings and project
+  examples, and the safe apply loop.
   Retire the completed roadmap, vision ratchet, cost-gate report, and their obsolete test; mark the
   implemented architecture decisions as accepted and refresh technical references that still
   described unfinished milestones.

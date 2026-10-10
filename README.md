@@ -83,6 +83,64 @@ documents:
   - .dokploy/projects/shop.yaml
 ```
 
+To define a new workspace instead of importing one, create the documents listed
+by the manifest. A small settings document can define shared tags and a container
+registry:
+
+```yaml
+# .dokploy/settings.yaml
+version: 2
+settings:
+  tags:
+    production:
+      color: "#16a34a"
+  registries:
+    ghcr:
+      type: cloud
+      url: ghcr.io
+      username: your-github-user
+      password:
+        env: GHCR_TOKEN
+```
+
+A project document can create an application from a Docker image, provide its
+environment, attach the shared tag, expose a domain, and deploy after a relevant
+configuration change:
+
+```yaml
+# .dokploy/projects/shop.yaml
+version: 2
+project:
+  slug: shop
+  description: Storefront services
+  tags:
+    - name: production
+  environments:
+    production:
+      applications:
+        web:
+          source:
+            type: docker
+            image: nginx:1.27-alpine
+          environment:
+            APP_ENV: production
+            SESSION_SECRET:
+              secret:
+                env: SHOP_SESSION_SECRET
+          lifecycle:
+            deploy: on_change
+          domains:
+            public:
+              host: shop.example.com
+              port: 80
+              https: true
+              certificate_type: letsencrypt
+```
+
+Set `GHCR_TOKEN` and `SHOP_SESSION_SECRET` in the environment that runs
+`dokploy plan` or `dokploy apply`. Their values are fingerprinted for change
+detection and are never copied into the YAML or state.
+
 Files in `.dokploy/files/` hold managed content such as Compose files and
 scripts. `.dokploy/secrets/` is git-ignored and stores imported secret values.
 `.dokploy/state/` holds the state, journals, and locks that make reconciliation
